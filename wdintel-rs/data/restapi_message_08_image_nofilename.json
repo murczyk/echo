@@ -1,0 +1,33 @@
+{
+	"envelope":
+	{
+		"source": "+380636504863",
+		"sourceNumber": "+380636504863",
+		"sourceUuid": "61b66a17-c69e-4951-b59a-fa368ba0b8ed",
+		"sourceName": "потап",
+		"sourceDevice": 1,
+		"timestamp": 1684224142687,
+		"dataMessage":
+		{
+			"timestamp": 1684224142687,
+			"message": null,
+			"expiresInSeconds": 0,
+			"viewOnce": false,
+			"attachments":
+			[
+				{
+					"contentType": "image/jpeg",
+					"filename": null,
+					"id": "A1TJI26CEXouWLcDdOaH.jpg",
+					"size": 246705
+				}
+			],
+			"groupInfo":
+			{
+				"groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+				"type": "DELIVER"
+			}
+		}
+	},
+	"account": "+380502711438"
+}

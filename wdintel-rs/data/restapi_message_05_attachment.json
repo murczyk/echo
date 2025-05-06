@@ -1,0 +1,28 @@
+{
+	"envelope":
+	{
+		"source": "+380731787267",
+		"sourceNumber": "+380731787267",
+		"sourceUuid": "04ed457c-a54c-4be5-b711-ca2ff3fcd03e",
+		"sourceName": "Ziggy Kostia",
+		"sourceDevice": 5,
+		"timestamp": 1684222440630,
+		"dataMessage":
+		{
+			"timestamp": 1684222440630,
+			"message": "testing attachments",
+			"expiresInSeconds": 0,
+			"viewOnce": false,
+			"attachments":
+			[
+				{
+					"contentType": "application/vnd.google-earth.kmz",
+					"filename": "Блоки-2023-05-12.kmz",
+					"id": "7099391942465532635.kmz",
+					"size": 9809
+				}
+			]
+		}
+	},
+	"account": "+380502711438"
+}

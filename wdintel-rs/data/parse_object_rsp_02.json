@@ -1,0 +1,45 @@
+{
+  "type": "org.c4isr.delta.contracts.model.ObjectContract",
+  "id": "371fb745-58f2-446a-8bfd-6309ccb58379",
+  "name": "Медичний підрозділ",
+  "typeId": "MIM:98a630cb-1c93-4eef-ab3a-c95cd4c7c74f",
+  "typeName": "Транспортний засіб",
+  "parentTypeName": "Наземне Обладнання",
+  "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+  "reportingDateTime": 1672246738105,
+  "geometry": {
+    "type": "AbsolutePointTypeCustom",
+    "absolutePointLatitudeCoordinate": {
+      "latitudeCoordinateCoordinate": 47.552443
+    },
+    "absolutePointLongitudeCoordinate": {
+      "longitudeCoordinateCoordinate": 36.659772
+    },
+    "absolutePointVerticalDistance": {
+      "verticalDistanceDimension": 0
+    },
+    "velocityType": {}
+  },
+  "source": {
+    "id": "91513b80-6424-409b-82a3-f05cba146f94",
+    "name": "ziggy"
+  },
+  "symbol": {
+    "app6d": {
+      "sidc": "10061500001200000000",
+      "amplifierFields": {
+        "T": {
+          "value": "Медичний підрозділ",
+          "type": "TEXT"
+        },
+        "Y": {
+          "value": "36.6597720 47.5524430",
+          "type": "TEXT"
+        }
+      }
+    }
+  },
+  "attachmentsCount": null,
+  "layerList": null,
+  "action": null
+}

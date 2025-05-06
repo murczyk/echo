@@ -1,0 +1,33 @@
+{
+	"envelope":
+	{
+		"source": "+380633806848",
+		"sourceNumber": "+380633806848",
+		"sourceUuid": "a9c36344-e4c2-4b74-9838-47020e289950",
+		"sourceName": "Fox 🥑",
+		"sourceDevice": 1,
+		"timestamp": 1684218057818,
+		"dataMessage":
+		{
+			"timestamp": 1684218057818,
+			"message": null,
+			"expiresInSeconds": 0,
+			"viewOnce": false,
+			"reaction":
+			{
+				"emoji": "✊",
+				"targetAuthor": "+380978359878",
+				"targetAuthorNumber": "+380978359878",
+				"targetAuthorUuid": "265ad248-07ff-45b5-b939-6bcd070123e6",
+				"targetSentTimestamp": 1684218012178,
+				"isRemove": false
+			},
+			"groupInfo":
+			{
+				"groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+				"type": "DELIVER"
+			}
+		}
+	},
+	"account": "+380502711438"
+}

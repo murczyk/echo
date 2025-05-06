@@ -1,0 +1,79 @@
+{
+    "id": "8e6f5437-4d48-4c79-9344-1fea315e919e",
+    "name": " ",
+    "creatingDateTime": 1672935632221,
+    "reportingDateTime": 1672935632221,
+    "observationDateTime": -1,
+    "validityEndDateTime": -1,
+    "status": "-",
+    "reporterName": "Ugin108",
+    "reporterPosition": "Оператор дельти",
+    "reporterType": "ACTOR",
+    "reporterOrganisation": "108 ОБрТРО",
+    "creatorName": "Ugin108",
+    "creatorPosition": "Оператор дельти",
+    "creatorOrganisation": "108 ОБрТРО",
+    "overlays":
+    [
+        {
+            "id": "59843f64-085e-59b0-7961-6a7e7d2ba233",
+            "name": "посадки 108 обр ТрО",
+            "editable": false,
+            "objectIsDisplayedOn": false
+        }
+    ],
+    "locationReports":
+    [
+        {
+            "reportTimeStamp": 1672935632221,
+            "location":
+            {
+                "type": "LineTypeCustom",
+                "linePoint":
+                [
+                    {
+                        "type": "AbsolutePointTypeCustom",
+                        "absolutePointLatitudeCoordinate":
+                        {
+                            "latitudeCoordinateCoordinate": 47.5892836
+                        },
+                        "absolutePointLongitudeCoordinate":
+                        {
+                            "longitudeCoordinateCoordinate": 36.1512877
+                        },
+                        "absolutePointVerticalDistance":
+                        {}
+                    },
+                    {
+                        "type": "AbsolutePointTypeCustom",
+                        "absolutePointLatitudeCoordinate":
+                        {
+                            "latitudeCoordinateCoordinate": 47.5908562
+                        },
+                        "absolutePointLongitudeCoordinate":
+                        {
+                            "longitudeCoordinateCoordinate": 36.1676099
+                        },
+                        "absolutePointVerticalDistance":
+                        {}
+                    }
+                ]
+            },
+            "sourceInfo":
+            {
+                "sourceType": "ACTOR",
+                "source": "Ugin108",
+                "sourceId": "58b9bbde-c885-103c-9869-9fec1796d7f7"
+            }
+        }
+    ],
+    "symbol":
+    {
+        "app6d":
+        {
+            "sidc": "10046600001100000000"
+        },
+        "milstd2525c":
+        {}
+    }
+}

@@ -1,0 +1,24 @@
+{
+  "envelope":
+  {
+	  "source": "+380934788997",
+	  "sourceNumber": "+380934788997",
+	  "sourceUuid": "cb6c81b6-555b-47e1-8956-c00a128cd9ec",
+	  "sourceName": "Тарас Марко (Террі)",
+	  "sourceDevice": 1,
+	  "timestamp": 1684170995858,
+	  "dataMessage":
+	  {
+		  "timestamp": 1684170995858,
+		  "message": "Каскад: проїхали Омельник",
+		  "expiresInSeconds": 0,
+		  "viewOnce": false,
+		  "groupInfo":
+		  {
+			  "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+			  "type": "DELIVER"
+		  }
+	  }
+  },
+  "account": "+380502711438"
+}

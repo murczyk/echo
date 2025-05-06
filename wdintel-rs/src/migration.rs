@@ -1,0 +1,26 @@
+use crate::config::read_config;
+use crate::types::*;
+use sea_orm_migration::cli;
+// use std::env;
+
+#[tokio::main]
+pub async fn run_migration(mode: Mode) -> Result<(), AppError> {
+    run_migration_1(mode).await.context(h!())?;
+    Ok(())
+}
+
+pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
+    let config = read_config(mode).context(h!())?;
+    if config.is_slave.unwrap_or(false) {
+        warn!("skipping DB migrations, running in slave mode");
+        return Ok(());
+    }
+    println!("Running migration");
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+
+    cli::run_migrate(echo_migration::Migrator, &dbx, None, false)
+        .await
+        .unwrap();
+    println!("Running migration: done");
+    Ok(())
+}

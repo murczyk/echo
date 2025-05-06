@@ -1,0 +1,6 @@
+*.db
+*.bak
+*.json
+*.png
+*.jpe
+/deploy/echo-whatsapp/echo-whatsapp

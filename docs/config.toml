@@ -1,0 +1,21 @@
+# The URL the site will be built for
+base_url = "/docs/"
+
+# Whether to automatically compile all Sass files in the sass directory
+compile_sass = false
+default_language = "ua"
+
+
+# Whether to build a search index to be used later on by a JavaScript library
+build_search_index = false
+
+[markdown]
+
+[extra]
+# Put all your custom variables here
+list_pages = true
+toc = true
+## suffix for sakura-css theme name. default is "", falls back to sakura.css
+## possible values are "-ink", "-dark", "-vader" etc.
+## full list here: https://github.com/oxalorg/sakura/tree/master/css
+sakura_theme="-ink"

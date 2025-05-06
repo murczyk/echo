@@ -1,0 +1,144 @@
+module Pages.Home_ exposing (Model, Msg, page)
+
+import Api
+import Auth
+import Bindings as B
+import Dict exposing (Dict)
+import Effect as E exposing (Effect)
+import Html exposing (..)
+import Html.Attributes as Attr exposing (..)
+import Html.Events exposing (..)
+import Html.Extra as HtmlX
+import Layouts
+import Le.Auth
+import Le.Block.Spinner
+import Le.Block.Toast
+import Le.Components exposing (googleMapsOutLink)
+import Le.RemoteData as RD exposing (RemoteData(..))
+import Le.Types
+import Page exposing (Page)
+import Process
+import Route exposing (Route)
+import Shared
+import Task
+import Time
+import View exposing (View)
+
+
+type alias Model =
+    { formErrors : Dict String String
+    , toasts : Le.Block.Toast.Model
+    , inboxGroupsActivityStats : RemoteData Le.Types.ApiError B.InboxByGroupDigestRsp
+    }
+
+
+type Msg
+    = ToastMsg Le.Block.Toast.Msg
+    | GotInboxGroupsActivityStats (Result Le.Types.ApiError B.InboxByGroupDigestRsp)
+    | Slept
+
+
+page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
+page user shared req =
+    Page.new
+        { init = init
+        , update = update
+        , view = view shared user
+        , subscriptions = subscriptions
+        }
+        |> Page.withLayout (toLayout user)
+
+
+toLayout : Auth.User -> Model -> Layouts.Layout Msg
+toLayout user model =
+    Layouts.Navbar
+        { user = user
+        , activeName = "home"
+        }
+
+
+loadInboxGroupsActivityInterval =
+    10000
+
+
+init : () -> ( Model, Effect Msg )
+init _ =
+    ( { formErrors = Dict.empty
+      , toasts = Le.Block.Toast.init
+      , inboxGroupsActivityStats = Loading
+      }
+    , E.batch
+        [ E.getInboxGroupsActivityStats GotInboxGroupsActivityStats
+
+        --, E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep loadInboxGroupsActivityInterval)
+        ]
+    )
+
+
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
+    case msg of
+        ToastMsg imsg ->
+            let
+                ( im, icmds ) =
+                    Le.Block.Toast.update imsg model.toasts
+            in
+            ( { model | toasts = im }
+            , E.sendCmd <| Cmd.map ToastMsg icmds
+            )
+
+        GotInboxGroupsActivityStats (Err err) ->
+            Api.handleHttpError ToastMsg err { model | inboxGroupsActivityStats = Failure err }
+
+        GotInboxGroupsActivityStats (Ok resp) ->
+            ( { model | inboxGroupsActivityStats = Success resp }, E.none )
+
+        Slept ->
+            ( { model | inboxGroupsActivityStats = RD.markOutdated model.inboxGroupsActivityStats }
+            , E.batch
+                [ E.getInboxGroupsActivityStats GotInboxGroupsActivityStats
+                , E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep loadInboxGroupsActivityInterval)
+                ]
+            )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
+
+
+view : Shared.Model -> B.User -> Model -> View Msg
+view shared user model =
+    { title = "головна"
+    , body =
+        [ mainContent user model
+        ]
+    }
+
+
+mainContent : B.User -> Model -> Html Msg
+mainContent user model =
+    div [ class "max-w-[80%] mx-auto my-4" ]
+        [ section []
+            [ h1 [ class "" ] [ text "Головна" ]
+            ]
+        , section [ class "flex gap-4 h-[50vh]" ]
+            [ a [ target "_blank", href "/docs", class "basis-[35%] border-1 border-border rounded-sm py-2 px-4 flex items-center justify-center gap-2 hover:border-border-selected" ]
+                [ span [] [ text "Алгоритм Роботи" ]
+                , i [ class "bi bi-box-arrow-up-right" ] []
+                ]
+            , HtmlX.viewIf (Le.Auth.hasRole "Rer" user) <|
+                div [ class "grow-1 border rounded-sm relative" ]
+                    [ h4 [ class "pl-2 pt-2" ] [ text "Активність груп" ]
+                    , div [ class "h-[45vh]" ]
+                        [ Html.node "bar-chart-2"
+                            [ Attr.property "data" <|
+                                B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
+                            ]
+                            []
+                        ]
+                    , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
+                        span [ class "absolute top-[50%] left-[50%]" ] [ Le.Block.Spinner.loadingSpinner ]
+                    ]
+            ]
+        ]

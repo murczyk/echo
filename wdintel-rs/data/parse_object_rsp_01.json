@@ -1,0 +1,93 @@
+{
+    "id": "15efbe77-4a48-4f41-8a01-06760823e19d",
+    "name": "Штаб",
+    "creatingDateTime": 1672167535464,
+    "reportingDateTime": 1672167558573,
+    "observationDateTime": -1,
+    "validityEndDateTime": -1,
+    "status": "-",
+    "reporterName": "ziggy",
+    "reporterPosition": "Оператор-радіотелефоніст відділення звʼязку",
+    "reporterType": "ACTOR",
+    "reporterOrganisation": "190 НЦ ЖВІ (А3508)",
+    "creatorName": "ziggy",
+    "creatorPosition": "Оператор-радіотелефоніст відділення звʼязку",
+    "creatorOrganisation": "190 НЦ ЖВІ (А3508)",
+    "comments": [
+        "Штаб",
+        "нп. Любимівка, Запорізька область",
+        "\n47.65232 36.697723"
+    ],
+    "overlays": [
+        {
+            "id": "2f823fab-2ff8-deb5-1ced-06088b6216fe",
+            "name": "test",
+            "editable": true,
+            "objectIsDisplayedOn": false
+        }
+    ],
+    "locationReports": [
+        {
+            "reportTimeStamp": 1672167558573,
+            "location": {
+                "locationGeometry": {
+                    "type": "{https://mip-interop.org/data/v4.3/BattlespaceConcept/Location}AbsolutePointType",
+                    "extension": [
+                        {
+                            "any": [
+                                {
+                                    "type": "{http://delta.c4isr.org/extension/AnnexLocationsExtension}LocationsAnnexType"
+                                },
+                                {
+                                    "type": "{https://mip-interop.org/data/v4.3/BattlespaceConcept/Location}VelocityType",
+                                    "velocityAbsoluteBearingAngle": {},
+                                    "velocitySpeed": {}
+                                }
+                            ]
+                        }
+                    ],
+                    "absolutePointLatitudeCoordinate": {
+                        "latitudeCoordinateCoordinate": 47.6803835
+                    },
+                    "absolutePointLongitudeCoordinate": {
+                        "longitudeCoordinateCoordinate": 36.6285018
+                    },
+                    "absolutePointVerticalDistance": {
+                        "verticalDistanceDimension": 0
+                    }
+                }
+            },
+            "sourceInfo": {
+                "sourceType": "ACTOR",
+                "source": "ziggy"
+            }
+        }
+    ],
+    "objectDetailInformation": [
+        {
+            "name": "Назва",
+            "type": "T",
+            "value": "Штаб"
+        },
+        {
+            "name": "Присутність",
+            "type": "C",
+            "value": "Присутній"
+        }
+    ],
+    "symbol": {
+        "app6d": {
+            "sidc": "10061000001100000000",
+            "amplifierFields": {
+                "T": {
+                    "value": "Штаб",
+                    "type": "TEXT"
+                },
+                "Y": {
+                    "value": "36.6285018 47.6803835",
+                    "type": "TEXT"
+                }
+            }
+        }
+    }
+}

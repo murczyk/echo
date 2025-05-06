@@ -1,0 +1,2437 @@
+[
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150055282,
+            "dataMessage":
+            {
+                "timestamp": 1712150055282,
+                "message": "03.04.2024_15:56 F=433.3750(МГц) П51\nУКХ р/м ймовірно 247 дшп\nНВ\nНВ\nс севера на юг ФПВ",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150063148,
+            "dataMessage":
+            {
+                "timestamp": 1712150063148,
+                "message": "03.04.2024_15:56 F=433.3750(МГц) П51\nУКХ р/м ймовірно 247 дшп\nНВ\nНВ\nс севера на юг ФПВ",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150067573,
+            "dataMessage":
+            {
+                "timestamp": 1712150067573,
+                "message": "03.04.2024_15:57 F=138.8250(МГц) П53\nУКХ НВ\nЗОЛОТОЙ\nНВ\n- (1) кто меня слышит ответьте, я ЗОЛОТОЙ\n- ......",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150070337,
+            "dataMessage":
+            {
+                "timestamp": 1712150070337,
+                "message": "03.04.2024_15:56 F=433.3750(МГц) П51\nУКХ р/м ймовірно 247 дшп\nНВ\nНВ\nс севера на юг ФПВ",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380954050487",
+            "sourceNumber": "+380954050487",
+            "sourceUuid": "2856e562-a0e9-4d41-bece-74252cee0668",
+            "sourceName": "Grogu",
+            "sourceDevice": 2,
+            "timestamp": 1712150074838,
+            "dataMessage":
+            {
+                "timestamp": 1712150074838,
+                "message": "655\n03.04, 16:05:03\n438.6000 - ДМР  \nУКХ р/м управління 1 мсб 136 омсбр 58 А (пн-сх НОВОПРОКОПІВКА)\nНВ\nКОМУНИСТ \n\n- Радиостанции  включенны  - 24 часа в  сутки  - Это  приказ  сверху  \n- 24 часа  на  связи  как принял меня  ? \n- руки  да  пика  \n- збоку  ......ебучий  на  связи  \n- до  .... дозвонися  .... пускай 24  часа  будет  на  связи - я понимаю ситуацию  - ну извините  . \n- вынос  валяеться на  улице - чтоб  мы  могли  выйти  на  тебя  . \n- КОМУНИСТ  ! \n- насыпте  там  ......... сверху  водой  облейте  АНТЕНУ  и  в грязе  блять  коричневым  цветом  сделайте  и  киньте  на  бунгалу  \n- ты принял  меня ? \n- обстановку  да . \n\n\n- 47.4038  35.8744",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "Screenshot_2663.jpg",
+                        "id": "dSJYWsfuOvWR8mUNlEjh.jpg",
+                        "size": 140268,
+                        "width": 1450,
+                        "height": 502,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    },
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "Screenshot_2664.jpg",
+                        "id": "oAjsUTAaI-9FOb3U5ftz.jpg",
+                        "size": 81508,
+                        "width": 963,
+                        "height": 507,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150084364,
+            "dataMessage":
+            {
+                "timestamp": 1712150084364,
+                "message": "03.04.2024_15:57 F=138.8250(МГц) П53\nУКХ НВ\nЗОЛОТОЙ\nНВ\n- (1) кто меня слышит ответьте, я ЗОЛОТОЙ\n- ......",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150087447,
+            "dataMessage":
+            {
+                "timestamp": 1712150087447,
+                "message": "03.04.2024_16:06 F=140.1400(МГц) П52\nDMR р/м 1 мсб 70 мсп 42 мсд\nНВ\nВИКИНГ\n- (1) ВИКНГ это который хочет добежать блять он...\n- Договорись блять до едь за птичку так 100 процентовый вариант будет что он до него добежит\n- ...",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380954050487",
+            "sourceNumber": "+380954050487",
+            "sourceUuid": "2856e562-a0e9-4d41-bece-74252cee0668",
+            "sourceName": "Grogu",
+            "sourceDevice": 2,
+            "timestamp": 1712150079794,
+            "dataMessage":
+            {
+                "timestamp": 1712150079794,
+                "message": "655\n03.04, 16:05:03\n438.6000 - ДМР  \nУКХ р/м управління 1 мсб 136 омсбр 58 А (пн-сх НОВОПРОКОПІВКА)\nНВ\nКОМУНИСТ \n\n- Радиостанции  включенны  - 24 часа в  сутки  - Это  приказ  сверху  \n- 24 часа  на  связи  как принял меня  ? \n- руки  да  пика  \n- збоку  ......ебучий  на  связи  \n- до  .... дозвонися  .... пускай 24  часа  будет  на  связи - я понимаю ситуацию  - ну извините  . \n- вынос  валяеться на  улице - чтоб  мы  могли  выйти  на  тебя  . \n- КОМУНИСТ  ! \n- насыпте  там  ......... сверху  водой  облейте  АНТЕНУ  и  в грязе  блять  коричневым  цветом  сделайте  и  киньте  на  бунгалу  \n- ты принял  меня ? \n- обстановку  да . \n\n\n- 47.4038  35.8744",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "Screenshot_2663.jpg",
+                        "id": "Bf-X6uVwI6h8RhT47r3i.jpg",
+                        "size": 140447,
+                        "width": 1450,
+                        "height": 502,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    },
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "Screenshot_2664.jpg",
+                        "id": "mHtgUHNmOUTSKMag_eYP.jpg",
+                        "size": 81513,
+                        "width": 963,
+                        "height": 507,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150091112,
+            "dataMessage":
+            {
+                "timestamp": 1712150091112,
+                "message": "03.04.2024_15:57 F=138.8250(МГц) П53\nУКХ НВ\nЗОЛОТОЙ\nНВ\n- (1) кто меня слышит ответьте, я ЗОЛОТОЙ\n- ......",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150107240,
+            "dataMessage":
+            {
+                "timestamp": 1712150107240,
+                "message": "03.04.2024_16:06 F=140.1400(МГц) П52\nDMR р/м 1 мсб 70 мсп 42 мсд\nНВ\nВИКИНГ\n- (1) ВИКНГ это который хочет добежать блять он...\n- Договорись блять до едь за птичку так 100 процентовый вариант будет что он до него добежит\n- ...",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150111479,
+            "dataMessage":
+            {
+                "timestamp": 1712150111479,
+                "message": "03.04.2024_16:00 F=445.8750(МГц) П54\nУКХ р/м управління гсадн 136 ОМСБР 58 А (ОЧЕРЕТУВАТЕ-СКЕЛЬКИ)\nНВ\nНВ\nдавай обратно сюда выезжай\nпринял, сейч....",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "a1d03042-98a2-41e9-a620-bc41e26e42ec",
+            "sourceNumber": null,
+            "sourceUuid": "a1d03042-98a2-41e9-a620-bc41e26e42ec",
+            "sourceName": "Альдераан",
+            "sourceDevice": 2,
+            "timestamp": 1712150115145,
+            "dataMessage":
+            {
+                "timestamp": 1712150115145,
+                "message": "651\n03.04, 16:10:58\n140.1400\nУКХ р/м управління йм. роти \"Шторм-V\" 1 мсб 70 мсп 42 (НОВОПРОКОПІВКА, сх. ХАРКОВЕ)\nНВ\nНВ\n\n— Некем, некем. Тут у нас вообще никого нет. Тебе, вчера, передали всех. Поэтому то, я не знаю сейчас. Навряд ли. Некем, просто.\n-   Пожалуйста, отдай. В ком я тебе говорю, что я тебе говорю, блядь. Здесь все понятно, что нет у нас всех? \n- Понял,  Че ты говоришь? Как Юра выйдет в наличку. Потому что мы на него не можем никак выйти. Юра, как на нас сам выйдет, я это передам. \n- Идите нахуй. Ей Богу.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150114880,
+            "dataMessage":
+            {
+                "timestamp": 1712150114880,
+                "message": "03.04.2024_16:04 F=445.3250(МГц) П54\nУКХ р/м невстановленого підрозділу\nРОДЯ\nВОЛК\nВОЛК РОДЕ",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150118013,
+            "dataMessage":
+            {
+                "timestamp": 1712150118013,
+                "message": "03.04.2024_16:06 F=140.1400(МГц) П52\nDMR р/м 1 мсб 70 мсп 42 мсд\nНВ\nВИКИНГ\n- (1) ВИКНГ это который хочет добежать блять он...\n- Договорись блять до едь за птичку так 100 процентовый вариант будет что он до него добежит\n- ...",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150140674,
+            "dataMessage":
+            {
+                "timestamp": 1712150140674,
+                "message": "03.04.2024_16:00 F=445.8750(МГц) П54\nУКХ р/м управління гсадн 136 ОМСБР 58 А (ОЧЕРЕТУВАТЕ-СКЕЛЬКИ)\nНВ\nНВ\nдавай обратно сюда выезжай\nпринял, сейч....",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150144822,
+            "dataMessage":
+            {
+                "timestamp": 1712150144822,
+                "message": "03.04.2024_16:04 F=445.3250(МГц) П54\nУКХ р/м невстановленого підрозділу\nРОДЯ\nВОЛК\nВОЛК РОДЕ",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150150235,
+            "dataMessage":
+            {
+                "timestamp": 1712150150235,
+                "message": "03.04.2024_16:00 F=445.8750(МГц) П54\nУКХ р/м управління гсадн 136 ОМСБР 58 А (ОЧЕРЕТУВАТЕ-СКЕЛЬКИ)\nНВ\nНВ\nдавай обратно сюда выезжай\nпринял, сейч....",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150152935,
+            "dataMessage":
+            {
+                "timestamp": 1712150152935,
+                "message": "03.04.2024_16:04 F=445.3250(МГц) П54\nУКХ р/м невстановленого підрозділу\nРОДЯ\nВОЛК\nВОЛК РОДЕ",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150155478,
+            "dataMessage":
+            {
+                "timestamp": 1712150155478,
+                "message": "03.04.2024_16:11 F=140.1400(МГц) П52\nDMR р/м 1 мсб 70 мсп 42 мсд\nНВ\nНВ\n- В спортивном костюме катаются люди\n- ...всех перебила уже\n- Ну это я понял ...",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150158689,
+            "dataMessage":
+            {
+                "timestamp": 1712150158689,
+                "message": "03.04.2024_15:56 F=462.3875(МГц) П55\nУКХ НВ\nНВ\nНВ\n- БАГДАД проблемы (?)\n- 24 последних...\n- (по взводам чисто)\n- принял\n- 3 0 1 в горесте метров\n- принял\n- принял",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "fsUEaAfYdDM8F1uQ+0AZwFRFXj13DaXuLLnRce4ykpA=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+            "sourceNumber": null,
+            "sourceUuid": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+            "sourceName": "ПУ",
+            "sourceDevice": 2,
+            "timestamp": 1712150171604,
+            "dataMessage":
+            {
+                "timestamp": 1712150171604,
+                "message": null,
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "image.jpg",
+                        "id": "4BP4T00SvOl50Wj73UXi.jpg",
+                        "size": 164321,
+                        "width": 1341,
+                        "height": 972,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "LnisILnwWYfMedvoR7a1QzUIDioXuWtIM96GHtNqH3Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150176675,
+            "dataMessage":
+            {
+                "timestamp": 1712150176675,
+                "message": "03.04.2024_16:11 F=140.1400(МГц) П52\nDMR р/м 1 мсб 70 мсп 42 мсд\nНВ\nНВ\n- В спортивном костюме катаются люди\n- ...всех перебила уже\n- Ну это я понял ...",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "cb6c81b6-555b-47e1-8956-c00a128cd9ec",
+            "sourceNumber": null,
+            "sourceUuid": "cb6c81b6-555b-47e1-8956-c00a128cd9ec",
+            "sourceName": "Террі",
+            "sourceDevice": 1,
+            "timestamp": 1712150185778,
+            "dataMessage":
+            {
+                "timestamp": 1712150185778,
+                "message": "Домінанта: сіли, борт 4.5.0",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150186944,
+            "dataMessage":
+            {
+                "timestamp": 1712150186944,
+                "message": "03.04.2024_16:11 F=140.1400(МГц) П52\nDMR р/м 1 мсб 70 мсп 42 мсд\nНВ\nНВ\n- В спортивном костюме катаются люди\n- ...всех перебила уже\n- Ну это я понял ...",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380984161576",
+            "sourceNumber": "+380984161576",
+            "sourceUuid": "57321bda-33fe-42ee-a56b-07fb05a72ed9",
+            "sourceName": "Валерія Кузнецова (Кузя)",
+            "sourceDevice": 4,
+            "timestamp": 1712150196707,
+            "dataMessage":
+            {
+                "timestamp": 1712150196707,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "reaction":
+                {
+                    "emoji": "👍",
+                    "targetAuthor": "cb6c81b6-555b-47e1-8956-c00a128cd9ec",
+                    "targetAuthorNumber": null,
+                    "targetAuthorUuid": "cb6c81b6-555b-47e1-8956-c00a128cd9ec",
+                    "targetSentTimestamp": 1712150185778,
+                    "isRemove": false
+                },
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507036026",
+            "sourceNumber": "+380507036026",
+            "sourceUuid": "eeeddd8c-5616-45e9-9d57-b9bd032b67b4",
+            "sourceName": "82 Черговий РЕБ",
+            "sourceDevice": 2,
+            "timestamp": 1712150197176,
+            "dataMessage":
+            {
+                "timestamp": 1712150197176,
+                "message": "оновіть",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "quote":
+                {
+                    "id": 1712149465575,
+                    "author": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+                    "authorNumber": null,
+                    "authorUuid": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+                    "text": "",
+                    "attachments":
+                    [
+                        {
+                            "contentType": "image/jpeg",
+                            "filename": "image.jpg",
+                            "thumbnail":
+                            {
+                                "contentType": "image/png",
+                                "filename": null,
+                                "id": "YBYhGU2KhlbWOPHY_XD2.png",
+                                "size": 27782,
+                                "width": 150,
+                                "height": 150,
+                                "caption": null,
+                                "uploadTimestamp": null
+                            }
+                        }
+                    ]
+                },
+                "groupInfo":
+                {
+                    "groupId": "LnisILnwWYfMedvoR7a1QzUIDioXuWtIM96GHtNqH3Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150231977,
+            "dataMessage":
+            {
+                "timestamp": 1712150231977,
+                "message": "03.04.2024_16:08 F=400.7000(МГц) П55\nЙмовірно УКХ р/м управління 2 мсб 1429 мсп (зх.ВЕРБОВЕ)\nНВ\nНВ\n- принимаешь?\n- я тебя ... такжу\n- сетки\n- да я так понял, ты наверное график уже составляешь там\n- тебя Сентябрь - чтоб ты не переживал\n- сразу да\n- ниче не, ниче не, я просто так",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "fsUEaAfYdDM8F1uQ+0AZwFRFXj13DaXuLLnRce4ykpA=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "0dbb6ada-2442-4611-94e6-184279c291e2",
+            "sourceNumber": null,
+            "sourceUuid": "0dbb6ada-2442-4611-94e6-184279c291e2",
+            "sourceName": "Grizzly_1",
+            "sourceDevice": 4,
+            "timestamp": 1712150261347,
+            "dataMessage":
+            {
+                "timestamp": 1712150261347,
+                "message": "03.04.2024 16:06:27\n140.140\nУКХ р/м й-но 70 МСП, пд Роботине\nНВ\nНВ\n\n— Шустрый. Он сможет договорить, доедь, блядь, за птичку. Так, блядь, 100 процентовов вариант будет, то он до него забежит. А так, мы просто можем поебать еще одной карандаша родной. Доедь за птичку. Доедь, пускай он за нее добежит. Он добежит. Вот че у тебя малых, добежит, блядь. В нем есть это, нахуй. Но просто слепую бежать и бегу туда не знаю куда, Ребят, еще то не знал, где ей, ебану. Это пиздец будет, родной. Попробуй доехать, попробуй доехать за птичку.\n- По молоку, по молоку. Сейчас это однозначно пизда будет.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gyJFd+4Ll3YIFRH9CO62Is97+TksWjW4ln5v2/b3jGM=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150283417,
+            "dataMessage":
+            {
+                "timestamp": 1712150283417,
+                "message": "03.04.2024_16:10 F=400.1150(МГц) П52\nУКХ НВ\nНВ\nНВ\n- .......\n- пробуй 442\n- .....\n- 422\n- 422\n- на 422 идёте и мы вас встретим\n- 422 физически не дойдём\n- .... воды не пили, вообще в горле всё пересохло, точка НОЛЬ которая, как заканчивается БАЛКА за БАЛКОЙ поле, вот там где\n- от куда мы начинали движение с нуля",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150302038,
+            "dataMessage":
+            {
+                "timestamp": 1712150302038,
+                "message": "03.04.2024_16:10 F=400.1150(МГц) П52\nУКХ НВ\nНВ\nНВ\n- .......\n- пробуй 442\n- .....\n- 422\n- 422\n- на 422 идёте и мы вас встретим\n- 422 физически не дойдём\n- .... воды не пили, вообще в горле всё пересохло, точка НОЛЬ которая, как заканчивается БАЛКА за БАЛКОЙ поле, вот там где\n- от куда мы начинали движение с нуля",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+            "sourceNumber": null,
+            "sourceUuid": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+            "sourceName": "ПУ",
+            "sourceDevice": 3,
+            "timestamp": 1712150276479,
+            "dataMessage":
+            {
+                "timestamp": 1712150276479,
+                "message": null,
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "image.jpg",
+                        "id": "7RsLaBuoIRQ8FOAj_eoo.jpg",
+                        "size": 232762,
+                        "width": 1920,
+                        "height": 981,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "LnisILnwWYfMedvoR7a1QzUIDioXuWtIM96GHtNqH3Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "5ab3b5d0-6fd7-4d55-b10b-2cbec2f533b9",
+            "sourceNumber": null,
+            "sourceUuid": "5ab3b5d0-6fd7-4d55-b10b-2cbec2f533b9",
+            "sourceName": "Кат",
+            "sourceDevice": 2,
+            "timestamp": 1712150316495,
+            "dataMessage":
+            {
+                "timestamp": 1712150316495,
+                "message": "Виявлені БпЛА противника у період з 16:13-16:17",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "image.jpg",
+                        "id": "KPk874Z0uNnvVimmdgd0.jpg",
+                        "size": 103285,
+                        "width": 830,
+                        "height": 616,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    },
+                    {
+                        "contentType": "image/png",
+                        "filename": "image.png",
+                        "id": "LWTniMKCXiXKhhKXjgVk.png",
+                        "size": 710949,
+                        "width": 858,
+                        "height": 711,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "LnisILnwWYfMedvoR7a1QzUIDioXuWtIM96GHtNqH3Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150318043,
+            "dataMessage":
+            {
+                "timestamp": 1712150318043,
+                "message": "03.04.2024_16:10 F=400.1150(МГц) П52\nУКХ НВ\nНВ\nНВ\n- .......\n- пробуй 442\n- .....\n- 422\n- 422\n- на 422 идёте и мы вас встретим\n- 422 физически не дойдём\n- .... воды не пили, вообще в горле всё пересохло, точка НОЛЬ которая, как заканчивается БАЛКА за БАЛКОЙ поле, вот там где\n- от куда мы начинали движение с нуля",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150322222,
+            "dataMessage":
+            {
+                "timestamp": 1712150322222,
+                "message": "118\n03.04, 16:13:04\n419.2250\nУКХ р/м НВ підрозділу 419.225 МГцп118\n1  НВ\n2   МАЛЕК\n\n1— Малек, и бампер, бампер, забери сегодня.\n2 - ....\n1 — Бампер, Бампер, лежит около моей машины. Забери тоже, сегодня, дотащи до своей.\n2 -  .....",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "UW18OUCsoQJx3okB1panKR7bISmnqyEGqjgFrj8RKhg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150324413,
+            "dataMessage":
+            {
+                "timestamp": 1712150324413,
+                "message": "118\n03.04, 16:13:04\n419.2250\nУКХ р/м НВ підрозділу 419.225 МГцп118\n1  НВ\n2   МАЛЕК\n\n1— Малек, и бампер, бампер, забери сегодня.\n2 - ....\n1 — Бампер, Бампер, лежит около моей машины. Забери тоже, сегодня, дотащи до своей.\n2 -  .....",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gm+zNfAhY4ghg56Yx+W5FqaylB5zTE9XcRtGhzzs9HI=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150326037,
+            "dataMessage":
+            {
+                "timestamp": 1712150326037,
+                "message": "⚠️ 03.04.2024_16:12 F=406.2750(МГц) П51\nУКХ р/м невстановленого підрозділу\nХАТА\nКОНТОЛЬ\nНВ\n- (1) ......\n- (2) КОНТРОЛЬ я ХАТА пока не включать\n- (1) да принял\n- ... в ящике",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150328996,
+            "dataMessage":
+            {
+                "timestamp": 1712150328996,
+                "message": "03.04.2024_16:11 F=452.5375(МГц) ЦФП51\nDMRe р/м невстановленого підрозділу\nДОК\nПРОГЕРС\nПРОГЕРС ДОКУ  сбросил подарки",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150335840,
+            "dataMessage":
+            {
+                "timestamp": 1712150335840,
+                "message": "⚠️ 03.04.2024_16:12 F=406.2750(МГц) П51\nУКХ р/м невстановленого підрозділу\nХАТА\nКОНТОЛЬ\nНВ\n- (1) ......\n- (2) КОНТРОЛЬ я ХАТА пока не включать\n- (1) да принял\n- ... в ящике",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380971170110",
+            "sourceNumber": "+380971170110",
+            "sourceUuid": "02dfd1a1-ed29-42d5-9d87-edd342c401b8",
+            "sourceName": "⁨Арслан 65⁩",
+            "sourceDevice": 2,
+            "timestamp": 1712150335712,
+            "dataMessage":
+            {
+                "timestamp": 1712150335712,
+                "message": "Виявлені БпЛА противника у період з 16:13-16:17",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "image.jpg",
+                        "id": "VD-ZafwcjGV6ckgNRteR.jpg",
+                        "size": 103221,
+                        "width": 830,
+                        "height": 616,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    },
+                    {
+                        "contentType": "image/png",
+                        "filename": "image.png",
+                        "id": "6ohB6r7KClS4cyRyUb5I.png",
+                        "size": 59369,
+                        "width": 858,
+                        "height": 711,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "0dbb6ada-2442-4611-94e6-184279c291e2",
+            "sourceNumber": null,
+            "sourceUuid": "0dbb6ada-2442-4611-94e6-184279c291e2",
+            "sourceName": "Grizzly_1",
+            "sourceDevice": 4,
+            "timestamp": 1712150338533,
+            "dataMessage":
+            {
+                "timestamp": 1712150338533,
+                "message": "03.04.2024 16:04:47\n438.600\nУКХ р/м 136 омсбр, пд-сх Роботине\nНВ\nНВ\n\n- Лорд, я Моздок. Да, каждый также 2 больших доклад, 2 больших доклад. Но при возможности, то есть, если вдруг какая то проверка, чтобы я мог вас вызвать, чтобы вы сразу ответили. Как принял?",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gyJFd+4Ll3YIFRH9CO62Is97+TksWjW4ln5v2/b3jGM=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380971170110",
+            "sourceNumber": "+380971170110",
+            "sourceUuid": "02dfd1a1-ed29-42d5-9d87-edd342c401b8",
+            "sourceName": "⁨Арслан 65⁩",
+            "sourceDevice": 2,
+            "timestamp": 1712150335711,
+            "dataMessage":
+            {
+                "timestamp": 1712150335711,
+                "message": null,
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": "image.jpg",
+                        "id": "FfoOGtzFcVcvv4OHKqXM.jpg",
+                        "size": 119866,
+                        "width": 1600,
+                        "height": 817,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150349167,
+            "dataMessage":
+            {
+                "timestamp": 1712150349167,
+                "message": "⚠️ 03.04.2024_16:12 F=406.2750(МГц) П51\nУКХ р/м невстановленого підрозділу\nХАТА\nКОНТОЛЬ\nНВ\n- (1) ......\n- (2) КОНТРОЛЬ я ХАТА пока не включать\n- (1) да принял\n- ... в ящике",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150373025,
+            "dataMessage":
+            {
+                "timestamp": 1712150373025,
+                "message": "118\n03.04, 16:13:10\n140.1400\nDMR р-м управління ймовірно роти \"Шторм-V\" 1 мсб 70 мсп 42 (Пд Новопрокопівки) \nНВ\nНВ\n\n— 5, 8, 9. К северу 150 -  200.",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150377821,
+            "dataMessage":
+            {
+                "timestamp": 1712150377821,
+                "message": "118\n03.04, 16:13:10\n140.1400\nDMR р-м управління ймовірно роти \"Шторм-V\" 1 мсб 70 мсп 42 (Пд Новопрокопівки) \nНВ\nНВ\n\n— 5, 8, 9. К северу 150 -  200.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gm+zNfAhY4ghg56Yx+W5FqaylB5zTE9XcRtGhzzs9HI=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150380043,
+            "dataMessage":
+            {
+                "timestamp": 1712150380043,
+                "message": "118\n03.04, 16:13:10\n140.1400\nDMR р-м управління ймовірно роти \"Шторм-V\" 1 мсб 70 мсп 42 (Пд Новопрокопівки) \nНВ\nНВ\n\n— 5, 8, 9. К северу 150 -  200.",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "UW18OUCsoQJx3okB1panKR7bISmnqyEGqjgFrj8RKhg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150389502,
+            "dataMessage":
+            {
+                "timestamp": 1712150389502,
+                "message": "03.04.2024_16:15 F=148.8000(МГц) П53\nйм. УКХ р/м управління 1430 мсп 42 мсд 58 А (НОВОПРОКОПІВКА)\nЛИМАН\nЛЕС\nНВ\n- (1) ЛЕС ЛИМАНУ\n- ...мой\n- работает ПОЛЬКА\n- работает по чередке\n- ...",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150397741,
+            "dataMessage":
+            {
+                "timestamp": 1712150397741,
+                "message": "03.04.2024_16:15 F=148.8000(МГц) П53\nйм. УКХ р/м управління 1430 мсп 42 мсд 58 А (НОВОПРОКОПІВКА)\nЛИМАН\nЛЕС\nНВ\n- (1) ЛЕС ЛИМАНУ\n- ...мой\n- работает ПОЛЬКА\n- работает по чередке\n- ...",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507036026",
+            "sourceNumber": "+380507036026",
+            "sourceUuid": "eeeddd8c-5616-45e9-9d57-b9bd032b67b4",
+            "sourceName": "82 Черговий РЕБ",
+            "sourceDevice": 2,
+            "timestamp": 1712150398650,
+            "dataMessage":
+            {
+                "timestamp": 1712150398650,
+                "message": null,
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "reaction":
+                {
+                    "emoji": "➕",
+                    "targetAuthor": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+                    "targetAuthorNumber": null,
+                    "targetAuthorUuid": "db89f4f1-6d17-4d16-b4ad-d31fe2ef6d30",
+                    "targetSentTimestamp": 1712150276479,
+                    "isRemove": false
+                },
+                "groupInfo":
+                {
+                    "groupId": "LnisILnwWYfMedvoR7a1QzUIDioXuWtIM96GHtNqH3Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150409205,
+            "dataMessage":
+            {
+                "timestamp": 1712150409205,
+                "message": "03.04.2024_16:15 F=148.8000(МГц) П53\nйм. УКХ р/м управління 1430 мсп 42 мсд 58 А (НОВОПРОКОПІВКА)\nЛИМАН\nЛЕС\nНВ\n- (1) ЛЕС ЛИМАНУ\n- ...мой\n- работает ПОЛЬКА\n- работает по чередке\n- ...",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380663975782",
+            "sourceNumber": "+380663975782",
+            "sourceUuid": "c55e03a1-5ac2-4915-971c-d8e762d3aef4",
+            "sourceName": "GO_12\\132",
+            "sourceDevice": 2,
+            "timestamp": 1712150417781,
+            "dataMessage":
+            {
+                "timestamp": 1712150417781,
+                "message": "Ймовірно вихід артилерії\n47.40042 35.95033\nS01",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": null,
+                        "id": "1tQXQtl5V4bZlpM2aZoL.jpg",
+                        "size": 172130,
+                        "width": 1600,
+                        "height": 900,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380663975782",
+            "sourceNumber": "+380663975782",
+            "sourceUuid": "c55e03a1-5ac2-4915-971c-d8e762d3aef4",
+            "sourceName": "GO_12\\132",
+            "sourceDevice": 2,
+            "timestamp": 1712150417784,
+            "dataMessage":
+            {
+                "timestamp": 1712150417784,
+                "message": "Ймовірно вихід артилерії\n47.40042 35.95033\nS01",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": null,
+                        "id": "5gD9u8SjO-_wC5ZJgxhu.jpg",
+                        "size": 172130,
+                        "width": 1600,
+                        "height": 900,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "6CF7B3Img60jrWuCATet29LFlOB66/XV+gz7OxQGi0Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150485194,
+            "dataMessage":
+            {
+                "timestamp": 1712150485194,
+                "message": "03.04.2024_16:14 F=415.9825(МГц) ЦФП51\nУКХ р/м 70 мсп 42 мсд 58 А\nНВ\nНВ\n- КУБА я БАЙКАЛ проверка связи\n- да слышу тебя на 5ть\n- стабильно на 5ку принимаю так же",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150488007,
+            "dataMessage":
+            {
+                "timestamp": 1712150488007,
+                "message": "⚠️ 03.04.2024_16:13 F=415.9825(МГц) ЦФП51\nУКХ р/м 70 мсп 42 мсд 58 А\nЧУБА\nНВ\n- (1) ... я ЧУБА приём\n- пацики если сможете, когда будете если кидать, по ближе если это будут сумерки то со светлячком, потомуу что полезу со своей ногой сломанной, как принял?\n- да спасибо большое, по больше водички, чистой воды а к этой воде сухой душ\n- и там по остаткам, если конфетки есть, тоже конфетки ципляйте туда",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380505633051",
+            "sourceNumber": "+380505633051",
+            "sourceUuid": "d711e8c6-dfb4-4066-833a-f87abe58088f",
+            "sourceName": "Татуін",
+            "sourceDevice": 2,
+            "timestamp": 1712150517762,
+            "dataMessage":
+            {
+                "timestamp": 1712150517762,
+                "message": "652\n03.04, 16:21:01\n445.3250\nУКХ р/м НВ підрозділу 445.325 МГц\nВОЛГА\nНВ\n\n— Я Проверка связи, это Волга.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150523459,
+            "dataMessage":
+            {
+                "timestamp": 1712150523459,
+                "message": "03.04.2024_16:16 F=450.5000(МГц) П51\nУКХ р/м управління дшб 108 дшп (НОВОФЕДОРІВКА-НОВОПОКРОВКА)\nНВ\nЕРМАК\nРУМЫН\nКУЗЯ\n- (1) ЕРМАК, ЕРМАК я ...\n- (3) КУЗЯ, КУЗЯ, я РУМЫН\n- (1) КУЗЯ прием\n- (4) на преиме, КУЗЯ ты шприц возил,уколы\n- (1) шприц здесь у нас\n- можешь привести\n- счас не могу -через пол часика\n- тех кто здесь\n- еще раз\n- я говорю попозже, небо не чистое здесь, как принял?\n- а то позиция.. по деле ждут\n- приеме\n- -\n- а по остальному - чуть попозже скажут",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150523864,
+            "dataMessage":
+            {
+                "timestamp": 1712150523864,
+                "message": "118\n03.04, 16:15:34\n148.8000\nУКХ р/м НВ підрозділу 148.800 МГц(рн.Новопрокоп!вка)\nНВ\nНВ\n\n1— Работает Полька. Где то на пол двенадцатого.\n1 -  .......березки.",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "UW18OUCsoQJx3okB1panKR7bISmnqyEGqjgFrj8RKhg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150526181,
+            "dataMessage":
+            {
+                "timestamp": 1712150526181,
+                "message": "118\n03.04, 16:15:34\n148.8000\nУКХ р/м НВ підрозділу 148.800 МГц(рн.Новопрокоп!вка)\nНВ\nНВ\n\n1— Работает Полька. Где то на пол двенадцатого.\n1 -  .......березки.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gm+zNfAhY4ghg56Yx+W5FqaylB5zTE9XcRtGhzzs9HI=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150528300,
+            "dataMessage":
+            {
+                "timestamp": 1712150528300,
+                "message": "118\n03.04, 16:19:09\n415.4200\nУКХ р/м НВ підрозділу 415.420 МГц\nНВ\nНВ\n\n1— Приеме.\n1— Тихо, спокойно.",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "UW18OUCsoQJx3okB1panKR7bISmnqyEGqjgFrj8RKhg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceNumber": null,
+            "sourceUuid": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceName": "Sudama",
+            "sourceDevice": 3,
+            "timestamp": 1712150528172,
+            "dataMessage":
+            {
+                "timestamp": 1712150528172,
+                "message": "03.04, 16:18:19\n400.2000 п104\nУКХ р/м штурмова рота (шторм-z) зі складу 114 мсп 127 мсд 5А (Степанівка)\nНВ\nНВ\n\n- ...от НОЛЯ полетят на камикадзе. В укрытия, если что\n\n\nКоментар: противник готує запуск ударних БПЛА",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceNumber": null,
+            "sourceUuid": "d98f8358-f51d-465a-8990-fa08a1cb978f",
+            "sourceName": "Слухач",
+            "sourceDevice": 3,
+            "timestamp": 1712150530616,
+            "dataMessage":
+            {
+                "timestamp": 1712150530616,
+                "message": "118\n03.04, 16:19:09\n415.4200\nУКХ р/м НВ підрозділу 415.420 МГц\nНВ\nНВ\n\n1— Приеме.\n1— Тихо, спокойно.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gm+zNfAhY4ghg56Yx+W5FqaylB5zTE9XcRtGhzzs9HI=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150532075,
+            "dataMessage":
+            {
+                "timestamp": 1712150532075,
+                "message": "03.04.2024_16:16 F=450.5000(МГц) П51\nУКХ р/м управління дшб 108 дшп (НОВОФЕДОРІВКА-НОВОПОКРОВКА)\nНВ\nЕРМАК\nРУМЫН\nКУЗЯ\n- (1) ЕРМАК, ЕРМАК я ...\n- (3) КУЗЯ, КУЗЯ, я РУМЫН\n- (1) КУЗЯ прием\n- (4) на преиме, КУЗЯ ты шприц возил,уколы\n- (1) шприц здесь у нас\n- можешь привести\n- счас не могу -через пол часика\n- тех кто здесь\n- еще раз\n- я говорю попозже, небо не чистое здесь, как принял?\n- а то позиция.. по деле ждут\n- приеме\n- -\n- а по остальному - чуть попозже скажут",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceNumber": null,
+            "sourceUuid": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceName": "Sudama",
+            "sourceDevice": 3,
+            "timestamp": 1712150532785,
+            "dataMessage":
+            {
+                "timestamp": 1712150532785,
+                "message": "03.04, 16:19:18\n465.5625 п106\nУКХ р/м управління бмп 336 обрмп БВ БФ (НОВОЗЛАТОПІЛЬ, НОВОУКРАЇНСЬКЕ, СТЕПОВЕ)\nНВ\nНВ\n\n— Я Второй. У меня пару малых. Постоянный наблюдатель.",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceNumber": null,
+            "sourceUuid": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceName": "Sudama",
+            "sourceDevice": 3,
+            "timestamp": 1712150537497,
+            "dataMessage":
+            {
+                "timestamp": 1712150537497,
+                "message": "03.04, 16:19:42\n444.4450 п106\nУКХ р/м 114 мсп 1 мсб 127 мсд (СТЕПАНІВКА-ЧКАЛОВА)\nНВ\nНВ\n\n- давай людей на розгрузку машины\n- принял",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150544043,
+            "dataMessage":
+            {
+                "timestamp": 1712150544043,
+                "message": "03.04.2024_16:16 F=450.5000(МГц) П51\nУКХ р/м управління дшб 108 дшп (НОВОФЕДОРІВКА-НОВОПОКРОВКА)\nНВ\nЕРМАК\nРУМЫН\nКУЗЯ\n- (1) ЕРМАК, ЕРМАК я ...\n- (3) КУЗЯ, КУЗЯ, я РУМЫН\n- (1) КУЗЯ прием\n- (4) на преиме, КУЗЯ ты шприц возил,уколы\n- (1) шприц здесь у нас\n- можешь привести\n- счас не могу -через пол часика\n- тех кто здесь\n- еще раз\n- я говорю попозже, небо не чистое здесь, как принял?\n- а то позиция.. по деле ждут\n- приеме\n- -\n- а по остальному - чуть попозже скажут",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150546934,
+            "dataMessage":
+            {
+                "timestamp": 1712150546934,
+                "message": "03.04.2024_16:18 F=442.3050(МГц) П53\nУКХ НВ\nНВ\nНВ\nопять бездельничаешь?",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380971170110",
+            "sourceNumber": "+380971170110",
+            "sourceUuid": "02dfd1a1-ed29-42d5-9d87-edd342c401b8",
+            "sourceName": "⁨Арслан 65⁩",
+            "sourceDevice": 2,
+            "timestamp": 1712150548223,
+            "dataMessage":
+            {
+                "timestamp": 1712150548223,
+                "message": "118\n03.04, 16:15:34\n148.8000\nУКХ р/м НВ підрозділу 148.800 МГц(рн.Новопрокоп!вка)\nНВ\nНВ\n\n1— Работает Полька. Где то на пол двенадцатого.\n1 -  .......березки.",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150550691,
+            "dataMessage":
+            {
+                "timestamp": 1712150550691,
+                "message": "03.04.2024_16:17 F=461.4500(МГц) П55\nУКХ НВ\nНВ\nКУЗЯ\n- приём\n- там на 10 часов задымление, чёрный дым\n- ......\n- (1) да давай доложим, КУЗЯ долложи",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "fsUEaAfYdDM8F1uQ+0AZwFRFXj13DaXuLLnRce4ykpA=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380663975782",
+            "sourceNumber": "+380663975782",
+            "sourceUuid": "c55e03a1-5ac2-4915-971c-d8e762d3aef4",
+            "sourceName": "GO_12\\132",
+            "sourceDevice": 2,
+            "timestamp": 1712150556050,
+            "dataMessage":
+            {
+                "timestamp": 1712150556050,
+                "message": "Ймовірно вихід міномета\n47.40454 35.89466\nD80",
+                "expiresInSeconds": 604800,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": null,
+                        "id": "dQ38_aB5R6FUbBtDjDBs.jpg",
+                        "size": 153264,
+                        "width": 1600,
+                        "height": 900,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "2QeIEbTHrQo/BfgDCf9ZPzP4BbRpsc3NU7uEaEhBcYo=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380663975782",
+            "sourceNumber": "+380663975782",
+            "sourceUuid": "c55e03a1-5ac2-4915-971c-d8e762d3aef4",
+            "sourceName": "GO_12\\132",
+            "sourceDevice": 2,
+            "timestamp": 1712150556049,
+            "dataMessage":
+            {
+                "timestamp": 1712150556049,
+                "message": "Ймовірно вихід міномета\n47.40454 35.89466\nD80",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "attachments":
+                [
+                    {
+                        "contentType": "image/jpeg",
+                        "filename": null,
+                        "id": "q-HRefuZDPMUMELWNwAl.jpg",
+                        "size": 153264,
+                        "width": 1600,
+                        "height": 900,
+                        "caption": null,
+                        "uploadTimestamp": null
+                    }
+                ],
+                "groupInfo":
+                {
+                    "groupId": "6CF7B3Img60jrWuCATet29LFlOB66/XV+gz7OxQGi0Y=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150566302,
+            "dataMessage":
+            {
+                "timestamp": 1712150566302,
+                "message": "03.04.2024_16:18 F=442.3050(МГц) П53\nУКХ НВ\nНВ\nНВ\nопять бездельничаешь?",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150570774,
+            "dataMessage":
+            {
+                "timestamp": 1712150570774,
+                "message": "03.04.2024_16:18 F=442.3050(МГц) П53\nУКХ НВ\nНВ\nНВ\nопять бездельничаешь?",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150575311,
+            "dataMessage":
+            {
+                "timestamp": 1712150575311,
+                "message": "03.04.2024_16:18 F=400.1150(МГц) П52\nУКХ НВ\nНВ\nНВ\n- ....\n- сейчас я уточню\n- ... уехала",
+                "expiresInSeconds": 172800,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "t0d0fO5K5YRhqAl+K3Zj1xOE2pm75B1jjZ7WOm2EkY8=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139377502,
+            "dataMessage":
+            {
+                "timestamp": 1712139377502,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "+jawh80bHBw9ciwA4eGvkKMAJPbgtdKsuAv863fJlZs=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150591437,
+            "dataMessage":
+            {
+                "timestamp": 1712150591437,
+                "message": "03.04.2024_16:18 F=400.1150(МГц) П52\nУКХ НВ\nНВ\nНВ\n- ....\n- сейчас я уточню\n- ... уехала",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "9074d878-e761-4bdd-be73-05ab07f0de64",
+            "sourceNumber": null,
+            "sourceUuid": "9074d878-e761-4bdd-be73-05ab07f0de64",
+            "sourceName": "Ingener",
+            "sourceDevice": 2,
+            "timestamp": 1712150594507,
+            "dataMessage":
+            {
+                "timestamp": 1712150594507,
+                "message": "Бажаю здоров'я. Знову не підтягуються перехоплення у вкладці аналіз.",
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "wBEFvJFh1dxNdg+Dpgnb0a8S5ofrXFRK0sPjqh2QACg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380507206809",
+            "sourceNumber": "+380507206809",
+            "sourceUuid": "f7131b52-3e8f-4008-b565-0ec6bba84d5d",
+            "sourceName": "Спец",
+            "sourceDevice": 1,
+            "timestamp": 1712139267690,
+            "dataMessage":
+            {
+                "timestamp": 1712139267690,
+                "message": null,
+                "expiresInSeconds": 0,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+                    "type": "UPDATE"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "+380990903379",
+            "sourceNumber": "+380990903379",
+            "sourceUuid": "2ae3ff06-753e-410d-83d7-cfa0b7004e0b",
+            "sourceName": "190/1",
+            "sourceDevice": 2,
+            "timestamp": 1712150600571,
+            "dataMessage":
+            {
+                "timestamp": 1712150600571,
+                "message": "03.04.2024_16:18 F=400.1150(МГц) П52\nУКХ НВ\nНВ\nНВ\n- ....\n- сейчас я уточню\n- ... уехала",
+                "expiresInSeconds": 259200,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "srtSGlwdT8MFglv7VLFkxTrnWUhx8o+TbUXL3OP6/Bg=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    },
+    {
+        "envelope":
+        {
+            "source": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceNumber": null,
+            "sourceUuid": "7eb21788-0171-44df-b593-816c5f7b073b",
+            "sourceName": "Sudama",
+            "sourceDevice": 5,
+            "timestamp": 1712150613261,
+            "dataMessage":
+            {
+                "timestamp": 1712150613261,
+                "message": "400.250 | 03.04, 16:15\nУКХ р/м 64 омсбр 2 мсб 35А (КП) (enc)\nНВ\nИНГАДА (ОПЕРАТИВНИЙ ЧЕРГОВИЙ), ВОЛГА, СКРИПАЧ-3, СОЛЯХ\n\n- все по сортам, все чотко как обычно\n- ИНГАДА я ВОЛГА принял принял\n- СКРИПАЧ-3 я ИНГАДА прием\n- СОЛЯХ, 5 малых\n- понял СКРИПАЧ-3 прием\n- принял. принмиаете?\n- ты меня как принял?\n- ВОЛГА я ИНЕГАДА как принял?",
+                "expiresInSeconds": 86400,
+                "viewOnce": false,
+                "groupInfo":
+                {
+                    "groupId": "gE3p4iip1Bxvfsou+7cjHf5ozLnRY+VQgB6ZkxTwX4E=",
+                    "type": "DELIVER"
+                }
+            }
+        },
+        "account": "+380504118655"
+    }
+]

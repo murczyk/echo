@@ -1,0 +1,3833 @@
+[
+    {
+        "id": "cd40c862-7e2c-49fd-bfb4-32fd2855f88d",
+        "name": "Урал",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.747549
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.789864
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7898640 47.7475490",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "235c258c-6d2e-48e2-8fc8-87525e99f3d7",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.750406
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.801235
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8012350 47.7504060",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "229c09a1-08d5-4688-aada-4009d6b6f47a",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.79212900000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793283
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7932830 47.7921290",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "2b119704-6fc7-4036-8534-91adaf65dbec",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.754506
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.796625
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7966250 47.7545060",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "cefc2fa3-fb03-4ead-8fde-1d4e8332bcba",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.757097
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.800318
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8003180 47.7570970",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "66e8cfea-5da3-481a-8b14-8c9e19e2dd09",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75375
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.805498
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8054980 47.7537500",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "3e4fd4d5-10c8-4311-b94f-97a61ec91187",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.764783
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.801139
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8011390 47.7647830",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "92093afa-3e37-4f7e-bb78-39294e90c711",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.747258
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.789262
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7892620 47.7472580",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "eedc4fce-f5d9-42ac-a6a8-c410fec7a0c6",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.757164
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.785928
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7859280 47.7571640",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "c012f400-fc29-4d71-a1d0-d3fdb5061205",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.763186
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.787002
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7870020 47.7631860",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7870020 47.7631860",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "adc6c885-7c16-4e6b-893d-8b8b38b7a489",
+        "name": "КамАЗ з Кунгом",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.748553
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.794114
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "КамАЗ з Кунгом",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7941140 47.7485530",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "fe7ff8d2-e196-4d31-a46d-5c8491afe7c1",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.755048
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.785992
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7859920 47.7550480",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "fc778f7b-946d-43fd-9d97-c28f010408e3",
+        "name": "Т-72",
+        "typeId": "MIM:31db5f28-2118-44f9-905b-1a5725ccffc9",
+        "typeName": "Танк",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.748343
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.794933
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001202000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Т-72",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7949330 47.7483430",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "98736a79-0708-4b79-aa18-7c439883681f",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.757144
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.786289
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7862890 47.7571440",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e4d74408-f2ce-43ef-b8e6-16a57889ad20",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.751538
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.789342
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7893420 47.7515380",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "d2043afe-9b8f-4a0b-b564-d619ff12e830",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.765118
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.801856
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8018560 47.7651180",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8018560 47.7651180",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "1b1560e6-681b-4050-8049-e15f004fe4d9",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75350099999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.802236
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8022360 47.7535010",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "9e837ac1-5cf5-4002-abdb-caffbf1bd9f2",
+        "name": "Урал",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.752587
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.804974
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8049740 47.7525870",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "a30674aa-d8a6-4e83-973d-db32843d51ba",
+        "name": "Танк",
+        "typeId": "MIM:31db5f28-2118-44f9-905b-1a5725ccffc9",
+        "typeName": "Танк",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.742602
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.823367
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001202000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Танк",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8233670 47.7426020",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "2d6c164a-4925-4ec0-a0f5-6bd510c37146",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.763265
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.788235
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7882350 47.7632650",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "a0df86d7-5be9-4156-8727-7185c8053e73",
+        "name": "Будинок де проживають ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.775596
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.803454
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Будинок де проживають ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8034540 47.7755960",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "4ddd573d-5f6c-4eea-a4ae-d6f8461d52b7",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75835300000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.787385
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7873850 47.7583530",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "84d3aa40-c7f1-43d8-9a63-bf375293dbaf",
+        "name": "Т-72",
+        "typeId": "MIM:31db5f28-2118-44f9-905b-1a5725ccffc9",
+        "typeName": "Танк",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.748027
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.791513
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001202000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Т-72",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7915130 47.7480270",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e4ddaaea-bbbc-4b2d-9602-25e8a34c1a74",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75501
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798113
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7981130 47.7550100",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "c7d8e7b8-ad54-4f94-9abc-748b37847e46",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.76355600000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.79018
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7901800 47.7635560",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7901800 47.7635560",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "dfaed6d1-b5ad-49f8-b2e4-8e3565b67d4a",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.754866
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.802673
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8026730 47.7548660",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "05999458-78ad-426c-b637-3fb26c23b214",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.747748
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.790155
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7901550 47.7477480",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e3d66c85-0869-4901-9ab8-28ac33d5dcdf",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.799594
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798195
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7981950 47.7995940",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "0f360657-8e22-4c7f-904c-bcbdfd0ee358",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75315800000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798369
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7983690 47.7531580",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "f2946241-fe12-4d8f-b33b-4d2c3a2e4705",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.755241
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793691
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7936910 47.7552410",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "9e144d1b-7df5-483a-8438-1385058ba29e",
+        "name": "МТЛБ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.745165
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793238
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "МТЛБ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7932380 47.7451650",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "9df0bcc3-71df-4655-b82d-8691526ff517",
+        "name": "Ферма використовується ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Танковий / Механізований / Гусеничний",
+        "parentTypeName": "Піхота",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.762493
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.803118
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211020000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Ферма використовується ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8031180 47.7624930",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "4a9b8ebe-2e73-4f43-b105-f9c7b5e75b32",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.798438
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798431
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7984310 47.7984380",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e2746ea4-a639-4716-ba5c-63b0578081e2",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.78157700000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.794393
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7943930 47.7815770",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e35b0c74-0aae-48b0-bbff-3e0e03bb5b7e",
+        "name": "Т-72",
+        "typeId": "MIM:31db5f28-2118-44f9-905b-1a5725ccffc9",
+        "typeName": "Танк",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.74741899999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.791941
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001202000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Т-72",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7919410 47.7474190",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "6e426484-93c7-4e8b-bf88-1a9694ad0877",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75378
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.805701
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8057010 47.7537800",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "ee7f110f-ea9d-4511-b4bc-297903d912ab",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75318799999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793832
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7938320 47.7531880",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "1dcab821-5065-442d-b0f3-1f948dcd4911",
+        "name": "Танк",
+        "typeId": "MIM:31db5f28-2118-44f9-905b-1a5725ccffc9",
+        "typeName": "Танк",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.775151
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.802888
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001202000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Танк",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8028880 47.7751510",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "aeb29b8e-114e-4ee5-a986-8d7a468ffc5e",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.758766
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.788741
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7887410 47.7587660",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e0dd9aaf-b9ce-4d9c-b80e-f0c4c9c088ec",
+        "name": "Сарай використовується ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.761258
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.801712
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Сарай використовується ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8017120 47.7612580",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "f08811ee-657e-438a-95e6-92720eab0229",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.757562
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.787728
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7877280 47.7575620",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e9c537e5-1b24-46cc-89d8-6b353c3df1f2",
+        "name": "БТР",
+        "typeId": "MIM:68d631cd-8534-4659-8e86-d4e4744dcc6b",
+        "typeName": "Бронетранспортер (БТР)",
+        "parentTypeName": "Броньований",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.754201
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.797025
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201030000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БТР",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7970250 47.7542010",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "b43297b0-9782-4e61-9c3e-d3ab5d9f4848",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.747263
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.789331
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7893310 47.7472630",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "08783c88-2453-4b09-a32c-6ef4884a07a9",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.755052
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.797928
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7979280 47.7550520",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "bf648e15-30e5-461b-88e0-c09010768c44",
+        "name": "Будівля використовується ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.740709
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.814708
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Будівля використовується ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8147080 47.7407090",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "72e95dc4-1eed-49b8-bfae-ea6eb7fb1787",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.753208
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.80322
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8032200 47.7532080",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "f5bed2f2-73c8-47bf-83aa-60a0ffc60c36",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75393499999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.797196
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7971960 47.7539350",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "810d2743-1dcd-44c3-acee-d18bf8b31341",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.77592299999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.803038
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8030380 47.7759230",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "482ed92c-19ce-4f53-a57c-377b440e9ff1",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.74772400000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.790295
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7902950 47.7477240",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "45292c87-1ace-41d0-bd57-e71f46093327",
+        "name": "Урал",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.74720199999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.795873
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7958730 47.7472020",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e53b6d3e-d222-471d-9c2d-4e90687e292e",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.763849
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793153
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7931530 47.7638490",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7931530 47.7638490",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "8591ff68-85ca-43c4-9f8a-6cdb44b2c5d8",
+        "name": "Стабпункт ров",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.77279
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.802073
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Стабпункт ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8020730 47.7727900",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "473c4f4c-62ec-4911-a3bb-4c0014bc1e35",
+        "name": "КамАЗ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.77240699999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.801783
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "КамАЗ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8017830 47.7724070",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "815d3c84-635d-4f58-8295-9d83e7da6886",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.755373
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798284
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7982840 47.7553730",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "31b99cf3-80b0-4e2e-87ee-6e4596075c8f",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.76508100000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.802405
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8024050 47.7650810",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "79d91dca-041e-4d77-a245-203d3fd0991f",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.753503
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.785416
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7854160 47.7535030",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "f7f27f3d-c6fb-4fa1-8dbb-e4bcebfd887f",
+        "name": "МТЛБ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.764174
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.784858
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "МТЛБ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7848580 47.7641740",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e1239f67-ffee-4945-88c4-ba3a892c8918",
+        "name": "Урал",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75405900000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.785352
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7853520 47.7540590",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "d83e5ac4-df18-4141-9774-f92f9eab0961",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.74995
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.799519
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7995190 47.7499500",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "2ed148f5-111d-4d9f-9664-9d5461f54487",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75701999999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.785914
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7859140 47.7570200",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "14721f95-29a5-46f9-9afd-3fb37d9b560e",
+        "name": "Урал",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.747006
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.795572
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7955720 47.7470060",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "d1ae46b2-fed2-4e17-990e-5d2e3ddb5eb0",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.750148
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.801349
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8013490 47.7501480",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "55c50601-70a5-4545-94f5-0be13e121cfc",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.748355
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.805236
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8052360 47.7483550",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "57cd39a9-495e-4de0-8108-9c564d7089ea",
+        "name": "УРАЛ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75748399999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.787175
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "УРАЛ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7871750 47.7574840",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "be2dc35a-5976-4d36-9e99-7aee95e3d85d",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.753411
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.802173
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8021730 47.7534110",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "02711275-f245-44c0-a6ca-fec8e5a76aae",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.792482
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793832
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7938320 47.7924820",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7938320 47.7924820",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "180f0057-7a04-4ea0-b58e-cb15a4096b8c",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.78367299999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.803032
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8030320 47.7836730",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8030320 47.7836730",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "baed64ed-9b58-41f8-9d5a-a0b3f69ea377",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.764633
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.800348
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8003480 47.7646330",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "2136e738-97a6-4cc7-8ce4-639e9b7339f6",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75621
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.800544
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8005440 47.7562100",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "9fa9973c-71df-4447-9c28-8552ecbb92b3",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.764637
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798715
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7987150 47.7646370",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7987150 47.7646370",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "0cd400fa-2512-4ebc-83e7-fdb1a3da7a9b",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75514
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.797605
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7976050 47.7551400",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "42f48a69-3e9f-4ef4-a6c3-b183389a8d99",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75716100000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.786702
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7867020 47.7571610",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "6a544bd6-dbda-42b4-b0b5-611bac036a24",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.764208
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.803745
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8037450 47.7642080",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "87bcc0d9-8847-4ab4-b03f-76cef1dea73c",
+        "name": "Урал 43206",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.747495
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.789724
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал 43206",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7897240 47.7474950",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "faaccda0-9a72-4bdc-9f79-92eb8ecdc220",
+        "name": "Будівля використовується ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.740794
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.81419
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Будівля використовується ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8141900 47.7407940",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "8534d453-d307-4ae4-88b0-d3e38ee74fa5",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75764400000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.787495
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7874950 47.7576440",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "8b4f4b46-5986-4d92-9d62-0a47a3550916",
+        "name": "Урал 43206",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.753124
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793903
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал 43206",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7939030 47.7531240",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "356bc03a-e705-4a8f-bc0b-306c70192fad",
+        "name": "Т-72",
+        "typeId": "MIM:31db5f28-2118-44f9-905b-1a5725ccffc9",
+        "typeName": "Танк",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.764138
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.795131
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001202000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Т-72",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7951310 47.7641380",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "c0ed9a16-5b8d-4e2d-ba04-615aeaa0322d",
+        "name": "БМП-2",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.75299900000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798236
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БМП-2",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7982360 47.7529990",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "74e5c32b-df2b-4e47-96c8-7b00f89efb0c",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.79930700000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798247
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7982470 47.7993070",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "ca9d92cf-ad08-4a02-9c72-bef59275510f",
+        "name": "Урал",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.756906
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.78608
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7860800 47.7569060",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "5dc3e295-1751-41d6-8f28-f650b5a70348",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.798715
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798326
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7983260 47.7987150",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "10ad8433-e85e-462c-92c5-ccb4184875e1",
+        "name": "Склад використовується ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.783353
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.800081
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Склад використовується ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.8000810 47.7833530",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "83328a82-8c73-4c60-b965-6c254fe5f78b",
+        "name": "о/с",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.79220600000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.793315
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "о/с",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7933150 47.7922060",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "id": "e6916ba9-edda-4028-8779-c85e5f954422",
+        "name": "Дім використовується ров",
+        "typeId": "MIM:e348d61c-6ff8-496f-bf71-962d13426741",
+        "typeName": "Піхота",
+        "parentTypeName": "Пересування та маневри",
+        "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+        "reportingDateTime": 1673594094866,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.773386
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.798644
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001211000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Дім використовується ров",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7986440 47.7733860",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    }
+]

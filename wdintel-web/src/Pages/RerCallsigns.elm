@@ -1,0 +1,1749 @@
+module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, page)
+
+import Api
+import Auth
+import Bindings as B
+import Debounce exposing (Debounce)
+import Dict exposing (Dict)
+import Effect as E exposing (Effect)
+import EnumeratedList as EL exposing (EnumeratedList)
+import Html exposing (..)
+import Html.Attributes as Attr exposing (..)
+import Html.Events exposing (..)
+import Html.Extra as HtmlX
+import Html.Styled as Styled
+import Layouts
+import Le.Auth
+import Le.Block.DateTime
+import Le.Block.Select
+import Le.Block.Spinner
+import Le.Block.Toast
+import Le.RemoteData exposing (RemoteData(..))
+import Le.Time
+import Le.Types exposing (ApiError)
+import Le.Utils exposing (..)
+import List.Extra as ListX
+import Page exposing (Page)
+import Route exposing (Route)
+import Route.Path
+import Select
+import Shared
+import Task
+import Time
+import TimeZone
+import View exposing (View)
+import Components.Watermark exposing (Watermark)
+import Components.Watermark as Watermark
+
+
+page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
+page user shared req =
+    Page.new
+        { init = init req
+        , update = update req
+        , view = view shared.isDarkMode shared user
+        , subscriptions = subscriptions
+        }
+        |> Page.withLayout (toLayout user)
+
+
+toLayout : Auth.User -> Model -> Layouts.Layout Msg
+toLayout user model =
+    Layouts.Navbar
+        { user = user
+        , activeName = "rer"
+        }
+
+
+type alias Model =
+    { formErrors : Dict String String
+    , toasts : Le.Block.Toast.Model
+    , zone : Maybe Time.Zone
+    , units : List B.Unit
+    , callsigns : List B.Callsign
+    , callsignsWithUnitsFromInbox : RemoteData ApiError (List ( String, List String ))
+    , addState : EnumeratedList AddState
+    , inpUnitSelState : Select.State
+    , inpUnitSelMenu : List (Select.MenuItem Int)
+    , inpUnit : Maybe Int
+    , editCallsign : Dict Int EditCallsignState
+    , deleteCallsignConfirmation : Maybe Int
+    , inpSource : Maybe Int
+    , sources : List B.Source
+    , filterCallsign : String
+    , filterPosition : String
+    , filterComment : String
+    , filterUnit : String
+    , filterCallsignDebounce : Debounce String
+    , filterPositionDebounce : Debounce String
+    , filterCommentDebounce : Debounce String
+    , filterUnitDebounce : Debounce String
+    , loading : Bool
+    , loadingUnitStats : Bool
+    , unitStats : List B.CallsignUnitStatRow
+    , from : Le.Block.DateTime.Model
+    , to : Le.Block.DateTime.Model
+    , now : Maybe Time.Posix
+    , isIgnoringDateFilter : Bool
+    , sortingOrder : SortingOrder
+    }
+
+
+type SortingOrder
+    = AscAlphabetically
+    | DescAlphabetically
+    | Default
+
+
+init : Route () -> () -> ( Model, Effect Msg )
+init req _ =
+    let
+        mCallsignName =
+            Dict.get "callsign" req.query
+
+        m2 : Model
+        m2 =
+            { formErrors = Dict.empty
+            , toasts = Le.Block.Toast.init
+            , zone = Nothing
+            , units = []
+            , callsigns = []
+            , callsignsWithUnitsFromInbox = NotAsked
+            , addState = EL.fromList [ initAddState mCallsignName ]
+            , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
+            , inpUnitSelMenu = []
+            , inpUnit = Nothing
+            , editCallsign = Dict.empty
+            , deleteCallsignConfirmation = Nothing
+            , inpSource = Nothing
+            , sources = []
+            , filterCallsign = Maybe.withDefault "" mCallsignName
+            , filterPosition = ""
+            , filterComment = ""
+            , filterUnit = ""
+            , filterCallsignDebounce = Debounce.init
+            , filterPositionDebounce = Debounce.init
+            , filterCommentDebounce = Debounce.init
+            , filterUnitDebounce = Debounce.init
+            , loading = True
+            , loadingUnitStats = True
+            , unitStats = []
+            , from = Le.Block.DateTime.init ()
+            , to = Le.Block.DateTime.init ()
+            , now = Nothing
+            , isIgnoringDateFilter = False
+            , sortingOrder = Default
+            }
+    in
+    ( m2
+    , E.batch
+        [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
+        , E.replaceRoute { path = Route.Path.RerCallsigns, hash = Nothing, query = Dict.remove "callsign" req.query }
+        ]
+    )
+
+
+type Msg
+    = ToastMsg Le.Block.Toast.Msg
+    | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
+    | GotUnits (Result ApiError B.ListUnitsRsp)
+    | GotCallsigns (Result ApiError B.ListCallsignsRsp)
+    | GotCallsignsWithUnitsFromInbox (Result ApiError B.GetCallsignsWithUnitsFromInboxRsp)
+    | AddStateMsg Int AddState
+    | InpSource String
+    | AddUnitSelMsg (Select.Msg Int)
+    | EditUnitSelMsg Int (Select.Msg Int)
+    | AddCallsign
+    | AddCallsignDone (Result ApiError B.Callsign)
+    | EditCallsign Int
+    | EditCallsignMsg Int EditCallsignState
+    | EditCallsignSave Int
+    | EditCallsignDone Int (Result ApiError B.Callsign)
+    | EditCallsignCancel Int
+    | DeleteCallsign Int
+    | DeleteCallsignConfirm
+    | DeleteCallsignCancel
+    | DeleteCallsignDone (Result ApiError B.Callsign)
+    | ClearInputs
+    | GotSources (Result ApiError B.ListSourcesRsp)
+    | ReloadUnits
+    | FilterCallsignMsg String
+    | FilterPositionMsg String
+    | FilterCommentMsg String
+    | FilterUnitMsg String
+    | FilterCallsignDebounceMsg Debounce.Msg
+    | FilterPositionDebounceMsg Debounce.Msg
+    | FilterCommentDebounceMsg Debounce.Msg
+    | FilterUnitDebounceMsg Debounce.Msg
+    | Refresh
+    | GotUnitStats (Result ApiError B.CallsignUnitStatsRsp)
+    | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)
+    | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
+    | InitGotTime Time.Zone Time.Posix
+    | ToggleIsIgnoringDateFilter Bool
+    | SortByCallsignName
+
+
+type alias AddState =
+    { inpCallsign : String
+    , inpPosition : String
+    , inpComment : String
+    , inpDeveloping : Bool
+    , inpRadioFreq : String
+    }
+
+
+type alias EditCallsignState =
+    { inpCallsign : String
+    , inpPosition : String
+    , inpComment : String
+    , inpUnitId : Int
+    , inpUnitSelState : Select.State
+    , inpUnitSelMenu : List (Select.MenuItem Int)
+    , inpSourceId : Int
+    , inpDeveloping : Bool
+    , inpRadioFreq : String
+    }
+
+
+initAddState : Maybe String -> AddState
+initAddState mCallsignName =
+    { inpCallsign = Maybe.withDefault "" mCallsignName, inpPosition = "", inpComment = "", inpDeveloping = False, inpRadioFreq = "" }
+
+
+initLoad : Model -> Effect Msg
+initLoad model =
+    E.batch
+        [ loadUnits
+        , loadCallsigns model
+        , loadSources
+        , loadUnitStats
+        ]
+
+
+loadUnits : Effect Msg
+loadUnits =
+    E.getUnits GotUnits
+        { sortBy = Nothing
+        , afterUnitId = Nothing
+        , beforeUnitId = Nothing
+        }
+
+
+loadCallsignsCmd : Model -> Cmd Msg
+loadCallsignsCmd model =
+    Api.sigint_list_callsigns GotCallsigns
+        { afterId = Nothing
+        , beforeId = Nothing
+        , filterCallsign = Just model.filterCallsign
+        , filterPosition = Just model.filterPosition
+        , filterComment = Just model.filterComment
+        , filterUnit = Just model.filterUnit
+        , sinceDateInclusiveMs =
+            if model.isIgnoringDateFilter then
+                Nothing
+
+            else
+                Maybe.map Time.posixToMillis model.from.datePosix
+        , tillDateInclusiveMs =
+            if model.isIgnoringDateFilter then
+                Nothing
+
+            else
+                Maybe.map Time.posixToMillis model.to.datePosix
+        }
+
+
+callsignsInpoxItemsPeriodLimit : Int
+callsignsInpoxItemsPeriodLimit =
+    14
+
+
+loadCallsignsWithUnitsFromInbox : Model -> Effect Msg
+loadCallsignsWithUnitsFromInbox model =
+    case ( model.now, ( model.from.datePosix, model.to.datePosix ) ) of
+        ( Just now, ( Just dateFrom, Just dateTo ) ) ->
+            let
+                tillDateInclusiveMs =
+                    if model.isIgnoringDateFilter then
+                        Time.posixToMillis now
+
+                    else
+                        Time.posixToMillis dateTo
+
+                sinceDateInclusiveMs =
+                    if model.isIgnoringDateFilter then
+                        Time.posixToMillis (Le.Time.xDaysAgo callsignsInpoxItemsPeriodLimit now)
+
+                    else if (Time.posixToMillis dateTo - Time.posixToMillis dateFrom) < Le.Time.xDaysInMillis callsignsInpoxItemsPeriodLimit then
+                        Time.posixToMillis dateFrom
+
+                    else
+                        Time.posixToMillis (Le.Time.xDaysAgo callsignsInpoxItemsPeriodLimit dateTo)
+            in
+            E.sendCmd
+                (Api.sigint_callsigns_with_units_from_inbox
+                    GotCallsignsWithUnitsFromInbox
+                    { callsigns = model.callsigns |> List.map (\callsign -> callsign.callsign)
+                    , sinceDateInclusiveMs = sinceDateInclusiveMs
+                    , tillDateInclusiveMs = tillDateInclusiveMs
+                    }
+                )
+
+        _ ->
+            E.none
+
+
+loadCallsigns : Model -> Effect Msg
+loadCallsigns model =
+    E.sendCmd (loadCallsignsCmd model)
+
+
+loadSources : Effect Msg
+loadSources =
+    E.sendCmd <|
+        Api.sigint_list_sources GotSources
+            ()
+
+
+loadUnitStats : Effect Msg
+loadUnitStats =
+    E.sendCmd <| Api.sigint_callsign_unit_stats GotUnitStats ()
+
+
+filterCallsignDebounceConfig : Debounce.Config Msg
+filterCallsignDebounceConfig =
+    { strategy = Debounce.later 50
+    , transform = FilterCallsignDebounceMsg
+    }
+
+
+filterPositionDebounceConfig : Debounce.Config Msg
+filterPositionDebounceConfig =
+    { strategy = Debounce.later 50
+    , transform = FilterPositionDebounceMsg
+    }
+
+
+filterCommentDebounceConfig : Debounce.Config Msg
+filterCommentDebounceConfig =
+    { strategy = Debounce.later 50
+    , transform = FilterCommentDebounceMsg
+    }
+
+
+filterUnitDebounceConfig : Debounce.Config Msg
+filterUnitDebounceConfig =
+    { strategy = Debounce.later 50
+    , transform = FilterUnitDebounceMsg
+    }
+
+
+update : Route () -> Msg -> Model -> ( Model, Effect Msg )
+update req msg model =
+    case msg of
+        ToastMsg imsg ->
+            let
+                ( im, icmds ) =
+                    Le.Block.Toast.update imsg model.toasts
+            in
+            ( { model | toasts = im }
+            , E.sendCmd <| Cmd.map ToastMsg icmds
+            )
+
+        InitGotZone (Err e) ->
+            ( model
+            , E.sendCmd <|
+                Le.Block.Toast.addError
+                    ToastMsg
+                    ("Error getting timezone: " ++ renderZoneError e)
+            )
+
+        InitGotZone (Ok ( _, zone )) ->
+            ( { model | zone = Just zone }
+            , E.sendCmd <|
+                Task.perform (InitGotTime zone) Time.now
+            )
+
+        InitGotTime zone now_ ->
+            let
+                from =
+                    Le.Block.DateTime.initFromPosix { datePosix = Le.Time.xDaysAgo 7 now_, zone = zone }
+
+                to =
+                    Le.Block.DateTime.initFromPosix { datePosix = now_, zone = zone }
+
+                m2 =
+                    { model
+                        | from = from
+                        , to = to
+                        , now = Just now_
+                    }
+            in
+            ( m2
+            , initLoad m2
+            )
+
+        GotUnits (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        GotUnits (Ok rsp) ->
+            case Dict.get "unitId" req.query |> Maybe.andThen String.toInt of
+                Just unitId ->
+                    ( { model
+                        | units = rsp.units
+                        , inpUnitSelMenu =
+                            List.map
+                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
+                                rsp.units
+                        , inpUnit = List.filter (\x -> x.id == unitId) rsp.units |> List.head |> Maybe.map .id
+                      }
+                    , E.replaceRoute { path = Route.Path.RerCallsigns, hash = Nothing, query = Dict.remove "unitId" req.query }
+                    )
+
+                Nothing ->
+                    ( { model
+                        | units = rsp.units
+                        , inpUnitSelMenu =
+                            List.map
+                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
+                                rsp.units
+                      }
+                    , E.none
+                    )
+
+        GotCallsigns (Err err) ->
+            Api.handleHttpError ToastMsg err { model | loading = False }
+
+        GotCallsigns (Ok rsp) ->
+            let
+                m2 =
+                    { model
+                        | callsigns = rsp.callsigns
+                        , callsignsWithUnitsFromInbox = Loading
+                        , loading = False
+                    }
+            in
+            ( m2, loadCallsignsWithUnitsFromInbox m2 )
+
+        GotCallsignsWithUnitsFromInbox (Err err) ->
+            Api.handleHttpError ToastMsg err { model | callsignsWithUnitsFromInbox = Failure err }
+
+        GotCallsignsWithUnitsFromInbox (Ok rsp) ->
+            ( { model
+                | callsignsWithUnitsFromInbox = Success rsp.callsignsWithUnits
+              }
+            , E.none
+            )
+
+        AddStateMsg pos state ->
+            let
+                triples : List AddState
+                triples =
+                    state.inpCallsign
+                        |> String.lines
+                        |> List.map (String.split "\t")
+                        |> List.filterMap
+                            (\row ->
+                                case row of
+                                    [ a, b, c ] ->
+                                        Just
+                                            { inpCallsign = a
+                                            , inpPosition = b
+                                            , inpComment = c
+                                            , inpDeveloping = False
+                                            , inpRadioFreq = ""
+                                            }
+
+                                    _ ->
+                                        Nothing
+                            )
+
+                addState =
+                    if pos > 0 || triples == [] then
+                        EL.setAtPos pos state model.addState
+
+                    else
+                        triples |> EL.fromList
+            in
+            ( { model | addState = addState }
+            , E.none
+            )
+
+        InpSource v ->
+            ( { model | inpSource = String.toInt v }, E.none )
+
+        AddUnitSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.inpUnitSelState
+
+                mUnitId =
+                    Le.Block.Select.singleUpd mAction model.inpUnit
+
+                mUnit =
+                    mUnitId |> andThen (\unitId -> ListX.find (\y -> y.id == unitId) model.units)
+
+                m2 =
+                    { model
+                        | inpUnitSelState = iState
+                        , inpUnit = mUnitId
+                        , filterUnit = mUnit |> mmap .name |> def ""
+                    }
+            in
+            ( m2
+            , E.batch
+                [ E.sendCmd <| Cmd.map AddUnitSelMsg iCmd
+                , E.sendCmd <| loadCallsignsCmd m2
+                ]
+            )
+
+        EditUnitSelMsg id selMsg ->
+            case Dict.get id model.editCallsign of
+                Nothing ->
+                    ( model, E.none )
+
+                Just editState ->
+                    let
+                        ( mAction, iState, iCmd ) =
+                            Select.update selMsg editState.inpUnitSelState
+                    in
+                    ( { model
+                        | editCallsign =
+                            case Le.Block.Select.singleUpd mAction (Just editState.inpUnitId) of
+                                Nothing ->
+                                    Dict.remove id model.editCallsign
+
+                                Just unitId ->
+                                    Dict.insert id
+                                        { editState
+                                            | inpUnitSelState = iState
+                                            , inpUnitId =
+                                                unitId
+                                        }
+                                        model.editCallsign
+                      }
+                    , E.sendCmd <| Cmd.map (EditUnitSelMsg id) iCmd
+                    )
+
+        -- adds many
+        AddCallsign ->
+            case model.inpUnit of
+                Nothing ->
+                    ( model, E.none )
+
+                Just unitId ->
+                    case model.inpSource of
+                        Nothing ->
+                            ( model, E.none )
+
+                        Just sourceId ->
+                            let
+                                effs =
+                                    model.addState
+                                        |> EL.toList
+                                        |> List.map
+                                            (\addState ->
+                                                E.sendCmd <|
+                                                    Api.sigint_callsign_create AddCallsignDone
+                                                        { callsign = addState.inpCallsign
+                                                        , position = addState.inpPosition
+                                                        , comment = addState.inpComment
+                                                        , unitId = unitId
+                                                        , sourceId = sourceId
+                                                        , developing = addState.inpDeveloping
+                                                        , radioFreq = Just addState.inpRadioFreq
+                                                        }
+                                            )
+                            in
+                            ( model
+                            , E.batch effs
+                            )
+
+        AddCallsignDone (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        AddCallsignDone (Ok _) ->
+            ( { model
+                | loading = True
+                , loadingUnitStats = True
+                , addState = EL.fromList [ initAddState Nothing ]
+              }
+            , initLoad model
+            )
+
+        EditCallsign id ->
+            case ListX.find (\c -> c.id == id) model.callsigns of
+                Nothing ->
+                    ( model, E.none )
+
+                Just callsign ->
+                    ( { model
+                        | editCallsign =
+                            Dict.insert id
+                                { inpCallsign = callsign.callsign
+                                , inpPosition = callsign.position
+                                , inpComment = callsign.comment
+                                , inpUnitId = callsign.unitId
+                                , inpSourceId = callsign.sourceId
+                                , inpUnitSelState =
+                                    Select.initState
+                                        (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt id)
+                                , inpUnitSelMenu =
+                                    List.map
+                                        (\u -> Select.basicMenuItem { item = u.id, label = u.name })
+                                        model.units
+                                , inpDeveloping = callsign.developing
+                                , inpRadioFreq = callsign.radioFreq |> def ""
+                                }
+                                model.editCallsign
+                      }
+                    , E.none
+                    )
+
+        EditCallsignMsg id editState ->
+            ( { model
+                | editCallsign =
+                    Dict.insert id editState model.editCallsign
+              }
+            , E.none
+            )
+
+        EditCallsignSave id ->
+            case Dict.get id model.editCallsign of
+                Nothing ->
+                    ( model, E.none )
+
+                Just editState ->
+                    case ListX.find (\c -> c.id == id) model.callsigns of
+                        Nothing ->
+                            ( model, E.none )
+
+                        Just callsign ->
+                            ( model
+                            , E.sendCmd <|
+                                Api.sigint_callsign_update
+                                    (EditCallsignDone id)
+                                    { id = id
+                                    , callsign = editState.inpCallsign
+                                    , position = editState.inpPosition
+                                    , comment = editState.inpComment
+                                    , unitId = editState.inpUnitId
+                                    , sourceId = editState.inpSourceId
+                                    , createdAt = callsign.createdAt
+                                    , developing = editState.inpDeveloping
+                                    , radioFreq = Just editState.inpRadioFreq
+                                    , active = True
+                                    }
+                            )
+
+        EditCallsignDone _ (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        EditCallsignDone id (Ok _) ->
+            ( { model
+                | editCallsign = Dict.remove id model.editCallsign
+                , loading = True
+              }
+            , loadCallsigns model
+            )
+
+        EditCallsignCancel id ->
+            ( { model | editCallsign = Dict.remove id model.editCallsign }, E.none )
+
+        DeleteCallsign id ->
+            ( { model | deleteCallsignConfirmation = Just id }, E.none )
+
+        DeleteCallsignConfirm ->
+            let
+                m2 =
+                    { model | deleteCallsignConfirmation = Nothing }
+            in
+            case model.deleteCallsignConfirmation of
+                Just id ->
+                    ( m2, E.sendCmd <| Api.sigint_callsign_delete DeleteCallsignDone id )
+
+                Nothing ->
+                    ( m2, E.none )
+
+        DeleteCallsignCancel ->
+            ( { model | deleteCallsignConfirmation = Nothing }, E.none )
+
+        DeleteCallsignDone (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        DeleteCallsignDone (Ok _) ->
+            ( { model | loading = True }
+            , loadCallsigns model
+            )
+
+        ClearInputs ->
+            ( { model
+                | addState = EL.fromList [ initAddState Nothing ]
+                , inpUnit = Nothing
+              }
+            , E.none
+            )
+
+        GotSources (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        GotSources (Ok rsp) ->
+            ( { model
+                | sources = rsp.sources
+                , inpSource =
+                    case model.inpSource of
+                        Nothing ->
+                            rsp.sources |> List.head |> Maybe.map .id
+
+                        Just v ->
+                            Just v
+              }
+            , E.none
+            )
+
+        ReloadUnits ->
+            ( model, loadUnits )
+
+        FilterCallsignMsg v ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push filterCallsignDebounceConfig v model.filterCallsignDebounce
+            in
+            ( { model
+                | filterCallsign = v
+                , filterCallsignDebounce = debounce
+              }
+            , E.sendCmd cmd
+            )
+
+        FilterPositionMsg v ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push filterPositionDebounceConfig v model.filterPositionDebounce
+            in
+            ( { model
+                | filterPosition = v
+                , filterPositionDebounce = debounce
+              }
+            , E.sendCmd cmd
+            )
+
+        FilterCommentMsg v ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push filterCommentDebounceConfig v model.filterCommentDebounce
+            in
+            ( { model
+                | filterComment = v
+                , filterCommentDebounce = debounce
+              }
+            , E.sendCmd cmd
+            )
+
+        FilterUnitMsg v ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push filterUnitDebounceConfig v model.filterUnitDebounce
+            in
+            ( { model
+                | filterUnit = v
+                , filterUnitDebounce = debounce
+              }
+            , E.sendCmd cmd
+            )
+
+        FilterCallsignDebounceMsg imsg ->
+            let
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        filterCallsignDebounceConfig
+                        (Debounce.takeLast (\_ -> loadCallsignsCmd model))
+                        imsg
+                        model.filterCallsignDebounce
+            in
+            ( { model
+                | filterCallsignDebounce = debounce
+                , loading = True
+              }
+            , E.sendCmd debounceCmd
+            )
+
+        FilterPositionDebounceMsg imsg ->
+            let
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        filterPositionDebounceConfig
+                        (Debounce.takeLast (\_ -> loadCallsignsCmd model))
+                        imsg
+                        model.filterPositionDebounce
+            in
+            ( { model
+                | filterPositionDebounce = debounce
+                , loading = True
+              }
+            , E.sendCmd debounceCmd
+            )
+
+        FilterCommentDebounceMsg imsg ->
+            let
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        filterCommentDebounceConfig
+                        (Debounce.takeLast (\_ -> loadCallsignsCmd model))
+                        imsg
+                        model.filterCommentDebounce
+            in
+            ( { model
+                | filterCommentDebounce = debounce
+                , loading = True
+              }
+            , E.sendCmd debounceCmd
+            )
+
+        FilterUnitDebounceMsg imsg ->
+            let
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        filterUnitDebounceConfig
+                        (Debounce.takeLast (\_ -> loadCallsignsCmd model))
+                        imsg
+                        model.filterUnitDebounce
+            in
+            ( { model
+                | filterUnitDebounce = debounce
+                , loading = True
+              }
+            , E.sendCmd debounceCmd
+            )
+
+        Refresh ->
+            ( { model | loading = True, loadingUnitStats = True }
+            , initLoad model
+            )
+
+        GotUnitStats (Err err) ->
+            Api.handleHttpError ToastMsg
+                err
+                { model | loadingUnitStats = False }
+
+        GotUnitStats (Ok rsp) ->
+            ( { model | unitStats = rsp.units, loadingUnitStats = False }
+            , E.none
+            )
+
+        DateTimeFromMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Le.Block.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.from
+                        , toModel = \from -> { model | from = from }
+                        , toMsg = DateTimeFromMsg
+                        }
+            in
+            case m2.from.datePosix of
+                Nothing ->
+                    ( m2, eff2 )
+
+                Just _ ->
+                    ( m2, loadCallsigns m2 )
+
+        DateTimeToMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Le.Block.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.to
+                        , toModel = \to -> { model | to = to }
+                        , toMsg = DateTimeToMsg
+                        }
+            in
+            case m2.to.datePosix of
+                Nothing ->
+                    ( m2, eff2 )
+
+                Just _ ->
+                    ( m2, loadCallsigns m2 )
+
+        ToggleIsIgnoringDateFilter isChecked ->
+            let
+                m2 =
+                    { model | isIgnoringDateFilter = isChecked }
+            in
+            ( m2, loadCallsigns m2 )
+
+        SortByCallsignName ->
+            ( { model
+                | sortingOrder =
+                    case model.sortingOrder of
+                        Default ->
+                            AscAlphabetically
+
+                        AscAlphabetically ->
+                            DescAlphabetically
+
+                        DescAlphabetically ->
+                            AscAlphabetically
+              }
+            , E.none
+            )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
+
+
+contentBlock : Shared.Model -> Model -> Auth.User -> Html Msg
+contentBlock shared model user =
+    let
+        hasEditorRole =
+            Le.Auth.hasRole "CallsignsEditor" user || Le.Auth.hasRole "UnitsEditor" user
+
+        deleteConfirmationModal =
+            div
+                [ class "modal fade"
+                , attribute "tabindex" "-1"
+                , attribute "role" "dialog"
+                , attribute "aria-hidden" "true"
+                , id "deleteConfirmationModal"
+                ]
+                [ div
+                    [ class "modal-dialog"
+                    , attribute "role" "document"
+                    ]
+                    [ div
+                        [ class "modal-content" ]
+                        [ div
+                            [ class "modal-header" ]
+                            [ h5 [ class "modal-title" ] [ text "Видалення позивного" ]
+                            , button
+                                [ class "btn-close"
+                                , type_ "button"
+                                , attribute "data-bs-dismiss" "modal"
+                                , attribute "ariaLabel" "Close"
+                                ]
+                                []
+                            ]
+                        , div
+                            [ class "modal-body p-3" ]
+                            [ text "Ви впевнені, що хочете видалити цей позивний?"
+                            ]
+                        , div
+                            [ class "modal-footer" ]
+                            [ button
+                                [ class "btn btn-secondary"
+                                , attribute "type" "button"
+                                , attribute "data-bs-dismiss" "modal"
+                                , onClick DeleteCallsignCancel
+                                ]
+                                [ text "Відміна" ]
+                            , button
+                                [ class "btn btn-danger"
+                                , type_ "button"
+                                , attribute "data-bs-dismiss" "modal"
+                                , onClick <| DeleteCallsignConfirm
+                                ]
+                                [ text "Видалити" ]
+                            ]
+                        ]
+                    ]
+                ]
+
+        renderUnitsFromInboxTd : B.Callsign -> Html Msg
+        renderUnitsFromInboxTd callsign =
+            case model.callsignsWithUnitsFromInbox of
+                Loading ->
+                    td [ class "align-middle text-center", style "width" "210px" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                Success callsignsWithUnitsFromInbox ->
+                    let
+                        unit =
+                            ListX.find (\u -> u.id == callsign.unitId) model.units
+
+                        callsignWithUnitsFromInbox =
+                            ListX.find
+                                (\callsignWithUnitsFromInbox_ ->
+                                    String.contains (Tuple.first callsignWithUnitsFromInbox_) callsign.callsign
+                                )
+                                callsignsWithUnitsFromInbox
+                    in
+                    td [ style "width" "210px" ]
+                        [ case callsignWithUnitsFromInbox of
+                            Nothing ->
+                                text ""
+
+                            Just callsignWithUnitsFromInbox_ ->
+                                text
+                                    (case unit of
+                                        Nothing ->
+                                            callsignWithUnitsFromInbox_
+                                                |> Tuple.second
+                                                |> String.join ", "
+
+                                        Just unit_ ->
+                                            callsignWithUnitsFromInbox_
+                                                |> Tuple.second
+                                                |> List.filter (\s -> not (String.contains s unit_.name))
+                                                |> String.join ", "
+                                    )
+                        ]
+
+                _ ->
+                    td [ style "width" "210px" ] []
+
+        renderCallsignTrView : Int -> B.Callsign -> Html Msg
+        renderCallsignTrView rowIndex callsign =
+            tr
+                [ class <|
+                    if callsign.active then
+                        ""
+
+                    else
+                        "disabled"
+                ]
+                [ td
+                    [ title (String.fromInt callsign.id)
+                    ]
+                    [ div []
+                        [ div [ class "text-uppercase" ]
+                            [ text callsign.callsign ]
+                        , HtmlX.viewIf callsign.developing
+                            (div [ class "badge rounded-pill text-bg-warning" ]
+                                [ text "в дорозвідці" ]
+                            )
+                        ]
+                    ]
+                , td [] [ text callsign.position ]
+                , td [class "relative"] [ text callsign.comment, Watermark.new user.name 
+                                                                    |> Watermark.withPositioning (5, 5) 
+                                                                    |> Watermark.withRotate -10
+                                                                    |> Watermark.withFontSize "1.3rem"
+                                                                    |> Watermark.withOpacity 0.3
+                                                                    |> Watermark.view  
+                                                                    |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
+                                                                    ]
+                , td []
+                    [ case ListX.find (\u -> u.id == callsign.unitId) model.units of
+                        Nothing ->
+                            text "<Виберіть підрозділ>"
+
+                        Just unit ->
+                            text unit.name
+                    ]
+                , renderUnitsFromInboxTd callsign
+                , td []
+                    [ case ListX.find (\s -> s.id == callsign.sourceId) model.sources of
+                        Nothing ->
+                            text "Loading..."
+
+                        Just source ->
+                            if source.id == 2 && not (String.isEmpty (callsign.radioFreq |> def "")) then
+                                text (source.name ++ " (" ++ def "" callsign.radioFreq ++ ")")
+
+                            else
+                                text source.name
+                    ]
+                , td []
+                    [ case model.zone of
+                        Nothing ->
+                            text "Loading..."
+
+                        Just zone ->
+                            text <|
+                                Le.Time.renderDateF6 zone
+                                    (Time.millisToPosix callsign.createdAt)
+                    ]
+                , if hasEditorRole then
+                    td []
+                        [ div [ style "font-size" ".8rem" ]
+                            [ button
+                                [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
+                                , type_ "button"
+                                , onClick <| EditCallsign callsign.id
+                                ]
+                                [ i [ class "bi bi-pencil-square" ] []
+                                ]
+                            , button
+                                [ class "btn btn-outline-danger btn-sm py-0 px-1"
+                                , type_ "button"
+                                , onClick <| DeleteCallsign callsign.id
+                                , attribute "data-bs-toggle" "modal"
+                                , attribute "data-bs-target" "#deleteConfirmationModal"
+                                ]
+                                [ i [ class "bi bi-trash" ] []
+                                ]
+                            ]
+                        ]
+
+                  else
+                    text ""
+                ]
+
+        renderCallsignTrEdit : B.Callsign -> EditCallsignState -> Html Msg
+        renderCallsignTrEdit callsign editState =
+            tr []
+                [ td []
+                    [ div
+                        []
+                        [ input
+                            [ class "form-control text-uppercase"
+                            , style "width" "200px"
+                            , style "font-size" ".8rem"
+                            , type_ "text"
+                            , placeholder "Позивний"
+                            , value editState.inpCallsign
+                            , onInput <|
+                                EditCallsignMsg callsign.id
+                                    << (\v -> { editState | inpCallsign = v })
+                            ]
+                            []
+                        , div
+                            [ class "form-check form-switch mt-1 ms-2"
+                            ]
+                            [ input
+                                [ class "form-check-input"
+                                , style "font-size" ".8rem"
+                                , type_ "checkbox"
+                                , attribute "role" "switch"
+                                , id "enableAutostream"
+                                , checked editState.inpDeveloping
+                                , onClick <|
+                                    EditCallsignMsg callsign.id
+                                        { editState
+                                            | inpDeveloping =
+                                                not editState.inpDeveloping
+                                        }
+                                ]
+                                []
+                            , label
+                                [ class "form-check-label mb-4"
+                                , for "enableAutostream"
+                                ]
+                                [ text "в дорозвідці" ]
+                            ]
+                        ]
+                    ]
+                , td []
+                    [ input
+                        [ class "form-control"
+                        , style "width" "200px"
+                        , style "font-size" ".8rem"
+                        , type_ "text"
+                        , placeholder "Посада"
+                        , value editState.inpPosition
+                        , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpPosition = v })
+                        ]
+                        []
+                    ]
+                , td []
+                    [ textarea
+                        [ class "form-control"
+                        , style "min-width" "200px"
+                        , style "font-size" ".8rem"
+                        , rows 3
+                        , placeholder "Коментар"
+                        , onInput <|
+                            EditCallsignMsg callsign.id
+                                << (\v -> { editState | inpComment = v })
+                        , value editState.inpComment
+                        ]
+                        []
+                    ]
+                , td []
+                    [ div [ style "font-size" ".8rem" ]
+                        [ let
+                            selectItem : Maybe (Select.MenuItem Int)
+                            selectItem =
+                                ListX.find (\unit -> unit.id == editState.inpUnitId) model.units
+                                    |> Maybe.map
+                                        (\unit ->
+                                            Select.basicMenuItem
+                                                { item = unit.id, label = unit.name }
+                                        )
+                          in
+                          Html.map (EditUnitSelMsg callsign.id) <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    selectItem
+                                    editState.inpUnitSelState
+                                    editState.inpUnitSelMenu
+                                    "жоден"
+                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                        ]
+                    ]
+                , renderUnitsFromInboxTd callsign
+                , td []
+                    [ div [ style "font-size" ".8rem" ]
+                        [ select
+                            [ class "form-select"
+                            , style "font-size" ".8rem"
+                            , onInput <|
+                                EditCallsignMsg callsign.id
+                                    << (\v ->
+                                            case String.toInt v of
+                                                Nothing ->
+                                                    editState
+
+                                                Just v2 ->
+                                                    { editState | inpSourceId = v2 }
+                                       )
+                            ]
+                            (List.map
+                                (\source ->
+                                    option
+                                        [ value (String.fromInt source.id)
+                                        , selected (editState.inpSourceId == source.id)
+                                        ]
+                                        [ text source.name ]
+                                )
+                                model.sources
+                            )
+                        , if editState.inpSourceId == 2 then
+                            input
+                                [ class "form-control"
+                                , style "width" "200px"
+                                , style "margin-top" "8px"
+                                , style "font-size" ".8rem"
+                                , type_ "text"
+                                , placeholder "Частота"
+                                , value editState.inpRadioFreq
+                                , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpRadioFreq = v })
+                                ]
+                                []
+
+                          else
+                            text ""
+                        ]
+                    ]
+                , td []
+                    [ case model.zone of
+                        Nothing ->
+                            text "Loading..."
+
+                        Just zone ->
+                            text <|
+                                Le.Time.renderDateF6 zone
+                                    (Time.millisToPosix callsign.createdAt)
+                    ]
+                , td [ style "font-size" ".8rem" ]
+                    [ div [ class "d-flex justify-content-start align-items-center" ]
+                        [ button
+                            [ class "btn btn-sm btn-outline-primary"
+                            , type_ "button"
+                            , onClick <| EditCallsignSave callsign.id
+                            ]
+                            [ i [ class "bi bi-check2" ] []
+                            ]
+                        , button
+                            [ class "btn btn-sm btn-outline-danger ms-2"
+                            , type_ "button"
+                            , onClick <| EditCallsignCancel callsign.id
+                            ]
+                            [ i [ class "bi bi-x" ] []
+                            ]
+                        ]
+                    ]
+                ]
+
+        renderCallsignTr : Int -> B.Callsign -> Html Msg
+        renderCallsignTr rowIndex callsign =
+            case Dict.get callsign.id model.editCallsign of
+                Nothing ->
+                    renderCallsignTrView rowIndex callsign
+
+                Just editState ->
+                    renderCallsignTrEdit callsign editState
+
+        addCallsignPanel : ( Int, AddState ) -> Html Msg
+        addCallsignPanel ( pos, addState ) =
+            div
+                [ class "flex justify-content items-start"
+                ]
+                [ div [ class "mr-2" ]
+                    [ textarea
+                        [ class "form-control text-uppercase"
+                        , style "min-width" "200px"
+                        , rows 1
+                        , Attr.disabled (not hasEditorRole)
+                        , placeholder "Позивний"
+                        , onInput <|
+                            AddStateMsg pos
+                                << (\v -> { addState | inpCallsign = v })
+                        , value addState.inpCallsign
+                        ]
+                        []
+                    , div
+                        [ class "form-check form-switch mt-1 ms-2"
+                        , style "font-size" ".8rem"
+                        ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , attribute "role" "switch"
+                            , id "enableAutostream"
+                            , checked addState.inpDeveloping
+                            , onClick <|
+                                AddStateMsg pos { addState | inpDeveloping = not addState.inpDeveloping }
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label mb-4"
+                            , for "enableAutostream"
+                            ]
+                            [ text "в дорозвідці" ]
+                        ]
+                    ]
+                , input
+                    [ class "form-control me-2"
+                    , style "width" "200px"
+                    , Attr.disabled (not hasEditorRole)
+                    , type_ "text"
+                    , placeholder "Посада"
+                    , onInput <| AddStateMsg pos << (\v -> { addState | inpPosition = v })
+                    , value addState.inpPosition
+                    ]
+                    []
+                , textarea
+                    [ class "form-control me-2"
+                    , style "flex-grow" "1"
+                    , rows 1
+                    , Attr.disabled (not hasEditorRole)
+                    , placeholder "Коментар"
+                    , onInput <| AddStateMsg pos << (\v -> { addState | inpComment = v })
+                    , value addState.inpComment
+                    ]
+                    []
+                , div
+                    [ class "me-2"
+                    ]
+                    [ HtmlX.viewIf (pos == 0) <|
+                        let
+                            selectItem =
+                                model.inpUnit
+                                    |> Maybe.andThen (\unitId -> ListX.find (\u -> u.id == unitId) model.units)
+                                    |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                        in
+                        div
+                            [ class "d-flex justify-content-between align-items-center"
+                            , style "min-width" "200px"
+                            , style "font-size" ".8rem"
+                            ]
+                            [ div [ class "flex-grow-1" ]
+                                [ let
+                                    options =
+                                        Le.Block.Select.defaultOptions shared.isDarkMode
+
+                                    options2 =
+                                        { options | disabled = not hasEditorRole }
+                                  in
+                                  Html.map AddUnitSelMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            selectItem
+                                            model.inpUnitSelState
+                                            model.inpUnitSelMenu
+                                            "жоден"
+                                            options2
+                                ]
+                            , button
+                                [ class "btn btn-sm btn-outline-secondary ms-2"
+                                , type_ "button"
+                                , onClick <| ReloadUnits
+                                , Attr.disabled (not hasEditorRole)
+                                ]
+                                [ i [ class "bi bi-arrow-clockwise" ]
+                                    []
+                                ]
+                            ]
+                    ]
+                , div
+                    [ class "me-2"
+                    , style "min-width" "160px"
+                    ]
+                    [ HtmlX.viewIf (pos == 0) <|
+                        div []
+                            [ select
+                                [ class "form-select"
+                                , style "font-size" ".8rem"
+                                , Attr.disabled (not hasEditorRole)
+                                , onInput <| InpSource
+                                ]
+                                (List.map
+                                    (\source ->
+                                        option
+                                            [ value (String.fromInt source.id)
+                                            , selected (model.inpSource == Just source.id)
+                                            ]
+                                            [ text source.name ]
+                                    )
+                                    model.sources
+                                )
+                            , if Maybe.withDefault 0 model.inpSource == 2 then
+                                input
+                                    [ class "form-control"
+                                    , style "margin-top" "8px"
+                                    , style "font-size" ".8rem"
+                                    , type_ "text"
+                                    , placeholder "Частота"
+                                    , onInput <| AddStateMsg pos << (\v -> { addState | inpRadioFreq = v })
+                                    , value addState.inpRadioFreq
+                                    ]
+                                    []
+
+                              else
+                                text ""
+                            ]
+                    ]
+                , div
+                    [ class "text-center"
+                    ]
+                    [ HtmlX.viewIf (pos == 0) <|
+                        button
+                            [ class "btn btn-primary"
+                            , type_ "button"
+                            , Attr.disabled (not hasEditorRole)
+                            , onClick AddCallsign
+                            ]
+                            [ text "Додати" ]
+                    ]
+                , div
+                    [ class "text-center"
+                    ]
+                    [ HtmlX.viewIf (pos == 0) <|
+                        button
+                            [ class "btn btn-secondary ms-2"
+                            , type_ "button"
+                            , Attr.disabled (not hasEditorRole)
+                            , onClick ClearInputs
+                            ]
+                            [ text "Очистити" ]
+                    ]
+                ]
+
+        filterPanel =
+            div [ class "d-flex justify-content-between align-items-center" ]
+                [ div [ class "me-2" ]
+                    [ if not model.loading then
+                        i [ class "bi bi-filter" ] []
+
+                      else
+                        Le.Block.Spinner.loadingSpinner2Sm
+                    ]
+                , div [ class "d-flex flex-column flex-grow-1", style "gap" "8px" ]
+                    [ div
+                        [ class "d-flex justify-content-start align-items-center"
+                        , style "width" "200px"
+                        , style "margin-left" "8px"
+                        ]
+                        [ input
+                            [ class "form-control me-2 text-uppercase"
+                            , style "min-width" "200px"
+                            , type_ "text"
+                            , placeholder "Позивний"
+                            , value model.filterCallsign
+                            , onInput FilterCallsignMsg
+                            ]
+                            []
+                        , input
+                            [ class "form-control me-2"
+                            , style "width" "200px"
+                            , type_ "text"
+                            , placeholder "Посада"
+                            , value model.filterPosition
+                            , onInput FilterPositionMsg
+                            ]
+                            []
+                        , input
+                            [ class "form-control me-2"
+                            , style "width" "200px"
+                            , type_ "text"
+                            , placeholder "Коментар"
+                            , value model.filterComment
+                            , onInput FilterCommentMsg
+                            ]
+                            []
+                        , input
+                            [ class "form-control me-2"
+                            , style "width" "200px"
+                            , type_ "text"
+                            , placeholder "Підрозділ"
+                            , value model.filterUnit
+                            , onInput FilterUnitMsg
+                            ]
+                            []
+                        ]
+                    , div
+                        [ class "d-inline-block ms-2"
+                        ]
+                        [ div [ class "d-flex justify-content-start align-items-center", style "gap" "4px" ] <|
+                            [ div []
+                                [ div
+                                    [ class "btn-group"
+                                    , attribute "role" "group"
+                                    , attribute "aria-label" "Basic radio toggle button group"
+                                    ]
+                                    [ input
+                                        [ type_ "radio"
+                                        , class "btn-check"
+                                        , id "btnradio1"
+                                        , autocomplete False
+                                        , checked model.isIgnoringDateFilter
+                                        , onClick <| ToggleIsIgnoringDateFilter True
+                                        ]
+                                        []
+                                    , label
+                                        [ class "btn btn-outline-secondary", for "btnradio1" ]
+                                        [ text "Весь час" ]
+                                    , input
+                                        [ type_ "radio"
+                                        , class "btn-check"
+                                        , id "btnradio2"
+                                        , autocomplete False
+                                        , checked (not model.isIgnoringDateFilter)
+                                        , onClick <| ToggleIsIgnoringDateFilter False
+                                        ]
+                                        []
+                                    , label
+                                        [ class "btn btn-outline-secondary", for "btnradio2" ]
+                                        [ text "Період" ]
+                                    ]
+                                ]
+                            , div
+                                [ style "font-size" "1rem"
+                                , style "margin-right" "4px"
+                                , style "margin-left" "12px"
+                                ]
+                                [ text "з" ]
+                            ]
+                                ++ (Le.Block.DateTime.new
+                                        { model =
+                                            if not model.isIgnoringDateFilter then
+                                                model.from
+
+                                            else
+                                                Le.Block.DateTime.init ()
+                                        , toMsg = DateTimeFromMsg
+                                        }
+                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Le.Block.DateTime.view
+                                   )
+                                ++ [ div
+                                        [ style "font-size" "1rem"
+                                        , style "margin-right" "4px"
+                                        ]
+                                        [ text "по" ]
+                                   ]
+                                ++ (Le.Block.DateTime.new
+                                        { model =
+                                            if not model.isIgnoringDateFilter then
+                                                model.to
+
+                                            else
+                                                Le.Block.DateTime.init ()
+                                        , toMsg = DateTimeToMsg
+                                        }
+                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Le.Block.DateTime.view
+                                   )
+                        ]
+                    ]
+                ]
+
+        sortByName model_ callsigns_ =
+            case model_.sortingOrder of
+                Default ->
+                    callsigns_
+
+                AscAlphabetically ->
+                    callsigns_ |> List.sortBy .callsign
+
+                DescAlphabetically ->
+                    callsigns_ |> List.sortBy .callsign |> List.reverse
+
+        mainContent =
+            div []
+                [ div
+                    [ class "border mb-2 p-2"
+                    , style "background-color" "var(--bs-tertiary-bg)"
+                    ]
+                    (EL.mapPair
+                        addCallsignPanel
+                        model.addState
+                    )
+                , div
+                    [ class "border mb-4 p-2"
+                    ]
+                    [ filterPanel
+                    ]
+                , table
+                    [ class "table table-bordered table-sm"
+                    , style "font-size" ".85rem"
+                    ]
+                    [ thead []
+                        [ tr []
+                            [ th
+                                [ scope "col"
+                                , class "nowrap"
+                                , style "min-width" "200px"
+                                ]
+                                [ text "Позивний "
+                                , i
+                                    [ class
+                                        (case model.sortingOrder of
+                                            Default ->
+                                                "bi bi-sort-alpha-down"
+
+                                            AscAlphabetically ->
+                                                "bi bi-sort-alpha-up"
+
+                                            DescAlphabetically ->
+                                                "bi bi-sort-alpha-down"
+                                        )
+                                    , style "cursor" "pointer"
+                                    , style "font-size" "16px"
+                                    , onClick SortByCallsignName
+                                    ]
+                                    []
+                                ]
+                            , th
+                                [ scope "col"
+                                , class "nowrap"
+                                , style "min-width" "200px"
+                                ]
+                                [ text "Посада" ]
+                            , th
+                                [ scope "col"
+                                , class "nowrap"
+                                , style "min-width" "200px"
+                                ]
+                                [ text "Коментар" ]
+                            , th
+                                [ scope "col"
+                                , class "nowrap"
+                                , style "min-width" "200px"
+                                ]
+                                [ text "Підрозділ" ]
+                            , th
+                                [ scope "col"
+                                , class "nowrap"
+                                , style "min-width" "210px"
+                                ]
+                                [ text "Зустрічається у підрозділах" ]
+                            , th [ scope "col", class "nowrap" ] [ text "Джерело" ]
+                            , th [ scope "col", class "nowrap" ] [ text "Створено" ]
+                            , if hasEditorRole then
+                                th
+                                    [ scope "col"
+                                    , class "nowrap"
+                                    , style "min-width" "100px"
+                                    ]
+                                    [ text "Дії" ]
+
+                              else
+                                text ""
+                            ]
+                        ]
+                    , tbody [] <|
+                        List.indexedMap renderCallsignTr (model.callsigns |> sortByName model)
+                    ]
+                ]
+    in
+    div []
+        [ deleteConfirmationModal
+        , mainContent
+        ]
+
+
+unitsBlock : Shared.Model -> Model -> Html Msg
+unitsBlock shared model =
+    let
+        renderUnitStat : B.CallsignUnitStatRow -> List (Html Msg)
+        renderUnitStat stat =
+            let
+                unitName =
+                    case ListX.find (\u -> u.id == stat.unitId) model.units of
+                        Nothing ->
+                            "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
+
+                        Just unit ->
+                            unit.name
+            in
+            [ div
+                [ class "flex justify-between items-between p-2 pointer max-w-[220px]"
+                , onClick <| FilterUnitMsg unitName
+                ]
+                [ div [ class "grow text-end me-2" ] [ text unitName ]
+                , div [ class "me-2" ]
+                    [ div
+                        [ style "min-width" "30px"
+                        , class "text-center"
+                        ]
+                        [ span
+                            [ class "badge badge-sm rounded-pill text-bg-secondary"
+                            , style "font-size" "0.6rem"
+                            ]
+                            [ text <| String.fromInt stat.count
+                            ]
+                        ]
+                    ]
+                ]
+            , div [ class "border-bottom" ] []
+            ]
+    in
+    if model.loadingUnitStats then
+        Le.Block.Spinner.loadingSpinner
+
+    else
+        div [ style "font-size" ".8rem" ] <|
+            List.concatMap renderUnitStat model.unitStats
+
+
+view : Bool -> Shared.Model -> B.User -> Model -> View Msg
+view dark shared user model =
+    { title = "позивні"
+    , body =
+        [ Le.Block.Toast.view ToastMsg model.toasts <|
+            div [ class "flex justify-start items-start h-[calc(100vh-50px)]" ]
+                [ div
+                    [ class "self-stretch max-h-full min-w-[200px] overflow-y-auto"
+                    ]
+                    [ div
+                        [ class "flex flex-col pt-1"
+                        ]
+                        [ unitsBlock shared model
+                        , div [ class "grow" ] []
+                        ]
+                    ]
+                , div
+                    [ class "grow h-full overflow-auto"
+                    ]
+                    [ h1 [ class "py-2 ps-4" ]
+                        [ span [ class "me-2" ] [ text "позивні" ]
+                        , button
+                            [ type_ "button"
+                            , class "inline-block btn btn-outline-secondary me-2"
+                            , onClick Refresh
+                            , attribute "data-tooltip" "оновити"
+                            , attribute "data-position" "bottom"
+                            ]
+                            (if model.loading then
+                                [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                             else
+                                [ i [ class "bi bi-arrow-repeat" ] [] ]
+                            )
+                        ]
+                    , div [] <|
+                        [ div []
+                            [ div [ class "mx-2" ]
+                                [ contentBlock shared model user ]
+                            ]
+                        ]
+                    ]
+                ]
+        ]
+    }

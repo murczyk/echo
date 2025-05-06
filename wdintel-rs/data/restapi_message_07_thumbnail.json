@@ -1,0 +1,46 @@
+{
+	"envelope":
+	{
+		"source": "+380994507734",
+		"sourceNumber": "+380994507734",
+		"sourceUuid": "8b221b9e-093e-4127-832b-088c832cdb12",
+		"sourceName": "Черговий 2",
+		"sourceDevice": 2,
+		"timestamp": 1684224607413,
+		"dataMessage":
+		{
+			"timestamp": 1684224607413,
+			"message": "Горіх взліт по готовності, давайте з дорогою попрацюємо все ж таки , туди арта доб'є",
+			"expiresInSeconds": 0,
+			"viewOnce": false,
+			"quote":
+			{
+				"id": 1684222370473,
+				"author": "+380994507734",
+				"authorNumber": "+380994507734",
+				"authorUuid": "8b221b9e-093e-4127-832b-088c832cdb12",
+				"text": "",
+				"attachments":
+				[
+					{
+						"contentType": "image/png",
+						"filename": "image.jpg",
+						"thumbnail":
+						{
+							"contentType": "image/png",
+							"filename": null,
+							"id": "5772509412055760019.png",
+							"size": 37267
+						}
+					}
+				]
+			},
+			"groupInfo":
+			{
+				"groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+				"type": "DELIVER"
+			}
+		}
+	},
+	"account": "+380502711438"
+}

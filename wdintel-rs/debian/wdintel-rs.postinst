@@ -1,0 +1,8 @@
+#!/bin/sh
+
+#DEBHELPER#
+
+set -e
+
+mkdir -p /var/log/echo
+chmod 777 /var/log/echo

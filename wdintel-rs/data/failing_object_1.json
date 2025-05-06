@@ -1,0 +1,44 @@
+{
+    "id": "cd40c862-7e2c-49fd-bfb4-32fd2855f88d",
+    "name": "Урал",
+    "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+    "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+    "parentTypeName": "Автомобілі загального призначення",
+    "layerId": "3e266b97-ab54-1823-9283-94971f2b1d3a",
+    "reportingDateTime": 1673594094866,
+    "geometry": {
+	"type": "AbsolutePointTypeCustom",
+	"absolutePointLatitudeCoordinate": {
+	    "latitudeCoordinateCoordinate": 47.747549
+	},
+	"absolutePointLongitudeCoordinate": {
+	    "longitudeCoordinateCoordinate": 36.789864
+	},
+	"absolutePointVerticalDistance": {
+	    "verticalDistanceDimension": 0.0
+	},
+	"velocityType": {}
+    },
+    "source": {
+	"id": "91513b80-6424-409b-82a3-f05cba146f94",
+	"name": "ziggy"
+    },
+    "symbol": {
+	"app6d": {
+	    "sidc": "10061500001408000000",
+	    "amplifierFields": {
+		"T": {
+		    "value": "Урал",
+		    "type": "TEXT"
+		},
+		"Y": {
+		    "value": "36.7898640 47.7475490",
+		    "type": "TEXT"
+		}
+	    }
+	}
+    },
+    "attachmentsCount": null,
+    "layerList": null,
+    "action": null
+}

@@ -1,0 +1,14 @@
+Host restreamer01
+     HostName 15.188.143.31
+     User ubuntu
+     IdentityFile "~/Nextcloud/gfhjkb/amazon/LightsailDefaultKey-eu-west-3.pem"
+
+Host restreamer02
+     HostName 13.49.57.220
+     User ubuntu
+     IdentityFile "~/Nextcloud/gfhjkb/amazon/LightsailDefaultKey-eu-north-1.pem"
+
+Host restreamer03
+     HostName 52.215.29.93
+     User ubuntu
+     IdentityFile "~/Nextcloud/gfhjkb/amazon/LightsailDefaultKey-eu-west-1.pem"

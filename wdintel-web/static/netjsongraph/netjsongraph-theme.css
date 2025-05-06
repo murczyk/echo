@@ -1,0 +1,80 @@
+#callsign-graph-div .leaflet-control-zoom-in,
+#callsign-graph-div .leaflet-control-zoom-out {
+  background: rgba(217, 79, 52, 0.85) !important;
+  color: #fff !important;
+}
+
+#callsign-graph-div .leaflet-control-layers {
+  background: rgba(217, 79, 52, 0.85) !important;
+  color: #fff !important;
+}
+
+#callsign-graph-div .switch-wrap {
+  color: #fff;
+}
+
+#callsign-graph-div .switch-wrap label {
+  border: 1px solid #dfdfdf;
+  background: #ffffff;
+}
+
+#callsign-graph-div .switch-wrap label::before {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 1);
+  background-color: #fff;
+}
+
+#callsign-graph-div .switch-wrap input[type="checkbox"]:checked+label {
+  background: grey;
+}
+
+#callsign-graph-div .njg-date {
+  color: #fff;
+}
+
+#callsign-graph-div .njg-selectIcon {
+  background: rgba(217, 79, 52, 0.85);
+  color: #ffffff;
+}
+
+#callsign-graph-div .njg-searchBtn {
+  background-color: white;
+}
+
+#callsign-graph-div .njg-sideBar {
+  background-color: #fff;
+}
+
+#callsign-graph-div .sideBarHandle {
+  background: rgba(217, 79, 52, 0.85);
+}
+
+#callsign-graph-div .sideBarHandle::before {
+  color: #fff;
+}
+
+#callsign-graph-div .njg-metaData,
+#callsign-graph-div .njg-infoContainer {
+  background-color: inherit;
+}
+
+#callsign-graph-div .njg-tooltip {
+  background: #fff !important;
+  border: none !important;
+}
+
+#callsign-graph-div .njg-tooltip-key,
+#callsign-graph-div .njg-tooltip-value {
+  color: #000;
+}
+
+#callsign-graph-div .marker-cluster div {
+  color: #fff;
+  background-color: rgba(21, 102, 169, 0.8) !important;
+}
+
+@media only screen and (max-width: 850px) {
+  #callsign-graph-div .njg-sideBar {
+    background: rgba(255, 255, 255, 0.96);
+    color: #000;
+  }
+}

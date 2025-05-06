@@ -1,0 +1,102 @@
+[
+    {
+        "id": "a60cc48f-1a6f-4e66-823a-8204d42e49ba",
+        "name": " ",
+        "typeId": "MIM:5767eff8-9120-42b1-8a19-8ad32886c601",
+        "typeName": "Горизонтальна (між підрозділами)",
+        "parentTypeName": "Лінії розмежування",
+        "layerId": "9cf0a377-ee75-e8e0-7361-a9a73359b88e",
+        "reportingDateTime": 1679041808388,
+        "geometry": {
+            "type": "LineTypeCustom",
+            "linePoint": [
+                {
+                    "type": "AbsolutePointTypeCustom",
+                    "absolutePointLatitudeCoordinate": {
+                        "latitudeCoordinateCoordinate": 47.8786861
+                    },
+                    "absolutePointLongitudeCoordinate": {
+                        "longitudeCoordinateCoordinate": 36.1095421
+                    },
+                    "absolutePointVerticalDistance": {}
+                },
+                {
+                    "type": "AbsolutePointTypeCustom",
+                    "absolutePointLatitudeCoordinate": {
+                        "latitudeCoordinateCoordinate": 47.9012068
+                    },
+                    "absolutePointLongitudeCoordinate": {
+                        "longitudeCoordinateCoordinate": 36.0119678
+                    },
+                    "absolutePointVerticalDistance": {}
+                }
+            ]
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10032500181101010000"
+            },
+            "milstd2525c": {
+                "sidc": "GFGPGLB----H--X"
+            }
+        },
+        "bsoType": "COMMON",
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+	{
+        "id": "d5f3c9ff-4a9c-4512-9b03-a8d53fa5f547",
+        "name": " ",
+        "typeId": "MIM:5767eff8-9120-42b1-8a19-8ad32886c601",
+        "typeName": "Горизонтальна (між підрозділами)",
+        "parentTypeName": "Лінії розмежування",
+        "layerId": "9cf0a377-ee75-e8e0-7361-a9a73359b88e",
+        "reportingDateTime": 1679041808388,
+        "geometry": {
+            "type": "LineTypeCustom",
+            "linePoint": [
+                {
+                    "type": "AbsolutePointTypeCustom",
+                    "absolutePointLatitudeCoordinate": {
+                        "latitudeCoordinateCoordinate": 47.5213187
+                    },
+                    "absolutePointLongitudeCoordinate": {
+                        "longitudeCoordinateCoordinate": 35.9674719
+                    },
+                    "absolutePointVerticalDistance": {}
+                },
+                {
+                    "type": "AbsolutePointTypeCustom",
+                    "absolutePointLatitudeCoordinate": {
+                        "latitudeCoordinateCoordinate": 47.6365309
+                    },
+                    "absolutePointLongitudeCoordinate": {
+                        "longitudeCoordinateCoordinate": 35.9105224
+                    },
+                    "absolutePointVerticalDistance": {}
+                }
+            ]
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10032500181101010000"
+            },
+            "milstd2525c": {
+                "sidc": "GFGPGLB----H--X"
+            }
+        },
+        "bsoType": "COMMON",
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    }
+]

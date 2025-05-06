@@ -1,0 +1,32 @@
+sources:
+  in:
+    type: "stdin"
+
+transforms:
+  nginx_access_t:
+    inputs:
+      - in
+    type: "remap"
+    source: |
+            # example input: 100.89.251.123 - - [18/Aug/2024:14:31:58 +0000] "POST /api/rer-importer/get-inbox HTTP/2.0" 200 6 "https://echo-kherson.alpines-banded.ts.net/rer-duty?state=%7B%22waterfalls%22%3A%5B%5B%22wf-0%22%2C%7B%22groups_selected%22%3A%5B%5D%2C%22senders_selected%22%3A%5B%5D%2C%22denied_senders%22%3A%5B%5D%2C%22freqs_selected%22%3A%5B%5D%2C%22freqs_denied%22%3A%5B%5D%7D%5D%5D%7D" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36" 0.282 0.280 .
+            . = parse_regex(.message, r'(?P<remote_addr>[^ ]*) - - \[(?P<time_local>[^\]]*)\] "(?P<request>[^"]*)" (?P<status>[^ ]*) (?P<body_bytes_sent>[^ ]*) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)" (?P<request_time>[^ ]*) (?P<upstream_response_time>[^ ]*)') ?? {}
+            .time_local = parse_timestamp(.time_local, "%d/%b/%Y:%H:%M:%S %z") ?? now()
+            .request = parse_regex(.request, r'(?P<request_method>[^ ]*) (?P<request_uri>[^ ]*) (?P<request_protocol>[^ ]*)') ?? {}
+            .status = parse_int(.status) ?? 0
+            .body_bytes_sent = parse_int(.body_bytes_sent) ?? 0
+            .request_time = parse_float(.request_time) ?? 0
+            .upstream_response_time = parse_float(.upstream_response_time) ?? 0
+
+  nginx_access_t_02_keep_slow_queries:
+    inputs:
+      - nginx_access_t
+    type: "filter"
+    condition: .upstream_response_time > 0.5 ?? true
+
+sinks:
+  out:
+    inputs:
+      - nginx_access_t_03_remove_empty_messages
+    type: "console"
+    encoding:
+      codec: "json"

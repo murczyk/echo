@@ -1,0 +1,13 @@
+[Unit]
+Description=echo-vector
+
+[Service]
+ExecStart=/bin/bash -c "export GREPTIME_USER=$(grep '^greptime_user' /etc/echo/config.toml | cut -d'\"' -f2); export GREPTIME_PASSWORD=$(grep '^greptime_password' /etc/echo/config.toml | cut -d'\"' -f2); exec /usr/bin/vector -c /etc/echo/vector.yaml"
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+WorkingDirectory=/etc/echo/
+
+[Install]
+WantedBy=multi-user.target

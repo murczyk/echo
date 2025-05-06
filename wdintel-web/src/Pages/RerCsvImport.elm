@@ -1,0 +1,172 @@
+module Pages.RerCsvImport exposing (Model, Msg, page)
+
+import Api
+import Auth
+import Bindings as B
+import Dict exposing (Dict)
+import Effect as E exposing (Effect)
+import File exposing (File)
+import File.Select
+import Html exposing (..)
+import Html.Attributes exposing (..)
+import Html.Events exposing (..)
+import Layouts
+import Le.Block.Spinner
+import Le.Block.Toast
+import Le.Console
+import Le.Types exposing (ApiError)
+import Page exposing (Page)
+import Process
+import Route exposing (Route)
+import Shared
+import Task
+import View exposing (View)
+import Views
+
+
+page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
+page user shared req =
+    Page.new
+        { init = init
+        , update = update
+        , view = view shared.isDarkMode shared user
+        , subscriptions = subscriptions
+        }
+        |> Page.withLayout (toLayout user)
+
+
+toLayout : Auth.User -> Model -> Layouts.Layout Msg
+toLayout user model =
+    Layouts.Navbar
+        { user = user
+        , activeName = "rer-csv-import"
+        }
+
+
+type alias Model =
+    { formErrors : Dict String String
+    , toasts : Le.Block.Toast.Model
+    , console : Le.Console.Model
+    }
+
+
+init : () -> ( Model, Effect Msg )
+init _ =
+    ( { formErrors = Dict.empty
+      , toasts = Le.Block.Toast.init
+      , console = Le.Console.init
+      }
+    , E.none
+    )
+
+
+type Msg
+    = ToastMsg Le.Block.Toast.Msg
+    | UploadFileToConvert
+    | UploadFileToConvertSelected File
+    | UploadFileToConvertDone File (Result ApiError Int)
+    | ConsoleMsg (Le.Console.Msg Msg)
+
+
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
+    case msg of
+        ToastMsg imsg ->
+            let
+                ( im, icmds ) =
+                    Le.Block.Toast.update imsg model.toasts
+            in
+            ( { model | toasts = im }
+            , E.sendCmd <| Cmd.map ToastMsg icmds
+            )
+
+        UploadFileToConvert ->
+            ( model
+            , E.sendCmd <|
+                File.Select.file
+                    []
+                    UploadFileToConvertSelected
+            )
+
+        UploadFileToConvertSelected file ->
+            let
+                m2 =
+                    model
+            in
+            ( m2
+            , E.sendCmd <|
+                Api.rer_csv_import (UploadFileToConvertDone file) file
+            )
+
+        UploadFileToConvertDone _ (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        UploadFileToConvertDone _ (Ok taskId) ->
+            ( model
+            , E.sendCmd <| Task.perform (always (ConsoleMsg (Le.Console.TaskLaunched taskId))) (Process.sleep 0)
+            )
+
+        ConsoleMsg imsg ->
+            Le.Console.update
+                { msg = imsg
+                , model = model.console
+                , toModel = \console -> { model | console = console }
+                , toMsg = ConsoleMsg
+                , finalizer = E.none
+                }
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
+
+
+contentBlock : Model -> Html Msg
+contentBlock model =
+    div []
+        [ p []
+            [ text "Приймає CSV-файл з єдиною колонкою, що містить перехоплення виду:" ]
+        , div [ class "flex justify-center items-center" ]
+            [ pre
+                [ class "bg-card p-3 grow flex-[45%]"
+                ]
+                [ text "29.02.2024_15:50 F=446.1125(МГц) П54\nУКХ р/м 70 мсп 42 мсд 58 А (СХ НОВОПРОКОПІВКА)\nЛАВИНА\nСЕРБ\nОРЕНБУРГ\nВОЛГОГРАД\n- (1) СЕРБ я ЛАВИНА дай мне ОРЕНБУРГА на связь  \n- (2) ЛАВИНА ... да сейчас!\n- (1) ОРЕНБУРГ на приёме \n- (2) ОРЕНБУРГ вызови к себе пожалуйста МАРКА ИРТЫША  и САВУ  и до САВЫ собери всех к САВЕ я сейчас буду там , еду уже с этого населённика про который я тебе говорил  , сейчас переговорим !\n\n47.4067019, 35.8642446" ]
+            , div [ class "ms-4 me-4 shrink" ] [ p [] [ text "або:" ] ]
+            , pre
+                [ class "bg-card p-3 flex-[45%]"
+                ]
+                [ text "Дата: 2024-03-02;\nЧас: 07:09;\nЧастота: 460.3250;\nПост: П325;\nЛокація: Авдіївка - Ласточкіне;\nПідрозділ: УКХ р/м 1 мсб 5 омсбр;\nХто: КАЛУГА;\nКому: БРЕСТ;\nТекст:\n- Калуга\n- Брест\n- Это кассеты по нам работают, не надо назад, вперед не останавливайтесь.Какие нахуй соседи по вам ложат, мы стреляем по лесополосе,вперед пошли пока ничего не летеит, быстрее. У нас БКне безгранично, идем пока держым.Вы чо сука охуели, почему вперед не идёте, Быстрее пошли пока нету воздействия, пока идем по всем фронтам, что один раз прилитело и вы обосрались, сейчас вон по 455 ебашут нахуй потому что там пацаны тоже идут. Пошли быстрее\n- СТарший я Брест я не понял в чем дело, мы только ебашим, прикрываем. Идем ребятки. Не по вам давайте быстрее и закрепляйтесь. Заходите закрепляйтесь молодци ребята, Ребята вы где уже в нашей полосе? Всё вы уже в блиндаже?сейчас подойду;\n\n48.1434076, 37.7146826"
+                ]
+            ]
+        , div [ class "text-center" ]
+            [ button
+                [ class "btn btn-lg btn-primary me-2 mb-4"
+                , type_ "button"
+                , onClick <| UploadFileToConvert
+                ]
+                [ if not (Le.Console.isInProgress model.console) then
+                    i [ class "bi bi-file-zip" ] []
+
+                  else
+                    Le.Block.Spinner.loadingSpinnerSm
+                , text " додати csv"
+                ]
+            ]
+        , Le.Console.view model.console
+        , div [ class "mb-4" ] []
+        ]
+
+
+view : Bool -> Shared.Model -> B.User -> Model -> View Msg
+view dark shared user model =
+    { title = "Імпорт csv"
+    , body =
+        [ Views.headerAndContent "Імпорт csv" ToastMsg model.toasts <|
+            div [ class "page-rer-import-csv" ] <|
+                [ div [ class "row" ]
+                    [ div [ class "col-sm-12" ]
+                        [ contentBlock model ]
+                    ]
+                ]
+        ]
+    }

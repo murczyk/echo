@@ -1,0 +1,34 @@
+{
+	"envelope":
+	{
+		"source": "+380977487366",
+		"sourceNumber": "+380977487366",
+		"sourceUuid": "c63adb6a-82dc-4f2b-9ddd-77c36a7e9511",
+		"sourceName": "OriON",
+		"sourceDevice": 1,
+		"timestamp": 1684173996699,
+		"dataMessage":
+		{
+			"timestamp": 1684173996699,
+			"message": "Ваші кори?",
+			"expiresInSeconds": 0,
+			"viewOnce": false,
+			"quote":
+			{
+				"id": 1684173887126,
+				"author": "+380952197311",
+				"authorNumber": "+380952197311",
+				"authorUuid": "32290332-6578-4784-ba05-ade1b19d05e8",
+				"text": "Каскад: точка нескафе підготовлене під арту(перерита), їдемо на точку леєр",
+				"attachments":
+				[]
+			},
+			"groupInfo":
+			{
+				"groupId": "I5bXy6XEDguR4Z2WkmUIIWGnSxcG3e1HTGgPW+mb9Z4=",
+				"type": "DELIVER"
+			}
+		}
+	},
+	"account": "+380502711438"
+}

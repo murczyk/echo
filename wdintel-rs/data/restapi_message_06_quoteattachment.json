@@ -1,0 +1,38 @@
+{
+	"envelope":
+	{
+		"source": "+380731787267",
+		"sourceNumber": "+380731787267",
+		"sourceUuid": "04ed457c-a54c-4be5-b711-ca2ff3fcd03e",
+		"sourceName": "Ziggy Kostia",
+		"sourceDevice": 5,
+		"timestamp": 1684224607900,
+		"dataMessage":
+		{
+			"timestamp": 1684224607900,
+			"message": "testing quote reply with an attachment",
+			"expiresInSeconds": 0,
+			"viewOnce": false,
+			"quote":
+			{
+				"id": 1684223194112,
+				"author": "+380731787267",
+				"authorNumber": "+380731787267",
+				"authorUuid": "04ed457c-a54c-4be5-b711-ca2ff3fcd03e",
+				"text": "testing reply with attachment",
+				"attachments":
+				[]
+			},
+			"attachments":
+			[
+				{
+					"contentType": "text/x-python-script",
+					"filename": "spm_train.py",
+					"id": "1300955422949939599.py",
+					"size": 1600
+				}
+			]
+		}
+	},
+	"account": "+380502711438"
+}

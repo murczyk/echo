@@ -1,0 +1,10 @@
+
+    // patch-added SignalGroup relation (see `just gen-sea-orm`)
+    #[sea_orm(
+        belongs_to = "super::signal_group::Entity",
+        from = "Column::GroupMasterKey",
+        to = "super::signal_group::Column::MasterKey",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SignalGroup,

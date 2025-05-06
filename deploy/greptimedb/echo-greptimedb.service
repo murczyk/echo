@@ -1,0 +1,14 @@
+[Unit]
+Description=echo-greptimedb
+
+[Service]
+ExecStart=/usr/local/bin/greptime standalone start -c /etc/greptimedb/config.toml --user-provider static_user_provider:file:/etc/greptimedb/auth.txt
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+# WorkingDirectory=/home/zptzr/www/wd/dist
+# MemoryLimit=8G
+
+[Install]
+WantedBy=multi-user.target

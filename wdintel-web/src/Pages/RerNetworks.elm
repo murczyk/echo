@@ -1,0 +1,1327 @@
+module Pages.RerNetworks exposing (Model, Msg, page)
+
+import Api
+import Auth
+import Bindings as B
+import Bytes exposing (Bytes)
+import Components.Button as Button
+import Components.Checkbox as Checkbox
+import Components.ModalDialog as ModalDialog
+import Components.Sidebar as Sidebar
+import Debounce exposing (Debounce)
+import Dict exposing (Dict)
+import Effect as E exposing (Effect)
+import File.Download as Download
+import Html exposing (..)
+import Html.Attributes as Attr exposing (..)
+import Html.Events exposing (..)
+import Html.Extra as HtmlX
+import Html.Keyed
+import Html.Styled as Styled
+import Json.Decode as Decode
+import Json.Encode as Encode
+import Layouts
+import Le.Block.Callsign
+import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Le.Block.DateTime
+import Le.Block.Select
+import Le.Block.Spinner
+import Le.Block.Toast
+import Le.Block.Unit as Unit
+import Le.NetworksUtils as EUtils
+import Le.RemoteData as RD exposing (RemoteData(..))
+import Le.Time
+import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
+import Le.Utils exposing (..)
+import List.Extra as ListX
+import Page exposing (Page)
+import Route exposing (Route)
+import Route.Path
+import Select
+import Set
+import Shared
+import Task
+import Time exposing (Posix)
+import TimeZone
+import Url.Builder
+import View exposing (View)
+
+
+type NetworksMergeStatus
+    = NotCalculatedSuggestionsYet
+    | CalculatedSuggestions (List ( B.Network, B.Network ))
+    | Merging ( B.Network, B.Network ) B.Network (List ( B.Network, B.Network ))
+
+
+type alias Model =
+    { formErrors : Dict String String
+    , toasts : Le.Block.Toast.Model
+    , zone : Maybe Time.Zone
+    , now : Maybe Time.Posix
+    , from : Le.Block.DateTime.Model
+    , to : Le.Block.DateTime.Model
+    , masterUnits : Dict Int B.Unit
+    , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
+    , networks : RemoteData ApiError (List B.Network)
+    , networksMergeStatus : NetworksMergeStatus
+    , networksMergeInProgress : Bool
+    , callsignsByNetwork : RemoteData ApiError E.CallsignsByNetwork
+    , callsignsOpenedPopupId : Maybe Int
+    , callsignsInfo : Dict String (List B.CallsignInfo)
+    , callsigns : List String
+    , map : MapState
+    , filterState : FilterState
+    , filterStateDebounce : Debounce FilterState
+    , unitStats : RemoteData ApiError (List B.FreqUnitStatRow)
+    , reportModalOpened : Bool
+    , reportDownloadInProgress : Bool
+    , reportGUROnly : Bool
+    , reportActiveCallsignsOnly : Bool
+    , reportActiveFreqsOnly : Bool
+    , reportIncludePelengsMap : Bool
+    , reportIncludeSigintSigns : Bool
+    , reportIncludeConfirmation : Bool
+    }
+
+
+type MapState
+    = Closed
+    | Opened Int (List B.NetworkPoint)
+
+
+type alias FilterState =
+    { freq : String
+    , unit : String
+    , callsigns : List String
+    }
+
+
+adjacentRangeToLabel value =
+    case value of
+        B.ShortRange ->
+            "5 кГц"
+
+        B.LongRange ->
+            "7.5 кГц"
+
+
+init : () -> ( Model, Effect Msg )
+init _ =
+    let
+        m2 : Model
+        m2 =
+            { formErrors = Dict.empty
+            , toasts = Le.Block.Toast.init
+            , zone = Nothing
+            , now = Nothing
+            , from = Le.Block.DateTime.init ()
+            , to = Le.Block.DateTime.init ()
+            , masterUnits = Dict.empty
+            , networks = NotAsked
+            , networksMergeStatus = NotCalculatedSuggestionsYet
+            , networksMergeInProgress = False
+            , networksGroupsActivity = NotAsked
+            , callsignsByNetwork = NotAsked
+            , callsignsOpenedPopupId = Nothing
+            , callsignsInfo = Dict.empty
+            , callsigns = []
+            , map = Closed
+            , filterState =
+                { freq = ""
+                , unit = ""
+                , callsigns = []
+                }
+            , filterStateDebounce = Debounce.init
+            , unitStats = Loading
+            , reportModalOpened = False
+            , reportDownloadInProgress = False
+            , reportGUROnly = False
+            , reportActiveCallsignsOnly = True
+            , reportActiveFreqsOnly = True
+            , reportIncludePelengsMap = True
+            , reportIncludeSigintSigns = True
+            , reportIncludeConfirmation = True
+            }
+    in
+    ( m2
+    , E.batch
+        [ E.sendCmd <| Task.attempt GotZone Le.Time.getZone
+        , E.getUnits UnitsReturnedByApi
+            { sortBy = Nothing
+            , afterUnitId = Nothing
+            , beforeUnitId = Nothing
+            }
+        , E.getUnitStatsForNetworks UnitStatsReturnedByApi
+        ]
+    )
+
+
+filterStateDebounceConfig : Debounce.Config Msg
+filterStateDebounceConfig =
+    { strategy = Debounce.later 50
+    , transform = FilterStateDebounceMsg
+    }
+
+
+loadNetworks : Model -> Shared.Model -> ( Model, Effect Msg )
+loadNetworks model shared =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            ( { model | networks = Loading }
+            , E.getNetworksList NetworksReturnedByApi
+                { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
+                , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                , filterFreq = emptySToNothing model.filterState.freq
+                , filterUnit = emptySToNothing model.filterState.unit
+                , sortBy = Nothing
+                }
+            )
+
+        _ ->
+            ( model, E.none )
+
+
+loadNetworksFixLater model shared =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            Api.get_networks_list NetworksReturnedByApi
+                { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
+                , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                , filterFreq = emptySToNothing model.filterState.freq
+                , filterUnit = emptySToNothing model.filterState.unit
+                , sortBy = Nothing
+                }
+
+        _ ->
+            Cmd.none
+
+
+type Msg
+    = ToastMsg Le.Block.Toast.Msg
+    | GotZone (Result TimeZone.Error ( String, Time.Zone ))
+    | GotTime Time.Zone Posix
+    | NetworksReturnedByApi (Result ApiError (List B.Network))
+    | NetworksGroupsActivityReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
+    | NetworkPointsReturnedByApi Int (Result ApiError B.ListNetworkPointsRsp)
+    | NetworksMergeStart
+    | NetworksMergeFinish
+    | NetworksMergeTryNext
+    | NetworksMergeDoIt Int Int
+    | NetworksMergedByApi Int (Result ApiError B.Network)
+    | NetworksMergeSwapOrder
+    | CallsignsPopupOpenedByUser Int
+    | CallsignsPopupClosedByUser
+    | CallsignsByNetworkReturnedByApi (Result ApiError E.CallsignsByNetwork)
+    | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
+    | MapOpenedByUser Int
+    | MapClosedByUser
+    | FilterStateMsg FilterState
+    | FilterStateDebounceMsg Debounce.Msg
+    | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)
+    | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
+    | UnitsReturnedByApi (Result ApiError B.ListUnitsRsp)
+    | UnitStatsReturnedByApi (Result ApiError B.NetworkUnitStatsRsp)
+    | ReportModalOpenedByUser
+    | ReportModalClosedByUser
+    | ReportDownloadClickedByUser
+    | ReportDownloadReturnedByApi (Result ApiError Bytes)
+    | ReportGURCheckedByUser Bool
+    | ReportActiveFreqsOnlyCheckedByUser Bool
+    | ReportActiveCallsignsOnlyCheckedByUser Bool
+    | ReportIncludePelengsMapCheckedByUser Bool
+    | ReportIncludeConfirmationCheckedByUser Bool
+    | ReportIncludeSigintSignsCheckedByUser Bool
+
+
+prepareReportDownloadCmd : Model -> Effect Msg
+prepareReportDownloadCmd model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            let
+                payload =
+                    { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
+                    , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                    , filterFreq = emptySToNothing model.filterState.freq
+                    , filterUnit = emptySToNothing model.filterState.unit
+                    , sortBy = Nothing
+                    , networksOnly = model.reportGUROnly
+                    , activeCallsignsOnly = model.reportActiveCallsignsOnly
+                    , activeFreqsOnly = model.reportActiveFreqsOnly
+                    , includePelengsMap = model.reportIncludePelengsMap
+                    , includeSigintSigns = model.reportIncludeSigintSigns
+                    , includeConfirmation = model.reportIncludeConfirmation
+                    }
+            in
+            E.getNetworksReport ReportDownloadReturnedByApi payload
+
+        _ ->
+            E.none
+
+
+generatePreview : ( B.Network, B.Network ) -> B.Network
+generatePreview x =
+    let
+        ( networkTo, networkFrom ) =
+            x
+
+        concatUniqueMaybe : Maybe String -> Maybe String -> Maybe String
+        concatUniqueMaybe to from =
+            case ( to, from ) of
+                ( Just toVal, Just fromVal ) ->
+                    let
+                        parts =
+                            String.split "|" toVal
+                    in
+                    if List.member fromVal parts then
+                        Just toVal
+                        -- Already present, return as is
+
+                    else
+                        Just (toVal ++ "|" ++ fromVal)
+
+                -- Append uniquely
+                ( Just toVal, Nothing ) ->
+                    Just toVal
+
+                ( Nothing, Just fromVal ) ->
+                    Just fromVal
+
+                ( Nothing, Nothing ) ->
+                    Nothing
+
+        concatUnique : String -> String -> String
+        concatUnique to from =
+            if String.isEmpty to then
+                from
+
+            else if String.isEmpty from then
+                to
+
+            else
+                let
+                    parts =
+                        String.split "|" to
+                in
+                if List.member from parts then
+                    to
+                    -- Already present, return as is
+
+                else
+                    to ++ "|" ++ from
+
+        -- Append uniquely
+    in
+    { networkTo
+        | location = concatUnique networkTo.location networkFrom.location
+        , comment = concatUnique networkTo.comment networkFrom.comment
+        , confirmation = concatUniqueMaybe networkTo.confirmation networkFrom.confirmation
+        , radioStation = concatUniqueMaybe networkTo.radioStation networkFrom.radioStation
+        , freqs = networkTo.freqs ++ networkFrom.freqs |> Set.fromList |> Set.toList
+    }
+
+
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
+    case msg of
+        ToastMsg imsg ->
+            let
+                ( im, icmds ) =
+                    Le.Block.Toast.update imsg model.toasts
+            in
+            ( { model | toasts = im }
+            , E.sendCmd <| Cmd.map ToastMsg icmds
+            )
+
+        GotZone (Err e) ->
+            ( model
+            , E.sendCmd <|
+                Le.Block.Toast.addError
+                    ToastMsg
+                    ("Error getting timezone: " ++ renderZoneError e)
+            )
+
+        GotZone (Ok ( _, zone )) ->
+            ( { model | zone = Just zone }
+            , E.sendCmd <|
+                Task.perform (GotTime zone) Time.now
+            )
+
+        GotTime zone now_ ->
+            let
+                from =
+                    Le.Block.DateTime.initFromPosix { datePosix = Le.Time.xDaysAgo 7 now_, zone = zone }
+
+                to =
+                    Le.Block.DateTime.initFromPosix { datePosix = now_, zone = zone }
+
+                m2 =
+                    { model
+                        | from = from
+                        , to = to
+                        , now = Just now_
+                    }
+            in
+            loadNetworks m2 shared
+
+        NetworksReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err { model | networks = Failure err }
+
+        NetworksReturnedByApi (Ok networks) ->
+            ( { model
+                | networks =
+                    Success networks
+                , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks networks)
+              }
+            , case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    E.batch
+                        [ E.getNetworksGroupsActivity NetworksGroupsActivityReturnedByApi
+                            { networkIds = networks |> List.map .id
+                            , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                            }
+                        , E.getNetworksCallsigns CallsignsByNetworkReturnedByApi
+                            { networkIds = networks |> List.map .id
+                            , sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
+                            , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                            }
+                        ]
+
+                _ ->
+                    E.none
+            )
+
+        UnitsReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        UnitsReturnedByApi (Ok rsp) ->
+            ( { model
+                | masterUnits =
+                    rsp.units
+                        |> List.map (\x -> ( x.id, x ))
+                        |> Dict.fromList
+              }
+            , E.none
+            )
+
+        NetworksGroupsActivityReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err { model | networksGroupsActivity = Failure err }
+
+        NetworksGroupsActivityReturnedByApi (Ok res) ->
+            ( { model | networksGroupsActivity = Success res }, E.none )
+
+        CallsignsPopupOpenedByUser networkId ->
+            ( { model | callsignsOpenedPopupId = Just networkId }, E.none )
+
+        CallsignsPopupClosedByUser ->
+            ( { model | callsignsOpenedPopupId = Nothing }, E.none )
+
+        CallsignsByNetworkReturnedByApi (Ok rsp) ->
+            let
+                mergedResult =
+                    Dict.merge
+                        (\key existingCs result -> Dict.insert key existingCs result)
+                        (\key _ newCs result -> Dict.insert key newCs result)
+                        (\key newCs result -> Dict.insert key newCs result)
+                        Dict.empty
+                        (RD.withDefault Dict.empty model.callsignsByNetwork)
+                        rsp
+
+                newCallsigns =
+                    Dict.values rsp
+                        |> List.concat
+                        |> List.filter (\callsign -> not (List.member callsign model.callsigns))
+            in
+            ( { model
+                | callsignsByNetwork = Success mergedResult
+                , callsigns =
+                    newCallsigns
+                        ++ model.callsigns
+                        |> Set.fromList
+                        |> Set.toList
+              }
+            , if List.length newCallsigns > 0 then
+                E.getCallsignsInfo CallsignsInfoReturnedByApi { callsigns = newCallsigns }
+
+              else
+                E.none
+            )
+
+        CallsignsByNetworkReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        CallsignsInfoReturnedByApi (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        CallsignsInfoReturnedByApi (Ok callsigns) ->
+            let
+                m2 =
+                    List.foldl
+                        (\callsign m ->
+                            { m
+                                | callsignsInfo =
+                                    Dict.insert callsign.callsign
+                                        callsign.res
+                                        m.callsignsInfo
+                            }
+                        )
+                        model
+                        callsigns
+            in
+            ( m2, E.none )
+
+        MapOpenedByUser networkId ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    ( model
+                    , E.getNetworkPoints (NetworkPointsReturnedByApi networkId)
+                        { networkId = networkId
+                        , sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
+                        , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                        }
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        MapClosedByUser ->
+            ( { model | map = Closed }, E.none )
+
+        NetworkPointsReturnedByApi _ (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        NetworkPointsReturnedByApi networkId (Ok res) ->
+            ( { model | map = Opened networkId res.points }, E.none )
+
+        FilterStateMsg filterState ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push filterStateDebounceConfig filterState model.filterStateDebounce
+
+                m2 =
+                    { model
+                        | filterState = filterState
+                        , filterStateDebounce = debounce
+                    }
+            in
+            ( m2
+            , E.sendCmd cmd
+            )
+
+        FilterStateDebounceMsg imsg ->
+            let
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        filterStateDebounceConfig
+                        (Debounce.takeLast (\_ -> loadNetworksFixLater model shared))
+                        imsg
+                        model.filterStateDebounce
+            in
+            ( { model
+                | filterStateDebounce = debounce
+              }
+            , E.sendCmd debounceCmd
+            )
+
+        DateTimeFromMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Le.Block.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.from
+                        , toModel = \from -> { model | from = from }
+                        , toMsg = DateTimeFromMsg
+                        }
+
+                ( m3, eff3 ) =
+                    loadNetworks m2 shared
+            in
+            ( m3
+            , E.batch
+                [ eff2
+                , eff3
+                ]
+            )
+
+        DateTimeToMsg imsg ->
+            let
+                ( m2, eff2 ) =
+                    Le.Block.DateTime.update
+                        { zone = model.zone
+                        , msg = imsg
+                        , model = model.to
+                        , toModel = \to -> { model | to = to }
+                        , toMsg = DateTimeToMsg
+                        }
+
+                ( m3, eff3 ) =
+                    loadNetworks m2 shared
+            in
+            ( m3
+            , E.batch
+                [ eff2
+                , eff3
+                ]
+            )
+
+        UnitStatsReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err { model | unitStats = Failure err }
+
+        UnitStatsReturnedByApi (Ok rsp) ->
+            ( { model
+                | unitStats = Success rsp.units
+              }
+            , E.none
+            )
+
+        ReportModalOpenedByUser ->
+            ( { model | reportModalOpened = True }, E.none )
+
+        ReportModalClosedByUser ->
+            ( { model | reportModalOpened = False }, E.none )
+
+        ReportDownloadClickedByUser ->
+            ( { model | reportDownloadInProgress = True }
+            , prepareReportDownloadCmd model
+            )
+
+        ReportDownloadReturnedByApi (Err e) ->
+            let
+                m2 =
+                    { model | reportDownloadInProgress = False }
+            in
+            Api.handleHttpError ToastMsg e m2
+
+        ReportDownloadReturnedByApi (Ok bytes) ->
+            let
+                m2 =
+                    { model | reportDownloadInProgress = False }
+
+                extension =
+                    "docx"
+
+                -- filename like "etalonka_2023-07-17-12-00_2023-07-18-12-00"
+                fname =
+                    case model.zone of
+                        Nothing ->
+                            "etalonka." ++ extension
+
+                        Just zone ->
+                            "etalonka_"
+                                ++ (model.from.datePosix
+                                        |> mmap (Le.Time.renderDateTimeF6 zone)
+                                        |> def ""
+                                   )
+                                ++ "_"
+                                ++ (model.to.datePosix
+                                        |> mmap (Le.Time.renderDateTimeF6 zone)
+                                        |> def ""
+                                   )
+                                ++ "."
+                                ++ extension
+            in
+            ( m2
+            , E.sendCmd <|
+                Download.bytes fname
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    bytes
+            )
+
+        ReportGURCheckedByUser isChecked ->
+            let
+                m1 =
+                    if isChecked then
+                        { model | reportIncludeConfirmation = False, reportIncludePelengsMap = False, reportIncludeSigintSigns = False }
+
+                    else
+                        model
+            in
+            ( { m1 | reportGUROnly = isChecked }, E.none )
+
+        ReportActiveFreqsOnlyCheckedByUser isChecked ->
+            ( { model | reportActiveFreqsOnly = isChecked }, E.none )
+
+        ReportActiveCallsignsOnlyCheckedByUser isChecked ->
+            ( { model | reportActiveCallsignsOnly = isChecked }, E.none )
+
+        ReportIncludePelengsMapCheckedByUser isChecked ->
+            ( { model | reportIncludePelengsMap = isChecked }, E.none )
+
+        ReportIncludeConfirmationCheckedByUser isChecked ->
+            ( { model | reportIncludeConfirmation = isChecked }, E.none )
+
+        ReportIncludeSigintSignsCheckedByUser isChecked ->
+            ( { model | reportIncludeSigintSigns = isChecked }, E.none )
+
+        NetworksMergeStart ->
+            ( { model
+                | networksMergeStatus =
+                    case model.networksMergeStatus of
+                        CalculatedSuggestions (x :: xs) ->
+                            let
+                                preview =
+                                    generatePreview x
+                            in
+                            Merging x preview xs
+
+                        _ ->
+                            NotCalculatedSuggestionsYet
+              }
+            , E.none
+            )
+
+        NetworksMergeFinish ->
+            ( { model
+                | networksMergeStatus =
+                    case ( model.networksMergeStatus, model.networks ) of
+                        ( Merging _ _ _, Success networks ) ->
+                            CalculatedSuggestions (findSuggestedToMergeNetworks networks)
+
+                        _ ->
+                            NotCalculatedSuggestionsYet
+              }
+            , E.none
+            )
+
+        NetworksMergeTryNext ->
+            ( { model
+                | networksMergeStatus =
+                    case ( model.networksMergeStatus, model.networks ) of
+                        ( Merging _ _ (next :: xs), _ ) ->
+                            Merging next (generatePreview next) xs
+
+                        ( _, Success networks ) ->
+                            CalculatedSuggestions (findSuggestedToMergeNetworks networks)
+
+                        _ ->
+                            NotCalculatedSuggestionsYet
+              }
+            , E.none
+            )
+
+        NetworksMergeDoIt mergeFrom mergeInto ->
+            ( { model | networksMergeInProgress = True }
+            , E.mergeNetworks (NetworksMergedByApi mergeFrom) { networkIdFrom = mergeFrom, networkIdTo = mergeInto }
+            )
+
+        NetworksMergedByApi _ (Err e) ->
+            Api.handleHttpError ToastMsg e { model | networksMergeInProgress = False }
+
+        NetworksMergedByApi idToRemove (Ok res) ->
+            let
+                networks =
+                    List.filter (\network -> network.id /= idToRemove) (RD.withDefault [] model.networks)
+
+                networks2 =
+                    ListX.updateIf (\network -> network.id == res.id) (\_ -> res) networks
+            in
+            ( { model
+                | networks = Success networks2
+                , networksMergeInProgress = False
+                , networksMergeStatus =
+                    case ( model.networksMergeStatus, findSuggestedToMergeNetworks networks2 ) of
+                        ( Merging _ _ _, x :: xs ) ->
+                            Merging x (generatePreview x) xs
+
+                        _ ->
+                            CalculatedSuggestions (findSuggestedToMergeNetworks networks2)
+              }
+            , E.none
+            )
+
+        NetworksMergeSwapOrder ->
+            ( { model
+                | networksMergeStatus =
+                    case model.networksMergeStatus of
+                        Merging ( networkA, networkB ) _ remaining ->
+                            Merging ( networkB, networkA ) (generatePreview ( networkB, networkA )) remaining
+
+                        _ ->
+                            model.networksMergeStatus
+              }
+            , E.none
+            )
+
+
+findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
+findSuggestedToMergeNetworks networks_ =
+    let
+        shouldBeMerged : B.Network -> B.Network -> Bool
+        shouldBeMerged network1 network2 =
+            network1.purpose == network2.purpose && List.sort network1.unitIds == List.sort network2.unitIds
+
+        findPairs : List ( B.Network, B.Network ) -> List B.Network -> List ( B.Network, B.Network )
+        findPairs acc remaining =
+            case remaining of
+                [] ->
+                    acc
+
+                x :: xs ->
+                    let
+                        suggestedItems =
+                            List.filter (shouldBeMerged x) xs
+
+                        newPairs =
+                            List.map (Tuple.pair x) suggestedItems
+                    in
+                    findPairs (List.append acc newPairs) xs
+    in
+    findPairs [] networks_
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
+
+
+mainContent : List B.Network -> Shared.Model -> Model -> Html Msg
+mainContent networks shared model =
+    section []
+        [ table
+            [ class "table-fixed w-full"
+            , style "font-size" ".85rem"
+            ]
+            [ thead [ class "" ]
+                [ tr [ class "" ]
+                    [ th
+                        [ scope "col"
+                        , class "w-[27%]"
+                        ]
+                        [ text "Мережа" ]
+                    , th
+                        [ scope "col"
+                        , class "w-[8%]"
+                        ]
+                        [ text "Частоти" ]
+                    , th
+                        [ scope "col"
+                        , class "w-[11%] "
+                        ]
+                        [ text "Локації" ]
+                    , th
+                        [ scope "col"
+                        , class "w-[18%]"
+                        ]
+                        [ text "Пеленги" ]
+                    , th
+                        [ scope "col"
+                        , class "w-[9%]"
+                        ]
+                        [ text "Позивні" ]
+                    , th
+                        [ scope "col"
+                        , class " w-[18%]"
+                        ]
+                        [ text "Активність" ]
+                    , th
+                        [ scope "col"
+                        , class "w-[9%]"
+                        ]
+                        [ text "Останнє оновлення" ]
+                    ]
+                ]
+            , Html.Keyed.node "tbody" [] <|
+                List.map (\network -> ( String.fromInt network.id, renderNetworkTr shared model network )) networks
+            ]
+        ]
+
+
+renderNetworkTr : Shared.Model -> Model -> B.Network -> Html Msg
+renderNetworkTr shared model network =
+    let
+        networkTd =
+            td []
+                [ a
+                    [ class "text-action! cursor-pointer"
+                    , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                    , target "_blank"
+                    ]
+                    [ EUtils.renderNetworkNameWithoutType network model.masterUnits ]
+                ]
+
+        freqsTd =
+            td []
+                [ div [ class "flex flex-col" ] (List.map (\freq -> span [] [ text freq ]) network.freqs)
+                ]
+    in
+    tr [ class "" ]
+        [ networkTd
+        , freqsTd
+        , td [] [ div [ style "overflow-wrap" "anywhere" ] [ text network.location ] ]
+        , td []
+            [ case model.map of
+                Closed ->
+                    span [ class " cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
+                        [ text "відкрити мапу "
+                        , i [ class "bi bi-map text-sm mr-2" ]
+                            []
+                        ]
+
+                Opened networkId points ->
+                    if networkId == network.id then
+                        Html.node "small-map"
+                            [ property "points" (Encode.list B.networkPointEncoder points)
+                            , Html.Events.on "close-map" (Decode.succeed MapClosedByUser)
+                            , class "block w-full h-[90px]"
+                            ]
+                            []
+
+                    else
+                        span [ class "cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
+                            [ text "відкрити мапу "
+                            , i [ class "bi bi-map text-sm mr-2" ]
+                                []
+                            ]
+            ]
+        , case model.callsignsByNetwork of
+            Success cbn ->
+                let
+                    callsigns =
+                        case Dict.get (String.fromInt network.id) cbn of
+                            Nothing ->
+                                []
+
+                            Just v ->
+                                v
+
+                    isOpen =
+                        case model.callsignsOpenedPopupId of
+                            Just openCallsignsPopup ->
+                                openCallsignsPopup == network.id
+
+                            Nothing ->
+                                False
+                in
+                CallsignsPopup.view
+                    { isOpened = isOpen
+                    , onClose = CallsignsPopupClosedByUser
+                    , onOpen = CallsignsPopupOpenedByUser network.id
+                    , callsigns = callsigns
+                    , callsignsInfo = model.callsignsInfo
+                    , masterUnits = model.masterUnits
+                    }
+                    (NetworksPage
+                        network
+                    )
+
+            _ ->
+                Le.Block.Spinner.loadingSpinnerSm
+        , td []
+            [ case model.networksGroupsActivity of
+                Success data ->
+                    let
+                        groupsMessageCountByDayJson =
+                            Dict.get (String.fromInt network.id) data |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int)) |> Maybe.map (Encode.encode 0)
+                    in
+                    case groupsMessageCountByDayJson of
+                        Just g ->
+                            div [ style "width" "200px", style "height" "90px" ]
+                                [ Html.node "bar-chart"
+                                    [ Attr.attribute "data" <| g
+                                    , Attr.attribute "last-day" <| Encode.encode 0 (Encode.string model.to.dateStr)
+                                    , style "display" "block"
+                                    ]
+                                    []
+                                ]
+
+                        Nothing ->
+                            text "Не активні останні 10 днів"
+
+                _ ->
+                    Le.Block.Spinner.loadingSpinnerSm
+            ]
+        , td []
+            (case ( network.lastUpdatedAt, model.zone ) of
+                ( updatedAt, Just zone ) ->
+                    let
+                        updatedAtString =
+                            Le.Time.renderDateF6 zone
+                                (Time.millisToPosix updatedAt)
+
+                        updatedByString =
+                            Maybe.withDefault "невідомий" network.lastUpdatedBy
+
+                        createdAtString =
+                            Le.Time.renderDateF6 zone
+                                (Time.millisToPosix network.createdAt)
+                    in
+                    [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
+                        [ i [ class "bi bi-calendar-date" ]
+                            []
+                        , text <|
+                            " "
+                                ++ createdAtString
+                        ]
+                    , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
+                        [ i [ class "bi bi-pencil-square" ] []
+                        , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
+                        ]
+                    ]
+
+                _ ->
+                    [ text "" ]
+            )
+        ]
+
+
+filterPanel : Shared.Model -> Model -> Html Msg
+filterPanel shared model =
+    let
+        filterState =
+            model.filterState
+    in
+    div
+        [ class "flex justify-start items-center"
+        ]
+        [ div [ class "me-2" ]
+            [ i [ class "bi bi-filter" ] []
+            ]
+        , input
+            [ class "form-control me-2"
+            , style "width" "200px"
+            , type_ "text"
+            , placeholder "частота"
+            , value model.filterState.freq
+            , onInput <| \v -> FilterStateMsg { filterState | freq = v }
+            ]
+            []
+        , input
+            [ class "form-control me-2"
+            , style "width" "200px"
+            , type_ "text"
+            , placeholder "підрозділ"
+            , value model.filterState.unit
+            , onInput <| \v -> FilterStateMsg { filterState | unit = v }
+            ]
+            []
+        , span [ class "grow-1" ] []
+        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+        , let
+            dialogContent =
+                [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                    [ div [ class "pb-12" ]
+                        [ h2 [] [ text "Звіт \"еталонка\"" ]
+                        , p [] [ text "Еталонка по фільтру дата/частота/підрозділ" ]
+                        , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
+                            ([ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
+                                |> Checkbox.withContent [ span [] [ text "Форма №1.5.4/ГУР" ] ]
+                                |> Checkbox.view
+                             , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
+                                |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
+                                |> Checkbox.view
+                             , Checkbox.new { isChecked = model.reportActiveCallsignsOnly, onToggle = ReportActiveCallsignsOnlyCheckedByUser }
+                                |> Checkbox.withContent [ span [] [ text "Лише активні позивні" ] ]
+                                |> Checkbox.view
+                             ]
+                                ++ (if not model.reportGUROnly then
+                                        [ Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
+                                            |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
+                                            |> Checkbox.view
+                                        , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
+                                            |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
+                                            |> Checkbox.view
+                                        , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
+                                            |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
+                                            |> Checkbox.view
+                                        ]
+
+                                    else
+                                        []
+                                   )
+                            )
+                        ]
+                    , div [ class "flex justify-between" ]
+                        [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
+                        , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
+                            |> (if model.reportDownloadInProgress then
+                                    Button.withIcon
+                                        [ Le.Block.Spinner.loadingSpinner2Sm
+                                        ]
+
+                                else
+                                    identity
+                               )
+                            |> Button.view
+                        ]
+                    ]
+                ]
+          in
+          ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+        ]
+
+
+contentBlock : List B.Network -> Shared.Model -> Model -> Html Msg
+contentBlock networks shared model =
+    div []
+        [ div
+            [ class "border mb-4 p-2"
+            ]
+            [ filterPanel shared model
+            ]
+        , mainContent
+            networks
+            shared
+            model
+        ]
+
+
+dateAndPanelsBlock : Bool -> Model -> Html Msg
+dateAndPanelsBlock _ model =
+    div
+        [ class "d-inline-block ms-2"
+        ]
+        [ div [ class "d-flex justify-content-start align-items-center" ] <|
+            div
+                [ class "me-2"
+                , style "font-size" "1rem"
+                ]
+                [ text "з" ]
+                :: (Le.Block.DateTime.new
+                        { model = model.from
+                        , toMsg = DateTimeFromMsg
+                        }
+                        |> Le.Block.DateTime.view
+                   )
+                ++ [ div
+                        [ class "me-2"
+                        , style "font-size" "1rem"
+                        ]
+                        [ text "по" ]
+                   ]
+                ++ (Le.Block.DateTime.new
+                        { model = model.to
+                        , toMsg = DateTimeToMsg
+                        }
+                        |> Le.Block.DateTime.view
+                   )
+        ]
+
+
+leftPanel : Shared.Model -> Model -> Html Msg
+leftPanel shared model =
+    div
+        [ class "align-self-stretch border-r-1 border-border "
+        , style "width" "220px"
+        , style "min-width" "220px"
+        , style "height" "calc(-50px + 100vh)"
+        , style "overflow-y" "scroll"
+        ]
+        [ div
+            [ class "filter-col d-flex flex-column pt-1 left-panel"
+            , style "height" "100%"
+            ]
+            [ unitStatsBlock shared model
+            , div [ class "flex-grow-1" ] []
+            ]
+        ]
+
+
+unitStatsBlock : Shared.Model -> Model -> Html Msg
+unitStatsBlock _ model =
+    let
+        filterState =
+            model.filterState
+
+        renderUnitStat : B.FreqUnitStatRow -> List (Html Msg)
+        renderUnitStat stat =
+            [ div
+                [ class "d-flex justify-content-between align-items-between p-2 pointer"
+                , onClick <| FilterStateMsg { filterState | unit = Unit.unitName model.masterUnits stat.unitId }
+                ]
+                [ div [ class "flex-grow-1 text-end me-2" ] [ text <| Unit.unitName model.masterUnits stat.unitId ]
+                , div [ class "me-2" ]
+                    [ div
+                        [ style "min-width" "30px"
+                        , class "text-center"
+                        ]
+                        [ span
+                            [ class "badge badge-sm rounded-pill text-bg-secondary"
+                            , style "font-size" "0.6rem"
+                            ]
+                            [ text <| String.fromInt stat.count
+                            ]
+                        ]
+                    ]
+                ]
+            , div [ class "border-bottom" ] []
+            ]
+    in
+    case model.unitStats of
+        Success unitStats ->
+            div [ style "font-size" ".8rem" ] <|
+                List.concatMap renderUnitStat unitStats
+
+        _ ->
+            Le.Block.Spinner.loadingSpinner
+
+
+view : Bool -> Shared.Model -> B.User -> Model -> View Msg
+view dark shared user model =
+    { title = "мережі"
+    , body =
+        [ Le.Block.Toast.view ToastMsg model.toasts <|
+            div [ class "flex rer-networks" ]
+                [ leftPanel shared model
+                , case model.networks of
+                    Success networks ->
+                        div [ class "grow  px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
+                            [ h1 [ class "mb-[16px]!" ]
+                                [ div [ class "d-flex justify-content-between align-items-center" ]
+                                    [ -- Left-side content
+                                      div [ class "d-flex align-items-center me-auto" ]
+                                        [ span [ class "me-2" ] [ text "мережі" ]
+                                        , dateAndPanelsBlock dark model
+                                        ]
+                                    ]
+                                ]
+                            , case model.networksMergeStatus of
+                                CalculatedSuggestions xs ->
+                                    div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                                        [ text <| (String.fromInt (List.length xs) ++ " неопрацьованих пропозицій по злиттю мереж")
+                                        , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                            |> Button.withOutlined True
+                                            |> Button.view
+                                        ]
+
+                                _ ->
+                                    text ""
+                            , contentBlock networks shared model
+                            ]
+
+                    _ ->
+                        div [ style "height" "calc(-50px + 100vh)", class "flex items-center justify-center w-full" ] [ Le.Block.Spinner.loadingSpinner ]
+                , let
+                    isOpen =
+                        case model.networksMergeStatus of
+                            Merging _ _ _ ->
+                                True
+
+                            _ ->
+                                False
+                  in
+                  Sidebar.view
+                    isOpen
+                    NetworksMergeFinish
+                    (networksMergeSidebarContent model)
+                ]
+        ]
+    }
+
+
+networksMergeSidebarContent : Model -> List (Html Msg)
+networksMergeSidebarContent model =
+    case model.networksMergeStatus of
+        Merging ( networkA, networkB ) preview remaining ->
+            [ div [ class "p-[24px] flex flex-col gap-[24px]" ]
+                [ div []
+                    [ span [] [ text <| String.fromInt (List.length remaining) ++ " рекомендацій по об’єданню мереж залишилося" ]
+                    , h3 [] [ text "Поєднання двох мереж" ]
+                    , span [] [ text "При поєднанні мереж інформація з другої мережі переноситься в першу. Після чого друга мережа видаляється." ]
+                    ]
+
+                -- , div []
+                --     [ h4 []
+                --         [ text "Що співпадає" ]
+                --     , table
+                --         []
+                --         [ thead []
+                --             [ tr []
+                --                 [ th [] []
+                --                 , th []
+                --                     [ EUtils.renderNetworkNameWithoutType networkA model.masterUnits
+                --                     ]
+                --                 , th []
+                --                     [ EUtils.renderNetworkNameWithoutType networkB model.masterUnits
+                --                     ]
+                --                 ]
+                --             ]
+                --         , tbody [] [ tr [] [ th [] [ text "Частоти" ], td [] [ text "225.2200, 113.3200" ], td [] [ text "225.2200, 113.3200" ] ] ]
+                --         ]
+                --     ]
+                , div []
+                    [ h4 [ class "mb-[8px]" ] [ text "Напрямок поєднання" ]
+                    , div []
+                        [ div [ class "flex gap-[8px] items-center mb-[8px]" ]
+                            [ span [ class "basis-[80px]" ] [ text "залишаємо" ]
+                            , span [ class "border-1 border-border p-[8px] rounded-lg font-medium" ]
+                                [ EUtils.renderNetworkNameWithoutType networkA model.masterUnits
+                                ]
+                            ]
+                        , span [ onClick NetworksMergeSwapOrder, class "text-action cursor-pointer font-medium" ] [ text "змінити місцями" ]
+                        , div [ class "flex gap-[8px] items-center mt-[8px]" ]
+                            [ span [ class "basis-[80px]" ] [ text "вливаємо" ]
+                            , span [ class "border-1 border-border p-[8px] rounded-lg font-medium" ]
+                                [ EUtils.renderNetworkNameWithoutType networkB model.masterUnits
+                                ]
+                            ]
+                        ]
+                    ]
+                , div []
+                    [ h4 [ class "mb-[8px]" ] [ text "Попередній перегляд" ]
+                    , ul []
+                        [ li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
+                            [ span [ class "text-sm font-medium  basis-1/3 shrink-0" ] [ text "Назва мережі" ]
+                            , span []
+                                [ EUtils.renderNetworkNameWithoutType preview model.masterUnits
+                                ]
+                            ]
+                        , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
+                            [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Район функціонування/розгортання:" ]
+                            , span [] [ text preview.location ]
+                            ]
+                        , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
+                            [ span [ class "text-sm font-medium shrink-0 basis-1/3 sh" ] [ text "Призначення:" ]
+                            , span [] [ text <| Maybe.withDefault "" preview.purpose ]
+                            ]
+                        , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
+                            [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Частоти:" ]
+                            , span [] [ text <| String.join ", " preview.freqs ]
+                            ]
+                        , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
+                            [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Коментар" ]
+                            , span [] [ text preview.comment ]
+                            ]
+                        , li [ class "flex gap-[4px] py-[8px]" ]
+                            [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Радіостанція:" ]
+                            , span [] [ text <| Maybe.withDefault "" preview.radioStation ]
+                            ]
+                        ]
+                    ]
+                , div [ class "flex justify-end gap-[8px]" ]
+                    [ div [ class "grow-1" ] [ Button.new { label = "Назад", onClick = NetworksMergeFinish } |> Button.withStyleSecondary |> Button.view ]
+                    , Button.new { label = "Пропустити", onClick = NetworksMergeTryNext } |> Button.withStyleSecondary |> Button.view
+                    , Button.new { label = "Поєднати", onClick = NetworksMergeDoIt networkA.id networkB.id }
+                        |> (if model.networksMergeInProgress then
+                                Button.withIcon
+                                    [ Le.Block.Spinner.loadingSpinner2Sm
+                                    ]
+
+                            else
+                                identity
+                           )
+                        |> Button.view
+                    ]
+                ]
+            ]
+
+        _ ->
+            [ text "" ]
+
+
+page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
+page user shared _ =
+    Page.new
+        { init = init
+        , update = update shared
+        , view = view shared.isDarkMode shared user
+        , subscriptions = subscriptions
+        }
+        |> Page.withLayout (toLayout user)
+
+
+toLayout : Auth.User -> Model -> Layouts.Layout Msg
+toLayout user model =
+    Layouts.Navbar
+        { user = user
+        , activeName = "rer"
+        }

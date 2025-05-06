@@ -1,0 +1,12 @@
+{
+  "envelope":
+  {
+	  "source": "+380934788997",
+	  "sourceNumber": "+380934788997",
+	  "sourceUuid": "cb6c81b6-555b-47e1-8956-c00a128cd9ec",
+	  "sourceName": "Тарас Марко (Террі)",
+	  "sourceDevice": 1,
+	  "timestamp": 1684174228408
+  },
+  "account": "+380502711438"
+}

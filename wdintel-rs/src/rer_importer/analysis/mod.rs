@@ -1,0 +1,2137 @@
+use super::types::*;
+use crate::config::*;
+use crate::delta::types::GeoJson;
+use crate::entities::*;
+use crate::kml::types::*;
+use crate::location::utils::*;
+use crate::types::*;
+use crate::users;
+use crate::users::*;
+use crate::utils::string::*;
+use crate::utils::*;
+use actix_identity::Identity;
+use actix_web::post;
+use actix_web::web::Json;
+use actix_web::HttpRequest;
+use actix_web::HttpResponse;
+use chrono::prelude::*;
+use futures_util::TryStreamExt;
+use itertools::Itertools;
+use rust_xlsxwriter::{Format, Workbook};
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::{prelude::Expr, *};
+use sea_query::*;
+use tempdir::TempDir;
+
+pub mod geojson;
+pub mod kmz;
+pub mod search;
+pub mod stats;
+
+pub fn filter_selected_groups<Q>(
+    q: Q,
+    selected_groups: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_groups) = selected_groups.as_ref() {
+        if !selected_groups.is_empty() {
+            return Ok(q.filter(
+                signal_message::Column::GroupMasterKey.is_in(selected_groups),
+            ));
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_senders<Q>(
+    q: Q,
+    selected_senders: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_senders) = selected_senders.as_ref() {
+        if !selected_senders.is_empty() {
+            // q.filter(
+            // signal_message::Column::Sender.in_subquery(
+            //     Query::select()
+            //         .column(signal_profile::Column::Uuid)
+            //         .from(signal_profile::Entity)
+            //         .and_where(
+            //             signal_profile::Column::GivenName
+            //                 .is_in(selected_senders)
+            //                 .or(signal_profile::Column::Uuid
+            //                     .is_in(selected_senders)),
+            //         )
+            //         .to_owned(),
+            // ),
+            // )
+            return Ok(q.filter(
+                signal_message::Column::Sender.is_in(selected_senders),
+            ));
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_denied_senders<Q>(
+    q: Q,
+    denied_senders: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(denied_senders) = denied_senders.as_ref() {
+        if !denied_senders.is_empty() {
+            return Ok(q.filter(
+                signal_message::Column::Sender.is_not_in(denied_senders),
+            ));
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_posts<Q>(
+    q: Q,
+    selected_posts: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_posts) = selected_posts.as_ref() {
+        return Ok(q.filter(
+            Expr::expr(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Post,
+                ))
+                .if_null(""),
+            )
+            .is_in(selected_posts),
+        ));
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_freqs<Q>(
+    q: Q,
+    selected_freqs: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_freqs) = selected_freqs.as_ref() {
+        if !selected_freqs.is_empty() {
+            return Ok(q.filter(
+                Expr::expr(
+                    Expr::col((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Freq,
+                    ))
+                    .if_null(""),
+                )
+                .is_in(selected_freqs),
+            ));
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_denied_freqs<Q>(
+    q: Q,
+    denied_freqs: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(denied_freqs) = denied_freqs.as_ref() {
+        if !denied_freqs.is_empty() {
+            return Ok(q.filter(
+                Expr::expr(
+                    Expr::col((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Freq,
+                    ))
+                    .if_null(""),
+                )
+                .is_not_in(denied_freqs),
+            ));
+        }
+    }
+    Ok(q)
+}
+pub fn filter_denied_posts<Q>(
+    q: Q,
+    denied_posts: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(denied_posts) = denied_posts.as_ref() {
+        if !denied_posts.is_empty() {
+            return Ok(q.filter(
+                Expr::expr(
+                    Expr::col((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Post,
+                    ))
+                    .if_null(""),
+                )
+                .is_not_in(denied_posts),
+            ));
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_units<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let mut m_empty_filter = None;
+    let mut m_filter = None;
+    if let Some(selected_units) = selected_units.as_ref() {
+        let mut selected_units: BTreeSet<String> =
+            selected_units.iter().cloned().collect::<BTreeSet<_>>();
+        let mut units_contain_empty = false;
+        if selected_units.remove("Не визначено") {
+            units_contain_empty = true;
+        }
+        if selected_units.remove("") {
+            units_contain_empty = true;
+        }
+        if units_contain_empty {
+            // частоти на яких був обмін в активних мережах, але всі підрозділи невідомі
+            let no_sigint_units = sigint_inbox_item::Column::Freq
+                .not_in_subquery(select_sigint_units_by_names(
+                    sigint_unit::Column::Name.is_not_null(),
+                ));
+            let no_freq = sigint_inbox_item::Column::Freq.is_null();
+            let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
+                .is_null()
+                .or(sigint_inbox_item::Column::UnitV2.eq(""));
+            let contains_empty =
+                unit_is_not_in_message.and(no_freq.or(no_sigint_units));
+            m_empty_filter = Some(contains_empty);
+        }
+        if !selected_units.is_empty() {
+            let mut expr =
+                sigint_inbox_item::Column::UnitV2.is_in(selected_units.clone());
+            if units_exact_match_only.is_none_or(|b| !b) {
+                expr = expr.or(sigint_inbox_item::Column::Freq.in_subquery(
+                    // якщо не виставлено прапорець `units_exact_match_only`, додаємо в фільтр також всі підрозділи на тих самих частотах що і `selected units`
+                    select_sigint_units_by_names(
+                        sigint_unit::Column::Name.is_in(selected_units),
+                    ),
+                ));
+            }
+            m_filter = Some(expr);
+        }
+    }
+    match (m_filter, m_empty_filter) {
+        (None, None) => Ok(q),
+        (None, Some(f)) => Ok(q.filter(f)),
+        (Some(f), None) => Ok(q.filter(f)),
+        (Some(f1), Some(f2)) => Ok(q.filter(f1.or(f2))),
+    }
+}
+
+/// Ця функція обирає тільки частоти для яких є активна мережа і підрозділ в ній, а також виконується додаткова умова
+///  * filter_expr -- додаткова умова фільтрування
+fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
+    Query::select()
+        .column(sigint_network_freq::Column::Freq)
+        .distinct()
+        .from(sigint_network_freq::Entity)
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            Expr::col((sigint_network::Entity, sigint_network::Column::Id))
+                .equals((
+                    sigint_network_freq::Entity,
+                    sigint_network_freq::Column::NetworkId,
+                )),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Entity,
+            Expr::col((
+                sigint_network_unit::Entity,
+                sigint_network_unit::Column::NetworkId,
+            ))
+            .equals((sigint_network::Entity, sigint_network::Column::Id)),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)).equals((
+                sigint_network_unit::Entity,
+                sigint_network_unit::Column::UnitId,
+            )),
+        )
+        .and_where(sigint_network_freq::Column::Deleted.eq(false))
+        .and_where(sigint_unit::Column::Deleted.eq(false))
+        .and_where(sigint_network::Column::Deleted.eq(false))
+        .and_where(filter_expr)
+        .to_owned()
+}
+
+pub fn filter_selected_locations<Q>(
+    q: Q,
+    selected_locations: &Option<Vec<String>>,
+    include_peleng_locations: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_locations) = selected_locations.as_ref() {
+        if !selected_locations.is_empty() {
+            let mut nonempty_locations = vec![];
+            let mut expressions = vec![];
+            let mut include_empty = false;
+            for location in selected_locations {
+                if location_is_empty(location) {
+                    include_empty = true;
+                } else {
+                    nonempty_locations.push(location.clone());
+                    let loc = format_location(location);
+                    expressions.push(
+                        sigint_inbox_item::Column::LocationV2
+                            .contains(loc.clone()),
+                    );
+                }
+            }
+            if include_peleng_locations && !nonempty_locations.is_empty() {
+                expressions.push(
+                    sigint_inbox_item::Column::Freq.in_subquery(
+                        Query::select()
+                            .column(freq_location::Column::Freq)
+                            .from(freq_location::Entity)
+                            .and_where(
+                                freq_location::Column::Location
+                                    .is_in(nonempty_locations),
+                            )
+                            .to_owned(),
+                    ),
+                )
+            }
+            if include_empty {
+                expressions
+                    .push(sigint_inbox_item::Column::LocationV2.is_null());
+            }
+            let expr = expressions.into_iter().reduce(|a, b| a.or(b));
+            if let Some(expr) = expr {
+                return Ok(q.filter(expr));
+            }
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_callsigns<Q>(
+    q: Q,
+    selected_callsigns: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    if let Some(selected_callsigns) = selected_callsigns.as_ref() {
+        if !selected_callsigns.is_empty() {
+            return Ok(q.filter(sea_query::expr::SimpleExpr::Custom(
+                cond_json_contains_oneof("callsigns", selected_callsigns),
+            )));
+        }
+    }
+    Ok(q)
+}
+
+pub fn filter_selected_tags<Q>(
+    q: Q,
+    selected_tags: &Option<Vec<i64>>,
+    or_bookmarked: &Option<bool>,
+    or_important: &Option<bool>,
+    or_with_coords: &Option<bool>,
+    or_with_extended_form: &Option<bool>,
+    filter_tags_option: &Option<TagFilterOption>,
+    user_id: &str,
+    group_by: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect + Clone,
+{
+    let mut q = q.clone();
+    let mut m_inner_expr = None;
+    if let Some(selected_tags) = selected_tags.as_ref() {
+        if !selected_tags.is_empty() {
+            match filter_tags_option.unwrap_or(TagFilterOption::OneOfTags) {
+                TagFilterOption::OneOfTags => {
+                    m_inner_expr = Some(sea_query::expr::SimpleExpr::Custom(
+                        cond_json_contains_oneof_i64("tags", selected_tags),
+                    ));
+                }
+                TagFilterOption::AllTags => {
+                    m_inner_expr = Some(sea_query::expr::SimpleExpr::Custom(
+                        cond_json_contains_all_i64("tags", selected_tags),
+                    ));
+                }
+            }
+        }
+    }
+    if or_bookmarked == &Some(true) {
+        let y = sigint_bookmark::Column::UserId.eq(user_id.to_string());
+        m_inner_expr =
+            m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
+        q = q.join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintBookmark.def().on_condition(
+                |_left, right| {
+                    Expr::col((right, sigint_bookmark::Column::Deleted))
+                        .not()
+                        .into_condition()
+                },
+            ),
+        );
+    }
+    if or_important == &Some(true) {
+        // let y = sigint_important::Column::UserId.eq(user_id.to_string());
+        // m_inner_expr =
+        //     m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
+        // m_inner_expr =
+        //     m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
+        let y = sigint_important::Column::SignalMessageId.is_not_null();
+        m_inner_expr =
+            m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
+        q = q.join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintImportant
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_important::Column::Deleted))
+                        .not()
+                        .into_condition()
+                }),
+        );
+    }
+    if or_with_coords == &Some(true) {
+        let y = sigint_inbox_item::Column::Lat
+            .is_not_null()
+            .and(sigint_inbox_item::Column::Lng.is_not_null());
+        m_inner_expr =
+            m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
+    }
+    if or_with_extended_form == &Some(true) {
+        q = q
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintComment.def(),
+            )
+            .filter(sigint_comment::Column::Comment.eq("").not());
+        if group_by {
+            q = q
+                .group_by(signal_message::Column::Id)
+                .group_by(sigint_inbox_item::Column::Id);
+        }
+        q = q.having(Expr::cust("count(sigint_comment.id) > 0"));
+    }
+    if let Some(ref inner_expr) = m_inner_expr {
+        q = q.filter(inner_expr.clone());
+    }
+    // println!(
+    //     "> filter_selected_tags q sql: {}",
+    //     q.build(DbBackend::Postgres).to_string()
+    // );
+    Ok(q)
+}
+
+pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    let mut q2 = q;
+    if let Some(ref search) = m_str_trim(search) {
+        let search_parts = search::parse_search_parts(search).context(h!())?;
+        if !search_parts.ts_query.is_empty() {
+            q2 = q2
+                .join(
+                    JoinType::InnerJoin,
+                    sigint_inbox_item::Relation::SigintSearch.def(),
+                )
+                .filter(
+                    sea_query::Expr::col(sigint_search::Column::SearchTsv)
+                        .matches(Expr::cust_with_values(
+                            "websearch_to_tsquery('russian', $1)",
+                            vec![search_parts.ts_query.clone()],
+                        )),
+                );
+        }
+        for ilike in search_parts.ilike {
+            q2 = q2.filter(
+                sea_query::Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
+                .ilike(ilike),
+            );
+        }
+        for not_ilike in search_parts.not_ilike {
+            q2 = q2.filter(
+                sea_query::Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
+                .not_ilike(not_ilike),
+            );
+        }
+
+        if !search_parts.freq.is_empty() {
+            q2 = filter_selected_freqs(q2, &Some(search_parts.freq))?;
+        }
+
+        if !search_parts.not_freq.is_empty() {
+            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))?;
+        }
+
+        return Ok(q2);
+    }
+    Ok(q2)
+}
+
+/// Summary table showing row-per-frequency
+#[post("/api/rer/analysis/summary-table-freq")]
+pub async fn summary_table_freq(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<SummaryTableFreq>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    Ok(Json(summary_table_freq_1(&user, &env, &req).await?))
+}
+
+pub async fn summary_table_freq_1(
+    user: &actix_identity::Identity,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<SummaryTableFreq, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let include_peleng_locations =
+        req.include_peleng_locations.clone().unwrap_or(false);
+
+    #[derive(FromQueryResult)]
+    struct Row {
+        freq: Option<String>,
+        lat: Option<f64>,
+        lng: Option<f64>,
+        nominatimres_id: Option<i64>,
+        count: i64,
+        callsigns: Vec<serde_json::Value>,
+        units: Vec<String>,
+        locations: Vec<String>,
+    }
+
+    let master_keys = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await?;
+
+    let rows_res = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+        .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
+        .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
+        .column_as(
+            Expr::col(sigint_inbox_item::Column::NominatimresId),
+            "nominatimres_id",
+        )
+        .column_as(Expr::cust("array_agg(distinct callsigns)"), "callsigns")
+        .column_as(
+            Expr::cust("array_agg(distinct coalesce(unit_v2, ''))"),
+            "units",
+        )
+        .column_as(
+            Expr::cust("array_agg(distinct coalesce(location_v2, ''))"),
+            "locations",
+        )
+        .column_as(Expr::col(signal_message::Entity).count(), "count")
+        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(signal_message::Column::Deleted.eq(false))
+        // .filter(signal_message::Column::DuplicateOf.is_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
+        .group_by(Expr::cust("1, 2, 3, 4"));
+    let rows_res = filter_selected_freqs(rows_res, &req.selected_freqs)?;
+    let rows_res = filter_selected_posts(rows_res, &req.selected_posts)?;
+    let rows_res = filter_selected_groups(rows_res, &req.selected_groups)?;
+    let rows_res = filter_selected_senders(rows_res, &req.selected_senders)?;
+    let rows_res = filter_selected_units(
+        rows_res,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )?;
+    let rows_res = filter_selected_locations(
+        rows_res,
+        &req.selected_locations,
+        include_peleng_locations,
+    )?;
+    let rows_res =
+        filter_selected_callsigns(rows_res, &req.selected_callsigns)?;
+    let rows_res = filter_selected_tags(
+        rows_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &user.id()?,
+        false,
+    )?;
+    let rows_res = filter_search(rows_res, &req.search)?;
+    // println!(
+    //     "> summary table rows_res sql: {}",
+    //     rows_res.build(DbBackend::Postgres).to_string()
+    // );
+    let rows_res: Vec<Row> = rows_res.into_model::<Row>().all(&env.dbx).await?;
+
+    let mut callsigns_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut units_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut locations_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut count_per_freq: BTreeMap<String, i64> = BTreeMap::new();
+    #[derive(PartialEq, Clone)]
+    struct LatLngNominatim {
+        lat: f64,
+        lng: f64,
+        nominatimres_id: Option<i64>,
+    }
+    let mut latlng_per_freq: BTreeMap<String, Vec<LatLngNominatim>> =
+        BTreeMap::new();
+    let mut nominatimres_per_id: BTreeMap<i64, nominatimres::Model> =
+        BTreeMap::new();
+    let mut nominatimres_per_freq: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+    for nominatimres_id in uniq_via_btreeset(
+        &rows_res.iter().filter_map(|x| x.nominatimres_id).collect(),
+    ) {
+        let m_nominatimres = nominatimres::Entity::find_by_id(nominatimres_id)
+            .one(&env.dbx)
+            .await?;
+        if let Some(nominatimres) = m_nominatimres {
+            nominatimres_per_id.insert(nominatimres_id, nominatimres);
+        }
+    }
+    nominatimres_per_id.insert(
+        0,
+        nominatimres::Model {
+            id: 0,
+            created_at: Utc::now()
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .ok_or("err 91734")?,
+            res: serde_json::Value::Null,
+            nominatim_display_name: "Невідомо".to_string(),
+        },
+    );
+    for row in rows_res.iter() {
+        let Some(freq) = row.freq.clone() else {
+            continue;
+        };
+        count_per_freq
+            .entry(freq.clone())
+            .and_modify(|c| *c += row.count)
+            .or_insert(row.count);
+        units_per_freq
+            .entry(freq.clone())
+            .and_modify(|xs| {
+                for unit in row.units.iter() {
+                    if !xs.contains(&unit) && !unit.trim().is_empty() {
+                        xs.push(unit.clone())
+                    }
+                }
+            })
+            .or_insert(
+                row.units
+                    .iter()
+                    .filter(|x| !x.trim().is_empty())
+                    .cloned()
+                    .collect(),
+            );
+
+        let locations = row
+            .locations
+            .iter()
+            .flat_map(|r| to_location_list(r).into_iter())
+            .map(|s| String::from(s))
+            .collect_vec();
+        locations_per_freq
+            .entry(freq.clone())
+            .and_modify(|xs| {
+                for location in locations.iter() {
+                    if !xs.contains(&location) && !location.trim().is_empty() {
+                        xs.push(location.clone())
+                    }
+                }
+            })
+            .or_insert(
+                locations
+                    .iter()
+                    .filter(|x| !x.trim().is_empty())
+                    .cloned()
+                    .collect(),
+            );
+
+        for callsigns_j in row.callsigns.iter() {
+            let callsigns: Vec<String> =
+                serde_json::from_value(callsigns_j.clone()).context(h!())?;
+            for callsign in callsigns {
+                callsigns_per_freq
+                    .entry(freq.clone())
+                    .and_modify(|xs| {
+                        if !xs.contains(&callsign) {
+                            xs.push(callsign.clone())
+                        }
+                    })
+                    .or_insert(vec![callsign.clone()]);
+            }
+        }
+        if let (Some(lat), Some(lng)) = (row.lat, row.lng) {
+            // println!("> some freq {freq} lat lng: {lat} {lng}");
+            let m_nominatimres_id = row.nominatimres_id.clone();
+            let v = LatLngNominatim {
+                lat,
+                lng,
+                nominatimres_id: m_nominatimres_id,
+            };
+            latlng_per_freq
+                .entry(freq.clone())
+                .and_modify(|xs| {
+                    if !xs.contains(&v) {
+                        xs.push(v.clone());
+                    }
+                })
+                .or_insert(vec![v.clone()]);
+        }
+        let nominatimres_id = row.nominatimres_id.unwrap_or(0);
+        nominatimres_per_freq
+            .entry(freq.clone())
+            .and_modify(|xs| {
+                if !xs.contains(&nominatimres_id) {
+                    xs.push(nominatimres_id.clone());
+                }
+            })
+            .or_insert(vec![nominatimres_id.clone()]);
+    }
+
+    let mut rows = vec![];
+    for (freq, count) in count_per_freq.iter() {
+        // let coords = latlng_per_freq
+        //     .get(freq)
+        //     .unwrap_or(&vec![])
+        //     .iter()
+        //     .map(|x| {
+        //         LatLng {
+        //             lat: x.lat,
+        //             lng: x.lng,
+        //         }
+        //         .clone()
+        //     })
+        //     .take(crate::config::COORDS_PER_FREQ_LIMIT)
+        //     .collect();
+        // // println!("> freq: {freq}, coords: {coords:?}");
+        // let nominatimids =
+        //     nominatimres_per_freq.get(freq).unwrap_or(&vec![0]).clone();
+        // let mut locality_coords_hm: BTreeMap<String, Vec<LatLng>> =
+        //     BTreeMap::new();
+        // for nomresid in nominatimids.iter() {
+        //     if let Some(nominatimres) = nominatimres_per_id.get(nomresid) {
+        //         let m_nomresid = if *nomresid == 0 {
+        //             None
+        //         } else {
+        //             Some(*nomresid)
+        //         };
+        //         // gather coords per freq which are in this nominatimres
+        //         let latlngs: Vec<LatLngNominatim> = latlng_per_freq
+        //             .get(freq)
+        //             .unwrap_or(&vec![])
+        //             .iter()
+        //             .filter(|x| x.nominatimres_id == m_nomresid)
+        //             .cloned()
+        //             .collect();
+        //         for latlngnom in latlngs {
+        //             let latlng = LatLng {
+        //                 lat: latlngnom.lat,
+        //                 lng: latlngnom.lng,
+        //             };
+        //             locality_coords_hm
+        //                 .entry(nominatimres.nominatim_display_name.clone())
+        //                 .and_modify(|xs| {
+        //                     if !xs.contains(&latlng) {
+        //                         xs.push(latlng.clone());
+        //                     }
+        //                 })
+        //                 .or_insert(vec![latlng.clone()]);
+        //         }
+        //     }
+        // }
+        // let locality_coords_len = locality_coords_hm.len();
+        // let locality_coords = locality_coords_hm
+        //     .iter()
+        //     .map(|(k, v)| LocalityCoords {
+        //         locality: k.to_string(),
+        //         count: locality_coords_len as i64,
+        //         coords: v.to_vec(),
+        //     })
+        //     .take(crate::config::COORDS_PER_FREQ_PER_LOC_LIMIT)
+        //     .collect();
+        rows.push(SummaryTableFreqRow {
+            freq: freq.clone(),
+            count: *count,
+            callsigns: callsigns_per_freq.get(freq).unwrap_or(&vec![]).clone(),
+            units: units_per_freq.get(freq).unwrap_or(&vec![]).clone(),
+            locations: locations_per_freq.get(freq).unwrap_or(&vec![]).clone(),
+            coords: vec![],
+            locality_coords: vec![],
+        });
+    }
+
+    Ok(SummaryTableFreq { rows })
+}
+
+/// Summary table showing row-per-frequency
+#[post("/api/rer/analysis/summary-table.xlsx")]
+async fn summary_table_xlsx(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
+    req: Json<AnalysisStatsReq>,
+) -> Result<HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let summary_table: SummaryTableFreq =
+        summary_table_freq_1(&user, &env, &req).await?;
+
+    let tmp_dir = TempDir::new("wdintel-summary-table")?;
+    let outpath = tmp_dir.path().join("summary-table.xlsx");
+    let mut workbook = Workbook::new(); // No argument needed here
+
+    // Create formats
+    let format_bold = Format::new().set_bold();
+    let format_wrap = Format::new().set_text_wrap();
+
+    // Get the first worksheet and set its name
+    let sheet1 = workbook.add_worksheet();
+    sheet1.set_name("Частоти").context(h!())?;
+
+    // Write data and apply formats
+    sheet1
+        .write_string(0, 0, &describe_analysis_stats_req(req.into_inner())?)
+        .context(h!())?;
+
+    sheet1
+        .write_string_with_format(2, 0, "Частота", &format_bold)
+        .context(h!())?;
+    sheet1
+        .write_string_with_format(2, 1, "Кількість повідомлень", &format_bold)
+        .context(h!())?;
+    sheet1.set_column_width(1, 5.0).context(h!())?; // Set width for column 1
+    sheet1
+        .write_string_with_format(2, 2, "Позивні", &format_bold)
+        .context(h!())?;
+    sheet1.set_column_width(2, 40.0).context(h!())?; // Set width for column 2
+    sheet1.set_column_format(2, &format_wrap).context(h!())?; // Apply format to column 2
+    sheet1
+        .write_string_with_format(2, 3, "Підрозділи", &format_bold)
+        .context(h!())?;
+    sheet1.set_column_width(3, 80.0).context(h!())?; // Set width for column 3
+    sheet1.set_column_format(3, &format_wrap).context(h!())?; // Apply format to column 3
+
+    for (i, row) in summary_table.rows.iter().enumerate() {
+        let row_i = i as u32 + 3;
+        sheet1.write_string(row_i, 0, &row.freq).context(h!())?; // Removed None
+        sheet1
+            .write_number(row_i, 1, row.count as f64)
+            .context(h!())?; // Removed None
+        sheet1
+            .write_string(row_i, 2, &row.callsigns.join(", "))
+            .context(h!())?; // Removed None
+        sheet1
+            .write_string(row_i, 3, &row.units.join(", "))
+            .context(h!())?; // Removed None
+    }
+
+    // Add and name the second sheet
+    let sheet2 = workbook.add_worksheet();
+    sheet2.set_name("Позивні").context(h!())?;
+    let mut freqs_per_callsign: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // ...existing code to populate freqs_per_callsign...
+    for row in summary_table.rows.iter() {
+        for callsign in row.callsigns.iter() {
+            freqs_per_callsign
+                .entry(callsign.clone())
+                .and_modify(|xs| {
+                    if !xs.contains(&row.freq) {
+                        xs.push(row.freq.clone())
+                    }
+                })
+                .or_insert(vec![row.freq.clone()]);
+        }
+    }
+    for (i, (callsign, freqs)) in freqs_per_callsign.iter().enumerate() {
+        sheet2.write_string(i as u32, 0, callsign).context(h!())?; // Removed None
+        for (j, freq) in freqs.iter().enumerate() {
+            sheet2
+                .write_string(i as u32, 1 + j as u16, freq)
+                .context(h!())?; // Removed None
+        }
+    }
+
+    // Save the workbook to the specified path
+    workbook.save(&outpath).context(h!())?;
+    let file = actix_files::NamedFile::open_async(&outpath).await?;
+    Ok(file.into_response(&http_req))
+}
+
+fn describe_analysis_stats_req(
+    req: AnalysisStatsReq,
+) -> Result<String, AppError> {
+    let dt_since = dt_zoned_from_millis(req.since_date_inclusive_ms)?;
+    let dt_till = dt_zoned_from_millis(req.till_date_noninclusive_ms)?;
+
+    let selected_groups_s = match req.selected_groups {
+        Some(groups) => format!("Групи: {}. ", groups.join(", ")),
+        None => "".to_string(),
+    };
+    let selected_senders_s = match req.selected_senders {
+        Some(senders) => format!("Відправники: {}. ", senders.join(", ")),
+        None => "".to_string(),
+    };
+    let selected_freqs_s = match req.selected_freqs {
+        Some(freqs) => format!("Частоти: {}. ", freqs.join(", ")),
+        None => "".to_string(),
+    };
+    let selected_callsigns_s = match req.selected_callsigns {
+        Some(callsigns) => format!("Позивні: {}. ", callsigns.join(", ")),
+        None => "".to_string(),
+    };
+    let selected_units_s = match req.selected_units {
+        Some(units) => format!("Підрозділи: {}. ", units.join(", ")),
+        None => "".to_string(),
+    };
+
+    Ok(format!(
+        "Період: {} - {}. {selected_groups_s}{selected_senders_s}{selected_freqs_s}{selected_callsigns_s}{selected_units_s}",
+        dt_since.format("%d.%m.%Y %H:%M:%S"),
+        dt_till.format("%d.%m.%Y %H:%M:%S"),
+    ))
+}
+
+/// Summary table showing row-per-frequency
+#[post("/api/rer/analysis/correlated-freqs")]
+async fn correlated_freqs(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let empty = CorrelatedFreqsRsp { freqs: vec![] };
+    let Some(selected_freqs) = req.selected_freqs.clone() else {
+        return Ok(Json(empty));
+    };
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+
+    // if dt_since is earlier than 7 days before dt_till -- put it to dt_till - 7 days
+    let dt_since = if dt_till - dt_since
+        > chrono::Duration::days(CORRELATED_FREQS_MAX_DAYS)
+    {
+        dt_till - chrono::Duration::days(CORRELATED_FREQS_MAX_DAYS)
+    } else {
+        dt_since
+    };
+
+    let mut freqs = vec![];
+    #[derive(FromQueryResult)]
+    struct Res {
+        callsign: Option<String>,
+    }
+    let q = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .filter(signal_message::Column::GroupMasterKey.is_in(
+            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+        ))
+        .select_only()
+        .column_as(
+            Expr::cust("jsonb_array_elements_text(callsigns)"),
+            "callsign",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let q = filter_selected_freqs(q, &req.selected_freqs)?;
+    let q = q.into_model::<Res>().all(&env.dbx).await?;
+    let mut selected_freq_callsigns: Vec<String> = vec![];
+    for x in q.iter() {
+        if let Some(ref callsign) = x.callsign {
+            selected_freq_callsigns.push(callsign.clone());
+        }
+    }
+    let selected_freq_callsigns = uniq_via_btreeset(&selected_freq_callsigns);
+
+    let mut freq_common_callsigns: BTreeMap<String, Vec<String>> =
+        BTreeMap::new();
+    for callsign in selected_freq_callsigns.iter() {
+        #[derive(FromQueryResult)]
+        struct Res2 {
+            freq: Option<String>,
+        }
+        let q = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .filter(
+                signal_message::Column::GroupMasterKey.is_in(
+                    crate::users::get_identity_sigint_groups(&env.dbx, &login)
+                        .await?,
+                ),
+            )
+            .filter(
+                signal_message::Column::GroupMasterKey.is_in(
+                    crate::users::get_identity_sigint_groups(&env.dbx, &login)
+                        .await?,
+                ),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+            .filter(Expr::cust_with_values(
+                "sigint_inbox_item.callsigns::jsonb ? $1",
+                vec![callsign],
+            ))
+            .select_only()
+            .column_as(sigint_inbox_item::Column::Freq, "freq");
+        let res = q.into_model::<Res2>().all(&env.dbx).await?;
+        for r in res {
+            let Some(freq): Option<String> = r.freq else {
+                continue;
+            };
+            freq_common_callsigns
+                .entry(freq.clone())
+                .and_modify(|xs| {
+                    if !xs.contains(&callsign) {
+                        xs.push(callsign.clone())
+                    }
+                })
+                .or_insert(vec![callsign.clone()]);
+        }
+    }
+    for (freq, callsigns) in freq_common_callsigns.iter() {
+        if !selected_freqs.contains(freq) {
+            freqs.push(CorrelatedFreq {
+                freq: freq.clone(),
+                common_callsigns: callsigns.clone(),
+            });
+        }
+    }
+    let mut freqs = freqs.clone();
+    freqs.sort_by(|a, b| {
+        b.common_callsigns
+            .len()
+            .partial_cmp(&a.common_callsigns.len())
+            .unwrap()
+    });
+
+    Ok(Json(CorrelatedFreqsRsp { freqs }))
+}
+
+#[post("/api/rer/analysis/freq-edit-unit-name")]
+pub async fn edit_freq_unit_name(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<EditFreqUnitNameReq>,
+) -> Result<Json<()>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let reqan = req.analysis_stats_req.clone();
+    let dt_since = dt_from_millis(reqan.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(reqan.till_date_noninclusive_ms)?;
+    let txn = env.dbx.begin().await?;
+
+    #[derive(FromQueryResult)]
+    struct Row {
+        id: i64,
+    }
+    let rows_res = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(Expr::cust("signal_message.id"), "id")
+        // .column_as(Expr::col(signal_message::Column::Id), "id")
+        .filter(signal_message::Column::GroupMasterKey.is_in(
+            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+        ))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(sigint_inbox_item::Column::Freq.eq(req.freq.clone()))
+        .filter(sigint_inbox_item::Column::UnitV2.eq(req.unit.clone()));
+    let rows_res = filter_selected_freqs(rows_res, &reqan.selected_freqs)?;
+    let rows_res = filter_selected_posts(rows_res, &reqan.selected_posts)?;
+    let rows_res = filter_selected_groups(rows_res, &reqan.selected_groups)?;
+    let rows_res = filter_selected_senders(rows_res, &reqan.selected_senders)?;
+    let rows_res = filter_selected_units(
+        rows_res,
+        &reqan.selected_units,
+        &req.analysis_stats_req.units_exact_match_only,
+    )?;
+    let rows_res =
+        filter_selected_callsigns(rows_res, &reqan.selected_callsigns)?;
+    let rows_res = filter_selected_tags(
+        rows_res,
+        &reqan.selected_tags,
+        &None,
+        &None,
+        &None,
+        &None,
+        &req.filter_tags_option,
+        &user.id()?,
+        true,
+    )?;
+    let rows_res = filter_search(rows_res, &req.search)?;
+    // println!(
+    //     "> freq edit query: {}",
+    //     rows_res.build(DbBackend::Postgres).to_string()
+    // );
+    let rows_res: Vec<Row> = rows_res.into_model::<Row>().all(&txn).await?;
+
+    for row in rows_res {
+        for id in crate::rer_importer::inbox::find_all_duplicates(&txn, row.id)
+            .await?
+        {
+            let Some(row) =
+                sigint_inbox_item::Entity::find_by_id(id).one(&txn).await?
+            else {
+                continue;
+            };
+            let mut row: sigint_inbox_item::ActiveModel = row.into();
+            row.unit = Set(Some(req.unit_new.clone()));
+            row.unit_v2 = Set(Some(req.unit_new.clone()));
+            row.parsed_unit_v2 = Set(true);
+            row.update(&txn).await?;
+        }
+    }
+
+    txn.commit().await?;
+    Ok(Json(()))
+}
+
+trait FromSavedFilter {
+    fn from_saved_filter(
+        saved_filter: &sigint_saved_filter::Model,
+    ) -> Result<Self, serde_json::Error>
+    where
+        Self: Sized;
+}
+
+impl FromSavedFilter for SavedFilter {
+    fn from_saved_filter(
+        saved_filter: &sigint_saved_filter::Model,
+    ) -> Result<Self, serde_json::Error> {
+        Ok(SavedFilter {
+            id: saved_filter.id,
+            name: saved_filter.name.clone(),
+            req: serde_json::from_value(saved_filter.req.clone())?,
+        })
+    }
+}
+
+impl FromSavedFilter for SavedFilterDuty {
+    fn from_saved_filter(
+        saved_filter: &sigint_saved_filter::Model,
+    ) -> Result<Self, serde_json::Error>
+    where
+        Self: Sized,
+    {
+        Ok(SavedFilterDuty {
+            id: saved_filter.id,
+            name: saved_filter.name.clone(),
+            req: serde_json::from_value(saved_filter.req.clone())?,
+        })
+    }
+}
+
+async fn select_saved_filter_list<T>(
+    filter_type: sea_orm_active_enums::SigintSavedFilterTypeEnum,
+    user_id: String,
+    dbx: &DbConn,
+) -> Result<Vec<T>, AppError>
+where
+    T: FromSavedFilter,
+{
+    let saved_filters = sigint_saved_filter::Entity::find()
+        .filter(sigint_saved_filter::Column::Login.eq(Some(user_id)))
+        .filter(sigint_saved_filter::Column::Type.eq(filter_type))
+        .order_by_asc(sigint_saved_filter::Column::Name)
+        .all(dbx)
+        .await?;
+    let mut res = vec![];
+    for saved_filter in saved_filters {
+        res.push(T::from_saved_filter(&saved_filter).context(h!())?);
+    }
+    Ok(res)
+}
+
+#[post("/api/rer/analysis/saved-filters")]
+pub async fn saved_filters_list(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<SavedFilter>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+
+    Ok(Json(
+        select_saved_filter_list(
+            sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+            user.id()?,
+            &env.dbx,
+        )
+        .await?,
+    ))
+}
+
+#[post("/api/rer/duty/saved-filters")]
+pub async fn saved_filters_duty_list(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+
+    Ok(Json(
+        select_saved_filter_list(
+            sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
+            user.id()?,
+            &env.dbx,
+        )
+        .await?,
+    ))
+}
+
+fn filter_type_form_path(
+    path: &str,
+) -> Result<sea_orm_active_enums::SigintSavedFilterTypeEnum, AppError> {
+    match path {
+        "analysis" => {
+            Ok(sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis)
+        }
+        "duty" => Ok(sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty),
+        _ => Err(AppError::NotFound),
+    }
+}
+
+#[post("/api/rer/analysis/saved-filter-upsert")]
+pub async fn saved_filter_upsert(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SavedFilterUpsertReq>,
+) -> Result<Json<Vec<SavedFilter>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+
+    Ok(Json(
+        saved_filter_upsert_1(
+            sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+            user.id()?,
+            &env.dbx,
+            req.name.clone(),
+            serde_json::to_value(req.req.clone()).context(h!())?,
+        )
+        .await?,
+    ))
+}
+
+#[post("/api/rer/duty/saved-filter-upsert")]
+pub async fn saved_filter_duty_upsert(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SavedFilterDutyUpsertReq>,
+) -> Result<Json<Vec<SavedFilterDuty>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+
+    Ok(Json(
+        saved_filter_upsert_1(
+            sea_orm_active_enums::SigintSavedFilterTypeEnum::Duty,
+            user.id()?,
+            &env.dbx,
+            req.name.clone(),
+            serde_json::to_value(req.req.clone()).context(h!())?,
+        )
+        .await?,
+    ))
+}
+
+async fn saved_filter_upsert_1<T>(
+    filter_type: sea_orm_active_enums::SigintSavedFilterTypeEnum,
+    user_id: String,
+    dbx: &DbConn,
+    name: String,
+    req: serde_json::Value,
+) -> Result<Vec<T>, AppError>
+where
+    T: FromSavedFilter,
+{
+    let m_filter = sigint_saved_filter::Entity::find()
+        .filter(sigint_saved_filter::Column::Name.eq(name.clone()))
+        .filter(sigint_saved_filter::Column::Login.eq(Some(user_id.clone())))
+        .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
+        .one(dbx)
+        .await?;
+    match m_filter {
+        None => {
+            sigint_saved_filter::ActiveModel {
+                id: NotSet,
+                created_at: NotSet,
+                name: Set(name.clone()),
+                req: Set(req.clone()),
+                login: Set(Some(user_id.clone())),
+                r#type: Set(Some(filter_type.clone())),
+            }
+            .insert(dbx)
+            .await?;
+        }
+        Some(saved_filter) => {
+            let mut saved_filter: sigint_saved_filter::ActiveModel =
+                saved_filter.into();
+            saved_filter.req =
+                Set(serde_json::to_value(req.clone()).context(h!())?);
+            saved_filter.update(dbx).await?;
+        }
+    }
+
+    select_saved_filter_list(filter_type, user_id, dbx).await
+}
+
+#[post("/api/rer/{filter_type}/saved-filter-rename")]
+pub async fn saved_filter_rename(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SavedFilterRenameReq>,
+    path: actix_web::web::Path<String>,
+) -> Result<Json<()>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let filter_type = filter_type_form_path(&path.into_inner().as_str())?;
+    let saved_filter = sigint_saved_filter::Entity::find_by_id(req.id)
+        .filter(sigint_saved_filter::Column::Login.eq(Some(user.id()?)))
+        .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
+        .one(&env.dbx)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let mut saved_filter: sigint_saved_filter::ActiveModel =
+        saved_filter.into();
+    saved_filter.name = Set(req.name.clone());
+    saved_filter.update(&env.dbx).await?;
+    Ok(Json(()))
+}
+
+#[post("/api/rer/{filter_type}/saved-filter-delete")]
+pub async fn saved_filter_delete(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<i64>,
+    path: actix_web::web::Path<String>,
+) -> Result<Json<()>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let filter_type = filter_type_form_path(&path.into_inner().as_str())?;
+    let saved_filter =
+        sigint_saved_filter::Entity::find_by_id(req.into_inner())
+            .filter(sigint_saved_filter::Column::Login.eq(Some(user.id()?)))
+            .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
+            .one(&env.dbx)
+            .await?
+            .ok_or(AppError::NotFound)?;
+    let saved_filter: sigint_saved_filter::ActiveModel = saved_filter.into();
+    saved_filter.delete(&env.dbx).await?;
+    Ok(Json(()))
+}
+
+#[post("/api/rer/analysis/new-callsigns")]
+pub async fn new_callsigns(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<NewCallsignsRes>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id()?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let include_peleng_locations =
+        req.include_peleng_locations.clone().unwrap_or(false);
+
+    #[derive(FromQueryResult)]
+    struct Row {
+        callsigns: Option<serde_json::Value>,
+        timestamp: Option<NaiveDateTime>,
+    }
+    let rows_res = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
+        .filter(signal_message::Column::GroupMasterKey.is_in(
+            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+        ))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let rows_res = filter_selected_senders(rows_res, &req.selected_senders)?;
+    let rows_res = filter_selected_freqs(rows_res, &req.selected_freqs)?;
+    let rows_res = filter_selected_posts(rows_res, &req.selected_posts)?;
+    let rows_res = filter_selected_units(
+        rows_res,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )?;
+    let rows_res = filter_selected_locations(
+        rows_res,
+        &req.selected_locations,
+        include_peleng_locations,
+    )?;
+    let rows_res =
+        filter_selected_callsigns(rows_res, &req.selected_callsigns)?;
+    let rows_res = filter_search(rows_res, &req.search)?;
+    let rows_res = filter_selected_tags(
+        rows_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &user.id()?,
+        true,
+    )?;
+    let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
+
+    let mut callsigns_in_period = BTreeSet::new();
+    while let Some(item) = rows_res.try_next().await? {
+        let Some(callsigns) = item.callsigns else {
+            continue;
+        };
+        let callsigns: Vec<String> =
+            serde_json::from_value(callsigns).context(h!())?;
+        for callsign in callsigns {
+            callsigns_in_period.insert(callsign);
+        }
+    }
+
+    // go back 30 days
+    let dt_till = dt_since;
+    let dt_since = dt_since - chrono::Duration::days(30);
+    let rows_res = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
+        .filter(signal_message::Column::GroupMasterKey.is_in(
+            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+        ))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let rows_res = filter_selected_senders(rows_res, &req.selected_senders)?;
+    let rows_res = filter_selected_freqs(rows_res, &req.selected_freqs)?;
+    let rows_res = filter_selected_posts(rows_res, &req.selected_posts)?;
+    let rows_res = filter_selected_units(
+        rows_res,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )?;
+    let rows_res = filter_selected_locations(
+        rows_res,
+        &req.selected_locations,
+        include_peleng_locations,
+    )?;
+    let rows_res =
+        filter_selected_callsigns(rows_res, &req.selected_callsigns)?;
+    let rows_res = filter_search(rows_res, &req.search)?;
+    let rows_res = filter_selected_tags(
+        rows_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &user.id()?,
+        true,
+    )?;
+    let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
+
+    let mut callsign_last_seen: BTreeMap<String, NaiveDateTime> =
+        BTreeMap::new();
+    while let Some(item) = rows_res.try_next().await? {
+        let Some(callsigns) = item.callsigns else {
+            continue;
+        };
+        let callsigns: Vec<String> =
+            serde_json::from_value(callsigns).context(h!())?;
+        let Some(timestamp) = item.timestamp else {
+            continue;
+        };
+        for callsign in callsigns {
+            callsign_last_seen
+                .entry(callsign)
+                .and_modify(|e| {
+                    if *e < timestamp {
+                        *e = timestamp;
+                    }
+                })
+                .or_insert(timestamp);
+        }
+    }
+
+    let seen_24h = callsign_last_seen
+        .iter()
+        .filter(|(_, v)| **v > dt_till - chrono::Duration::hours(24))
+        .map(|(k, _)| k.clone())
+        .collect::<Vec<_>>();
+    let seen_7days = callsign_last_seen
+        .iter()
+        .filter(|(_, v)| **v > dt_till - chrono::Duration::days(7))
+        .map(|(k, _)| k.clone())
+        .collect::<Vec<_>>();
+    let seen_30days = callsign_last_seen
+        .iter()
+        .filter(|(_, v)| **v > dt_till - chrono::Duration::days(30))
+        .map(|(k, _)| k.clone())
+        .collect::<Vec<_>>();
+    let not_seen_24h = callsigns_in_period
+        .iter()
+        .filter(|k| !seen_24h.contains(k))
+        .cloned()
+        .collect::<Vec<_>>();
+    let not_seen_7days = callsigns_in_period
+        .iter()
+        .filter(|k| !seen_7days.contains(k))
+        .cloned()
+        .collect::<Vec<_>>();
+    let not_seen_30days = callsigns_in_period
+        .iter()
+        .filter(|k| !seen_30days.contains(k))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    Ok(Json(NewCallsignsRes {
+        not_seen_24h,
+        not_seen_7days,
+        not_seen_30days,
+    }))
+}
+
+#[post("/api/rer/message/comments-batch")]
+pub async fn batch_message_comments(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<BatchMessageCommentsReq>,
+) -> Result<Json<MessageComments>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let message_ids: Vec<i64> =
+        req.messages.iter().map(|m| m.message_id.clone()).collect();
+    let comments = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
+        .order_by_asc(sigint_comment::Column::CreatedAt)
+        .all(&env.dbx)
+        .await?;
+    let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
+    for comment in comments {
+        let message_id = comment.signal_message_id;
+        let mut comm_vec = match res.get(&message_id) {
+            None => vec![],
+            Some(v) => v.clone(),
+        };
+        comm_vec.push(MessageComment {
+            message_id,
+            id: comment.id,
+            comment: comment.comment,
+            login: comment.login,
+        });
+        res.insert(message_id, comm_vec);
+    }
+    let data = res
+        .iter()
+        .map(|(id, comments)| MessageCommentEntry {
+            message_id: *id,
+            comments: comments.clone(),
+        })
+        .collect();
+    Ok(Json(MessageComments { data }))
+}
+
+#[post("/api/rer/message/comments")]
+pub async fn message_comments(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MessageCommentsReq>,
+) -> Result<Json<Vec<MessageComment>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let message = signal_message::Entity::find_by_id(req.message_id)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .one(&env.dbx)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let comments = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::SignalMessageId.eq(req.message_id))
+        .order_by_asc(sigint_comment::Column::CreatedAt)
+        .all(&env.dbx)
+        .await?;
+    let mut res = vec![];
+    for comment in comments {
+        res.push(MessageComment {
+            id: comment.id,
+            message_id: message.id,
+            comment: comment.comment,
+            login: comment.login,
+        });
+    }
+    Ok(Json(res))
+}
+
+/// STATS
+#[post("/api/rer/analysis/stats/groups")]
+async fn group_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<GroupStatsRsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let master_keys_noimport =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+    let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
+        .await
+        .context(h!())?;
+    let group_names =
+        collect_group_names(&groups, &env.dbx).await.context(h!())?;
+    Ok(Json(GroupStatsRsp {
+        groups,
+        group_names,
+    }))
+}
+
+#[post("/api/rer/analysis/stats/senders")]
+async fn sender_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<SenderStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let senders = stats::fetch_senders(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    let sender_names = collect_sender_names(&senders, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(SenderStatsRsp {
+        senders,
+        sender_names,
+    }))
+}
+
+#[post("/api/rer/analysis/stats/posts")]
+async fn post_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<PostStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let posts = stats::fetch_posts(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(PostStatsRsp { posts }))
+}
+
+#[post("/api/rer/analysis/stats/freqs")]
+async fn freq_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<FreqStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
+        .await?;
+
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let freqs = stats::fetch_freqs(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(FreqStatsRsp { freqs }))
+}
+
+#[post("/api/rer/analysis/stats/callsigns")]
+async fn callsign_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<CallsignStatsRsp>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id()?;
+    let master_keys =
+        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let callsigns = stats::fetch_callsigns(&req, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(CallsignStatsRsp { callsigns }))
+}
+
+#[post("/api/rer/analysis/stats/tags")]
+async fn tag_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<TagStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let tags = stats::fetch_tags(&req, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(TagStatsRsp { tags }))
+}
+
+#[post("/api/rer/analysis/stats/units")]
+async fn unit_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<UnitStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let units = stats::fetch_units(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(UnitStatsRsp { units }))
+}
+
+#[post("/api/rer/analysis/stats/locations")]
+async fn location_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<LocationStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let locations = fetch_locations(&user, &env, &req, master_keys).await?;
+    Ok(Json(LocationStatsRsp { locations }))
+}
+
+async fn fetch_locations(
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    req: &Json<AnalysisStatsReq>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsLocation>, AppError> {
+    let mut locations_map = BTreeMap::new();
+    stats::fetch_locations(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?
+        .into_iter()
+        .for_each(|stat| {
+            let location = stat.location;
+            let old_count = locations_map.get(&location).unwrap_or(&0);
+            let count = old_count + stat.count;
+            locations_map.insert(location, count);
+        });
+    let locations = locations_map
+        .into_iter()
+        .map(|(location, count)| AnalysisStatsLocation { location, count })
+        .collect_vec();
+    Ok(locations)
+}
+
+#[post("/api/rer/analysis/stats/count")]
+async fn count_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<CountStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let master_keys_noimport =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+
+    let groups_count =
+        stats::count_groups(&req, &user, &env, master_keys_noimport)
+            .await
+            .context(h!())?;
+    let senders_count =
+        stats::count_senders(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let freqs_count =
+        stats::count_freqs(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let posts_count =
+        stats::count_posts(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let callsigns_count =
+        stats::count_callsigns(&req, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let units_count =
+        stats::count_units(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let locations_count =
+        stats::count_locations(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+    let tags_count = stats::count_tags(&req, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let (count_overall, count_selected) =
+        stats::fetch_counts(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
+
+    Ok(Json(CountStatsRsp {
+        count_overall,
+        count_selected,
+        groups_count,
+        senders_count,
+        freqs_count,
+        posts_count,
+        callsigns_count,
+        units_count,
+        locations_count,
+        tags_count,
+    }))
+}
+
+/// STATS
+#[post("/api/rer/analysis/stats/groups/count")]
+async fn group_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let master_keys_noimport =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+    let groups_count =
+        stats::count_groups(&req, &user, &env, master_keys_noimport)
+            .await
+            .context(h!())?;
+    Ok(Json(groups_count))
+}
+
+#[post("/api/rer/analysis/stats/senders/count")]
+async fn sender_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let senders_count = stats::count_senders(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(senders_count))
+}
+
+#[post("/api/rer/analysis/stats/posts/count")]
+async fn post_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let posts_count = stats::count_posts(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(posts_count))
+}
+
+#[post("/api/rer/analysis/stats/freqs/count")]
+async fn freq_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "Api"]).await?;
+
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let freqs_count = stats::count_freqs(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(freqs_count))
+}
+
+#[post("/api/rer/analysis/stats/callsigns/count")]
+async fn callsign_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let callsigns_count = stats::count_callsigns(&req, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(callsigns_count))
+}
+
+#[post("/api/rer/analysis/stats/tags/count")]
+async fn tag_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let tags_count = stats::count_tags(&req, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(tags_count))
+}
+
+#[post("/api/rer/analysis/stats/units/count")]
+async fn unit_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let units_count = stats::count_units(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(units_count))
+}
+
+#[post("/api/rer/analysis/stats/locations/count")]
+async fn location_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys = users::get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let locations_count =
+        stats::count_locations(&req, &user, &env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(Json(locations_count))
+}
+
+/// Deprecated.
+/// Also see inbox.rs and callsigns.rs for similar end-points filtering done on the same screen
+#[post("/api/rer/analysis/stats")]
+async fn stats_deprecated(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<AnalysisStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+
+    let instant = std::time::Instant::now();
+
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let master_keys_noimport =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+
+    let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
+        .await
+        .context(h!())?;
+    let senders = stats::fetch_senders(&req, &user, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let posts = stats::fetch_posts(&req, &user, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let freqs = stats::fetch_freqs(&req, &user, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let callsigns = stats::fetch_callsigns(&req, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let tags = stats::fetch_tags(&req, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let units = stats::fetch_units(&req, &user, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let locations =
+        fetch_locations(&user, &env, &req, master_keys.clone()).await?;
+    let count = stats::fetch_counts(&req, &user, &env, master_keys.clone())
+        .await
+        .context(h!())?;
+    debug!("[stats] get stats: {:?}", instant.elapsed());
+
+    Ok(Json(AnalysisStatsRsp {
+        groups,
+        senders,
+        posts,
+        freqs,
+        callsigns,
+        units,
+        locations,
+        tags,
+        count_overall: count.0,
+        count_selected: count.1,
+    }))
+}
+
+async fn collect_group_names(
+    groups: &Vec<AnalysisStatsGroup>,
+    txn: &DatabaseConnection,
+) -> anyhow::Result<Vec<SignalGroupEntry>> {
+    let mut result = vec![];
+    let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
+    let signal_groups = signal_group::Entity::find()
+        .select_only()
+        .columns([
+            signal_group::Column::MasterKey,
+            signal_group::Column::Name,
+            signal_group::Column::IgnoreOperativny,
+        ])
+        .filter(signal_group::Column::MasterKey.is_in(group_keys.clone()))
+        .into_tuple::<(String, Option<String>, bool)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    for (master_key, name, ignore_operativny) in signal_groups {
+        if let Some(name) = name {
+            result.push(SignalGroupEntry {
+                master_key,
+                name,
+                ignore_operativny,
+            });
+        }
+    }
+    let whatsapp_groups = whatsapp_group::Entity::find()
+        .select_only()
+        .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
+        .filter(whatsapp_group::Column::Jid.is_in(group_keys.clone()))
+        .into_tuple::<(String, String)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let ignore_operativny = false;
+    for (master_key, name) in whatsapp_groups {
+        result.push(SignalGroupEntry {
+            master_key,
+            name,
+            ignore_operativny,
+        });
+    }
+    Ok(result)
+}
+
+async fn collect_sender_names(
+    senders: &Vec<AnalysisStatsSender>,
+    txn: &DatabaseConnection,
+) -> anyhow::Result<BTreeMap<String, Option<SignalProfileRsp>>> {
+    let mut result = BTreeMap::new();
+    let mut sender_keys = vec![];
+    for sender in senders {
+        sender_keys.push(sender.uuid.clone());
+    }
+    let signal_profiles = signal_profile::Entity::find()
+        .select_only()
+        .columns([
+            signal_profile::Column::Uuid,
+            signal_profile::Column::FamilyName,
+            signal_profile::Column::GivenName,
+        ])
+        .filter(signal_profile::Column::Uuid.is_in(sender_keys.clone()))
+        .into_tuple::<(String, Option<String>, Option<String>)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let mut signal_profiles_map = BTreeMap::new();
+    for (key, family_name, given_name) in signal_profiles {
+        signal_profiles_map.insert(
+            key,
+            SignalProfileRsp {
+                given_name,
+                family_name,
+            },
+        );
+    }
+    for s in sender_keys {
+        let entry = signal_profiles_map.remove(&s);
+        result.insert(s, entry);
+    }
+
+    Ok(result)
+}

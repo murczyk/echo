@@ -1,0 +1,16 @@
+[package]
+name = "signal-cli-native"
+version = "0.1.0"
+edition = "2021"
+authors = [ "rickyrepel@gmail.com" ]
+license = "AllRightsReserved"
+description = "Signal Cli Native and Signal Cli REST API binaries"
+
+[dependencies]
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+assets = [
+	["deploy/signal-cli/signal-cli-native", "usr/bin/", "755"],
+	["deploy/signal-cli/signal-cli-rest-api", "usr/bin/", "755"],
+]

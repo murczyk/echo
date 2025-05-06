@@ -1,0 +1,17 @@
+[Unit]
+Description=echo-signal-cli
+
+[Service]
+ExecStart=/usr/bin/signal-cli-rest-api -signal-cli-config /etc/echo/signal-cli/ -attachment-tmp-dir /etc/echo/signal-cli/attachments/
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+Environment=MODE=native
+Environment=PORT=8083
+Environment=BIND_IP=127.0.0.1
+Environment=TRUSTED_PROXIES=127.0.0.1
+Environment=SIGNAL_CLI_VERBOSE=true
+
+[Install]
+WantedBy=multi-user.target

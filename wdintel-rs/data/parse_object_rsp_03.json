@@ -1,0 +1,92 @@
+{
+    "id": "1d863572-a86d-4f18-bf72-447e63b7004f",
+    "name": "ББМ",
+    "creatingDateTime": 1672296795735,
+    "reportingDateTime": 1672296795749,
+    "observationDateTime": -1,
+    "validityEndDateTime": -1,
+    "status": "-",
+    "reporterName": "ziggy",
+    "reporterPosition": "Оператор-радіотелефоніст відділення звʼязку",
+    "reporterType": "ACTOR",
+    "reporterOrganisation": "190 НЦ ЖВІ (А3508)",
+    "creatorName": "ziggy",
+    "creatorPosition": "Оператор-радіотелефоніст відділення звʼязку",
+    "creatorOrganisation": "190 НЦ ЖВІ (А3508)",
+    "comments": [
+        "ББМ",
+        "За оперативною інформацією на території тракторної бригади розташовано 15 одиниць ВТ та до 10 одиниць БМП (5272984, 7332046; 5273000, 7332484; 5272463, 7332511; 5272465, 7332044)."
+    ],
+    "overlays": [
+        {
+            "id": "41a4520b-2f60-e655-807a-7508ad0faff4",
+            "name": "test2",
+            "editable": true,
+            "objectIsDisplayedOn": false
+        }
+    ],
+    "locationReports": [
+        {
+            "reportTimeStamp": 1672296795749,
+            "location": {
+                "locationGeometry": {
+                    "type": "{https://mip-interop.org/data/v4.3/BattlespaceConcept/Location}AbsolutePointType",
+                    "extension": [
+                        {
+                            "any": [
+                                {
+                                    "type": "{https://mip-interop.org/data/v4.3/BattlespaceConcept/Location}VelocityType"
+                                }
+                            ]
+                        }
+                    ],
+                    "absolutePointLatitudeCoordinate": {
+                        "latitudeCoordinateCoordinate": 47.564061
+                    },
+                    "absolutePointLongitudeCoordinate": {
+                        "longitudeCoordinateCoordinate": 36.772713
+                    },
+                    "absolutePointVerticalDistance": {
+                        "verticalDistanceDimension": 0.0
+                    }
+                }
+            },
+            "sourceInfo": {
+                "sourceType": "ACTOR",
+                "source": "ziggy"
+            }
+        }
+    ],
+    "objectDetailInformation": [
+        {
+            "name": "Броньована",
+            "type": "B",
+            "value": true
+        },
+        {
+            "name": "Назва",
+            "type": "T",
+            "value": "ББМ"
+        },
+        {
+            "name": "Присутність / Боєздатність",
+            "type": "C",
+            "value": "Присутній"
+        }
+    ],
+    "symbol": {
+        "app6d": {
+            "sidc": "10061500001201000000",
+            "amplifierFields": {
+                "T": {
+                    "value": "ББМ",
+                    "type": "TEXT"
+                },
+                "Y": {
+                    "value": "36.7727130 47.5640610",
+                    "type": "TEXT"
+                }
+            }
+        }
+    }
+}

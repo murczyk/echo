@@ -1,0 +1,485 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "fdfs3u7uuultse"
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 15,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.97,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "orientation": "auto",
+        "showValue": "always",
+        "stacking": "normal",
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 75,
+        "xTickLabelSpacing": 100
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "fdfs3u7uuultse"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroup(sm.\"timestamp\",'1d',0) as time, \n  sg.name as metric,\n  COUNT(sm.id) as value\nFROM signal_message sm\nINNER JOIN sigint_inbox_item sii ON sm.id=sii.id\nLEFT JOIN signal_group sg ON sg.master_key=sm.group_master_key\ninner join datasource d on d.id=sm.datasource_id \ninner join sigint_zone_datasource szd on szd.datasource_id = d.id \ninner join sigint_zone sz on sz.id=szd.sigint_zone_id \ninner join login l on l.sigint_zone_id = sz.id\nWHERE $__timeFilter(\"timestamp\") \n\tand szd.group_master_keys ? sm.group_master_key \n  AND l.login = replace('${__user.login}', 'admin', 'ziggy')\n  AND sii.freq = '$freq'\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "РЕР-перехоплень по дням по signal-групам",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "marcusolsson-json-datasource",
+        "uid": "ddfs3gl06nhtsc"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 15,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "basemap": {
+          "config": {},
+          "name": "Layer 0",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": false,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "name": "Layer 2",
+            "opacity": 1,
+            "tooltip": true,
+            "type": "osm-standard"
+          },
+          {
+            "config": {
+              "rules": [],
+              "src": "https://echo.localhost:8443/api/delta/geojson/latest",
+              "style": {
+                "color": {
+                  "fixed": "#8F3BB8"
+                },
+                "opacity": 0.4,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 5,
+                  "max": 15,
+                  "min": 2
+                },
+                "symbol": {
+                  "field": "",
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "name": "Layer 4",
+            "opacity": 0.5,
+            "tooltip": true,
+            "type": "geojson"
+          },
+          {
+            "config": {
+              "showLegend": false,
+              "style": {
+                "color": {
+                  "fixed": "dark-purple"
+                },
+                "opacity": 0.4,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 5,
+                  "max": 15,
+                  "min": 2
+                },
+                "symbol": {
+                  "field": "",
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "text": {
+                  "field": "name",
+                  "fixed": "NaMe",
+                  "mode": "field"
+                },
+                "textConfig": {
+                  "offsetY": -12,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "auto"
+            },
+            "name": "Layer 5",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "none"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "coords",
+          "lat": 47.358906,
+          "lon": 36.369651,
+          "zoom": 8.36
+        }
+      },
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {
+          "cacheDurationSeconds": 300,
+          "datasource": {
+            "type": "marcusolsson-json-datasource",
+            "uid": "edezqwvte4wlcf"
+          },
+          "fields": [
+            {
+              "jsonPath": "$.features[*].geometry.coordinates.0",
+              "language": "jsonpath",
+              "name": "lng"
+            },
+            {
+              "jsonPath": "$.features[*].geometry.coordinates.1",
+              "language": "jsonpath",
+              "name": "lat"
+            },
+            {
+              "jsonPath": "$.features[*].geometry.type",
+              "language": "jsonpath",
+              "name": "type"
+            },
+            {
+              "jsonPath": "$.features[*]",
+              "language": "jsonpath",
+              "name": "data"
+            }
+          ],
+          "headers": [],
+          "method": "GET",
+          "queryParams": "",
+          "refId": "GeoJson",
+          "urlPath": "/delta/geojson/latest"
+        },
+        {
+          "cacheDurationSeconds": 300,
+          "datasource": {
+            "type": "marcusolsson-json-datasource",
+            "uid": "ddfs3gl06nhtsc"
+          },
+          "fields": [
+            {
+              "jsonPath": "$[*].lat",
+              "name": "lat"
+            },
+            {
+              "jsonPath": "$[*].lng",
+              "language": "jsonpath",
+              "name": "lng"
+            },
+            {
+              "jsonPath": "$[*].body",
+              "language": "jsonpath",
+              "name": ""
+            }
+          ],
+          "hide": false,
+          "method": "GET",
+          "params": [
+            ["freq", "$freq"],
+            ["to", "$__isoTo()"],
+            ["from", "$__isoFrom()"]
+          ],
+          "queryParams": "",
+          "refId": "MessagesByFreq",
+          "urlPath": "/rer-importer/grafana/messages"
+        }
+      ],
+      "title": "Пеленги",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "equal",
+                  "options": {
+                    "value": "Point"
+                  }
+                },
+                "fieldName": "type"
+              },
+              {
+                "config": {
+                  "id": "isNull",
+                  "options": {}
+                },
+                "fieldName": "type"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
+        },
+        {
+          "id": "extractFields",
+          "options": {
+            "format": "json",
+            "jsonPaths": [
+              {
+                "alias": "name",
+                "path": "properties.name"
+              }
+            ],
+            "source": "data"
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "equal",
+                  "options": {
+                    "value": "ENY"
+                  }
+                },
+                "fieldName": "name"
+              }
+            ],
+            "match": "any",
+            "type": "exclude"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "data": true,
+              "type": true
+            },
+            "includeByName": {},
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ],
+      "type": "geomap"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "460.3250",
+          "value": "460.3250"
+        },
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "fdfs3u7uuultse"
+        },
+        "definition": "select distinct sii.freq from signal_message sm inner join sigint_inbox_item sii on sm.id=sii.id where sm.\"timestamp\"  > now() - interval '2 months' group by 1",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Частота",
+        "multi": false,
+        "name": "freq",
+        "options": [],
+        "query": "select distinct sii.freq from signal_message sm inner join sigint_inbox_item sii on sm.id=sii.id where sm.\"timestamp\"  > now() - interval '2 months' group by 1",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-12h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "02. РЕР для частоти по днях",
+  "uid": "a3356654-5b21-483d-8ec8-876d5476fe73",
+  "version": 28,
+  "weekStart": ""
+}

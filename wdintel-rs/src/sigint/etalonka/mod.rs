@@ -1,0 +1,1512 @@
+use crate::error::AppError;
+use crate::types::*;
+use crate::utils::*;
+use actix_web::web::Json;
+use actix_web::{post, HttpRequest, HttpResponse};
+use chrono::prelude::*;
+use docx_rs::*;
+use futures::stream::StreamExt;
+use log::*;
+
+use crate::rer_importer::reports::{
+    cleanup_old_reports_nofail, save_report_log,
+};
+use crate::sigint::etalonka::query::*;
+use crate::sigint::etalonka::types::*;
+use std::str::FromStr;
+
+const OLD_CALLSIGNS_COLOR: &str = "696969";
+const DEFAULT_PURPOSE: &str =
+    "для управління підлеглим особовим складом підрозділу.";
+const DEFAULT_OPERATION_MODE: &str =
+    "з використанням дуплексного способу організації зв’язку";
+const DEFAULT_OPERATION_TYPE: &str =
+    "перевірка зв’язку, ведення службового радіообміну";
+const DEFAULT_OPERATION_PERIOD: &str = "цілодобово";
+
+pub mod query;
+pub mod types;
+
+#[post("/api/sigint/etalonka/report")]
+pub async fn report_freqs(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
+    req: Json<EtalonkaReq>,
+) -> Result<HttpResponse, AppError> {
+    info!("> Start Etalonka report generation...");
+    let width_unit = 1138;
+
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
+
+    let storage_dir =
+        std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
+    let outfolder = storage_dir.join("reports_log");
+    let _ = std::fs::create_dir_all(&outfolder);
+    let filename = format!(
+        "report_{}.docx",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f").to_string()
+    );
+    let outpath = outfolder.join(&filename);
+    let user_login = user.id().context(h!())?;
+
+    let dt_since = dt_from_millis(req.list_freq_req.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(req.list_freq_req.till_date_noninclusive_ms)?;
+    let tz = crate::config::get_tz();
+    let date_from_dt_tz = Utc.from_utc_datetime(&dt_since).with_timezone(&tz);
+    let date_to_dt_tz = Utc.from_utc_datetime(&dt_till).with_timezone(&tz);
+
+    let groups = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await?;
+
+    let file = std::fs::File::create(outpath.clone())?;
+
+    let paragraph_1_style_name = "Paragraph 1";
+    let paragraph_1_style_id = gen_style_id_by_name(paragraph_1_style_name);
+    let paragraph_1_style = define_new_paragraph_style(
+        paragraph_1_style_name,
+        "Calibri",
+        24,
+        true,
+        AlignmentType::Left,
+    );
+
+    let paragraph_2_style_name = "Paragraph 2";
+    let paragraph_2_style_id = gen_style_id_by_name(paragraph_2_style_name);
+    let paragraph_2_style = define_new_paragraph_style(
+        paragraph_2_style_name,
+        "Calibri",
+        22,
+        true,
+        AlignmentType::Left,
+    );
+
+    let table_header_style_name = "Table Header";
+    let table_header_style_id = gen_style_id_by_name(table_header_style_name);
+    let table_header_style = define_new_paragraph_style(
+        table_header_style_name,
+        "Calibri",
+        22,
+        true,
+        AlignmentType::Center,
+    );
+
+    let mut doc = docx_rs::Docx::new()
+        .page_orient(PageOrientationType::Landscape)
+        .page_size(16838, 11906)
+        .default_size(20)
+        .default_fonts(RunFonts::new().ascii("Calibri"))
+        .page_margin(
+            docx_rs::page_margin::PageMargin::new()
+                .left(600)
+                .right(300)
+                .top(1200),
+        )
+        .add_style(table_header_style)
+        .add_style(paragraph_1_style)
+        .add_style(paragraph_2_style)
+        .add_paragraph(
+            Paragraph::new()
+                .style(&paragraph_1_style_id)
+                .add_run(Run::new().size(32).add_text(format!(
+                    "Опис радіомереж за період {}-{} {} - {}",
+                    date_from_dt_tz.format("%d.%m"),
+                    date_to_dt_tz.format("%d.%m.%Y"),
+                    date_from_dt_tz.format("%H:%M"),
+                    date_to_dt_tz.format("%H:%M")
+                )))
+                .align(docx_rs::alignment_type::AlignmentType::Center),
+        )
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(
+            Paragraph::new().style(&paragraph_1_style_id).add_run(
+                Run::new().add_text(
+                    "Розділ 1. Радіомережі з визначеною приналежністю",
+                ),
+            ),
+        )
+        .add_paragraph(Paragraph::new());
+
+    let freqs_data: HashMap<String, Vec<FreqStatsRes>> =
+        load_freqs_per_unit(&env.dbx, groups.clone(), &req).await?;
+
+    let all_known_callsigns = find_all_known_callsigns(&env.dbx).await?;
+
+    let callsigns_data: HashMap<String, Vec<CallsignRes>> =
+        futures::future::join_all(freqs_data.keys().map(|unit| {
+            let unit = unit.clone();
+            let groups = &groups;
+            let env = &env;
+            let req = &req;
+            let all_known_callsigns = &all_known_callsigns;
+            let filter = EtalonkaFilter {
+                since_date_inclusive_ms: Some(
+                    req.list_freq_req.since_date_inclusive_ms,
+                ),
+                till_date_noninclusive_ms: Some(
+                    req.list_freq_req.till_date_noninclusive_ms,
+                ),
+                filter_freq: req.list_freq_req.filter_freq.clone(),
+                filter_unit: Some(unit.clone()),
+                network_id: None,
+                full_etalonka_report: req.full_etalonka_report,
+            };
+
+            async move {
+                let result = load_callsigns(
+                    &env.dbx,
+                    groups,
+                    &filter,
+                    all_known_callsigns,
+                    false,
+                )
+                .await;
+                match result {
+                    Ok(callsigns) => Some((unit, callsigns)),
+                    Err(e) => {
+                        warn!("Error loading callsigns for {unit}: {e:#?}",);
+                        None
+                    }
+                }
+            }
+        }))
+        .await
+        .into_iter()
+        .filter_map(|x| x) // Remove None values
+        .collect();
+
+    // Load signals data grouped by unit
+    let signals_data: HashMap<String, Vec<SignalRes>> =
+        futures::future::join_all(freqs_data.keys().map(|unit| {
+            let unit = unit.clone();
+            let env = &env;
+
+            async move {
+                let result = load_signals_per_unit(&env.dbx, &unit).await;
+                match result {
+                    Ok(signals) => Some((unit, signals)),
+                    Err(e) => {
+                        warn!("Error loading signals for {unit}: {e:#?}");
+                        None
+                    }
+                }
+            }
+        }))
+        .await
+        .into_iter()
+        .filter_map(|x| x) // Remove None values
+        .collect();
+
+    // Load pelengs map data grouped by unit
+    let pelengs_map_data: HashMap<String, Vec<u8>> =
+        futures::stream::iter(freqs_data.keys().cloned())
+            .then(|unit| {
+                let groups = &groups;
+                let env = &env;
+                let filter = EtalonkaFilter {
+                    since_date_inclusive_ms: Some(
+                        req.list_freq_req.since_date_inclusive_ms,
+                    ),
+                    till_date_noninclusive_ms: Some(
+                        req.list_freq_req.till_date_noninclusive_ms,
+                    ),
+                    filter_freq: req.list_freq_req.filter_freq.clone(),
+                    filter_unit: Some(unit.clone()),
+                    network_id: None,
+                    full_etalonka_report: req.full_etalonka_report,
+                };
+
+                async move {
+                    let result =
+                        load_pelengs_map(&env.dbx, groups, &filter).await;
+                    match result {
+                        Ok(Some(pelengs_map)) => Some((unit, pelengs_map)),
+                        Ok(None) => {
+                            trace!("No pelengs map for {}", unit);
+                            None
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Error loading pelengs map for {unit}: {e:#?}"
+                            );
+                            None
+                        }
+                    }
+                }
+            })
+            // .buffered(1) // Execute one by one
+            .filter_map(|x| async { x }) // Remove None values
+            .collect()
+            .await;
+
+    // Build the document using the combined data
+    doc = freqs_data.into_iter().fold(doc, |mut d, (unit, freqs)| {
+        let callsigns = callsigns_data
+            .get(&unit)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+
+        let signals =
+            signals_data.get(&unit).map(|v| v.as_slice()).unwrap_or(&[]);
+
+        d = d
+            // Add heading for frequencies
+            .add_paragraph(
+                Paragraph::new().style(&paragraph_2_style_id).add_run(
+                    Run::new().add_text(format!("Радіомережі {}", &unit)),
+                ),
+            )
+            // Add frequency table
+            .add_table(
+                Table::new(
+                    vec![TableRow::new(vec![
+                        create_table_header_cell(
+                            width_unit * 1,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Частота",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 1,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "К-ть перехоплень",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 1,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Тип передачі",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 1,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "р/c",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 3,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Назва р/м",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Підтвердження приналежності р/м",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Призначення, х-р роботи",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Локація",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 1,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Вперше відмічена",
+                            false,
+                        ),
+                    ])]
+                    .into_iter()
+                    .chain(freqs.into_iter().map(|freq| {
+                        TableRow::new(vec![
+                            create_table_data_cell(
+                                width_unit * 1,
+                                &freq.freq,
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 1,
+                                &freq.message_count.to_string(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 1,
+                                &freq.kind_updated.unwrap_or_default(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 1,
+                                &freq.radio_station.unwrap_or_default(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 3,
+                                format!(
+                                    "{} р/м {}",
+                                    &freq.kind.unwrap_or_default(),
+                                    &freq.name
+                                )
+                                .as_str(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 2,
+                                &freq.confirmation.unwrap_or_default(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 2,
+                                &freq.comment.unwrap_or_default(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 2,
+                                &freq.location.unwrap_or_default(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 1,
+                                &freq
+                                    .first_time
+                                    .map(|dt| {
+                                        dt.format("%d.%m.%Y %H:%M").to_string()
+                                    })
+                                    .unwrap_or_else(|| String::new()),
+                                None,
+                                false,
+                            ),
+                        ])
+                    }))
+                    .collect(),
+                )
+                .width(width_unit * 14, WidthType::Dxa),
+            )
+            .add_paragraph(Paragraph::new())
+            // Add heading for callsigns
+            .add_paragraph(
+                Paragraph::new()
+                    .style(&paragraph_2_style_id)
+                    .add_run(Run::new().add_text("Позивні")),
+            );
+
+        if !callsigns.is_empty() {
+            // Add callsigns table
+            d = d.add_table(
+                Table::new(
+                    vec![TableRow::new(vec![
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Позивний",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Посада",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 5,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Коментар",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Останній раз в етері",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 1,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Частоти",
+                            false,
+                        ),
+                        create_table_header_cell(
+                            width_unit * 2,
+                            "f2f2f2",
+                            &table_header_style_id,
+                            "Радіомережі",
+                            false,
+                        ),
+                    ])]
+                    .into_iter()
+                    .chain(callsigns.iter().map(|callsign| {
+                        TableRow::new(vec![
+                            create_table_data_cell(
+                                width_unit * 2,
+                                &callsign.callsign.to_uppercase(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 2,
+                                get_unique_field_as_string(
+                                    &callsign.known_callsigns,
+                                    |item| item.position.clone(),
+                                )
+                                .as_str(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 5,
+                                get_unique_field_as_string(
+                                    &callsign.known_callsigns,
+                                    |item| item.comment.clone(),
+                                )
+                                .as_str(),
+                                None,
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 2,
+                                format_datetime_field(callsign.last_datetime)
+                                    .as_str(),
+                                get_color(callsign.is_old),
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 1,
+                                get_unique_field_as_string(
+                                    &callsign.freqs,
+                                    |f| f.clone(),
+                                )
+                                .as_str(),
+                                get_color(callsign.is_old),
+                                false,
+                            ),
+                            create_table_data_cell(
+                                width_unit * 2,
+                                get_unique_field_as_string(
+                                    &callsign.network_names,
+                                    |n| n.clone(),
+                                )
+                                .as_str(),
+                                get_color(callsign.is_old),
+                                false,
+                            ),
+                        ])
+                    }))
+                    .collect(),
+                )
+                .width(width_unit * 14, WidthType::Dxa),
+            );
+        } else {
+            d = d
+                .add_paragraph(
+                    Paragraph::new().add_run(
+                        Run::new()
+                            .add_text("За звітний період дані відсутні")
+                            .size(20),
+                    ),
+                )
+                .add_paragraph(Paragraph::new());
+        }
+
+        d = d
+            .add_paragraph(Paragraph::new())
+            // Add heading for signals
+            .add_paragraph(
+                Paragraph::new().style(&paragraph_2_style_id).add_run(
+                    Run::new()
+                        .add_text("Сигнали управління, розвідувальні ознаки:"),
+                ),
+            );
+
+        if !signals.is_empty() {
+            // Add signals table
+            d = d
+                .add_table(
+                    Table::new(
+                        vec![]
+                            .into_iter()
+                            .chain(signals.iter().map(|signal| {
+                                TableRow::new(vec![
+                                    create_table_data_cell(
+                                        width_unit * 7,
+                                        &signal.text,
+                                        None,
+                                        true,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 7,
+                                        &signal.meaning,
+                                        None,
+                                        true,
+                                    ),
+                                ])
+                            }))
+                            .collect(),
+                    )
+                    .width(width_unit * 14, WidthType::Dxa),
+                )
+                .add_paragraph(Paragraph::new());
+        } else {
+            d = d
+                .add_paragraph(
+                    Paragraph::new().add_run(
+                        Run::new()
+                            .add_text("За звітний період дані відсутні")
+                            .size(20),
+                    ),
+                )
+                .add_paragraph(Paragraph::new());
+        }
+
+        if let Some(img) = pelengs_map_data.get(&unit) {
+            let pic = Pic::new(&img).size(720 * 9525, 540 * 9525);
+
+            d = d
+                // Add map locations
+                .add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_break(BreakType::Page)),
+                )
+                .add_paragraph(
+                    Paragraph::new()
+                        .style(&paragraph_2_style_id)
+                        .add_run(Run::new().add_text(
+                        "Карта пеленгів частот підрозділу за звітний період:",
+                    )),
+                )
+                .add_paragraph(Paragraph::new())
+                .add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_image(pic))
+                        .align(docx_rs::alignment_type::AlignmentType::Center),
+                )
+                .add_paragraph(Paragraph::new());
+        }
+
+        d
+    });
+
+    let unregistre_networks_data =
+        load_unregistred_networks(&env.dbx, &groups, &req)
+            .await
+            .context(h!())?;
+
+    doc = doc
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(
+            Paragraph::new().style(&paragraph_1_style_id).add_run(
+                Run::new().add_text("Розділ 2. Неприв'язані радіомережі"),
+            ),
+        )
+        .add_paragraph(Paragraph::new())
+        .add_table(
+            Table::new(
+                vec![TableRow::new(vec![
+                    create_table_header_cell(
+                        width_unit * 2,
+                        "f2f2f2",
+                        &table_header_style_id,
+                        "Частоти",
+                        false,
+                    ),
+                    create_table_header_cell(
+                        width_unit * 1,
+                        "f2f2f2",
+                        &table_header_style_id,
+                        "К-ть перехоплень",
+                        false,
+                    ),
+                    create_table_header_cell(
+                        width_unit * 7,
+                        "f2f2f2",
+                        &table_header_style_id,
+                        "Позивні",
+                        false,
+                    ),
+                    create_table_header_cell(
+                        width_unit * 4,
+                        "f2f2f2",
+                        &table_header_style_id,
+                        "Локація",
+                        false,
+                    ),
+                ])]
+                .into_iter()
+                .chain(unregistre_networks_data.iter().map(|network| {
+                    TableRow::new(vec![
+                        create_table_data_cell(
+                            width_unit * 2,
+                            &network.freq,
+                            None,
+                            false,
+                        ),
+                        create_table_data_cell(
+                            width_unit * 1,
+                            &network.message_count.to_string(),
+                            None,
+                            false,
+                        ),
+                        create_table_data_cell(
+                            width_unit * 7,
+                            &network
+                                .callsigns
+                                .clone()
+                                .unwrap_or_default()
+                                .to_uppercase(),
+                            None,
+                            false,
+                        ),
+                        create_table_data_cell(
+                            width_unit * 4,
+                            &network.locations.clone().unwrap_or_default(),
+                            None,
+                            false,
+                        ),
+                    ])
+                }))
+                .collect(),
+            )
+            .width(width_unit * 14, WidthType::Dxa),
+        );
+
+    doc.build().pack(file).context(h!())?;
+
+    save_report_log(
+        &env.dbx,
+        format!("reports_log/{}", filename),
+        &serde_json::to_string(&req).context(h!())?,
+        &user_login,
+    )
+    .await
+    .context(h!())?;
+    Ok(actix_files::NamedFile::open(outpath)?.into_response(&http_req))
+}
+
+// TODO: this
+#[post("/api/sigint/etalonka/report-networks")]
+pub async fn report_networks(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
+    req: Json<EtalonkaJimForksReq>,
+) -> Result<HttpResponse, AppError> {
+    info!("> Start Etalon Network report generation...");
+    let width_unit = 300;
+
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    cleanup_old_reports_nofail(&env.dbx, &env.config).await;
+
+    let storage_dir =
+        std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
+    let outfolder = storage_dir.join("reports_log");
+    let _ = std::fs::create_dir_all(&outfolder);
+    let filename = format!(
+        "report_{}.docx",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f").to_string()
+    );
+    let outpath = outfolder.join(&filename);
+    let user_login = user.id().context(h!())?;
+
+    let groups = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await?;
+
+    let file = std::fs::File::create(outpath.clone())?;
+
+    let paragraph_1_style_name = "Paragraph 1";
+    let paragraph_1_style_id = gen_style_id_by_name(paragraph_1_style_name);
+    let paragraph_1_style = define_new_paragraph_style(
+        paragraph_1_style_name,
+        "Times New Roman",
+        24,
+        true,
+        AlignmentType::Left,
+    );
+
+    let paragraph_2_style_name = "Paragraph 2";
+    let paragraph_2_style_id = gen_style_id_by_name(paragraph_2_style_name);
+    let paragraph_2_style = define_new_paragraph_style(
+        paragraph_2_style_name,
+        "Times New Roman",
+        24,
+        false,
+        AlignmentType::Left,
+    );
+
+    let table_header_style_name = "Table Header";
+    let table_header_style_id = gen_style_id_by_name(table_header_style_name);
+    let table_header_style = define_new_paragraph_style(
+        table_header_style_name,
+        "Times New Roman",
+        24,
+        true,
+        AlignmentType::Center,
+    );
+
+    let mut doc = docx_rs::Docx::new()
+        .page_orient(PageOrientationType::Landscape)
+        .page_size(16838, 11906)
+        .default_size(24)
+        .default_fonts(RunFonts::new().ascii("Times New Roman"))
+        .page_margin(
+            docx_rs::page_margin::PageMargin::new()
+                .left(1984)     // 3.5 cm
+                .right(567)     // 1 cm
+                .top(1134)      // 2 cm
+                .bottom(1134)   // 2 cm
+        )
+        .add_style(table_header_style)
+        .add_style(paragraph_1_style)
+        .add_style(paragraph_2_style)
+        .add_paragraph(
+            Paragraph::new()
+                .style(&paragraph_1_style_id)
+                .add_run(Run::new().size(28).add_text(
+                    "ДОНЕСЕННЯ").bold())
+                .align(docx_rs::alignment_type::AlignmentType::Center),
+        )
+        .add_paragraph(
+            Paragraph::new()
+                .style(&paragraph_1_style_id)
+                .add_run(Run::new().size(28).add_text(
+                    r#"“Еталонні описи джерел радіовипромінювання противника у зоні відповідальності угруповання військ (сил)”"#).bold())
+                .align(docx_rs::alignment_type::AlignmentType::Center),
+        )
+        .add_paragraph(Paragraph::new());
+
+    let networks_data: HashMap<String, Vec<NetworkEtalonkaRes>> =
+        load_networks(&env.dbx, groups.clone(), &req)
+            .await
+            .context(h!())?;
+
+    let all_known_callsigns =
+        find_all_known_callsigns(&env.dbx).await.context(h!())?;
+
+    // let mut numbering_id = 0;
+    for (i, (name, results)) in networks_data.iter().enumerate() {
+        // doc = doc.add_numbering(Numbering::new(numbering_id, 0));
+
+        // Add unit name as title
+        doc = doc.add_paragraph(
+            Paragraph::new().add_run(Run::new().add_text(name).bold().size(32)), // .align(JustificationType::Center),
+        );
+
+        for (_index, network) in results.iter().enumerate() {
+            let filter = EtalonkaFilter {
+                since_date_inclusive_ms: Some(
+                    network.active_from.and_utc().timestamp_millis(),
+                ),
+                till_date_noninclusive_ms: Some(
+                    network
+                        .active_to
+                        .map(|dt| dt.and_utc().timestamp_millis())
+                        .unwrap_or_else(|| {
+                            Utc::now().naive_utc().and_utc().timestamp_millis()
+                        }),
+                ),
+                filter_freq: None,
+                filter_unit: None,
+                network_id: Some(network.id.clone()),
+                full_etalonka_report: false,
+            };
+
+            let callsigns = load_callsigns(
+                &env.dbx,
+                &groups,
+                &filter,
+                &all_known_callsigns,
+                req.active_freqs_only,
+            )
+            .await
+            .context(h!())?;
+
+            let correspondents_number = if callsigns.is_empty() {
+                String::new()
+            } else {
+                let unique_count = callsigns
+                    .iter()
+                    .map(|item| &item.callsign)
+                    .collect::<HashSet<_>>()
+                    .len();
+                format!("щонайменше {} ВЗ.", unique_count)
+            };
+
+            let freqs =
+                load_freqs(&env.dbx, &groups, &filter, req.active_freqs_only)
+                    .await
+                    .context(h!())?;
+
+            // doc = add_field(doc, "0. Id: ", &network.id.to_string());
+            doc = add_field(
+                doc,
+                "1. Назва радіомережі: ",
+                &network.network_full_name,
+            );
+
+            doc = add_field(
+                doc,
+                "2. Район функціонування/розгортання: ",
+                network
+                    .location
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+            );
+            doc = add_field(
+                doc,
+                "3. Призначення: ",
+                network
+                    .purpose
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or(DEFAULT_PURPOSE),
+            );
+            doc = add_field(
+                doc,
+                "4. Склад кореспондентів: ",
+                &correspondents_number,
+            );
+            doc = add_field(doc, "5. Позивні: ", &String::new());
+            if !callsigns.is_empty() {
+                // Add known callsigns in table
+                if callsigns.iter().any(|callsign| {
+                    callsign
+                        .known_callsigns
+                        .as_ref()
+                        .map_or(false, |v| !v.is_empty())
+                }) {
+                    doc = doc
+                        .add_table(
+                            Table::new(
+                                vec![TableRow::new(vec![
+                                    create_table_header_cell(
+                                        width_unit * 6,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Позивний",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 10,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Посада",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 10,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Коментар",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 1,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "К-ть перехоплень",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 3,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Частоти",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 7,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Останній раз в етері",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 7,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Дата прив'язки",
+                                        false,
+                                    ),
+                                    create_table_header_cell(
+                                        width_unit * 5,
+                                        "f2f2f2",
+                                        &table_header_style_id,
+                                        "Джерело",
+                                        false,
+                                    ),
+                                ])]
+                                .into_iter()
+                                .chain(
+                                    callsigns
+                                        .iter()
+                                        .filter(|callsign| {
+                                            callsign.known_callsigns.is_some()
+                                        })
+                                        .map(|callsign| {
+                                            TableRow::new(vec![
+                                    create_table_data_cell(
+                                        width_unit * 6,
+                                        &callsign.callsign.to_uppercase(),
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 10,
+                                        get_unique_field_as_string(
+                                            &callsign.known_callsigns,
+                                            |item| item.position.clone(),
+                                        )
+                                        .as_str(),
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 10,
+                                        get_unique_field_as_string(
+                                            &callsign.known_callsigns,
+                                            |item| item.comment.clone(),
+                                        )
+                                        .as_str(),
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 1,
+                                        &callsign
+                                            .message_count
+                                            .clone()
+                                            .to_string(),
+                                        get_color(callsign.is_old),
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 3,
+                                        get_unique_field_as_string(
+                                            &callsign.freqs,
+                                            |f| f.clone(),
+                                        )
+                                        .as_str(),
+                                        get_color(callsign.is_old),
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 7,
+                                        format_datetime_field(
+                                            callsign.last_datetime,
+                                        )
+                                        .as_str(),
+                                        get_color(callsign.is_old),
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 7,
+                                        get_unique_field_as_string(
+                                            &callsign.known_callsigns,
+                                            |item| {
+                                                format_datetime_field(Some(
+                                                    item.created_at,
+                                                ))
+                                            },
+                                        )
+                                        .as_str(),
+                                        get_color(callsign.is_old),
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 5,
+                                        get_unique_field_as_string(
+                                            &callsign.known_callsigns,
+                                            |item| item.source_name.clone(),
+                                        )
+                                        .as_str(),
+                                        get_color(callsign.is_old),
+                                        false,
+                                    ),
+                                ])
+                                        }),
+                                )
+                                .collect(),
+                            )
+                            .width(width_unit * 48, WidthType::Dxa)
+                            .set_borders(TableBorders::with_empty()),
+                        )
+                        .add_paragraph(Paragraph::new());
+                }
+                // add all other callsigns in text
+                let callsigns_other = callsigns
+                    .iter()
+                    .filter(|callsign| callsign.known_callsigns.is_none())
+                    .map(|callsign| callsign.callsign.to_uppercase().clone())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                if !callsigns_other.is_empty() {
+                    doc = doc
+                        .add_paragraph(
+                            Paragraph::new()
+                                .add_run(
+                                    Run::new()
+                                        .add_text(
+                                            "Приналежність встановлюється - ",
+                                        )
+                                        .bold(),
+                                )
+                                .add_run(Run::new().add_text(callsigns_other)), // .align(
+                                                                                //     docx_rs::alignment_type::AlignmentType::Justified,
+                                                                                // ),
+                        )
+                        .add_paragraph(Paragraph::new());
+                }
+            }
+            doc = add_field(doc, "6. Робочі частоти: ", &String::new());
+            if !freqs.is_empty() {
+                // Add callsigns table
+                doc = doc
+                    .add_table(
+                        Table::new(
+                            vec![TableRow::new(vec![
+                                create_table_header_cell(
+                                    width_unit * 4,
+                                    "f2f2f2",
+                                    &table_header_style_id,
+                                    "Частота",
+                                    false,
+                                ),
+                                create_table_header_cell(
+                                    width_unit * 3,
+                                    "f2f2f2",
+                                    &table_header_style_id,
+                                    "Модуляція",
+                                    false,
+                                ),
+                                create_table_header_cell(
+                                    width_unit * 2,
+                                    "f2f2f2",
+                                    &table_header_style_id,
+                                    "К-ть перехоплень",
+                                    false,
+                                ),
+                                create_table_header_cell(
+                                    width_unit * 25,
+                                    "f2f2f2",
+                                    &table_header_style_id,
+                                    "Позивні",
+                                    false,
+                                ),
+                                create_table_header_cell(
+                                    width_unit * 7,
+                                    "f2f2f2",
+                                    &table_header_style_id,
+                                    "Останній раз в етері",
+                                    false,
+                                ),
+                                create_table_header_cell(
+                                    width_unit * 7,
+                                    "f2f2f2",
+                                    &table_header_style_id,
+                                    "Дата прив'язки",
+                                    false,
+                                ),
+                            ])]
+                            .into_iter()
+                            .chain(freqs.iter().map(|freq| {
+                                let formatted_callsigns = freq
+                                    .callsigns
+                                    .as_ref()
+                                    .map(|calls| {
+                                        calls
+                                            .iter()
+                                            .map(|s| s.to_uppercase())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    })
+                                    .unwrap_or_default();
+
+                                TableRow::new(vec![
+                                    create_table_data_cell(
+                                        width_unit * 4,
+                                        &freq.freq,
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 3,
+                                        &freq
+                                            .modulation
+                                            .clone()
+                                            .unwrap_or_default(),
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 2,
+                                        &freq.message_count.clone().to_string(),
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 25,
+                                        &formatted_callsigns,
+                                        None,
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 7,
+                                        &format_datetime_field(
+                                            freq.last_datetime,
+                                        ),
+                                        get_color(!freq.is_active),
+                                        false,
+                                    ),
+                                    create_table_data_cell(
+                                        width_unit * 7,
+                                        &format_datetime_field(Some(
+                                            freq.created_at,
+                                        )),
+                                        get_color(!freq.is_active),
+                                        false,
+                                    ),
+                                ])
+                            }))
+                            .collect(),
+                        )
+                        .width(width_unit * 48, WidthType::Dxa)
+                        .set_borders(TableBorders::with_empty()),
+                    )
+                    .add_paragraph(Paragraph::new());
+            }
+
+            doc = add_field(
+                doc,
+                "7. Вид передачі: ",
+                &network.modulation_name.clone().unwrap_or_default(),
+            );
+            doc = add_field(
+                doc,
+                "8. Режим роботи радіомережі: ",
+                network
+                    .operation_mode
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or(DEFAULT_OPERATION_MODE),
+            );
+            doc = add_field(
+                doc,
+                "9. Характер роботи: ",
+                network
+                    .operation_type
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or(DEFAULT_OPERATION_TYPE),
+            );
+            doc = add_field(
+                doc,
+                "10. Період функціонування: ",
+                network
+                    .operation_period
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or(DEFAULT_OPERATION_PERIOD),
+            );
+
+            if !req.networks_only {
+                doc = add_field(
+                    doc,
+                    "Розвідувальні ознаки підрозділу: ",
+                    network
+                        .signs
+                        .as_ref()
+                        .map(String::as_str)
+                        .unwrap_or_default(),
+                );
+
+                if req.include_sigint_signs {
+                    let network_unit_signals =
+                        load_signals_per_network(&env.dbx, network.id)
+                            .await
+                            .context(h!())?;
+                    for unit_signals in &network_unit_signals {
+                        // if network has multiple units, add unit name
+                        if network_unit_signals.len() > 1
+                            && !unit_signals.signals.is_empty()
+                        {
+                            doc = doc
+                                .add_paragraph(
+                                    Paragraph::new()
+                                        .style(&paragraph_2_style_id)
+                                        .add_run(
+                                            Run::new()
+                                                .add_text(
+                                                    format!(
+                                                        "{}: ",
+                                                        unit_signals.unit_name
+                                                    )
+                                                    .as_str(),
+                                                )
+                                                .bold(),
+                                        ),
+                                )
+                                .add_paragraph(Paragraph::new());
+                        }
+                        // Add signals table for each unit
+                        if !unit_signals.signals.is_empty() {
+                            doc = doc
+                            .add_table(
+                                Table::new(
+                                    vec![]
+                                        .into_iter()
+                                        .chain(unit_signals.signals.iter().map(|signal| {
+                                            TableRow::new(vec![
+                                                create_table_data_cell(
+                                                    width_unit * 15,
+                                                    &signal.text,
+                                                    None,
+                                                    false,
+                                                ),
+                                                create_table_data_cell(
+                                                    width_unit * 33,
+                                                    &signal.meaning.clone().unwrap_or_default(),
+                                                    None,
+                                                    false,
+                                                ),
+                                            ])
+                                        }))
+                                        .collect(),
+                                )
+                                .width(width_unit * 48, WidthType::Dxa)
+                                .set_borders(TableBorders::with_empty()),
+                            )
+                            .add_paragraph(Paragraph::new());
+                        }
+                    }
+                }
+
+                if req.include_confirmation {
+                    doc = add_field(
+                        doc,
+                        "Примітки (аргументація): ",
+                        format!(
+                            "{} {}",
+                            network.confirmation.as_deref().unwrap_or_default(),
+                            network.comment
+                        )
+                        .as_str(),
+                    );
+                }
+
+                if req.include_pelengs_map {
+                    let pelengs_map =
+                        load_pelengs_map(&env.dbx, &groups, &filter)
+                            .await
+                            .context(h!())?;
+
+                    if let Some(img) = pelengs_map {
+                        let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
+
+                        doc = doc
+                            // Add map locations
+                            .add_paragraph(
+                                Paragraph::new()
+                                    .add_run(Run::new().add_break(BreakType::Page)),
+                            )
+                            .add_paragraph(
+                                Paragraph::new()
+                                    .style(&paragraph_2_style_id)
+                                    .add_run(Run::new().add_text(
+                                    "Карта пеленгів частот підрозділу за звітний період:",
+                                ).bold()),
+                            )
+                            .add_paragraph(Paragraph::new())
+                            .add_paragraph(
+                                Paragraph::new()
+                                    .add_run(Run::new().add_image(pic))
+                                    .align(docx_rs::alignment_type::AlignmentType::Center),
+                            )
+                            .add_paragraph(Paragraph::new());
+                    }
+                }
+
+                doc = doc.add_paragraph(Paragraph::new());
+            }
+        }
+
+        // Add a page break after each network if this is NOT the last
+        if i < networks_data.len() - 1 {
+            doc = doc.add_paragraph(Paragraph::new().page_break_before(true));
+        }
+    }
+
+    doc.build().pack(file).context(h!())?;
+
+    save_report_log(
+        &env.dbx,
+        format!("reports_log/{}", filename),
+        &serde_json::to_string(&req).context(h!())?,
+        &user_login,
+    )
+    .await
+    .context(h!())?;
+    Ok(actix_files::NamedFile::open(outpath)?.into_response(&http_req))
+}
+
+fn add_field(
+    mut doc: Docx,
+    field_name: &str,
+    value: &str,
+    // numbering_id: usize,
+) -> Docx {
+    doc = doc.add_paragraph(
+        Paragraph::new()
+            // .numbering(NumberingId::new(numbering_id), IndentLevel::new(0))
+            .add_run(Run::new().add_text(field_name).bold())
+            .add_run(Run::new().add_text(value)),
+    );
+
+    doc
+}
+
+fn gen_style_id_by_name(name: &str) -> String {
+    format!("Style_{}", name.replace(" ", ""))
+}
+
+fn define_new_paragraph_style(
+    name: &str,
+    font_name: &str,
+    font_size: usize,
+    bold: bool,
+    align: AlignmentType,
+) -> Style {
+    let style = Style::new(gen_style_id_by_name(name), StyleType::Paragraph)
+        .name(name)
+        .based_on("Normal")
+        .next("Normal");
+
+    let mut run_property = RunProperty::new()
+        .fonts(RunFonts::new().ascii(font_name))
+        .size(font_size);
+
+    if bold {
+        run_property = run_property.bold();
+    }
+
+    let style = Style {
+        run_property,
+        paragraph_property: ParagraphProperty::new().align(align),
+        ..style
+    };
+
+    style
+}
+
+fn get_color(is_old: bool) -> Option<String> {
+    if is_old {
+        Some(OLD_CALLSIGNS_COLOR.to_string())
+    } else {
+        None
+    }
+}
+
+fn create_table_header_cell(
+    width: usize,
+    fill: &str,
+    style_id: &str,
+    text: &str,
+    with_empty_borders: bool,
+) -> TableCell {
+    let table_cell_borders = if with_empty_borders {
+        TableCellBorders::with_empty()
+    } else {
+        TableCellBorders::new()
+    };
+
+    TableCell::new()
+        .width(width, WidthType::Dxa)
+        .shading(Shading::new().fill(fill))
+        .add_paragraph(
+            Paragraph::new()
+                .style(style_id)
+                .add_run(Run::new().add_text(text)),
+        )
+        .set_borders(table_cell_borders)
+}
+
+fn create_table_data_cell(
+    width: usize,
+    text: &str,
+    color: Option<String>,
+    with_empty_borders: bool,
+) -> TableCell {
+    let table_cell_borders = if with_empty_borders {
+        TableCellBorders::with_empty()
+    } else {
+        TableCellBorders::new()
+    };
+
+    TableCell::new()
+        .width(width, WidthType::Dxa)
+        .add_paragraph(Paragraph::new().add_run({
+            let mut run = Run::new().add_text(text);
+            if let Some(color) = color {
+                run = run.color(color);
+            }
+            run
+        }))
+        .set_borders(table_cell_borders)
+}
+
+fn format_datetime_field(dt_millis: Option<i64>) -> String {
+    dt_millis
+        .and_then(|millis| dt_from_millis(millis).ok())
+        .map(|dt| dt.format("%d.%m.%Y %H:%M").to_string())
+        .unwrap_or_default()
+}
+
+fn get_unique_field_as_string<T, F>(
+    input: &Option<Vec<T>>,
+    field_extractor: F,
+) -> String
+where
+    T: Ord + Clone,
+    F: Fn(&T) -> String,
+{
+    let field_vec = input.as_ref().map(|vec| {
+        vec.iter()
+            .map(|item| field_extractor(item))
+            .collect::<Vec<_>>()
+    });
+
+    if let Some(vec) = field_vec {
+        crate::utils::uniq_via_btreeset(&vec).join(", ")
+    } else {
+        String::new()
+    }
+}

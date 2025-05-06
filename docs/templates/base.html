@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="{% if page %}{{ page.lang }}{% else %}{{ config.default_language }}{% endif %}">
+
+<head>
+    <meta content="text/html; charset=UTF-8" http-equiv="content-type" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+</head>
+<style>
+    html, body {
+        margin: 0;
+    }
+    * {
+        box-sizing: border-box;
+    }
+    video {
+        max-width: 100%;
+    }
+    img {
+        max-width: 100%;
+
+    }
+
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.sidebar {
+    flex:0 0 20%;
+    padding: 24px;
+}
+
+
+.main-content {
+    padding: 24px;
+    overflow-y: auto;
+}
+.main-container {
+    width: 80%;
+    margin: 0 auto;
+}
+</style>
+
+<body>
+    <div class="container">
+
+        <div class="sidebar">
+            <span>
+                <h3>Зміст</h3>
+            </span>
+            <span>
+                <h3>Показати зміст</h3>
+            </span>
+    
+            <div id="table-of-contents">
+                {% if section.toc %}
+                <ul>
+                    {% for h1 in section.toc %}
+                    <li>
+                        <a href="{{ h1.permalink | safe }}">{{ h1.title }}</a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+        <div class="main-content">
+            <div class="main-container">
+                {% block content %}
+            {% endblock content %}
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

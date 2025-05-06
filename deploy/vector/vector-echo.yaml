@@ -1,0 +1,175 @@
+sources:
+  nginx_access:
+    type: file
+    include:
+      - /var/log/nginx/access.log
+  host_journald:
+    type: journald
+    current_boot_only: true
+    since_now: true
+  disk_space_check:
+    type: exec
+    mode:
+      scheduled
+    scheduled:
+      exec_interval_secs: 30
+    command:
+      - sh
+      - "-c"
+      - "df -kH . | grep -Po '\\d+%'"
+  psql_calls_num:
+    type: exec
+    mode:
+      scheduled
+    scheduled:
+      exec_interval_secs: 30
+    command:
+      - psql
+      - "-d"
+      - wd
+      - "-c"
+      - "select 'total_calls', sum(calls) from pg_stat_statements where dbid = (select oid from pg_database where datname = 'wd');"
+  psql_conn_num:
+    type: exec
+    mode:
+      scheduled
+    scheduled:
+      exec_interval_secs: 30
+    command:
+      - psql
+      - "-d"
+      - wd
+      - "-c"
+      - "SELECT 'connections_qty', numbackends FROM pg_stat_database where datname = 'wd';"
+
+transforms:
+  host_journald_t:
+    inputs:
+      - host_journald
+    type: "remap"
+    drop_on_error: true
+    source: |
+      result = {}
+      timestamp_mcs = to_int!(.__REALTIME_TIMESTAMP)
+      result.timestamp = from_unix_timestamp!(timestamp_mcs, unit: "microseconds")
+      result.instance = "${TARGET_MACHINE}"
+      result.message = .message
+      result.source_type = .source_type
+      result.unit = ._SYSTEMD_UNIT
+      . = result
+  disk_space_check_t:
+    inputs:
+      - disk_space_check
+    type: "remap"
+    drop_on_error: true
+    source: |
+      msg_re = r'(?<num>\d+)%'
+      if (match!(.message, msg_re)) { 
+          msg_txt = parse_regex!(.message, msg_re)
+          .instance = "${TARGET_MACHINE}"
+          .storage_space = parse_int(msg_txt.num) ?? 0
+      } else {
+          . = {}
+      }
+  psql_conn_num_t:
+    inputs:
+      - psql_conn_num
+    type: "remap"
+    drop_on_error: true
+    source: |
+      msg_re = r'\w+\s\|\s+(?<count>\d+)'
+      if (match!(.message, msg_re)) { 
+          msg_txt = parse_regex!(.message, msg_re)
+          .instance = "${TARGET_MACHINE}"
+          .live_db_connections = parse_int(msg_txt.count) ?? 0
+      } else {
+          . = {}
+      }
+  psql_conn_num_f:
+    inputs:
+      - psql_conn_num_t
+    type: "filter"
+    condition: .instance != null
+  psql_calls_num_t:
+    inputs:
+      - psql_calls_num
+    type: "remap"
+    drop_on_error: true
+    source: |
+      msg_re = r'\w+\s\|\s+(?<total_calls>\d+)'
+      if (match!(.message, msg_re)) { 
+          msg_txt = parse_regex!(.message, msg_re)
+          .instance = "${TARGET_MACHINE}"
+          .total_db_calls = parse_int(msg_txt.total_calls) ?? 0
+      } else {
+          . = {}
+      }
+  disk_space_check_f:
+    inputs:
+      - disk_space_check_t
+    type: "filter"
+    condition: .instance != null
+  psql_calls_num_f:
+    inputs:
+      - psql_calls_num_t
+    type: "filter"
+    condition: .instance != null
+  nginx_access_t:
+    inputs:
+      - nginx_access
+    type: "remap"
+    drop_on_error: true
+    source: |
+      msg_re = r'(?P<remote_addr>[^ ]*) - - \[(?P<time_local>[^\]]*)\] "(?P<request>[^"]*)" (?P<status>[^ ]*) (?P<body_bytes_sent>[^ ]*) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)" (?P<request_time>[^ ]*) (?P<upstream_response_time>[^ ]*)'
+      if (match!(.message, msg_re)) { 
+          . = parse_regex!(.message, msg_re)
+          .instance = "${TARGET_MACHINE}"
+          .time_local = parse_timestamp(.time_local, "%d/%b/%Y:%H:%M:%S %z") ?? now()
+          .request = parse_regex(.request, r'(?P<request_method>[^ ]*) (?P<request_uri>[^ ]*) (?P<request_protocol>[^ ]*)') ?? {}
+          .status = parse_int(.status) ?? 0
+          .body_bytes_sent = parse_int(.body_bytes_sent) ?? 0
+          .request_time = parse_float(.request_time) ?? 0
+          .upstream_response_time = parse_float(.upstream_response_time) ?? 0
+      } else {
+          . = {}
+      }
+  nginx_access_t2:
+    inputs:
+      - nginx_access_t
+    type: "filter"
+    condition: .instance != null
+  nginx_access_t2_keep_slow_queries:
+    inputs:
+      - nginx_access_t2
+    type: "filter"
+    condition: .upstream_response_time > 0.5 ?? true
+  nginx_access_slow_queries:
+    inputs:
+      - nginx_access_t2_keep_slow_queries
+    type: "remap"
+    drop_on_error: true
+    source: |
+      .slow = "true"
+
+sinks:
+  out:
+    inputs:
+      - nginx_access_t2
+      - nginx_access_slow_queries
+      - host_journald_t
+      - psql_conn_num_f
+      - psql_calls_num_f
+      - disk_space_check_f
+    type: "elasticsearch"
+    endpoints:
+      - ${ELASTIC_ENDPOINT}
+    tls:
+      verify_certificate: false
+    auth:
+      strategy: basic
+      user: ${ELASTIC_LOGIN}
+      password: ${ELASTIC_PWD}
+
+api:
+  enabled: true
+

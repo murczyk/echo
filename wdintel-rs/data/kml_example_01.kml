@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:xal="urn:oasis:names:tc:ciq:xsdschema:xAL:2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+    <Document>
+        <visibility>1</visibility>
+        <Folder id="8fa7102f-008b-477e-89ae-55874ab0c619">
+            <name>1 мсб 1472 мсп</name>
+            <visibility>1</visibility>
+            <description>Бойова позиція (оборонна позиція)</description>
+            <Placemark>
+                <name>1 мсб 14...</name>
+                <Style>
+                    <IconStyle>
+                        <scale>0.7</scale>
+                        <heading>0.0</heading>
+                        <Icon>
+                            <href></href>
+                        </Icon>
+                    </IconStyle>
+                    <LabelStyle>
+                        <color>#FF0000FF</color>
+                        <scale>1.0</scale>
+                    </LabelStyle>
+                </Style>
+                <Point>
+                    <extrude>1</extrude>
+                    <altitudeMode>relativeToGround</altitudeMode>
+                    <coordinates>36.0050915,47.4713433</coordinates>
+                </Point>
+            </Placemark>
+        </Folder>
+    </Document>
+</kml>

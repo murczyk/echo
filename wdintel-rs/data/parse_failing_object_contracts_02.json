@@ -1,0 +1,40 @@
+{
+    "id": "8cb4e290-033a-43a5-b3a6-e36f7bf9584c",
+    "name": null,
+    "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+    "typeName": "Сухопутний Підрозділ",
+    "parentTypeName": null,
+    "layerId": "5621684a-0d9e-2b5f-7127-9679f755f350",
+    "reportingDateTime": 1673865887658,
+    "geometry": {
+	"type": "AbsolutePointTypeCustom",
+	"absolutePointLatitudeCoordinate": {
+	    "latitudeCoordinateCoordinate": 47.752981
+	},
+	"absolutePointLongitudeCoordinate": {
+	    "longitudeCoordinateCoordinate": 36.818552
+	},
+	"absolutePointVerticalDistance": {
+	    "verticalDistanceDimension": 0.0
+	},
+	"velocityType": {}
+    },
+    "source": {
+	"id": "eb6d55e8-8b0b-4e24-8b92-1c3e48ce54b9",
+	"name": "potap"
+    },
+    "symbol": {
+	"app6d": {
+	    "sidc": "10061000000000000000",
+	    "amplifierFields": {
+		"Y": {
+		    "value": "36.8185520 47.7529810",
+		    "type": "TEXT"
+		}
+	    }
+	}
+    },
+    "attachmentsCount": null,
+    "layerList": null,
+    "action": null
+}

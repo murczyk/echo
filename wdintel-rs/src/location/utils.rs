@@ -1,0 +1,16 @@
+pub fn format_location(location: &String) -> String {
+    format!("|{}|", location.to_uppercase())
+}
+
+pub fn to_location_list(text: &String) -> Vec<String> {
+    text.clone()
+        .split("|")
+        .into_iter()
+        .map(|s| String::from(s.trim()))
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+pub fn format_locations_list(result: Vec<String>) -> String {
+    format!("|{}|", result.join("|"))
+}

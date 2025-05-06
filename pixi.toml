@@ -1,0 +1,6 @@
+[project]
+name = "echo"
+authors = ["ziggy@localhost"]
+readme = "README.md"
+repository = "https://github.com/echoua/echo"
+version = "0.1.0"

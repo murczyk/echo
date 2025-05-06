@@ -1,0 +1,20 @@
+[package]
+name = "echo-docs"
+version = "0.1.0"
+edition = "2021"
+authors = ["rickyrepel@gmail.com"]
+license = "AllRightsReserved"
+description = "ЕХО docs"
+
+[dependencies]
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = [
+    { unit-name = "echo-docs" },
+]
+depends = ""
+assets = [
+    [ "../public/*", "usr/share/echo-docs/", "755", ],
+]
+

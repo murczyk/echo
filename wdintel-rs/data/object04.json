@@ -1,0 +1,2936 @@
+[
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "079bbfd8-c389-4a0f-a44a-0fed4f1c7117",
+        "name": "САУ",
+        "typeId": "MIM:1bad6bae-8286-45d8-9182-3a5c34d881a2",
+        "typeName": "Самохідна артилерія (САУ)",
+        "parentTypeName": "Польова артилерія",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.631461
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.737873
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001303010000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "САУ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7378730 47.6314610",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "3c8625a5-bc46-4a93-a4cd-7143e4a5efb3",
+        "name": "ІФО",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.659191
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.689608
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6896080 47.6591910",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "fee32966-1d9b-4e47-b9f7-d2b2c4f4941f",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.631986
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.731689
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7316890 47.6319860",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7316890 47.6319860",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "85a2b2de-858c-483f-9ffd-bcaf962ce90e",
+        "name": "САУ",
+        "typeId": "MIM:1bad6bae-8286-45d8-9182-3a5c34d881a2",
+        "typeName": "Самохідна артилерія (САУ)",
+        "parentTypeName": "Польова артилерія",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.63212
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.73662
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001303010000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "САУ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7366200 47.6321200",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "05fba84d-5f25-4636-ab60-384eb4d1e43b",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.692042
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.720691
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7206910 47.6920420",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7206910 47.6920420",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "5c02626e-8d20-4e83-aae4-86c7f3032440",
+        "name": "ІФО",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.66736000000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.760204
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7602040 47.6673600",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "a8ce3550-3865-458a-92ae-a3dfa9468fe8",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65195599999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.692512
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6925120 47.6519560",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "3785339d-53a0-4a9f-af0f-90a97b9b83f4",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.68852100000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.666787
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6667870 47.6885210",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "155d056e-3540-4714-a4aa-d0372f9e28b9",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.687231
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.75034
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7503400 47.6872310",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "7c3ead71-ac99-49ba-9532-d643c0430d18",
+        "name": "Легковий автомобіль",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.648648
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.689733
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Легковий автомобіль",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6897330 47.6486480",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "f9c02d40-018f-4998-868a-18fc25904682",
+        "name": "Цивільне авто",
+        "typeId": "MIM:4ea911fe-2544-4830-ba70-c69d50fe11b1",
+        "typeName": "Пасажирський транспортний засіб",
+        "parentTypeName": "Цивільний автомобіль",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.688423
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.670828
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001603000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Цивільне авто",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6708280 47.6884230",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "53d8b98a-74dc-4bef-8667-52dd5baee7f6",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.654546
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.76792
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7679200 47.6545460",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "c1875738-bf0b-404c-9c72-df1fef86be1a",
+        "name": "Танк",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.66868100000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.572714
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Танк",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5727140 47.6686810",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "58bcc439-9f6d-4e58-8e0a-2b5a9a99a3ef",
+        "name": "Урал",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.648663
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.690255
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6902550 47.6486630",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "4126cc2c-353d-4dae-a0c6-2b53c3cb17be",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.650641
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.688856
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6888560 47.6506410",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6888560 47.6506410",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "ce7e73ea-6a41-4fe1-b337-8532e6784152",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.654186
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.55114
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5511400 47.6541860",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5511400 47.6541860",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "005b2ec8-684a-4183-9707-4a4d9ea4582e",
+        "name": "КамАЗ",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.654867
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.621351
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "КамАЗ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6213510 47.6548670",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "f922cd1c-5d64-49d9-8573-7378858aee3a",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.650389
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.663123
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6631230 47.6503890",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "383c2e8d-3506-4b75-ab61-94be92505894",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.63205
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.73307
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7330700 47.6320500",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7330700 47.6320500",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "c6151733-ea7c-4ea8-97eb-9fad57da8658",
+        "name": "БТР",
+        "typeId": "MIM:68d631cd-8534-4659-8e86-d4e4744dcc6b",
+        "typeName": "Бронетранспортер (БТР)",
+        "parentTypeName": "Броньований",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65344499999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.550975
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201030000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БТР",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5509750 47.6534450",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "fa7780bf-8e0c-45d8-aa6b-14f20f0966cb",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.63173
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.745592
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7455920 47.6317300",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "1c72fa93-b144-41b9-ab6d-cf37424a26fd",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65061600000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.662793
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6627930 47.6506160",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6627930 47.6506160",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "60c7d3c4-965e-4bb0-99b9-416288ab9b85",
+        "name": "МСТА-Б",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.653317
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.636329
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "МСТА-Б",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6363290 47.6533170",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "975a06a9-1feb-420c-9e68-11487b2957c7",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.657966
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.693072
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6930720 47.6579660",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6930720 47.6579660",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "35e19b1c-e0b5-4b88-a6ea-56b75c1236f4",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.631901
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.734673
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7346730 47.6319010",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "000359ff-2e23-4fda-a880-dfeb6316b2c8",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.658634
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.758932
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7589320 47.6586340",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7589320 47.6586340",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "935e5714-f84e-49b0-b19d-fd74dd112d66",
+        "name": "КамАЗ",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.649272
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.689949
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "КамАЗ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6899490 47.6492720",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "1437ddb3-0ae5-44f6-997c-607f1cff433c",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.632923
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.745448
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7454480 47.6329230",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7454480 47.6329230",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "72afc141-f4c8-4352-aa6d-f556dd49a7cb",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.68857300000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.678215
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6782150 47.6885730",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6782150 47.6885730",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "71dd26c6-861a-4b4e-88b5-ba1109096534",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.687544
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.696803
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6968030 47.6875440",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "726a1398-75f2-4abf-9a65-8793e9501c57",
+        "name": "Склад",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.649253
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.689631
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Склад",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6896310 47.6492530",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "c063c11f-06e7-4376-a7a5-ae5c725fa04a",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65183600000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.685702
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6857020 47.6518360",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "5089efa9-ec43-4a50-8be1-599a8f06756b",
+        "name": "Міномет",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.663539
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.574757
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Міномет",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5747570 47.6635390",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "e0321f7b-80e9-470f-b5b1-61561e5aac8a",
+        "name": "ІФО",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65687700000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.764005
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7640050 47.6568770",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "de3e4135-704a-429c-bae3-ba98ca4b6b59",
+        "name": "Урал",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.64915
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.690313
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Урал",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6903130 47.6491500",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "2790d9cb-6fca-41cd-b7bc-162286aec9f7",
+        "name": "Намет",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65645599999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.767823
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Намет",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7678230 47.6564560",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "72534bae-45e1-4b67-95a9-d9a5d93834fa",
+        "name": "БТР",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.6661
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.572814
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "БТР",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5728140 47.6661000",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "de502ce3-4eb0-4366-9f30-91c60f31c60a",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.651808
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.69771
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6977100 47.6518080",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "5b2fc96a-c866-4cc8-9414-a75919adaa75",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.631335
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.745636
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7456360 47.6313350",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7456360 47.6313350",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "8dd25a78-6dc7-469e-917d-026f8277bd5f",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.63319599999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.746514
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7465140 47.6331960",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7465140 47.6331960",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "8b03373d-aa33-4490-bf42-85e4d6c63432",
+        "name": "ІФО",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.632048
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.733092
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7330920 47.6320480",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "40ce58e9-b7c0-43be-b8b7-d5594cc76c87",
+        "name": "Цивільне авто",
+        "typeId": "MIM:4ea911fe-2544-4830-ba70-c69d50fe11b1",
+        "typeName": "Пасажирський транспортний засіб",
+        "parentTypeName": "Цивільний автомобіль",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.694607
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.738019
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001603000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Цивільне авто",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7380190 47.6946070",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "679a8765-f8dc-445e-972b-2a9045a6a10f",
+        "name": "САУ",
+        "typeId": "MIM:1bad6bae-8286-45d8-9182-3a5c34d881a2",
+        "typeName": "Самохідна артилерія (САУ)",
+        "parentTypeName": "Польова артилерія",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.631942
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.733541
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000001303010000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "САУ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7335410 47.6319420",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "f3399a07-8133-4b60-8b85-8330ebda17d2",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.641175
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.765389
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7653890 47.6411750",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "6f09e1c1-f1e2-4547-aea3-dd00c9795b0c",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.67964199999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.537722
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5377220 47.6796420",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "860302b7-270d-455e-abc4-6b3eab86b6dd",
+        "name": "ІФО",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.680454
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.565876
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5658760 47.6804540",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "088310bd-e45a-4b60-8cc7-eb3dcc73f7a5",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.632158
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.741755
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7417550 47.6321580",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7417550 47.6321580",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "bba67eb9-934b-4624-929f-7d33f7c7dee8",
+        "name": "1В12",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.639081
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.719311
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "1В12",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7193110 47.6390810",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "63dc9475-531d-48f6-9359-f7c5e06429be",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65777800000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.763948
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7639480 47.6577780",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7639480 47.6577780",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "d5148dbf-e4cc-4b71-ad1b-aa439a5dd62b",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.632571
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.74537
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7453700 47.6325710",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "e12724f9-edce-42dc-8b73-c892cb79f245",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.66693899999999
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.559066
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5590660 47.6669390",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5590660 47.6669390",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "79cb9d42-7951-4a69-a7ca-087713e7e597",
+        "name": "Склад",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.648723
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.690012
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Склад",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6900120 47.6487230",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "45adee2a-0be3-494f-9d8d-235f8370dc27",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65761000000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.692329
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6923290 47.6576100",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "645dff73-f4b5-47be-9e5a-6d8f97180e88",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.665333
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.574107
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5741070 47.6653330",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5741070 47.6653330",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "4da6f727-a459-4ffb-a177-5dd6e682272a",
+        "name": "Протитанкові перешкоди",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.653538
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.639104
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Протитанкові перешкоди",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6391040 47.6535380",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "b8b6a400-7e28-4b42-8593-2faf78e9bb52",
+        "name": "ББМ",
+        "typeId": "MIM:10455512-3a2c-4173-a210-74c73201bed3",
+        "typeName": "Броньований",
+        "parentTypeName": "Транспортний засіб",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.68758700000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.697121
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001201000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ББМ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6971210 47.6875870",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "b1e3139b-040d-4fdb-b3c6-02fab990490d",
+        "name": "ВАТ",
+        "typeId": "MIM:30fe04db-862b-4e68-a47b-831577bc6d27",
+        "typeName": "Вантажівка (транспортний засіб підвищеної прохідності)",
+        "parentTypeName": "Автомобілі загального призначення",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.632312
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.745461
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061500001408000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ВАТ",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.7454610 47.6323120",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "c5fd6ef6-f09c-4517-bb02-81a154e947a5",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.649621
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.66514
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6651400 47.6496210",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6651400 47.6496210",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "ef188bda-130c-4341-83a1-355124b459b4",
+        "name": "Протитанкове поле (Протитанкова міна - Наземні міни Окреме обладнання)",
+        "typeId": "MIM:fbaa2ad2-f53a-437c-99e2-b70df3a1ee6a",
+        "typeName": "Сухопутний Підрозділ",
+        "parentTypeName": null,
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.678099
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.542902
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10061000000000000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "Протитанкове поле (Протитанкова міна - Наземні міни Окреме обладнання)",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.5429020 47.6780990",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    },
+    {
+        "type": "org.c4isr.delta.contracts.model.ObjectContract",
+        "id": "56ca5084-4703-4dd2-8e40-505275ef0d71",
+        "name": "ІФО",
+        "typeId": "MIM:fd016c41-719e-4abb-ad74-ef1fea807214",
+        "typeName": "Підземне укриття",
+        "parentTypeName": "Точки захисту",
+        "layerId": "41a4520b-2f60-e655-807a-7508ad0faff4",
+        "reportingDateTime": 1672305072138,
+        "geometry": {
+            "type": "AbsolutePointTypeCustom",
+            "absolutePointLatitudeCoordinate": {
+                "latitudeCoordinateCoordinate": 47.65411600000001
+            },
+            "absolutePointLongitudeCoordinate": {
+                "longitudeCoordinateCoordinate": 36.61784
+            },
+            "absolutePointVerticalDistance": {
+                "verticalDistanceDimension": 0.0
+            },
+            "velocityType": {}
+        },
+        "source": {
+            "id": "91513b80-6424-409b-82a3-f05cba146f94",
+            "name": "ziggy"
+        },
+        "symbol": {
+            "app6d": {
+                "sidc": "10062500002811000000",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6178400 47.6541160",
+                        "type": "TEXT"
+                    }
+                }
+            },
+            "milstd2525c": {
+                "sidc": "GHMPSU--------X",
+                "amplifierFields": {
+                    "T": {
+                        "value": "ІФО",
+                        "type": "TEXT"
+                    },
+                    "Y": {
+                        "value": "36.6178400 47.6541160",
+                        "type": "TEXT"
+                    }
+                }
+            }
+        },
+        "attachmentsCount": null,
+        "layerList": null,
+        "action": null
+    }
+]
