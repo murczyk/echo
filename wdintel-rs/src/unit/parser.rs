@@ -1473,6 +1473,85 @@ mod tests {
     }
 
     #[test]
+    fn extract_unit_34() {
+        let body = r#"Отримано з поста "Л"
+-------------------------------
+УКХ р/м управління 901/902 полку особливого призначення фсвнг рф (район ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК)
+08:21
+МЕТРО
+ОЛИМП 2
+406.975
+1. п\с"#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(
+            res.unit.unwrap(),
+            "УКХ р/м управління 901/902 полку особливого призначення фсвнг рф"
+                .to_string()
+        );
+        assert_eq!(res.locality, Some("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК".to_string()));
+        assert_eq!(
+            res.locality_v2.unwrap(),
+            vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"]
+        );
+    }
+
+    #[test]
+    fn extract_unit_35() {
+        let body = r#"Ціль:0901/18
+Час:17:44
+Ідентифікація: Цифрова Радіостанція
+Місце розташування: Новопрокопівка-Пшеничне
+Координати: 36T YT 16058 52456
+Частота: 445.439 МГц
+Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А
+Радіус похибки: 1000 м"#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(
+            res.unit.unwrap(),
+            "ймовірно 2 мсб 70 мсп 42 мсд 58 А".to_string()
+        );
+        assert_eq!(res.locality, Some("Новопрокопівка-Пшеничне".to_string()));
+        assert_eq!(
+            res.locality_v2.unwrap(),
+            vec!["НОВОПРОКОПІВКА", "ПШЕНИЧНЕ"]
+        );
+    }
+
+    #[test]
+    fn extract_unit_36() {
+        let body = r#"31.12, 11:12:30
+446.0134
+УКХ р/м йм. гсабатр гсадн 30 мсп 72 мсд 44 АК (р-н Шебекіно) (наносять ВУ по м. Вовчанськ)
+НВ
+КЕНГУРУ
+
+— Кенгуру 1 огонь
+— Один огонь, да, принял."#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "УКХ р/м йм. гсабатр гсадн 30 мсп\u{a0}72\u{a0}мсд\u{a0}44\u{a0}АК (р-н Шебекіно)".to_string());
+        assert_eq!(res.locality, Some("ВУ по м. Вовчанськ".to_string()));
+        assert_eq!(res.locality_v2.unwrap(), vec!["ВОВЧАНСЬК", "ШЕБЕКІНО"]);
+    }
+
+    #[test]
     fn extract_unit_buran_1() {
         let body = r#"Дата: 2024-02-21;
 Частота: 408.500;

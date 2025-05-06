@@ -625,6 +625,21 @@ mod tests {
     }
 
     #[test]
+    pub fn test24() {
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let result = parse_location(
+            settlements,
+            String::from("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК"),
+        )
+        .unwrap();
+        assert_eq!(vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"], result);
+    }
+
+    #[test]
     pub fn test_pidar1() {
         let config = crate::config::read_config(Mode::Debug).unwrap();
         let settlements = Arc::new(RwLock::new(

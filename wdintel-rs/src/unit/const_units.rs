@@ -400,7 +400,7 @@ fn divisions_arr() -> [&'static str; 38] {
         "шад",
     ]
 }
-fn armies_arr() -> [&'static str; 30] {
+fn armies_arr() -> [&'static str; 31] {
     [
         "А",
         "ак",
@@ -432,6 +432,7 @@ fn armies_arr() -> [&'static str; 30] {
         "ОВА",
         "ОВДА",
         "Фл",
+        "фсвнг", //Національна гвардія Росії
     ]
 }
 
