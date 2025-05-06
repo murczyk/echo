@@ -317,7 +317,7 @@ type Msg
     | NetworkStartEditingFlow B.Network
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
-    | NetworkPostsUpdated (Result ApiError B.Network)
+    | NetworkPostsUpdated String B.UpdateNetworkReq (Result ApiError B.Network)
 
 
 loadUnits : Effect Msg
@@ -1601,7 +1601,7 @@ update shared msg model =
                 EditExistingNetwork freq state ->
                     ( model
                     , E.batch
-                        [ E.updateNetwork (NetworkUpdated freq) state, E.updateNetworkPosts NetworkPostsUpdated { networkId = state.id, postIds = model.editPostsSelect.selected } ]
+                        [ E.updateNetworkPosts (NetworkPostsUpdated freq state) { networkId = state.id, postIds = model.editPostsSelect.selected } ]
                     )
 
                 _ ->
@@ -1657,10 +1657,10 @@ update shared msg model =
         FreqGroupsActivityReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
 
-        NetworkPostsUpdated (Ok r) ->
-            ( model, E.none )
+        NetworkPostsUpdated freq editState (Ok r) ->
+            ( model, E.updateNetwork (NetworkUpdated freq) editState )
 
-        NetworkPostsUpdated (Err err) ->
+        NetworkPostsUpdated _ _ (Err err) ->
             Api.handleHttpError ToastMsg err model
 
 
