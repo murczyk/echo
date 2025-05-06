@@ -100,6 +100,7 @@ time = "0.3.41"
 cmd_lib = "1.9.5"
 rustls = { version = "0.23.26", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 ssh2 = "0.9.5"
+demoji = "0.0.3"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"

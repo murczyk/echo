@@ -2012,6 +2012,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da692b8d1080ea3045efaab14434d40468c3d8657e42abddfffca87b428f4c1b"
 
 [[package]]
+name = "demoji"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "751460fd45c92e82e22a36f9ab5af571ec5a9e7032aee999a8e9d0e5e23b7077"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "der"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7272,6 +7281,7 @@ dependencies = [
  "csv",
  "ctor",
  "deadpool-postgres",
+ "demoji",
  "dirs",
  "docx-rs",
  "echo-im",

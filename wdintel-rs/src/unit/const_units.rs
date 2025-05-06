@@ -400,9 +400,10 @@ fn divisions_arr() -> [&'static str; 38] {
         "шад",
     ]
 }
-fn armies_arr() -> [&'static str; 31] {
+fn armies_arr() -> [&'static str; 32] {
     [
         "А",
+        "ЗВА",
         "ак",
         "армія",
         "армії",

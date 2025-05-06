@@ -48,22 +48,7 @@ pub async fn find_known_callsigns(
     body: &str,
 ) -> Result<Vec<CNCallsign>, AppError> {
     let body_orig = body;
-    let mut res = vec![];
-    for callsign in extract_kazhanchik_callsigns(body)? {
-        res.push(callsign);
-    }
-    for callsign in extract_buran_callsigns(body)? {
-        res.push(callsign);
-    }
-    for callsign in extract_kharkiv_callsigns(body)? {
-        res.push(callsign);
-    }
-    for callsign in extract_digital_callsigns(body)? {
-        res.push(callsign);
-    }
-    for callsign in extract_non_caps_callsigns(body)? {
-        res.push(callsign);
-    }
+    let res = extract_callsigns(&body)?;
     // let mut body = body.to_string();
     // let first_line: &str = body.lines().nth(0).unwrap_or("");
     // let m_freq = crate::rer_importer::frequency::extract_freq(first_line)?;
@@ -130,6 +115,27 @@ pub async fn find_known_callsigns(
     let callsigns: Vec<String> = res.iter().map(|x| x.etalon.clone()).collect();
     let res = highlight_callsigns(rq, &body_orig, &callsigns).await?;
     let res = crate::utils::uniq_via_btreeset(&res);
+    Ok(res)
+}
+
+fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
+    let body = &demoji::demoji(body);
+    let mut res = vec![];
+    for callsign in extract_kazhanchik_callsigns(body)? {
+        res.push(callsign);
+    }
+    for callsign in extract_buran_callsigns(body)? {
+        res.push(callsign);
+    }
+    for callsign in extract_kharkiv_callsigns(body)? {
+        res.push(callsign);
+    }
+    for callsign in extract_digital_callsigns(body)? {
+        res.push(callsign);
+    }
+    for callsign in extract_non_caps_callsigns(body)? {
+        res.push(callsign);
+    }
     Ok(res)
 }
 
@@ -1945,6 +1951,41 @@ mod tests {
             "ТРАМВАЙ".to_string(),
             "САМОРЕЗ".to_string(),
         ];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_extract_callsigns_zp() {
+        let body = r#"28.11, 18:56
+УКХ р/м н/в підрозділу артилерії зі складу 127 мсд 5А (ЦфП91)
+НВ
+РУБИН, КУПОЛ-6
+
+- Рубин 308, 43 22, прием.
+- Купол 6, я Рубин 310, 43 22. Прием."#;
+        let res = extract_kazhanchik_callsigns(body).unwrap();
+        let expected: Vec<String> =
+            vec!["РУБИН".to_string(), "КУПОЛ-6".to_string()];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_enoji_list() {
+        let body = r#"26.04, 04:37:43
+424.8750
+УКХ р/м НВ підрозділу 424.875 МГц
+ХЬЮСТОН 1️⃣
+ВОЛГА 2️⃣
+
+1️⃣: Волга я Хюстон на приеме.
+2️⃣: ... у Спеца, там, давай, смотри, там, небо, блядь, дорогу и забирай его.
+1️⃣: Да, принял."#;
+        let res = extract_callsigns(body).unwrap();
+        let expected: Vec<String> =
+            vec!["РУБИН".to_string(), "КУПОЛ-6".to_string()];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }

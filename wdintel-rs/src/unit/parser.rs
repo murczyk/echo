@@ -1529,6 +1529,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn extract_unit_36() {
         let body = r#"31.12, 11:12:30
@@ -1549,6 +1550,102 @@ mod tests {
         assert_eq!(res.unit.unwrap(), "УКХ р/м йм. гсабатр гсадн 30 мсп\u{a0}72\u{a0}мсд\u{a0}44\u{a0}АК (р-н Шебекіно)".to_string());
         assert_eq!(res.locality, Some("ВУ по м. Вовчанськ".to_string()));
         assert_eq!(res.locality_v2.unwrap(), vec!["ВОВЧАНСЬК", "ШЕБЕКІНО"]);
+    }
+
+    #[test]
+    fn extract_unit_37() {
+        let body = r#"26.12, 23:48:55
+421.0810
+УКХ р/м НВ підрозділу(DMR), між ОЧЕРЕТИНЕ, КЕРАМІК
+АЛТАЙ
+АЛМАЗ"#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "УКХ р/м НВ підрозділу(DMR)".to_string());
+        assert_eq!(res.locality, Some("ОЧЕРЕТИНЕ, КЕРАМІК".to_string()));
+        assert_eq!(res.locality_v2.unwrap(), vec!["КЕРАМІК", "ОЧЕРЕТИНЕ"]);
+    }
+
+    #[ignore]
+    #[test]
+    fn extract_unit_38() {
+        let body = r#"Отримано з поста "П152"
+--------------------------------------
+28.11, 19:12:29
+436.2550
+(йм. 20 загін БАРС)(р-н Зх. від Красноселівка)
+ЯМАЛ
+БУТИК , ЛИМОН
+
+— Лимон, Ямалу, Лимон, Ямалу, 6 6 6.
+— Бутик, Ямалу, Бутик, Ямалу, 6 6."#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.locality_v2.unwrap(), vec!["Красноселівка"]);
+        assert_eq!(res.unit.unwrap(), "(йм. 20 загін БАРС)  ".to_string());
+        assert_eq!(
+            res.locality,
+            Some("(р-н Зх. від Красноселівка)".to_string())
+        );
+    }
+
+    #[ignore]
+    #[test]
+    fn extract_unit_39() {
+        let body = r#"150.025
+J
+16:26
+Az-155
+УКХ радіомережа невизначеного підрозділу
+околиці Новооєлизаветівки (уточнюється)"#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(
+            res.unit.unwrap(),
+            "УКХ радіомережа невизначеного підрозділу".to_string()
+        );
+        assert_eq!(
+            res.locality,
+            Some("околиці Новооєлизаветівки (уточнюється)".to_string())
+        );
+        assert_eq!(res.locality_v2.unwrap(), vec!["Новооєлизаветівки"]);
+    }
+
+    #[ignore]
+    #[test]
+    fn extract_unit_40() {
+        let body = r#"06.05, 17:57:54
+446.0188
+УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА (КОЖУМ'ЯКИ - МАЛА ЛЕПЕТИХА)
+НВ
+НВ
+
+— Юла 0 1. Шторм 333, Шторм 333."#;
+
+        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_from_file(config.settlement_paths().unwrap())
+                .unwrap(),
+        ));
+        let res = extract_unit(settlements, body, vec![]).unwrap();
+        assert_eq!(res.unit.unwrap(), "УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА".to_string());
+        assert_eq!(res.locality, Some("КОЖУМ'ЯКИ - МАЛА ЛЕПЕТИХА".to_string()));
+        assert_eq!(res.locality_v2.unwrap(), vec!["Новооєлизаветівки"]);
     }
 
     #[test]

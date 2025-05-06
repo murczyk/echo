@@ -174,6 +174,21 @@ mod tests {
         assert_eq!(res.unwrap(), "DOT3_1 (77)".to_string())
     }
 
+    #[ignore]
+    #[test]
+    fn extract_post_extra_02() {
+        let body = r#"П34
+28.11, 18:30:58
+415.1250
+УКХ р/м НВ підрозділу 415.125 МГц
+НВ
+НВ
+
+— .... поле 202."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "П34".to_string())
+    }
+
     #[test]
     fn extract_post_buran() {
         let body = r#"
