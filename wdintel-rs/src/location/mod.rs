@@ -178,11 +178,7 @@ fn handle_three_words_group(
     let data = if !joined_res.data.is_empty() {
         i += 1;
         let is_region = joined_res.data.iter().any(|row| regions.contains(row));
-        if is_region {
-            vec![]
-        } else {
-            joined_res.data
-        }
+        if is_region { vec![] } else { joined_res.data }
     } else {
         res0.data.clone()
     };
@@ -228,7 +224,7 @@ pub fn load_from_file(
                     .context(h!())?
             }
         };
-        info!("[{}] loaded source successfully", &source);
+        trace!("[{}] loaded source successfully", &source);
         let data: BTreeMap<String, Vec<String>> =
             serde_json::from_str(&*text).context(h!())?;
 
