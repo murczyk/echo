@@ -170,7 +170,7 @@ html[data-bs-theme="dark"] {
 
 body {
     font-size: 14px;
-    overflow: hidden;
+    overflow-x: hidden;
 }
 
 @layer base {

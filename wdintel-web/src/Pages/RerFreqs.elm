@@ -1354,7 +1354,7 @@ update shared msg model =
                         (\_ ->
                             List.map
                                 (\post -> Select.basicMenuItem { item = post.id, label = post.name })
-                                (RD.withDefault [] shared.posts)
+                                (RD.withDefault Dict.empty shared.posts |> Dict.values)
                         )
                         model.addPostsSelect
                 , editPostsSelect =
@@ -1362,7 +1362,7 @@ update shared msg model =
                         (\_ ->
                             List.map
                                 (\post -> Select.basicMenuItem { item = post.id, label = post.name })
-                                (RD.withDefault [] shared.posts)
+                                (RD.withDefault Dict.empty shared.posts |> Dict.values)
                         )
                         model.editPostsSelect
               }
@@ -2190,9 +2190,8 @@ contentBlock shared model user =
                                     Select.basicMenuItem
                                         { item = postId
                                         , label =
-                                            RD.withDefault [] shared.posts
-                                                |> List.filter (\post -> post.id == postId)
-                                                |> List.head
+                                            RD.withDefault Dict.empty shared.posts
+                                                |> Dict.get postId
                                                 |> Maybe.map .name
                                                 |> Maybe.withDefault ""
                                         }
@@ -2412,8 +2411,7 @@ contentBlock shared model user =
                                         , label =
                                             case shared.posts of
                                                 Success posts ->
-                                                    List.filter (\post -> post.id == postId) posts
-                                                        |> List.head
+                                                    Dict.get postId posts
                                                         |> Maybe.map .name
                                                         |> Maybe.withDefault ""
 

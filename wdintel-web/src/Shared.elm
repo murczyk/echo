@@ -195,7 +195,14 @@ update req msg model =
             )
 
         PostsReturnedByApi (Ok res) ->
-            ( { model | posts = Success res }, E.none )
+            ( { model
+                | posts =
+                    List.map (\post -> ( post.id, post )) res
+                        |> Dict.fromList
+                        |> Success
+              }
+            , E.none
+            )
 
         PostsReturnedByApi (Err err) ->
             ( model, E.none )

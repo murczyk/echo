@@ -911,14 +911,14 @@ renderNetworkTr shared model network =
                 Success data ->
                     let
                         groupsMessageCountByDayJson =
-                            Dict.get (String.fromInt network.id) data |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int)) |> Maybe.map (Encode.encode 0)
+                            Dict.get (String.fromInt network.id) data |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
                     in
                     case groupsMessageCountByDayJson of
                         Just g ->
                             div [ style "width" "200px", style "height" "90px" ]
                                 [ Html.node "bar-chart"
-                                    [ Attr.attribute "data" <| g
-                                    , Attr.attribute "last-day" <| Encode.encode 0 (Encode.string model.to.dateStr)
+                                    [ Attr.property "data" <| g
+                                    , Attr.property "last-day" <| Encode.string model.to.dateStr
                                     , style "display" "block"
                                     ]
                                     []
@@ -1175,9 +1175,9 @@ view dark shared user model =
                                     ]
                                 ]
                             , case model.networksMergeStatus of
-                                CalculatedSuggestions xs ->
+                                CalculatedSuggestions (x :: xs) ->
                                     div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                        [ text <| (String.fromInt (List.length xs) ++ " неопрацьованих пропозицій по злиттю мереж")
+                                        [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
                                         , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
                                             |> Button.withOutlined True
                                             |> Button.view

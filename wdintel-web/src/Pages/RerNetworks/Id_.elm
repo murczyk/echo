@@ -132,6 +132,7 @@ type Msg
     | NetworkEditingSavedByUser
     | NetworkEditingMsg B.UpdateNetworkReq
     | NetworkUpdatedByApi (Result ApiError B.Network)
+    | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | EditNetworkKindSelMsg (Select.Msg EUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
 
@@ -270,7 +271,7 @@ update shared msg model =
         NetworkEditingSavedByUser ->
             case model.mode of
                 Editing edit ->
-                    ( model, E.updateNetwork NetworkUpdatedByApi edit )
+                    ( model, E.updateNetworkPosts (NetworkPostsUpdatedByApi edit) { networkId = edit.id, postIds = model.editPostsSelect.selected } )
 
                 Readonly ->
                     ( model, E.none )
@@ -287,6 +288,12 @@ update shared msg model =
               }
             , E.none
             )
+
+        NetworkPostsUpdatedByApi _ (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        NetworkPostsUpdatedByApi editState (Ok _) ->
+            ( model, E.updateNetwork NetworkUpdatedByApi editState )
 
         NetworkUpdatedByApi (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -344,8 +351,12 @@ update shared msg model =
                         --TODO: remove this hack
                         items =
                             case ( postsSelect.items, shared.posts ) of
-                                ( [], Success (x :: xs) ) ->
-                                    List.map (\post -> Select.basicMenuItem { item = post.id, label = post.name }) (x :: xs)
+                                ( [], Success posts ) ->
+                                    if List.length (Dict.toList posts) > 0 then
+                                        List.map (\post -> Select.basicMenuItem { item = post.id, label = post.name }) (Dict.values posts)
+
+                                    else
+                                        postsSelect.items
 
                                 _ ->
                                     postsSelect.items
@@ -455,10 +466,20 @@ mainInfoBlock network shared model =
                             text ""
                     ]
                 ]
-            , div [ class "col-span-4" ]
+            , div [ class "col-span-8" ]
                 [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-                , span []
-                    []
+                , div [ class "" ]
+                    [ case shared.posts of
+                        Success posts ->
+                            List.map (\postId -> Dict.get postId posts) network.postIds
+                                |> List.filterMap identity
+                                |> List.map .name
+                                |> String.join ", "
+                                |> text
+
+                        _ ->
+                            text ""
+                    ]
                 ]
             ]
         ]
@@ -611,7 +632,7 @@ mainInfoEditBlock updNetworkReq shared model =
                     ]
                     []
                 ]
-            , div [ class "col-span-4" ]
+            , div [ class "col-span-8" ]
                 [ label [ class "text-[13px] font-medium" ] [ text "Пости:" ]
                 , let
                     selectedItems =
@@ -620,9 +641,8 @@ mainInfoEditBlock updNetworkReq shared model =
                                 Select.basicMenuItem
                                     { item = postId
                                     , label =
-                                        RD.withDefault [] shared.posts
-                                            |> List.filter (\post -> post.id == postId)
-                                            |> List.head
+                                        RD.withDefault Dict.empty shared.posts
+                                            |> Dict.get postId
                                             |> Maybe.map .name
                                             |> Maybe.withDefault ""
                                     }
@@ -979,16 +999,18 @@ view : Shared.Model -> Model -> View Msg
 view shared model =
     { title = "Мережа"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
-                [ div [ class "w-[75vw] mx-auto py-[16px]" ]
-                    (case model.network of
-                        Success network ->
-                            contentBlock shared network model
+        [ div []
+            [ Le.Block.Toast.view ToastMsg model.toasts <|
+                div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
+                    [ div [ class "w-[75vw] mx-auto py-[16px]" ]
+                        (case model.network of
+                            Success network ->
+                                contentBlock shared network model
 
-                        _ ->
-                            [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
-                    )
-                ]
+                            _ ->
+                                [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
+                        )
+                    ]
+            ]
         ]
     }
