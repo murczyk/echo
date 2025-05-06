@@ -99,6 +99,7 @@ tokio-postgres = { version = "0.7.13", default-features = false, features = [
 time = "0.3.41"
 cmd_lib = "1.9.5"
 rustls = { version = "0.23.26", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+ssh2 = "0.9.5"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
