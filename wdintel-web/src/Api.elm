@@ -1202,3 +1202,11 @@ get_networks_list toMsg req =
         , body = Http.jsonBody (listNetworksReqEncoder req)
         , expect = leExpectJson toMsg (Decode.list networkDecoder)
         }
+
+
+get_posts toMsg req =
+    Http.post
+        { url = "/api/sigint/posts"
+        , body = Http.jsonBody (listPostsReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list postDecoder)
+        }

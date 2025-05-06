@@ -887,6 +887,7 @@ type alias InboxMessage =
     , duplicateIds : Maybe (List Int)
     , extendedForm : Maybe String
     , post : Maybe String
+    , postId : Maybe Int
     , unit : Maybe String
     , callsignTokens : Maybe (List CnCallsign)
     , signalTokens : Maybe (List CnSignal)
@@ -918,6 +919,7 @@ inboxMessageEncoder struct =
         , ( "duplicate_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.duplicateIds )
         , ( "extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.extendedForm )
         , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.post )
+        , ( "post_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.postId )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.unit )
         , ( "callsign_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnCallsignEncoder)) struct.callsignTokens )
         , ( "signal_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list cnSignalEncoder)) struct.signalTokens )
@@ -3324,6 +3326,7 @@ type alias ListCallsignsReq =
     , filterUnit : Maybe String
     , sinceDateInclusiveMs : Maybe Int
     , tillDateInclusiveMs : Maybe Int
+    , limit : Maybe Int
     }
 
 
@@ -3338,6 +3341,7 @@ listCallsignsReqEncoder struct =
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateInclusiveMs )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.limit )
         ]
 
 
@@ -4018,6 +4022,7 @@ type alias Network =
     , activeTo : Maybe Int
     , modulationId : Maybe Int
     , modulationName : Maybe String
+    , postIds : List Int
     }
 
 
@@ -4045,6 +4050,7 @@ networkEncoder struct =
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
         , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.modulationId )
         , ( "modulation_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.modulationName )
+        , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         ]
 
 
@@ -4079,6 +4085,7 @@ type alias CreateNetworkReq =
     , activeFrom : Maybe Int
     , activeTo : Maybe Int
     , modulationId : Maybe Int
+    , postIds : List Int
     }
 
 
@@ -4101,6 +4108,7 @@ createNetworkReqEncoder struct =
         , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
         , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.modulationId )
+        , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         ]
 
 
@@ -4428,6 +4436,113 @@ singleNetworkCallsignsListRspEncoder : SingleNetworkCallsignsListRsp -> Json.Enc
 singleNetworkCallsignsListRspEncoder struct =
     Json.Encode.object
         [ ( "callsigns", Json.Encode.list callsignResEncoder struct.callsigns )
+        ]
+
+
+type alias UpdateNetworkPostsReq =
+    { networkId : Int
+    , postIds : List Int
+    }
+
+
+updateNetworkPostsReqEncoder : UpdateNetworkPostsReq -> Json.Encode.Value
+updateNetworkPostsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
+        ]
+
+
+type alias Post =
+    { id : Int
+    , name : String
+    , origin : Maybe String
+    , description : Maybe String
+    , deleted : Bool
+    , createdAt : Int
+    }
+
+
+postEncoder : Post -> Json.Encode.Value
+postEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "origin", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.origin )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        , ( "deleted", Json.Encode.bool struct.deleted )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        ]
+
+
+type ListPostsSortBy
+    = PostNameDesc
+    | PostNameAsc
+
+
+listPostsSortByEncoder : ListPostsSortBy -> Json.Encode.Value
+listPostsSortByEncoder enum =
+    case enum of
+        PostNameDesc ->
+            Json.Encode.string "PostNameDesc"
+
+        PostNameAsc ->
+            Json.Encode.string "PostNameAsc"
+
+
+type alias ListPostsReq =
+    { sortBy : Maybe ListPostsSortBy
+    }
+
+
+listPostsReqEncoder : ListPostsReq -> Json.Encode.Value
+listPostsReqEncoder struct =
+    Json.Encode.object
+        [ ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listPostsSortByEncoder) struct.sortBy )
+        ]
+
+
+type alias CreatePostReq =
+    { name : String
+    , description : Maybe String
+    }
+
+
+createPostReqEncoder : CreatePostReq -> Json.Encode.Value
+createPostReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", Json.Encode.string struct.name )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        ]
+
+
+type alias UpdatePostReq =
+    { id : Int
+    , name : Maybe String
+    , description : Maybe String
+    , deleted : Maybe Bool
+    }
+
+
+updatePostReqEncoder : UpdatePostReq -> Json.Encode.Value
+updatePostReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.name )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        , ( "deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.deleted )
+        ]
+
+
+type alias DeletePostReq =
+    { id : Int
+    }
+
+
+deletePostReqEncoder : DeletePostReq -> Json.Encode.Value
+deletePostReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
         ]
 
 
@@ -5049,6 +5164,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duplicate_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extended_form" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_tokens" (Json.Decode.nullable (Json.Decode.list cnCallsignDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_tokens" (Json.Decode.nullable (Json.Decode.list cnSignalDecoder))))
@@ -6378,6 +6494,7 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable Json.Decode.int)))
 
 
 listCallsignsRspDecoder : Json.Decode.Decoder ListCallsignsRsp
@@ -6817,6 +6934,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
 
 
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq
@@ -6845,6 +6963,7 @@ createNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
 
 
 updateNetworkReqDecoder : Json.Decode.Decoder UpdateNetworkReq
@@ -7027,6 +7146,78 @@ singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsign
 singleNetworkCallsignsListRspDecoder =
     Json.Decode.succeed SingleNetworkCallsignsListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list callsignResDecoder)))
+
+
+updateNetworkPostsReqDecoder : Json.Decode.Decoder UpdateNetworkPostsReq
+updateNetworkPostsReqDecoder =
+    Json.Decode.succeed UpdateNetworkPostsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
+
+
+postDecoder : Json.Decode.Decoder Post
+postDecoder =
+    Json.Decode.succeed Post
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+
+
+listPostsSortByDecoder : Json.Decode.Decoder ListPostsSortBy
+listPostsSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "PostNameDesc" ->
+                            Json.Decode.succeed PostNameDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "PostNameAsc" ->
+                            Json.Decode.succeed PostNameAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+listPostsReqDecoder : Json.Decode.Decoder ListPostsReq
+listPostsReqDecoder =
+    Json.Decode.succeed ListPostsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listPostsSortByDecoder)))
+
+
+createPostReqDecoder : Json.Decode.Decoder CreatePostReq
+createPostReqDecoder =
+    Json.Decode.succeed CreatePostReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+
+
+updatePostReqDecoder : Json.Decode.Decoder UpdatePostReq
+updatePostReqDecoder =
+    Json.Decode.succeed UpdatePostReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.nullable Json.Decode.bool)))
+
+
+deletePostReqDecoder : Json.Decode.Decoder DeletePostReq
+deletePostReqDecoder =
+    Json.Decode.succeed DeletePostReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
 
 
 sourceDecoder : Json.Decode.Decoder Source

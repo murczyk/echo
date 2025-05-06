@@ -16,3 +16,5 @@ type Msg
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | CallsignsInfoAskedByPage (List String)
+    | PostLoadAll B.ListPostsReq
+    | PostsReturnedByApi (Result ApiError (List B.Post))

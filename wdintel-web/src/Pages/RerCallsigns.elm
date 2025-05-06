@@ -3,6 +3,7 @@ module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, pag
 import Api
 import Auth
 import Bindings as B
+import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -32,8 +33,6 @@ import Task
 import Time
 import TimeZone
 import View exposing (View)
-import Components.Watermark exposing (Watermark)
-import Components.Watermark as Watermark
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -251,6 +250,7 @@ loadCallsignsCmd model =
 
             else
                 Maybe.map Time.posixToMillis model.to.datePosix
+        , limit = Nothing
         }
 
 
@@ -1018,14 +1018,16 @@ contentBlock shared model user =
                         ]
                     ]
                 , td [] [ text callsign.position ]
-                , td [class "relative"] [ text callsign.comment, Watermark.new user.name 
-                                                                    |> Watermark.withPositioning (5, 5) 
-                                                                    |> Watermark.withRotate -10
-                                                                    |> Watermark.withFontSize "1.3rem"
-                                                                    |> Watermark.withOpacity 0.3
-                                                                    |> Watermark.view  
-                                                                    |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
-                                                                    ]
+                , td [ class "relative" ]
+                    [ text callsign.comment
+                    , Watermark.new user.name
+                        |> Watermark.withPositioning ( 5, 5 )
+                        |> Watermark.withRotate -10
+                        |> Watermark.withFontSize "1.3rem"
+                        |> Watermark.withOpacity 0.3
+                        |> Watermark.view
+                        |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
+                    ]
                 , td []
                     [ case ListX.find (\u -> u.id == callsign.unitId) model.units of
                         Nothing ->

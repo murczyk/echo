@@ -1,4 +1,4 @@
-module Le.RemoteData exposing (RemoteData(..), isLoading, toMaybe, withDefault, withDefault2, markOutdated)
+module Le.RemoteData exposing (RemoteData(..), isLoading, isSuccess, markOutdated, toMaybe, withDefault, withDefault2)
 
 
 type RemoteData err data
@@ -18,16 +18,19 @@ withDefault default data =
         _ ->
             default
 
+
 withDefault2 : a -> RemoteData e a -> a
 withDefault2 default data =
     case data of
         Success x ->
             x
+
         NeedsReload x ->
             x
 
         _ ->
             default
+
 
 toMaybe : RemoteData e a -> Maybe a
 toMaybe data =
@@ -51,10 +54,22 @@ isLoading data =
         _ ->
             False
 
-markOutdated: RemoteData e a -> RemoteData e a 
+
+isSuccess : RemoteData e a -> Bool
+isSuccess data =
+    case data of
+        Success _ ->
+            True
+
+        _ ->
+            False
+
+
+markOutdated : RemoteData e a -> RemoteData e a
 markOutdated data =
-    case data of 
+    case data of
         Success xs ->
-            NeedsReload xs 
+            NeedsReload xs
+
         _ ->
             data

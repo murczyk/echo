@@ -13,12 +13,14 @@ import Dict
 import Effect as E exposing (Effect)
 import Http
 import Json.Decode
-import Le.RemoteData exposing (RemoteData(..))
+import Le.RemoteData as RD exposing (RemoteData(..))
 import PagePorts.SharedPorts as Ports
+import Process
 import Route exposing (Route)
 import Route.Path
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
+import Task
 import TimeZone
 import Url
 
@@ -68,6 +70,7 @@ init flagsResult route =
       , now = flags.now
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
+      , posts = NotAsked
       }
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
@@ -185,6 +188,17 @@ update req msg model =
               else
                 E.none
             )
+
+        PostLoadAll payload ->
+            ( model
+            , E.sendCmd <| Api.get_posts PostsReturnedByApi payload
+            )
+
+        PostsReturnedByApi (Ok res) ->
+            ( { model | posts = Success res }, E.none )
+
+        PostsReturnedByApi (Err err) ->
+            ( model, E.none )
 
 
 subscriptions : Route () -> Model -> Sub Msg

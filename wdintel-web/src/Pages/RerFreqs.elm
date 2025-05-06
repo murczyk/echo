@@ -102,6 +102,8 @@ type alias Model =
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
+    , addPostsSelect : Le.Block.Select.SelectType Int
+    , editPostsSelect : Le.Block.Select.SelectType Int
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , modulations : RemoteData ApiError (List B.ModulationRec)
@@ -227,6 +229,16 @@ init _ =
                 }
             , modulations = NotAsked
             , freqGroupsActivityForNetworkAdd = NotAsked
+            , addPostsSelect =
+                { state = Select.initState (Select.selectIdentifier "add-network-posts-state")
+                , selected = []
+                , items = []
+                }
+            , editPostsSelect =
+                { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
+                , selected = []
+                , items = []
+                }
             }
     in
     ( m2
@@ -234,6 +246,7 @@ init _ =
         [ E.sendCmd <| Task.attempt GotZone Le.Time.getZone
         , initLoad m2
         , E.getModulations ModulationsReturnedByApi
+        , E.loadPostsFromShared { sortBy = Nothing }
         ]
     )
 
@@ -256,29 +269,30 @@ type Msg
     | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
     | GotZone (Result TimeZone.Error ( String, Time.Zone ))
     | GotTime Time.Zone Posix
-    | GotUnits (Result ApiError B.ListUnitsRsp)
-      -- if Nothing -- adding a new network, if Just -- editing an existing network
-    | AddNetworkUnitSelMsg (Select.Msg Int)
-    | AddNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
-    | AddNetworkModulationSelMsg (Select.Msg Int)
-    | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
-    | EditNetworkModulationSelMsg (Select.Msg Int)
-    | AddNetworkMsg B.CreateNetworkReq
-    | EditNetworkMsg B.UpdateNetworkReq
-    | GotNetworks (Result ApiError (List B.Network))
+    | UnitsReturnedByApi (Result ApiError B.ListUnitsRsp)
+    | NetworkAddUnitSelMsg (Select.Msg Int)
+    | NetworkAddKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
+    | NetworkAddModulationSelMsg (Select.Msg Int)
+    | NetworkAddPostsSelMsg (Select.Msg Int)
+    | NetworkEditPostsSelMsg (Select.Msg Int)
+    | NetworkEditKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
+    | NetworkEditModulationSelMsg (Select.Msg Int)
+    | NetworkAddMsg B.CreateNetworkReq
+    | NetworkEditMsg B.UpdateNetworkReq
+    | NetworksReturnedByApi (Result ApiError (List B.Network))
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
-    | GotUnitStats (Result ApiError B.FreqUnitStatsRsp)
-    | ReloadUnits
+    | UnitStatsReturnedByApi (Result ApiError B.FreqUnitStatsRsp)
+    | UnitsReload
     | SwitchFromTextToMap String
-    | CloseMap String
-    | GotPointsByFreq String (Result ApiError B.ListPointsByFreqRsp)
-    | GotCallsignsByFreqs (Result ApiError Api.ListCallsignsByFreqsRsp)
-    | GotGroupsMessageCountByDay (Result ApiError GroupsActivityPerDayRsp)
-    | GotCallsignsInfo (Result ApiError (List B.CallsignInfoRes))
-    | GotAltUnitsByFreq (Result ApiError Api.ListAltUnitsByFreqsRsp)
+    | MapClose String
+    | PointsByFreqReturnedByApi String (Result ApiError B.ListPointsByFreqRsp)
+    | CallsignsByFreqsReturnedByApi (Result ApiError Api.ListCallsignsByFreqsRsp)
+    | GroupsMessageCountByDayReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
+    | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
+    | AltUnitsByFreqReturnedByApi (Result ApiError Api.ListAltUnitsByFreqsRsp)
     | SortByMessageNumber
-    | LoadMoreFreqs
+    | FreqsLoadMore
     | SetFreqToShowAllCallsignsPopup (Maybe String)
     | SelCallsignMsg (Select.Msg String)
     | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
@@ -290,24 +304,25 @@ type Msg
     | SelectReportAdjacentFreqsRange (Select.Msg B.AdjacentFreqDistance)
     | OpenAddNetworkSidebar String
     | CloseAddNetworkSidebar
-    | CreateNetwork
-    | CreateNetworkDone String (Result ApiError B.Network)
-    | UpdateNetwork
-    | UpdateNetworkDone String (Result ApiError B.Network)
-    | StartCreatingNewNetwork
-    | AddFreqToExistingNetwork String Int
-    | RemoveFreqFromExistingNetwork String B.Network
+    | NetworkCreate
+    | NetworkCreated String (Result ApiError B.Network)
+    | NetworkUpdate
+    | NetworkUpdated String (Result ApiError B.Network)
+    | NetworkStartCreatingFlow
+    | FreqAddToExistingNetwork String Int
+    | FreqRemoveFromExistingNetwork String B.Network
     | NetworkAddSelectExistingId Int
-    | AddFreqToNetworkDone String (Result ApiError B.Network)
-    | RemoveFreqFromNetworkDone String (Result ApiError B.Network)
-    | StartEditingExistingNetwork B.Network
+    | FreqAddedToNetwork String (Result ApiError B.Network)
+    | FreqRemovedFromNetwork String (Result ApiError B.Network)
+    | NetworkStartEditingFlow B.Network
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
+    | NetworkPostsUpdated (Result ApiError B.Network)
 
 
 loadUnits : Effect Msg
 loadUnits =
-    E.getUnits GotUnits
+    E.getUnits UnitsReturnedByApi
         { sortBy = Nothing
         , afterUnitId = Nothing
         , beforeUnitId = Nothing
@@ -327,7 +342,7 @@ initLoad model =
         [ loadUnits
         , E.sendCmd <| loadFreqs model False
         , E.sendCmd <|
-            Api.sigint_freq_unit_stats GotUnitStats
+            Api.sigint_freq_unit_stats UnitStatsReturnedByApi
         ]
 
 
@@ -612,7 +627,7 @@ update shared msg model =
                 , noMoreToLoad = not rsp.showLoadMore
               }
             , E.batch
-                (E.getNetworksInfoByIds GotNetworks networkIds
+                (E.getNetworksInfoByIds NetworksReturnedByApi networkIds
                     :: (case ( model.from.datePosix, model.to.datePosix ) of
                             ( Just dtFromPosix, Just dtToPosix ) ->
                                 let
@@ -625,19 +640,19 @@ update shared msg model =
                                     timeTo =
                                         Time.posixToMillis dtToPosix
                                 in
-                                [ E.getGroupsActivityStats GotGroupsMessageCountByDay
+                                [ E.getGroupsActivityStats GroupsMessageCountByDayReturnedByApi
                                     { freqs = freqsAsString
                                     , sinceDateInclusiveMs = timeFrom
                                     , tillDateNoninclusiveMs = timeTo
                                     }
                                 , E.sendCmd <|
-                                    Api.list_callsigns_by_freq GotCallsignsByFreqs
+                                    Api.list_callsigns_by_freq CallsignsByFreqsReturnedByApi
                                         { freqs = freqsAsString
                                         , sinceDateInclusiveMs = timeFrom
                                         , tillDateNoninclusiveMs = timeTo
                                         }
                                 , E.sendCmd <|
-                                    Api.list_alt_units_by_freqs GotAltUnitsByFreq
+                                    Api.list_alt_units_by_freqs AltUnitsByFreqReturnedByApi
                                         { freqs = freqsAsString
                                         , sinceDateInclusiveMs = timeFrom
                                         , tillDateNoninclusiveMs = timeTo
@@ -652,10 +667,10 @@ update shared msg model =
                 )
             )
 
-        GotGroupsMessageCountByDay (Ok r) ->
+        GroupsMessageCountByDayReturnedByApi (Ok r) ->
             ( { model | groupsMessageCountByDay = r }, E.none )
 
-        GotGroupsMessageCountByDay (Err err) ->
+        GroupsMessageCountByDayReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err model
 
         GotFreqNetworks _ (Err err) ->
@@ -672,7 +687,7 @@ update shared msg model =
                         |> ListX.updateIf (\f -> f.freq == freqS)
                             (\f -> { f | networkIds = networks |> List.map .id })
               }
-            , E.getNetworksInfoByIds GotNetworks newNetworkIds
+            , E.getNetworksInfoByIds NetworksReturnedByApi newNetworkIds
             )
 
         DateTimeFromMsg imsg ->
@@ -725,10 +740,10 @@ update shared msg model =
             in
             ( m2, initLoad m2 )
 
-        GotUnits (Err err) ->
+        UnitsReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err model
 
-        GotUnits (Ok rsp) ->
+        UnitsReturnedByApi (Ok rsp) ->
             let
                 m1 =
                     { model
@@ -758,10 +773,10 @@ update shared msg model =
             , E.none
             )
 
-        ReloadUnits ->
+        UnitsReload ->
             ( model, loadUnits )
 
-        AddNetworkUnitSelMsg imsg ->
+        NetworkAddUnitSelMsg imsg ->
             let
                 ( mAct, imodel, icmd ) =
                     Select.update imsg model.networkDialogUnitSelect.state
@@ -781,11 +796,11 @@ update shared msg model =
             ( { model | networkDialogUnitSelect = unitsSelect2 }
             , E.sendCmd <|
                 Cmd.map
-                    AddNetworkUnitSelMsg
+                    NetworkAddUnitSelMsg
                     icmd
             )
 
-        AddNetworkModulationSelMsg imsg ->
+        NetworkAddModulationSelMsg imsg ->
             case model.networkAddStatus of
                 CreateNewNetwork freq addNetworkState ->
                     let
@@ -810,14 +825,75 @@ update shared msg model =
                     ( { model | addModulationSelect = modulationSelect2, networkAddStatus = CreateNewNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
-                            AddNetworkModulationSelMsg
+                            NetworkAddModulationSelMsg
                             icmd
                     )
 
                 _ ->
                     ( model, E.none )
 
-        AddNetworkKindSelMsg imsg ->
+        NetworkAddPostsSelMsg imsg ->
+            case model.networkAddStatus of
+                CreateNewNetwork freq addNetworkState ->
+                    let
+                        ( mAct, imodel, icmd ) =
+                            Select.update imsg model.addPostsSelect.state
+
+                        updatedNetworkPosts =
+                            Le.Block.Select.multiUpdI mAct model.addPostsSelect.selected
+
+                        postsSelect =
+                            model.addPostsSelect
+
+                        postsSelect2 =
+                            { postsSelect
+                                | state = imodel
+                                , selected = updatedNetworkPosts
+                            }
+
+                        ns2 =
+                            { addNetworkState | postIds = updatedNetworkPosts }
+                    in
+                    ( { model | addPostsSelect = postsSelect2, networkAddStatus = CreateNewNetwork freq ns2 }
+                    , E.sendCmd <|
+                        Cmd.map
+                            NetworkAddPostsSelMsg
+                            icmd
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        NetworkEditPostsSelMsg imsg ->
+            case model.networkAddStatus of
+                EditExistingNetwork freq editNetworkState ->
+                    let
+                        ( mAct, imodel, icmd ) =
+                            Select.update imsg model.editPostsSelect.state
+
+                        updatedNetworkPosts =
+                            Le.Block.Select.multiUpdI mAct model.editPostsSelect.selected
+
+                        postsSelect =
+                            model.editPostsSelect
+
+                        postsSelect2 =
+                            { postsSelect
+                                | state = imodel
+                                , selected = updatedNetworkPosts
+                            }
+                    in
+                    ( { model | editPostsSelect = postsSelect2, networkAddStatus = EditExistingNetwork freq editNetworkState }
+                    , E.sendCmd <|
+                        Cmd.map
+                            NetworkEditPostsSelMsg
+                            icmd
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        NetworkAddKindSelMsg imsg ->
             case model.networkAddStatus of
                 CreateNewNetwork freq addNetworkState ->
                     let
@@ -842,7 +918,7 @@ update shared msg model =
                     ( { model | addKindSelect = kindSelect2, networkAddStatus = CreateNewNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
-                            AddNetworkKindSelMsg
+                            NetworkAddKindSelMsg
                             icmd
                     )
 
@@ -851,7 +927,7 @@ update shared msg model =
                     , E.none
                     )
 
-        EditNetworkModulationSelMsg imsg ->
+        NetworkEditModulationSelMsg imsg ->
             case model.networkAddStatus of
                 EditExistingNetwork freq editNetworkState ->
                     let
@@ -876,14 +952,14 @@ update shared msg model =
                     ( { model | editModulationSelect = modulationSelect2, networkAddStatus = EditExistingNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
-                            AddNetworkModulationSelMsg
+                            NetworkAddModulationSelMsg
                             icmd
                     )
 
                 _ ->
                     ( model, E.none )
 
-        EditNetworkKindSelMsg imsg ->
+        NetworkEditKindSelMsg imsg ->
             case model.networkAddStatus of
                 EditExistingNetwork freq editNetworkState ->
                     let
@@ -908,7 +984,7 @@ update shared msg model =
                     ( { model | editKindSelect = kindSelect2, networkAddStatus = EditExistingNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
-                            EditNetworkKindSelMsg
+                            NetworkEditKindSelMsg
                             icmd
                     )
 
@@ -917,7 +993,7 @@ update shared msg model =
                     , E.none
                     )
 
-        AddNetworkMsg addNetworkState ->
+        NetworkAddMsg addNetworkState ->
             ( { model
                 | networkAddStatus =
                     case model.networkAddStatus of
@@ -930,7 +1006,7 @@ update shared msg model =
             , E.none
             )
 
-        EditNetworkMsg editNetworkState ->
+        NetworkEditMsg editNetworkState ->
             ( { model
                 | networkAddStatus =
                     case model.networkAddStatus of
@@ -943,10 +1019,10 @@ update shared msg model =
             , E.none
             )
 
-        GotNetworks (Err err) ->
+        NetworksReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err model
 
-        GotNetworks (Ok networks) ->
+        NetworksReturnedByApi (Ok networks) ->
             ( { model
                 | networks =
                     networks
@@ -989,10 +1065,10 @@ update shared msg model =
             , E.sendCmd debounceCmd
             )
 
-        GotUnitStats (Err err) ->
+        UnitStatsReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err { model | loadingUnitStats = False }
 
-        GotUnitStats (Ok rsp) ->
+        UnitStatsReturnedByApi (Ok rsp) ->
             ( { model
                 | unitStats = rsp.units
                 , loadingUnitStats = False
@@ -1012,17 +1088,17 @@ update shared msg model =
             in
             ( model
             , E.sendCmd <|
-                Api.list_points_by_freq (GotPointsByFreq containerId)
+                Api.list_points_by_freq (PointsByFreqReturnedByApi containerId)
                     { freq = containerId
                     , sinceDateInclusiveMs = from
                     , tillDateNoninclusiveMs = to
                     }
             )
 
-        CloseMap _ ->
+        MapClose _ ->
             ( { model | openMapRowId = Nothing }, E.none )
 
-        GotPointsByFreq containerId (Ok rsp) ->
+        PointsByFreqReturnedByApi containerId (Ok rsp) ->
             case rsp.points of
                 [] ->
                     ( { model | locationTexts = Dict.update containerId (\_ -> Just NoCoords) model.locationTexts }, E.none )
@@ -1030,10 +1106,10 @@ update shared msg model =
                 _ ->
                     ( { model | openMapRowId = Just containerId, locationTexts = Dict.insert containerId LocationText model.locationTexts }, E.sendCmd <| Ports.rer_freqs_openMap { points = rsp.points, containerId = containerId } )
 
-        GotPointsByFreq _ (Err err) ->
+        PointsByFreqReturnedByApi _ (Err err) ->
             Api.handleHttpError ToastMsg err model
 
-        GotCallsignsByFreqs (Ok rsp) ->
+        CallsignsByFreqsReturnedByApi (Ok rsp) ->
             let
                 mergedResult =
                     Dict.merge
@@ -1058,27 +1134,27 @@ update shared msg model =
                         |> Set.toList
               }
             , if List.length newCallsigns > 0 then
-                E.getCallsignsInfo GotCallsignsInfo { callsigns = newCallsigns }
+                E.getCallsignsInfo CallsignsInfoReturnedByApi { callsigns = newCallsigns }
 
               else
                 E.none
             )
 
-        GotCallsignsByFreqs (Err err) ->
+        CallsignsByFreqsReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err model
 
-        GotAltUnitsByFreq (Ok rsp) ->
+        AltUnitsByFreqReturnedByApi (Ok rsp) ->
             ( { model | altUnitsByFreq = rsp }
             , E.none
             )
 
-        GotAltUnitsByFreq (Err err) ->
+        AltUnitsByFreqReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err model
 
-        GotCallsignsInfo (Err e) ->
+        CallsignsInfoReturnedByApi (Err e) ->
             Api.handleHttpError ToastMsg e model
 
-        GotCallsignsInfo (Ok callsignsRes) ->
+        CallsignsInfoReturnedByApi (Ok callsignsRes) ->
             let
                 updatedCallsignsInfo =
                     List.foldl
@@ -1105,7 +1181,7 @@ update shared msg model =
                 loadFreqs m2 False
             )
 
-        LoadMoreFreqs ->
+        FreqsLoadMore ->
             ( model
             , E.sendCmd <| loadFreqs model True
             )
@@ -1271,12 +1347,32 @@ update shared msg model =
         OpenAddNetworkSidebar freq ->
             ( { model
                 | networkAddStatus = SelectFromExistingNetwork freq Nothing
+
+                --TODO: remove workaround related to loading from Shared
+                , addPostsSelect =
+                    Le.Block.Select.updateSelectItems
+                        (\_ ->
+                            List.map
+                                (\post -> Select.basicMenuItem { item = post.id, label = post.name })
+                                (RD.withDefault [] shared.posts)
+                        )
+                        model.addPostsSelect
+                , editPostsSelect =
+                    Le.Block.Select.updateSelectItems
+                        (\_ ->
+                            List.map
+                                (\post -> Select.basicMenuItem { item = post.id, label = post.name })
+                                (RD.withDefault [] shared.posts)
+                        )
+                        model.editPostsSelect
               }
-            , E.getFreqActivityDaily FreqGroupsActivityReturnedByApi
-                { freq = freq
-                , sinceDateInclusiveMs = Time.posixToMillis (Le.Time.xDaysAgo 30 (Time.millisToPosix shared.now))
-                , tillDateInclusiveMs = Nothing
-                }
+            , E.batch
+                [ E.getFreqActivityDaily FreqGroupsActivityReturnedByApi
+                    { freq = freq
+                    , sinceDateInclusiveMs = Time.posixToMillis (Le.Time.xDaysAgo 30 (Time.millisToPosix shared.now))
+                    , tillDateInclusiveMs = Nothing
+                    }
+                ]
             )
 
         CloseAddNetworkSidebar ->
@@ -1289,18 +1385,18 @@ update shared msg model =
             in
             ( { model | networkAddStatus = NotStarted, networkDialogUnitSelect = unitSelect2 }, E.none )
 
-        CreateNetwork ->
+        NetworkCreate ->
             case model.networkAddStatus of
                 CreateNewNetwork freq state ->
-                    ( model, E.createNetwork (CreateNetworkDone freq) state )
+                    ( model, E.createNetwork (NetworkCreated freq) state )
 
                 _ ->
                     ( model, E.none )
 
-        CreateNetworkDone _ (Err e) ->
+        NetworkCreated _ (Err e) ->
             Api.handleHttpError ToastMsg e model
 
-        CreateNetworkDone freq (Ok network) ->
+        NetworkCreated freq (Ok network) ->
             let
                 fre =
                     ListX.find (\freq_ -> freq_.freq == freq) model.freqs
@@ -1325,7 +1421,7 @@ update shared msg model =
             , E.none
             )
 
-        StartCreatingNewNetwork ->
+        NetworkStartCreatingFlow ->
             ( { model
                 | networkAddStatus =
                     case ( model.networkDialogUnitSelect.selected, model.networkAddStatus ) of
@@ -1347,6 +1443,7 @@ update shared msg model =
                                 , activeTo = Nothing
                                 , activeFrom = Nothing
                                 , modulationId = model.addModulationSelect.selected
+                                , postIds = []
                                 }
 
                         _ ->
@@ -1355,7 +1452,7 @@ update shared msg model =
             , E.none
             )
 
-        StartEditingExistingNetwork network ->
+        NetworkStartEditingFlow network ->
             let
                 ( networkAddStatus, modulationSelected ) =
                     case model.networkAddStatus of
@@ -1392,6 +1489,10 @@ update shared msg model =
             ( { model
                 | networkAddStatus = networkAddStatus
                 , editModulationSelect = ems2
+                , editPostsSelect =
+                    Le.Block.Select.updateSelectSelected
+                        (\_ -> network.postIds)
+                        model.editPostsSelect
               }
             , E.none
             )
@@ -1409,11 +1510,11 @@ update shared msg model =
             , E.none
             )
 
-        AddFreqToExistingNetwork freq id ->
+        FreqAddToExistingNetwork freq id ->
             case Dict.get id model.networks of
                 Just network ->
                     ( { model | networkAddLoading = True }
-                    , E.addFreqToNetwork (AddFreqToNetworkDone freq)
+                    , E.addFreqToNetwork (FreqAddedToNetwork freq)
                         { networkId = network.id
                         , freq = freq
                         }
@@ -1422,10 +1523,10 @@ update shared msg model =
                 _ ->
                     ( model, E.none )
 
-        AddFreqToNetworkDone _ (Err e) ->
+        FreqAddedToNetwork _ (Err e) ->
             Api.handleHttpError ToastMsg e { model | networkAddLoading = False }
 
-        AddFreqToNetworkDone freq (Ok network) ->
+        FreqAddedToNetwork freq (Ok network) ->
             let
                 fre =
                     ListX.find (\freq_ -> freq_.freq == freq) model.freqs
@@ -1458,18 +1559,18 @@ update shared msg model =
             , E.none
             )
 
-        RemoveFreqFromExistingNetwork freq network ->
+        FreqRemoveFromExistingNetwork freq network ->
             ( { model | networkAddLoading = True }
-            , E.removeFreqFromNetwork (RemoveFreqFromNetworkDone freq)
+            , E.removeFreqFromNetwork (FreqRemovedFromNetwork freq)
                 { networkId = network.id
                 , freq = freq
                 }
             )
 
-        RemoveFreqFromNetworkDone _ (Err e) ->
+        FreqRemovedFromNetwork _ (Err e) ->
             Api.handleHttpError ToastMsg e { model | networkAddLoading = False }
 
-        RemoveFreqFromNetworkDone freq (Ok network) ->
+        FreqRemovedFromNetwork freq (Ok network) ->
             let
                 fre =
                     ListX.find (\freq_ -> freq_.freq == freq) model.freqs
@@ -1495,18 +1596,21 @@ update shared msg model =
             , E.none
             )
 
-        UpdateNetwork ->
+        NetworkUpdate ->
             case model.networkAddStatus of
                 EditExistingNetwork freq state ->
-                    ( model, E.updateNetwork (UpdateNetworkDone freq) state )
+                    ( model
+                    , E.batch
+                        [ E.updateNetwork (NetworkUpdated freq) state, E.updateNetworkPosts NetworkPostsUpdated { networkId = state.id, postIds = model.editPostsSelect.selected } ]
+                    )
 
                 _ ->
                     ( model, E.none )
 
-        UpdateNetworkDone _ (Err e) ->
+        NetworkUpdated _ (Err e) ->
             Api.handleHttpError ToastMsg e model
 
-        UpdateNetworkDone freq (Ok network) ->
+        NetworkUpdated freq (Ok network) ->
             ( { model
                 | networks = Dict.insert network.id network model.networks
                 , networkAddStatus = SelectFromExistingNetwork freq Nothing
@@ -1552,6 +1656,12 @@ update shared msg model =
 
         FreqGroupsActivityReturnedByApi (Err err) ->
             Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
+
+        NetworkPostsUpdated (Ok r) ->
+            ( model, E.none )
+
+        NetworkPostsUpdated (Err err) ->
+            Api.handleHttpError ToastMsg err model
 
 
 prepareReportDownloadCmd : Model -> Bool -> Cmd Msg
@@ -1606,7 +1716,7 @@ changeSortOrder order =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Ports.rer_freqs_closeMapRes CloseMap
+    Ports.rer_freqs_closeMapRes MapClose
 
 
 mainContent : Shared.Model -> Model -> B.User -> Html Msg
@@ -1634,7 +1744,7 @@ mainContent shared model user =
             div [ class "d-flex justify-content-center align-items-center mb-4" ]
                 [ button
                     [ class "btn btn-outline-secondary btn-sm"
-                    , onClick LoadMoreFreqs
+                    , onClick FreqsLoadMore
                     ]
                     [ if model.loading then
                         Le.Block.Spinner.loadingSpinner2Sm
@@ -2005,7 +2115,7 @@ contentBlock shared model user =
                         , value editState.name
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | name = v }
                         ]
                         []
@@ -2029,7 +2139,7 @@ contentBlock shared model user =
                         do2 =
                             { defaultOptions | clearable = False }
                       in
-                      Html.map EditNetworkKindSelMsg <|
+                      Html.map NetworkEditKindSelMsg <|
                         Styled.toUnstyled <|
                             Le.Block.Select.renderSelectSingle
                                 (Just selectedItem)
@@ -2062,12 +2172,45 @@ contentBlock shared model user =
                         do2 =
                             { defaultOptions | clearable = False }
                       in
-                      Html.map EditNetworkModulationSelMsg <|
+                      Html.map NetworkEditModulationSelMsg <|
                         Styled.toUnstyled <|
                             Le.Block.Select.renderSelectSingle
                                 selectedItem
                                 model.editModulationSelect.state
                                 model.editModulationSelect.items
+                                "жоден"
+                                do2
+                    ]
+                , div [ class "col-span-2" ]
+                    [ label [ class "mb-1" ] [ text "Пости" ]
+                    , let
+                        selectedItems =
+                            List.map
+                                (\postId ->
+                                    Select.basicMenuItem
+                                        { item = postId
+                                        , label =
+                                            RD.withDefault [] shared.posts
+                                                |> List.filter (\post -> post.id == postId)
+                                                |> List.head
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ""
+                                        }
+                                )
+                                model.editPostsSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+
+                        do2 =
+                            { defaultOptions | clearable = False }
+                      in
+                      Html.map NetworkEditPostsSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.editPostsSelect.state
+                                model.editPostsSelect.items
                                 "жоден"
                                 do2
                     ]
@@ -2079,7 +2222,7 @@ contentBlock shared model user =
                         , value <| editState.location
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | location = v }
                         ]
                         []
@@ -2091,7 +2234,7 @@ contentBlock shared model user =
                         , value <| editState.comment
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | comment = v }
                         ]
                         []
@@ -2103,7 +2246,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" editState.radioStation)
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | radioStation = Just v }
                         ]
                         []
@@ -2116,7 +2259,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" editState.confirmation)
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | confirmation = Just v }
                         ]
                         []
@@ -2129,7 +2272,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" editState.purpose)
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | purpose = Just v }
                         ]
                         []
@@ -2142,7 +2285,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" editState.operationType)
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | operationType = Just v }
                         ]
                         []
@@ -2155,7 +2298,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" editState.operationMode)
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | operationMode = Just v }
                         ]
                         []
@@ -2168,7 +2311,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" editState.signs)
                         , onInput <|
                             \v ->
-                                EditNetworkMsg
+                                NetworkEditMsg
                                     { editState | signs = Just v }
                         ]
                         []
@@ -2176,7 +2319,7 @@ contentBlock shared model user =
                     ]
                 , div [ class "flex gap-2 justify-end col-span-4 mb-2" ]
                     [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
-                    , Button.new { label = "Зберегти", onClick = UpdateNetwork } |> Button.view
+                    , Button.new { label = "Зберегти", onClick = NetworkUpdate } |> Button.view
                     ]
                 ]
             ]
@@ -2193,7 +2336,7 @@ contentBlock shared model user =
                         , value addState.name
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | name = v }
                         ]
                         []
@@ -2216,7 +2359,7 @@ contentBlock shared model user =
                         do2 =
                             { defaultOptions | clearable = False }
                       in
-                      Html.map AddNetworkKindSelMsg <|
+                      Html.map NetworkAddKindSelMsg <|
                         Styled.toUnstyled <|
                             Le.Block.Select.renderSelectSingle
                                 (Just selectedItem)
@@ -2249,12 +2392,49 @@ contentBlock shared model user =
                         do2 =
                             { defaultOptions | clearable = False }
                       in
-                      Html.map AddNetworkModulationSelMsg <|
+                      Html.map NetworkAddModulationSelMsg <|
                         Styled.toUnstyled <|
                             Le.Block.Select.renderSelectSingle
                                 selectedItem
                                 model.addModulationSelect.state
                                 model.addModulationSelect.items
+                                "жоден"
+                                do2
+                    ]
+                , div [ class "col-span-2" ]
+                    [ label [ class "mb-1" ] [ text "Пости" ]
+                    , let
+                        selectedItems =
+                            List.map
+                                (\postId ->
+                                    Select.basicMenuItem
+                                        { item = postId
+                                        , label =
+                                            case shared.posts of
+                                                Success posts ->
+                                                    List.filter (\post -> post.id == postId) posts
+                                                        |> List.head
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault ""
+
+                                                _ ->
+                                                    ""
+                                        }
+                                )
+                                model.addPostsSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+
+                        do2 =
+                            { defaultOptions | clearable = False }
+                      in
+                      Html.map NetworkAddPostsSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.addPostsSelect.state
+                                model.addPostsSelect.items
                                 "жоден"
                                 do2
                     ]
@@ -2266,7 +2446,7 @@ contentBlock shared model user =
                         , value <| addState.location
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | location = v }
                         ]
                         []
@@ -2278,7 +2458,7 @@ contentBlock shared model user =
                         , value <| addState.comment
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | comment = v }
                         ]
                         []
@@ -2290,7 +2470,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" addState.radioStation)
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | radioStation = Just v }
                         ]
                         []
@@ -2303,7 +2483,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" addState.confirmation)
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | confirmation = Just v }
                         ]
                         []
@@ -2316,7 +2496,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" addState.purpose)
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | purpose = Just v }
                         ]
                         []
@@ -2329,7 +2509,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" addState.operationType)
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | operationType = Just v }
                         ]
                         []
@@ -2342,7 +2522,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" addState.operationMode)
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | operationMode = Just v }
                         ]
                         []
@@ -2355,7 +2535,7 @@ contentBlock shared model user =
                         , value (Maybe.withDefault "" addState.signs)
                         , onInput <|
                             \v ->
-                                AddNetworkMsg
+                                NetworkAddMsg
                                     { addState | signs = Just v }
                         ]
                         []
@@ -2383,7 +2563,7 @@ contentBlock shared model user =
                                        )
                                     |> value
                                 , onInput <|
-                                    AddNetworkMsg
+                                    NetworkAddMsg
                                         << (\v ->
                                                 { addState
                                                     | activeFrom =
@@ -2414,9 +2594,9 @@ contentBlock shared model user =
                             ]
                         ]
                     ]
-                , div [ class "flex gap-2 justify-end col-span-4 my-2" ]
+                , div [ class "flex gap-2 justify-end col-span-4 mt-4" ]
                     [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
-                    , Button.new { label = "Зберегти", onClick = CreateNetwork } |> Button.view
+                    , Button.new { label = "Зберегти", onClick = NetworkCreate } |> Button.view
                     ]
                 ]
             ]
@@ -2455,8 +2635,8 @@ contentBlock shared model user =
                                         ]
                                         [ NetworksUtils.renderNetwork network_ model.masterUnits
                                         , div [ class "flex gap-2" ]
-                                            [ i [ class "bi bi-pencil cursor-pointer", onClick <| StartEditingExistingNetwork network_ ] []
-                                            , i [ class "bi bi-trash cursor-pointer", onClick <| RemoveFreqFromExistingNetwork freq network_ ] []
+                                            [ i [ class "bi bi-pencil cursor-pointer", onClick <| NetworkStartEditingFlow network_ ] []
+                                            , i [ class "bi bi-trash cursor-pointer", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
                                             ]
                                         ]
                                 )
@@ -2480,7 +2660,7 @@ contentBlock shared model user =
                       in
                       div [ class "" ]
                         [ label [] [ text "Пошук існуючих по підрозділу:" ]
-                        , Html.map AddNetworkUnitSelMsg <|
+                        , Html.map NetworkAddUnitSelMsg <|
                             Styled.toUnstyled <|
                                 Le.Block.Select.renderSelectSingle
                                     selectItem
@@ -2546,7 +2726,7 @@ contentBlock shared model user =
                     , div [ class "flex justify-end mb-2" ]
                         [ case mSelectedNetworkId of
                             Just id ->
-                                button [ class "btn btn-primary", onClick <| AddFreqToExistingNetwork freq id, disabled <| model.networkDialogUnitSelect.selected == Nothing ] [ text "Використати цю мережу" ]
+                                button [ class "btn btn-primary", onClick <| FreqAddToExistingNetwork freq id, disabled <| model.networkDialogUnitSelect.selected == Nothing ] [ text "Використати цю мережу" ]
 
                             Nothing ->
                                 text ""
@@ -2554,7 +2734,7 @@ contentBlock shared model user =
                     ]
                 , div [ class "flex gap-2 justify-end border-t-1 pt-2 border-[var(--neutral-400)]" ]
                     [ Button.new { label = "Назад", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
-                    , Button.new { label = "Створити нову мережу", onClick = StartCreatingNewNetwork }
+                    , Button.new { label = "Створити нову мережу", onClick = NetworkStartCreatingFlow }
                         |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing)
                         |> Button.view
                     ]
@@ -2563,7 +2743,7 @@ contentBlock shared model user =
 
         createNetworkSidebarContent : List (Html Msg)
         createNetworkSidebarContent =
-            [ div [ class "p-4 w-full flex flex-col" ]
+            [ div [ class "p-4 w-full flex flex-col overflow-y-auto max-h-screen" ]
                 ([ h2 [] [ text "Прив'язка мережі до частоти" ]
                  ]
                     ++ (case model.networkAddStatus of

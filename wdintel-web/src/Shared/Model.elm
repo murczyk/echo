@@ -16,4 +16,5 @@ type alias Model =
     , now : Int
     , timeZone : Zone
     , callsignsInfo : Dict String (List B.CallsignInfo)
+    , posts : RemoteData ApiError (List B.Post)
     }

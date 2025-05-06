@@ -50,7 +50,8 @@ class BarChart extends LitElement {
 
 	updated(changedProperties: PropertyValues<this>) {
 		if (changedProperties.has('data') || changedProperties.has('lastDay')) {
-			const transformedData = this.transformData(this.data, new Date(this.lastDay));
+			const lastDay = dayjs(this.lastDay)
+			const transformedData = this.transformData(this.data, lastDay.isValid() ? lastDay.toDate() : new Date());
 			this.renderChart(transformedData)
 		}
 	}

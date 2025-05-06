@@ -34,7 +34,7 @@ page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
 page user shared route =
     Page.new
         { init = init route shared
-        , update = update
+        , update = update shared
         , subscriptions = subscriptions
         , view = view shared
         }
@@ -70,6 +70,7 @@ type alias Model =
     , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty EUtils.NetworkKind
+    , editPostsSelect : Le.Block.Select.SelectType Int
     }
 
 
@@ -97,6 +98,11 @@ init route shared () =
                                 }
                         )
             , selected = EUtils.VHF
+            }
+      , editPostsSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
+            , items = []
+            , selected = []
             }
       }
     , case String.toInt route.params.id of
@@ -127,10 +133,11 @@ type Msg
     | NetworkEditingMsg B.UpdateNetworkReq
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | EditNetworkKindSelMsg (Select.Msg EUtils.NetworkKind)
+    | NetworkEditPostsSelMsg (Select.Msg Int)
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
     case msg of
         ToastMsg imsg ->
             let
@@ -155,10 +162,16 @@ update msg model =
                 kindSelect =
                     model.editKindSelect
 
+                postsSelect =
+                    model.editPostsSelect
+
                 kindSelect2 =
                     { kindSelect | selected = EUtils.networkKindFromString res.kind }
+
+                postsSelect2 =
+                    { postsSelect | selected = res.postIds }
             in
-            ( { model | network = Success res, editKindSelect = kindSelect2 }
+            ( { model | network = Success res, editKindSelect = kindSelect2, editPostsSelect = postsSelect2 }
             , E.batch
                 [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = res.id }
                 , E.getNetworkPoints MapPointsReturnedByApi
@@ -175,6 +188,9 @@ update msg model =
                     , filterUnit = Nothing
                     , sortBy = Nothing
                     }
+
+                --TODO: do not load if loaded already
+                , E.loadPostsFromShared { sortBy = Nothing }
                 ]
             )
 
@@ -312,6 +328,60 @@ update msg model =
                     , E.none
                     )
 
+        NetworkEditPostsSelMsg imsg ->
+            case model.mode of
+                Editing editNetworkState ->
+                    let
+                        ( mAct, imodel, icmd ) =
+                            Select.update imsg model.editPostsSelect.state
+
+                        updatedNetworkPosts =
+                            Le.Block.Select.multiUpdI mAct model.editPostsSelect.selected
+
+                        postsSelect =
+                            model.editPostsSelect
+
+                        --TODO: remove this hack
+                        items =
+                            case ( postsSelect.items, shared.posts ) of
+                                ( [], Success (x :: xs) ) ->
+                                    List.map (\post -> Select.basicMenuItem { item = post.id, label = post.name }) (x :: xs)
+
+                                _ ->
+                                    postsSelect.items
+
+                        postsSelect2 =
+                            { postsSelect
+                                | state = imodel
+                                , selected = updatedNetworkPosts
+                                , items = items
+                            }
+
+                        network =
+                            model.network
+
+                        n2 =
+                            case network of
+                                Success n ->
+                                    Success { n | postIds = updatedNetworkPosts }
+
+                                _ ->
+                                    network
+                    in
+                    ( { model
+                        | editPostsSelect = postsSelect2
+                        , mode = Editing editNetworkState
+                        , network = n2
+                      }
+                    , E.sendCmd <|
+                        Cmd.map
+                            NetworkEditPostsSelMsg
+                            icmd
+                    )
+
+                _ ->
+                    ( model, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -328,8 +398,8 @@ subscriptions model =
 
 mainInfoBlock : B.Network -> Shared.Model -> Model -> List (Html Msg)
 mainInfoBlock network shared model =
-    [ h4 [ class "mb-[8px]" ]
-        [ text "Деталі мережі" ]
+    [ h5 [ class "mb-[8px]" ]
+        [ text "Форма № 1.5.4/ГУР" ]
     , div
         [ class "network-list-container" ]
         [ div [ class "border-t-1 border-border py-[8px] flex" ]
@@ -360,25 +430,35 @@ mainInfoBlock network shared model =
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
             , span [] [ text <| Maybe.withDefault "" network.operationPeriod ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Активна з:" ]
-            , span []
-                [ text <|
-                    Le.Time.renderDateF6 shared.timeZone
-                        (Time.millisToPosix network.activeFrom)
-                ]
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Активна по:" ]
-            , span []
-                [ case network.activeTo of
-                    Just millis ->
+        ]
+    , div [ class "mt-[8px]" ]
+        [ h5 [] [ text "Додаткове" ]
+        , div [ class "grid grid-cols-12 gap-[16px]" ]
+            [ div [ class "col-span-2" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
+                , div []
+                    [ text <|
                         Le.Time.renderDateF6 shared.timeZone
-                            (Time.millisToPosix millis)
-                            |> text
+                            (Time.millisToPosix network.activeFrom)
+                    ]
+                ]
+            , div [ class "col-span-2" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
+                , div []
+                    [ case network.activeTo of
+                        Just millis ->
+                            Le.Time.renderDateF6 shared.timeZone
+                                (Time.millisToPosix millis)
+                                |> text
 
-                    Nothing ->
-                        text ""
+                        Nothing ->
+                            text ""
+                    ]
+                ]
+            , div [ class "col-span-4" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+                , span []
+                    []
                 ]
             ]
         ]
@@ -387,8 +467,8 @@ mainInfoBlock network shared model =
 
 mainInfoEditBlock : B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
 mainInfoEditBlock updNetworkReq shared model =
-    [ h4 [ class "mb-[8px]" ]
-        [ text "Деталі мережі" ]
+    [ h5 [ class "mb-[8px]" ]
+        [ text "Форма № 1.5.4/ГУР" ]
     , div
         [ class "network-list-container" ]
         [ div [ class "border-t-1 border-border py-[8px] flex" ]
@@ -473,59 +553,97 @@ mainInfoEditBlock updNetworkReq shared model =
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Активна з:" ]
-            , input
-                [ type_ "date"
-                , class "form-control w-[150px]!"
-                , Time.millisToPosix updNetworkReq.activeFrom
-                    |> Le.Time.renderDateF4 shared.timeZone
-                    |> value
-                , onInput <|
-                    NetworkEditingMsg
-                        << (\v ->
-                                { updNetworkReq
-                                    | activeFrom =
-                                        case Le.Time.parseDateParts v of
-                                            Err _ ->
-                                                updNetworkReq.activeFrom
+        ]
+    , div [ class "mt-[8px]" ]
+        [ h5 [] [ text "Додаткове" ]
+        , div [ class "grid grid-cols-12 gap-[16px]" ]
+            [ div [ class "col-span-2" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
+                , input
+                    [ type_ "date"
+                    , class "form-control w-[150px]!"
+                    , Time.millisToPosix updNetworkReq.activeFrom
+                        |> Le.Time.renderDateF4 shared.timeZone
+                        |> value
+                    , onInput <|
+                        NetworkEditingMsg
+                            << (\v ->
+                                    { updNetworkReq
+                                        | activeFrom =
+                                            case Le.Time.parseDateParts v of
+                                                Err _ ->
+                                                    updNetworkReq.activeFrom
 
-                                            Ok parts ->
-                                                Time.Extra.partsToPosix shared.timeZone parts
-                                                    |> Time.posixToMillis
-                                }
-                           )
+                                                Ok parts ->
+                                                    Time.Extra.partsToPosix shared.timeZone parts
+                                                        |> Time.posixToMillis
+                                    }
+                               )
+                    ]
+                    []
                 ]
-                []
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Активна по:" ]
-            , input
-                [ type_ "date"
-                , class "form-control w-[150px]!"
-                , case updNetworkReq.activeTo of
-                    Just millis ->
-                        value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+            , div [ class "col-span-2" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
+                , input
+                    [ type_ "date"
+                    , class "form-control w-[150px]!"
+                    , case updNetworkReq.activeTo of
+                        Just millis ->
+                            value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
 
-                    Nothing ->
-                        value ""
-                , onInput <|
-                    NetworkEditingMsg
-                        << (\v ->
-                                { updNetworkReq
-                                    | activeTo =
-                                        case Le.Time.parseDateParts v of
-                                            Err _ ->
-                                                updNetworkReq.activeTo
+                        Nothing ->
+                            value ""
+                    , onInput <|
+                        NetworkEditingMsg
+                            << (\v ->
+                                    { updNetworkReq
+                                        | activeTo =
+                                            case Le.Time.parseDateParts v of
+                                                Err _ ->
+                                                    updNetworkReq.activeTo
 
-                                            Ok parts ->
-                                                Time.Extra.partsToPosix shared.timeZone parts
-                                                    |> Time.posixToMillis
-                                                    |> Just
-                                }
-                           )
+                                                Ok parts ->
+                                                    Time.Extra.partsToPosix shared.timeZone parts
+                                                        |> Time.posixToMillis
+                                                        |> Just
+                                    }
+                               )
+                    ]
+                    []
                 ]
-                []
+            , div [ class "col-span-4" ]
+                [ label [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+                , let
+                    selectedItems =
+                        List.map
+                            (\postId ->
+                                Select.basicMenuItem
+                                    { item = postId
+                                    , label =
+                                        RD.withDefault [] shared.posts
+                                            |> List.filter (\post -> post.id == postId)
+                                            |> List.head
+                                            |> Maybe.map .name
+                                            |> Maybe.withDefault ""
+                                    }
+                            )
+                            model.editPostsSelect.selected
+
+                    defaultOptions =
+                        Le.Block.Select.defaultOptions shared.isDarkMode
+
+                    do2 =
+                        { defaultOptions | clearable = False }
+                  in
+                  Html.map NetworkEditPostsSelMsg <|
+                    Styled.toUnstyled <|
+                        Le.Block.Select.renderSelect
+                            selectedItems
+                            model.editPostsSelect.state
+                            model.editPostsSelect.items
+                            "жоден"
+                            do2
+                ]
             ]
         ]
     ]
@@ -545,7 +663,7 @@ contentBlock shared network model =
                 i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
-        [ div [ class "col-span-8 grid  gap-[30px]", style "grid-template-rows" "440px 320px" ]
+        [ div [ class "col-span-8 grid  gap-[30px]", style "grid-template-rows" "460px 320px" ]
             [ div [ class "col-span-8 bg-w dark:bg-[#1C1C21] p-[16px]" ]
                 (case model.mode of
                     Readonly ->
@@ -813,11 +931,11 @@ contentBlock shared network model =
                     Success data ->
                         let
                             groupsMessageCountByDayJson =
-                                data |> Encode.dict identity (Encode.dict identity Encode.int) |> Encode.encode 0
+                                data |> Encode.dict identity (Encode.dict identity Encode.int)
                         in
                         Html.node "bar-chart"
-                            [ attribute "data" <| groupsMessageCountByDayJson
-                            , attribute "last-day" <| Encode.encode 0 (Encode.int shared.now)
+                            [ property "data" <| groupsMessageCountByDayJson
+                            , property "last-day" <| Encode.int shared.now
                             , class "block"
                             ]
                             []
