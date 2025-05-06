@@ -38,6 +38,7 @@ messageStub =
     , time = Just "11:33"
     , timestamp = Just 1726734960438
     , unit = Just "УКХ р/м йм. 1/2 мсб 1199 мсп"
+    , postId = Nothing
     }
 
 
