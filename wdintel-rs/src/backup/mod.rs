@@ -61,7 +61,6 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-
 #[tokio::main]
 #[allow(dead_code)]
 pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
@@ -75,7 +74,7 @@ pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
             tokio::time::sleep(tokio::time::Duration::from_secs(
                 sleep_before_backup_mins * 60,
             ))
-                .await;
+            .await;
         }
     }
     // only launch this command for tailscale domains
@@ -101,14 +100,14 @@ pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
         sh,
         "pg_dump --user wd -Fc wd --file wd-{server}-{dt1}.pgrestore"
     )
-        .env("PGPASSWORD", pgpwd)
-        .run()?;
+    .env("PGPASSWORD", pgpwd)
+    .run()?;
     cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore").run()?;
     cmd!(
         sh,
         "gpg --encrypt --recipient 'Echo' wd-{server}-{dt1}.pgrestore"
     )
-        .run()?;
+    .run()?;
     cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg").run()?;
     cmd!(sh, "b2 upload-file echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
         .env("B2_APPLICATION_KEY_ID", backup_key_id.clone())
@@ -119,4 +118,3 @@ pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
     info!("postgresql backup done");
     Ok(())
 }
-

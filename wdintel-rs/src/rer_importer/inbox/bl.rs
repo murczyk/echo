@@ -57,9 +57,11 @@ pub async fn get_inbox_map_items(
 ) -> Result<Vec<InboxMapItem>, AppError> {
     let q = build_inbox_query(login, logins, env, req).await?;
     let q = format!(
-        r#"SELECT "A_id" as id, "A_duplicate_of" as duplicate_of, "B_freq" as freq, "B_coords" as coords from ({}) q"#,
+        r#"SELECT id, "freq" as freq, "coords" as coords from ({}) q"#,
         q.build(DbBackend::Postgres)
     );
+
+    println!("test query: {}", q);
 
     let query_res: Vec<QueryResult> = env
         .dbx
@@ -69,8 +71,7 @@ pub async fn get_inbox_map_items(
     let mut result = vec![];
     for query_res in query_res {
         let id: i64 = query_res.try_get("", "id")?;
-        let duplicate_of: Option<i64> =
-            query_res.try_get("", "duplicate_of")?;
+        let duplicate_of: Option<i64> = None; // FIXME actually retrieve duplicate_of from db
         let freq: Option<String> = query_res.try_get("", "freq")?;
         let coords: Option<String> = query_res.try_get("", "coords")?;
         result.push(InboxMapItem {
