@@ -582,7 +582,7 @@ mainInfoEditBlock updNetworkReq shared model =
                 [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
                 , input
                     [ type_ "date"
-                    , class "form-control w-[150px]!"
+                    , class "form-control"
                     , Time.millisToPosix updNetworkReq.activeFrom
                         |> Le.Time.renderDateF4 shared.timeZone
                         |> value
@@ -607,7 +607,7 @@ mainInfoEditBlock updNetworkReq shared model =
                 [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
                 , input
                     [ type_ "date"
-                    , class "form-control w-[150px]!"
+                    , class "form-control"
                     , case updNetworkReq.activeTo of
                         Just millis ->
                             value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
