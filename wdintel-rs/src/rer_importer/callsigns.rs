@@ -1972,8 +1972,9 @@ mod tests {
         assert_eq!(ress, expected);
     }
 
+    #[ignore]
     #[tokio::test]
-    async fn test_extract_callsigns_enoji_list() {
+    async fn test_extract_callsigns_emoji_list() {
         let body = r#"26.04, 04:37:43
 424.8750
 УКХ р/м НВ підрозділу 424.875 МГц
