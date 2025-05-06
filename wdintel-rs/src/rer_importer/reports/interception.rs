@@ -83,6 +83,10 @@ async fn get_inbox_messages_report(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
         .filter(signal_message::Column::Deleted.eq(false))

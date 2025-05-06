@@ -523,6 +523,10 @@ pub async fn get_inbox_messages_report_unit(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,

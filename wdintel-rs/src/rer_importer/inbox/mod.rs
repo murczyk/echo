@@ -93,15 +93,27 @@ async fn messages_by_id(
 
     let sigint_groups =
         crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
-    let messages = SignalMessage::find()
-        .find_also_related(SigintInboxItem)
+    let mut messages = SignalMessage::find()
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
         .join(
             JoinType::LeftJoin,
             signal_message::Relation::SignalGroup.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        );
+    messages = add_inbox_message_columns(messages);
+    messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::GroupMasterKey.is_in(sigint_groups))
-        .filter(signal_message::Column::Id.is_in(req.message_ids.clone()))
+        .filter(signal_message::Column::Id.is_in(req.message_ids.clone()));
+
+    let messages = messages
+        .into_model::<InboxMessageDesc>()
         .all(&env.dbx)
         .await
         .context(h!())?;
@@ -272,7 +284,7 @@ async fn inbox_messages_count(
         .await
         .context(h!())?;
     let q = format!(
-        "SELECT COUNT(*) AS count, MIN(q.\"A_timestamp\") AS first_element_ts from ({}) q",
+        "SELECT COUNT(*) AS count, MIN(q.\"timestamp\") AS first_element_ts from ({}) q",
         q.build(DbBackend::Postgres));
 
     let query_res: Option<QueryResult> = env
@@ -448,10 +460,11 @@ pub async fn get_inbox_messages(
         q.build(DbBackend::Postgres).to_string()
     );
 
-    let messages: Vec<(
-        signal_message::Model,
-        Option<sigint_inbox_item::Model>,
-    )> = q.all(&env.dbx).await?;
+    let messages = q
+        .into_model::<InboxMessageDesc>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
     let res = aggregate_to_inbox_messages(messages, logins, &req, &env)
         .await
         .context(h!())?;

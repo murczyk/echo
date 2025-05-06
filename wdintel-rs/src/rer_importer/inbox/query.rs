@@ -16,18 +16,25 @@ pub(crate) async fn build_inbox_query(
     _logins: &Vec<String>,
     env: &Env,
     req: &InboxMessagesReq,
-) -> Result<
-    SelectTwo<signal_message::Entity, sigint_inbox_item::Entity>,
-    AppError,
-> {
+) -> Result<Select<signal_message::Entity>, AppError> {
     let sigint_groups =
         crate::users::get_identity_sigint_groups(&env.dbx, login).await?;
     let mut q = SignalMessage::find()
-        .find_also_related(SigintInboxItem)
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
         .join(
             JoinType::LeftJoin,
             signal_message::Relation::SignalGroup.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        );
+
+    q = add_inbox_message_columns(q);
+    q = q
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::GroupMasterKey.is_in(sigint_groups));
 
@@ -334,4 +341,33 @@ fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     let ts = ts.format("%Y-%m-%d %H:%M:%S%.9f");
     let txt = format!("'{}'::timestamp at time zone 'UTC'", ts);
     Expr::cust(txt)
+}
+
+pub fn add_inbox_message_columns<E>(select: Select<E>) -> Select<E>
+where
+    E: EntityTrait,
+{
+    select
+        .select_only()
+        .column_as(signal_message::Column::Id, "id")
+        .column_as(signal_message::Column::Body, "body")
+        .column_as(signal_message::Column::Timestamp, "timestamp")
+        .column_as(signal_message::Column::GroupMasterKey, "group_master_key")
+        .column_as(signal_message::Column::Sender, "sender")
+        .column_as(signal_message::Column::DatasourceId, "datasource_id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Coords, "coords")
+        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
+        .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
+        .column_as(sigint_inbox_item::Column::SignalTokens, "signal_tokens")
+        .column_as(sigint_inbox_item::Column::KeywordTokens, "keyword_tokens")
+        .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
+        .column_as(sigint_inbox_item::Column::Date, "date")
+        .column_as(sigint_inbox_item::Column::Time, "time")
+        .column_as(sigint_inbox_item::Column::Checked, "checked")
+        .column_as(sigint_inbox_item::Column::UnitV2, "unit_v2")
+        .column_as(sigint_inbox_item::Column::PostId, "post_id")
+        .column_as(sigint_post::Column::Name, "post_name")
+        .column_as(sigint_inbox_item::Column::Tags, "tags")
 }

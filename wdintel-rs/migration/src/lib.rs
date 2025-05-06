@@ -83,6 +83,7 @@ mod m20250417_150320_fix_merge_login_migration;
 mod m20250418_095050_add_active_from_to_for_network;
 mod m20250418_103016_add_logging_for_networks;
 mod m20250424_191053_add_modulation_to_network;
+mod m20250430_090456_add_sigint_post;
 
 pub struct Migrator;
 
@@ -173,6 +174,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250418_095050_add_active_from_to_for_network::Migration),
             Box::new(m20250418_103016_add_logging_for_networks::Migration),
             Box::new(m20250424_191053_add_modulation_to_network::Migration),
+            Box::new(m20250430_090456_add_sigint_post::Migration),
         ]
     }
 }

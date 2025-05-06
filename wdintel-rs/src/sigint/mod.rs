@@ -24,6 +24,7 @@ pub mod callsign;
 pub mod etalonka;
 pub mod freq;
 pub mod network;
+pub mod post;
 pub mod restapi;
 pub mod signal;
 pub mod source;

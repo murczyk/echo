@@ -24,6 +24,31 @@ use log::*;
 use sea_orm::*;
 use sea_query::Expr;
 
+#[derive(Debug, FromQueryResult)]
+pub struct InboxMessageDesc {
+    pub id: i64,
+    pub body: Option<String>,
+    pub timestamp: Option<NaiveDateTime>,
+    pub group_master_key: Option<String>,
+    pub sender: Option<String>,
+    pub datasource_id: Option<i64>,
+    pub freq: Option<String>,
+    pub coords: Option<String>,
+    pub callsigns: Option<serde_json::Value>,
+    pub callsigns_alg2: Option<serde_json::Value>,
+    pub callsign_tokens: Option<serde_json::Value>,
+    pub signal_tokens: Option<serde_json::Value>,
+    pub keyword_tokens: Option<serde_json::Value>,
+    pub location_v2: Option<String>,
+    pub date: Option<String>,
+    pub time: Option<String>,
+    pub checked: Option<bool>,
+    pub unit_v2: Option<String>,
+    pub post_id: Option<i64>,
+    pub post_name: Option<String>,
+    pub tags: Option<serde_json::Value>,
+}
+
 pub async fn get_inbox_map_items(
     login: &str,
     logins: &Vec<String>,
@@ -70,20 +95,19 @@ pub async fn get_inbox_map_items(
 }
 
 pub async fn aggregate_to_inbox_messages(
-    messages: Vec<(signal_message::Model, Option<sigint_inbox_item::Model>)>,
+    messages: Vec<InboxMessageDesc>,
     logins: &Vec<String>,
     req: &&InboxMessagesReq,
     env: &&Env,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let mut res: Vec<(i64, InboxMessage)> = vec![];
     let dbx_raw = env.dbx.get_postgres_connection_pool();
-    for (message, m_inbox) in messages {
+    for message in messages {
         // for message in messages {
         // let m_inbox: Option<sigint_inbox_item::Model> =
         //     SigintInboxItem::find_by_id(message.id)
         //         .one(&env.dbx)
         //         .await?;
-        let Some(inbox) = m_inbox else { continue };
         let attachments: Vec<signal_attachment::Model> =
             SignalAttachment::find()
                 .filter(
@@ -108,9 +132,9 @@ pub async fn aggregate_to_inbox_messages(
         let body = message.body.unwrap_or("".to_string());
         let no_headers_body =
             crate::rer_importer::body_noheader::extract_text(&body)?;
-        let freq = inbox.freq.clone();
-        let coords = inbox.coords.clone();
-        let callsigns = match inbox.callsigns.as_ref() {
+        let freq = message.freq.clone();
+        let coords = message.coords.clone();
+        let callsigns = match message.callsigns.as_ref() {
             Some(v) => serde_json::from_value(v.clone()).context(h!())?,
             None => vec![],
         };
@@ -120,16 +144,17 @@ pub async fn aggregate_to_inbox_messages(
             .all(&env.dbx)
             .await?;
         let m_callsign_tokens: Option<Vec<CNCallsign>> =
-            match inbox.callsign_tokens {
+            match message.callsign_tokens {
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
-        let m_signal_tokens: Option<Vec<CNSignal>> = match inbox.signal_tokens {
+        let m_signal_tokens: Option<Vec<CNSignal>> = match message.signal_tokens
+        {
             None => None,
             Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
         };
         let m_keyword_tokens: Option<Vec<CNHighlight>> =
-            match inbox.keyword_tokens {
+            match message.keyword_tokens {
                 None => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
@@ -163,7 +188,7 @@ pub async fn aggregate_to_inbox_messages(
             .filter(sigint_comment::Column::Login.is_in(logins.clone()))
             .one(&env.dbx)
             .await?;
-        let location_v2 = match inbox.location_v2.clone() {
+        let location_v2 = match message.location_v2.clone() {
             None => None,
             Some(location) => Some(to_location_list(&location).join(", ")),
         };
@@ -173,12 +198,12 @@ pub async fn aggregate_to_inbox_messages(
                 text: body.clone(),
                 images,
                 image_recognized: vec![],
-                date: inbox.date.clone(),
-                time: inbox.time.clone(),
+                date: message.date.clone(),
+                time: message.time.clone(),
                 freq: freq.clone(),
                 coords,
                 callsigns,
-                checked: inbox.checked.unwrap_or(false),
+                checked: message.checked.unwrap_or(false),
                 timestamp: message
                     .timestamp
                     .map(|x| x.and_utc().timestamp_millis()),
@@ -186,17 +211,18 @@ pub async fn aggregate_to_inbox_messages(
                 sender: message.sender.clone(),
                 duplicate_ids: Some(dups.iter().map(|dup| dup.id).collect()),
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
-                unit: inbox.unit_v2.clone(),
+                unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
                 keyword_tokens: m_keyword_tokens,
                 signal_tokens: m_signal_tokens,
                 text_marked: Some(text_marked),
-                post: inbox.post.clone(),
+                post: message.post_name.clone(),
+                post_id: message.post_id,
                 datasource_id: message.datasource_id.clone(),
                 location: location_v2,
-                tags: Some(from_m_val_vec(inbox.tags.clone())?),
-                callsigns_alg2: from_m_val_vec(inbox.callsigns_alg2.clone())?,
+                tags: Some(from_m_val_vec(message.tags.clone())?),
+                callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
             },
         ));
     }
@@ -556,7 +582,7 @@ pub async fn submit_upsert_inbox_item(
             signal_tokens: NotSet,
             datetime: NotSet,
             body_noheader: NotSet,
-            post: Set(message.post.clone()),
+            post_id: Set(message.post_id),
             unit_v2: Set(message.unit.clone()),
             parsed_unit_v2: Set(true),
         })
@@ -580,7 +606,7 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Location,
                     sigint_inbox_item::Column::LocationV2,
                     sigint_inbox_item::Column::Tags,
-                    sigint_inbox_item::Column::Post,
+                    sigint_inbox_item::Column::PostId,
                 ])
                 .to_owned(),
         )

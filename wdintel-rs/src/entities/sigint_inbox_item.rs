@@ -41,8 +41,6 @@ pub struct Model {
     pub datetime: Option<DateTime>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub signal_tokens: Option<Json>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub post: Option<String>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub body_noheader: Option<Json>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -50,6 +48,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub unit_v2: Option<String>,
     pub parsed_unit_v2: bool,
+    pub post_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -64,6 +63,14 @@ pub enum Relation {
     Nominatimres,
     #[sea_orm(has_many = "super::sigint_peleng::Entity")]
     SigintPeleng,
+    #[sea_orm(
+        belongs_to = "super::sigint_post::Entity",
+        from = "Column::PostId",
+        to = "super::sigint_post::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintPost,
     #[sea_orm(has_one = "super::sigint_search::Entity")]
     SigintSearch,
     #[sea_orm(
@@ -94,6 +101,12 @@ impl Related<super::nominatimres::Entity> for Entity {
 impl Related<super::sigint_peleng::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintPeleng.def()
+    }
+}
+
+impl Related<super::sigint_post::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintPost.def()
     }
 }
 

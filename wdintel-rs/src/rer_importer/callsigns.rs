@@ -972,6 +972,10 @@ pub async fn callsigns_graph(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));

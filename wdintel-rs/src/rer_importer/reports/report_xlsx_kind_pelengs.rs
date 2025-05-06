@@ -93,6 +93,10 @@ pub async fn get_inbox_messages_report(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
         .filter(signal_message::Column::GroupMasterKey.is_in(
@@ -221,6 +225,7 @@ pub async fn get_inbox_messages_report(
                     signal_tokens: None,
                     text_marked: None,
                     post: None,
+                    post_id: None,
                     no_headers_body: None,
                     datasource_id: Some(m.datasource_id),
                     tags: None,

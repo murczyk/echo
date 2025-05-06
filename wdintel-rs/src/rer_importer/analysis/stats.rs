@@ -86,6 +86,10 @@ fn build_groups_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(
             Expr::col(signal_message::Column::GroupMasterKey),
@@ -210,6 +214,10 @@ fn build_senders_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(Expr::col(signal_message::Column::Sender), "uuid")
         // .column_as(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()), "uuid")
@@ -324,11 +332,12 @@ fn build_posts_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::col(sigint_inbox_item::Column::Post).if_null(""),
-            "post",
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .select_only()
+        .column_as(Expr::col(sigint_post::Column::Name).if_null(""), "post")
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
         .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
         // .filter(signal_message::Column::DuplicateOf.is_null())
@@ -493,6 +502,10 @@ fn build_freqs_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(
             Expr::col(sigint_inbox_item::Column::Freq).if_null(""),
@@ -610,6 +623,10 @@ fn build_callsigns_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(
             Expr::cust("jsonb_array_elements_text(callsigns)"),
@@ -718,6 +735,10 @@ fn build_tags_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(
             Expr::cust("array(select jsonb_array_elements_text(tags))::int[]"),
@@ -821,6 +842,10 @@ fn build_units_query(
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(
@@ -942,6 +967,10 @@ fn build_locations_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(
             Expr::col(sigint_inbox_item::Column::LocationV2).if_null(""),
@@ -1015,6 +1044,10 @@ pub async fn fetch_counts(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
         .filter(
@@ -1049,6 +1082,10 @@ pub async fn fetch_counts(
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")

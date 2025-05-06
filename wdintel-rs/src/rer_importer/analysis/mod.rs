@@ -103,11 +103,8 @@ where
     if let Some(selected_posts) = selected_posts.as_ref() {
         return Ok(q.filter(
             Expr::expr(
-                Expr::col((
-                    sigint_inbox_item::Entity,
-                    sigint_inbox_item::Column::Post,
-                ))
-                .if_null(""),
+                Expr::col((sigint_post::Entity, sigint_post::Column::Name))
+                    .if_null(""),
             )
             .is_in(selected_posts),
         ));
@@ -173,11 +170,8 @@ where
         if !denied_posts.is_empty() {
             return Ok(q.filter(
                 Expr::expr(
-                    Expr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Post,
-                    ))
-                    .if_null(""),
+                    Expr::col((sigint_post::Entity, sigint_post::Column::Name))
+                        .if_null(""),
                 )
                 .is_not_in(denied_posts),
             ));
@@ -540,6 +534,10 @@ pub async fn summary_table_freq_1(
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
@@ -1074,6 +1072,10 @@ pub async fn edit_freq_unit_name(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(Expr::cust("signal_message.id"), "id")
         // .column_as(Expr::col(signal_message::Column::Id), "id")
@@ -1384,6 +1386,10 @@ pub async fn new_callsigns(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
         .select_only()
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
@@ -1441,6 +1447,10 @@ pub async fn new_callsigns(
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")

@@ -178,6 +178,15 @@ pub async fn network_list(
             .map(|x| x.freq.clone())
             .collect();
 
+        let post_ids = sigint_network_post::Entity::find()
+            .filter(sigint_network_post::Column::NetworkId.eq(network.id))
+            .filter(sigint_network_post::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await?
+            .iter()
+            .map(|x| x.post_id.clone())
+            .collect();
+
         networks_res.push(Network {
             id: network.id,
             freqs,
@@ -202,6 +211,7 @@ pub async fn network_list(
                 .map(|d| d.and_utc().timestamp_millis()),
             modulation_id: network.modulation_id,
             modulation_name: network.modulation_name,
+            post_ids,
         });
     }
     Ok(Json(networks_res))
@@ -285,6 +295,17 @@ async fn render_networks(
             .map(|x| x.freq.clone())
             .collect();
 
+        let post_ids = sigint_network_post::Entity::find()
+            .filter(
+                sigint_network_post::Column::NetworkId.eq(network.id.clone()),
+            )
+            .filter(sigint_network_post::Column::Deleted.eq(false))
+            .all(txn)
+            .await?
+            .iter()
+            .map(|x| x.post_id)
+            .collect();
+
         networks_res.push(Network {
             id: network.id,
             freqs,
@@ -309,6 +330,7 @@ async fn render_networks(
                 .map(|d| d.and_utc().timestamp_millis()),
             modulation_id: network.modulation_id,
             modulation_name: network_modulation.map(|x| x.name),
+            post_ids,
         });
     }
     Ok(networks_res)
@@ -466,6 +488,22 @@ pub async fn create_network(
         .exec(&txn)
         .await?;
 
+    let network_posts: Vec<sigint_network_post::ActiveModel> = req
+        .post_ids
+        .clone()
+        .into_iter()
+        .map(|post_id| sigint_network_post::ActiveModel {
+            id: NotSet,
+            network_id: Set(network.id),
+            post_id: Set(post_id),
+            deleted: NotSet,
+            created_at: NotSet,
+        })
+        .collect();
+    sigint_network_post::Entity::insert_many(network_posts)
+        .exec(&txn)
+        .await?;
+
     let modulation_name =
         get_modulation_name_by_id(network.modulation_id, &txn)
             .await
@@ -495,6 +533,7 @@ pub async fn create_network(
         active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
         modulation_id: network.modulation_id,
         modulation_name: modulation_name,
+        post_ids: req.post_ids.clone(),
     }))
 }
 
@@ -555,6 +594,15 @@ pub async fn update_network(
         .map(|x| x.unit_id)
         .collect();
 
+    let post_ids = sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::NetworkId.eq(network.id))
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .all(&txn)
+        .await?
+        .into_iter()
+        .map(|x| x.post_id)
+        .collect();
+
     let modulation_name =
         get_modulation_name_by_id(network.modulation_id, &txn)
             .await
@@ -584,6 +632,7 @@ pub async fn update_network(
         active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
         modulation_id: network.modulation_id,
         modulation_name: modulation_name,
+        post_ids,
     }))
 }
 
@@ -1580,6 +1629,15 @@ pub async fn merge_network(
         .map(|x| x.unit_id)
         .collect();
 
+    let post_ids = sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::NetworkId.eq(network.id))
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .all(&txn)
+        .await?
+        .into_iter()
+        .map(|x| x.post_id)
+        .collect();
+
     txn.commit().await.context(h!())?;
 
     debug!(
@@ -1609,6 +1667,7 @@ pub async fn merge_network(
         active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
         modulation_id: network.modulation_id,
         modulation_name: network_modulation.map(|x| x.name),
+        post_ids,
     }))
 }
 
@@ -1759,6 +1818,103 @@ pub async fn network_signals_list(
     };
 
     Ok(Json(res))
+}
+
+#[post("/api/sigint/network/update-posts")]
+pub async fn update_network_posts(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateNetworkPostsReq>,
+) -> Result<Json<Network>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    let user_login = user.id()?.to_string();
+
+    info!(
+        "Update {} posts for network {}; user={}",
+        req.post_ids.len(),
+        req.network_id,
+        user_login
+    );
+
+    let txn = env.dbx.begin().await?;
+
+    // 1. Check if network exists
+    let network = sigint_network::Entity::find_by_id(req.network_id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    // 2. Fetch current non-deleted post_ids for the network
+    let existing_posts = sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::NetworkId.eq(req.network_id))
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .all(&txn)
+        .await
+        .context(h!())?;
+    let existing_post_ids: Vec<i64> =
+        existing_posts.iter().map(|np| np.post_id).collect();
+
+    // 3. Determine posts to delete and insert
+    let to_delete: Vec<i64> = existing_post_ids
+        .iter()
+        .filter(|id| !req.post_ids.contains(id))
+        .copied()
+        .collect();
+
+    let to_insert: Vec<i64> = req
+        .post_ids
+        .iter()
+        .filter(|id| !existing_post_ids.contains(id))
+        .copied()
+        .collect();
+
+    let is_network_updated = !to_delete.is_empty() || !to_insert.is_empty();
+
+    // 4. Mark deleted ones
+    if !to_delete.is_empty() {
+        sigint_network_post::Entity::update_many()
+            .col_expr(sigint_network_post::Column::Deleted, Expr::value(true))
+            .filter(sigint_network_post::Column::NetworkId.eq(req.network_id))
+            .filter(sigint_network_post::Column::PostId.is_in(to_delete))
+            .exec(&txn)
+            .await?;
+    }
+
+    // 5. Insert missing ones
+    for post_id in to_insert {
+        let network_post = sigint_network_post::ActiveModel {
+            id: NotSet,
+            network_id: Set(req.network_id),
+            post_id: Set(post_id.clone()),
+            deleted: NotSet,
+            created_at: NotSet,
+        };
+        network_post.insert(&txn).await?;
+    }
+
+    // 6. Update the network's updated_at timestamp()
+    if is_network_updated {
+        let mut network_model = network.into_active_model();
+        network_model.updated_at = Set(Utc::now().naive_utc());
+        network_model.updated_by = Set(Some(user.id()?.to_string()));
+        network_model.update(&txn).await?;
+    }
+
+    // Now fetch the updated network with all posts to return
+    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(network_detail[0].clone()))
 }
 
 #[tokio::main]
@@ -2005,6 +2161,42 @@ pub async fn merge_two_networks(
         .await
         .context(h!())?;
 
+    // Merge posts
+    // Step 1: Copy posts to new network_id (with deleted = false)
+    let posts_to = sigint_network_post::Entity::find()
+        .select_only()
+        .column(sigint_network_post::Column::Id)
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id_to))
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .into_query();
+
+    let posts_from = sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id_from))
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .filter(sigint_network_post::Column::Id.not_in_subquery(posts_to))
+        .all(txn)
+        .await?;
+
+    for post in posts_from {
+        // Clone post before moving it into active model
+        let post_id_clone = post.id.clone();
+
+        // Mark the original network post as deleted
+        let mut network_post = post.into_active_model();
+        network_post.deleted = Set(true);
+        network_post.update(txn).await.context(h!())?;
+
+        // Create a new post for a target network
+        let new_post = sigint_network_post::ActiveModel {
+            id: NotSet, // New row, let DB assign an ID
+            network_id: Set(network_id_to),
+            post_id: Set(post_id_clone),
+            deleted: Set(false), // New freq should NOT be deleted
+            ..Default::default()
+        };
+        new_post.insert(txn).await?;
+    }
+
     // Update network_to attributes by concatenating only unique values
     let new_location = concat_unique(
         Some(network_to.location.clone()),
@@ -2022,6 +2214,8 @@ pub async fn merge_two_networks(
         network_to.radio_station.clone(),
         network_from.radio_station.clone(),
     );
+    let new_active_from =
+        network_from.active_from.min(network_to.active_from.clone());
 
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());
@@ -2030,6 +2224,7 @@ pub async fn merge_two_networks(
     network_to_model.radio_station = Set(new_radio_station);
     network_to_model.updated_at = Set(Utc::now().naive_utc());
     network_to_model.updated_by = Set(Some(login.clone()));
+    network_to_model.active_from = Set(new_active_from);
     network_to_model.update(txn).await.context(h!())?;
 
     // Mark network_from as deleted, set merget_to field

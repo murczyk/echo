@@ -25,6 +25,7 @@ pub struct InboxMessage {
     pub duplicate_ids: Option<Vec<i64>>,
     pub extended_form: Option<String>,
     pub post: Option<String>,
+    pub post_id: Option<i64>,
     pub unit: Option<String>,
     /// overwritten upon save (ignored upon submission)
     pub callsign_tokens:

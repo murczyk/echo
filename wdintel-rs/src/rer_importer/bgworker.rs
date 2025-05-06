@@ -111,6 +111,8 @@ where
         crate::rer_importer::body_noheader::extract_text(&body)?;
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;
+    let post_id =
+        crate::sigint::post::get_or_create_post_id(txn, &post).await?;
     let callsigns_alg1 = callsigns.clone();
     let callsigns_alg2 = crate::nlp::complete_callsigns(rq, &body).await?;
     let signal_tokens =
@@ -190,7 +192,7 @@ where
         signal_tokens: Set(Some(
             serde_json::to_value(signal_tokens).context(h!())?,
         )),
-        post: Set(post),
+        post_id: Set(post_id),
         unit_v2: NotSet,
         parsed_unit_v2: NotSet,
     }

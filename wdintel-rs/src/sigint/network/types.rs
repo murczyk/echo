@@ -53,6 +53,7 @@ pub struct Network {
     pub active_to: Option<i64>,
     pub modulation_id: Option<i32>,
     pub modulation_name: Option<String>,
+    pub post_ids: Vec<i64>,
 }
 
 #[derive(
@@ -83,6 +84,7 @@ pub struct CreateNetworkReq {
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
     pub modulation_id: Option<i32>,
+    pub post_ids: Vec<i64>,
 }
 
 #[derive(
@@ -90,9 +92,10 @@ pub struct CreateNetworkReq {
 )]
 pub struct UpdateNetworkReq {
     pub id: i64,
-    // use a separate API to add/remove freqs and units
+    // use a separate API to add/remove freqs, units and posts
     // pub freqs: Option<Vec<String>>,
     // pub unit_ids: Vec<i64>,
+    // pub post_ids: Vec<i64>,
     pub kind: String,
     pub name: String,
     pub location: String,
@@ -275,4 +278,11 @@ pub struct ModulationRec {
     pub left: i32,
     pub right: i32,
     pub enabled: bool,
+}
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateNetworkPostsReq {
+    pub network_id: i64,
+    pub post_ids: Vec<i64>,
 }
