@@ -61,8 +61,6 @@ pub async fn get_inbox_map_items(
         q.build(DbBackend::Postgres)
     );
 
-    println!("test query: {}", q);
-
     let query_res: Vec<QueryResult> = env
         .dbx
         .query_all(Statement::from_string(DatabaseBackend::Postgres, q))

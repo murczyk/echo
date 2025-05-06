@@ -429,6 +429,7 @@ where
         if group_by {
             q = q
                 .group_by(signal_message::Column::Id)
+                .group_by(sigint_post::Column::Name)
                 .group_by(sigint_inbox_item::Column::Id);
         }
         q = q.having(Expr::cust("count(sigint_comment.id) > 0"));
