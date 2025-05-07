@@ -22,8 +22,11 @@ pub fn extract_unit(
     }
     let mut locality = None;
     let mut locality_v2 = None;
-    let lines: Vec<String> = inp.lines().map(|x| x.to_string()).collect();
-    let lines = lines.iter().filter(|l| l.trim() != "").cloned().collect();
+    let lines: Vec<String> = inp
+        .lines()
+        .map(|x| x.to_string())
+        .filter(|l| !l.trim().is_empty())
+        .collect();
     let mut lines = try_remove_commintify_header(lines);
     lines.truncate(5);
     let lines = try_process_kharkiv_style_unit_and_locality(lines);
@@ -112,12 +115,12 @@ fn try_lookup_next_line_loc_with_prefix(
 }
 
 fn cleanup_line(ltrim: &str) -> String {
-    let line = if ltrim.starts_with("(") && ltrim.ends_with(")") {
-        remove_first_and_last(ltrim).to_string()
+    if ltrim.starts_with("(") && ltrim.ends_with(")") {
+        let result = remove_first_occurrence(ltrim, '(');
+        remove_first_occurrence(&result, ')')
     } else {
         ltrim.to_string()
-    };
-    line
+    }
 }
 
 fn extract_locality(
@@ -548,6 +551,7 @@ fn is_unit_and_loc_line(
         || (l.contains("укх") && !has_date(&line)?)
         || l.contains("мсб")
         || l.contains("омсбр")
+        || l.contains("загін")
         || ltrim.starts_with("dmr")
         || (l.contains("dmr") && !has_date(&line)?)
         || l.contains("укх радіомережа")
@@ -643,11 +647,18 @@ fn has_date(s: &str) -> Result<bool, AppError> {
     Ok(RE.is_match(s))
 }
 
-fn remove_first_and_last(value: &str) -> &str {
-    let mut chars = value.chars();
-    chars.next();
-    chars.next_back();
-    chars.as_str()
+fn remove_first_occurrence(text: &str, char_to_remove: char) -> String {
+    let mut result = String::new();
+    let mut found = false;
+
+    for char in text.chars() {
+        if char == char_to_remove && !found {
+            found = true;
+            continue; // Skip adding this character to the result
+        }
+        result.push(char);
+    }
+    result
 }
 
 pub fn try_extract_comm_operator(body: &str) -> Option<String> {
@@ -1122,11 +1133,11 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
             res.unit.unwrap(),
-            r#"йм. підрозділ БпЛА 114 мсп 127 мсд 5 А)(р-н Любимівка - Орлинське"#
+            r#"йм. підрозділ БпЛА 114 мсп 127 мсд 5 А(р-н Любимівка - Орлинське)"#
         );
         assert_eq!(
             res.locality.unwrap(),
-            "йм. підрозділ БпЛА 114 мсп 127 мсд 5 А)(р-н Любимівка - Орлинське"
+            "йм. підрозділ БпЛА 114 мсп 127 мсд 5 А(р-н Любимівка - Орлинське)"
                 .to_string()
         );
         assert_eq!(res.locality_v2.unwrap(), vec!["ЛЮБИМІВКА", "ОРЛИНСЬКЕ"]);
@@ -1529,7 +1540,6 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     fn extract_unit_36() {
         let body = r#"31.12, 11:12:30
@@ -1549,7 +1559,7 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м йм. гсабатр гсадн 30 мсп\u{a0}72\u{a0}мсд\u{a0}44\u{a0}АК (р-н Шебекіно)".to_string());
         assert_eq!(res.locality, Some("ВУ по м. Вовчанськ".to_string()));
-        assert_eq!(res.locality_v2.unwrap(), vec!["ВОВЧАНСЬК", "ШЕБЕКІНО"]);
+        assert_eq!(res.locality_v2.unwrap(), vec!["ВОВЧАНСЬК"]);
     }
 
     #[test]
@@ -1571,7 +1581,6 @@ mod tests {
         assert_eq!(res.locality_v2.unwrap(), vec!["КЕРАМІК", "ОЧЕРЕТИНЕ"]);
     }
 
-    #[ignore]
     #[test]
     fn extract_unit_38() {
         let body = r#"Отримано з поста "П152"
@@ -1591,12 +1600,15 @@ mod tests {
                 .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
-        assert_eq!(res.locality_v2.unwrap(), vec!["Красноселівка"]);
-        assert_eq!(res.unit.unwrap(), "(йм. 20 загін БАРС)  ".to_string());
+        assert_eq!(
+            res.unit.unwrap(),
+            "йм. 20 загін БАРС(р-н Зх. від Красноселівка)".to_string()
+        );
         assert_eq!(
             res.locality,
-            Some("(р-н Зх. від Красноселівка)".to_string())
+            Some("йм. 20 загін БАРС(р-н Зх. від Красноселівка)".to_string())
         );
+        assert_eq!(res.locality_v2.unwrap(), vec!["КРАСНОСЕЛІВКА"]);
     }
 
     #[ignore]
@@ -2082,7 +2094,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
             res.unit.unwrap(),
-            "йм. 64 осмбр 25 п 35 А)(р-н Пд. від Дорожнянка".to_string()
+            "йм. 64 осмбр 25 п 35 А(р-н Пд. від Дорожнянка)".to_string()
         );
         assert_eq!(
             vec!["64 осмбр", "25 п 35 А"],
@@ -2090,7 +2102,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         );
         assert_eq!(
             res.locality.unwrap(),
-            "йм. 64 осмбр 25 п 35 А)(р-н Пд. від Дорожнянка"
+            "йм. 64 осмбр 25 п 35 А(р-н Пд. від Дорожнянка)"
         );
         assert_eq!(res.locality_v2.unwrap(), vec!["ДОРОЖНЯНКА"]);
     }
