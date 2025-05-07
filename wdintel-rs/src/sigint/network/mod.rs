@@ -492,29 +492,31 @@ pub async fn create_network(
         .await
         .context(h!())?;
 
-    info!(
+    debug!(
         "User={}, creating network {} with posts={:?}",
-        user_login,
-        req.network_id,
+        &user.id()?,
+        network.id,
         req.post_ids
     );
 
-    let network_posts: Vec<sigint_network_post::ActiveModel> = req
-        .post_ids
-        .clone()
-        .into_iter()
-        .map(|post_id| sigint_network_post::ActiveModel {
-            id: NotSet,
-            network_id: Set(network.id),
-            post_id: Set(post_id),
-            deleted: NotSet,
-            created_at: NotSet,
-        })
-        .collect();
-    sigint_network_post::Entity::insert_many(network_posts)
-        .exec(&txn)
-        .await
-        .context(h!())?;
+    if !req.post_ids.is_empty() {
+        let network_posts: Vec<sigint_network_post::ActiveModel> = req
+            .post_ids
+            .clone()
+            .into_iter()
+            .map(|post_id| sigint_network_post::ActiveModel {
+                id: NotSet,
+                network_id: Set(network.id),
+                post_id: Set(post_id),
+                deleted: NotSet,
+                created_at: NotSet,
+            })
+            .collect();
+        sigint_network_post::Entity::insert_many(network_posts)
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
 
     let modulation_name =
         get_modulation_name_by_id(network.modulation_id, &txn)
