@@ -214,14 +214,6 @@ _copy-db:
     sudo -u postgres psql -c "CREATE DATABASE wd"
     echo "now run: pg_restore -U wd -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
 
-copy-db-echo-gpu:
-    #!/bin/bash
-    set -euxo pipefail
-    if [[ "{{ server }}" == "" ]]; then
-        just _print-servers; exit 1;
-    fi
-    just server={{ server }} target='echo-gpu' copy-db-to-server
-
 copy-db-echo-tgt-art:
     #!/bin/bash
     set -euxo pipefail
@@ -599,7 +591,7 @@ docs-deb: docs
 
 builder-build-docs:
     #!/bin/bash
-    if [[ "{{ builder }}" == "echo-gpu" ]]; then
+    if [[ "{{ builder }}" == "tgt-art" ]]; then
       ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs && zola build)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs/echo-docs && PATH=$HOME/.local/bin:$PATH /home/ubuntu/.cargo/bin/cargo deb)'

@@ -436,8 +436,7 @@ pub async fn create_network(
         modulation_id: Set(req.modulation_id.clone()),
     }
     .insert(&txn)
-    .await
-    .context(h!())?;
+    .await?;
 
     let network_json = sigint_network::Entity::find_by_id(network.id)
         .into_json()
@@ -455,8 +454,7 @@ pub async fn create_network(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
     }
     .insert(&txn)
-    .await
-    .context(h!())?;
+    .await?;
 
     let network_freq: Vec<sigint_network_freq::ActiveModel> = req
         .freqs
@@ -473,8 +471,7 @@ pub async fn create_network(
         .collect();
     sigint_network_freq::Entity::insert_many(network_freq)
         .exec(&txn)
-        .await
-        .context(h!())?;
+        .await?;
 
     let network_units: Vec<sigint_network_unit::ActiveModel> = req
         .unit_ids
@@ -489,34 +486,23 @@ pub async fn create_network(
         .collect();
     sigint_network_unit::Entity::insert_many(network_units)
         .exec(&txn)
-        .await
-        .context(h!())?;
+        .await?;
 
-    debug!(
-        "User={}, creating network {} with posts={:?}",
-        &user.id()?,
-        network.id,
-        req.post_ids
-    );
-
-    if !req.post_ids.is_empty() {
-        let network_posts: Vec<sigint_network_post::ActiveModel> = req
-            .post_ids
-            .clone()
-            .into_iter()
-            .map(|post_id| sigint_network_post::ActiveModel {
-                id: NotSet,
-                network_id: Set(network.id),
-                post_id: Set(post_id),
-                deleted: NotSet,
-                created_at: NotSet,
-            })
-            .collect();
-        sigint_network_post::Entity::insert_many(network_posts)
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
+    let network_posts: Vec<sigint_network_post::ActiveModel> = req
+        .post_ids
+        .clone()
+        .into_iter()
+        .map(|post_id| sigint_network_post::ActiveModel {
+            id: NotSet,
+            network_id: Set(network.id),
+            post_id: Set(post_id),
+            deleted: NotSet,
+            created_at: NotSet,
+        })
+        .collect();
+    sigint_network_post::Entity::insert_many(network_posts)
+        .exec(&txn)
+        .await?;
 
     let modulation_name =
         get_modulation_name_by_id(network.modulation_id, &txn)
@@ -1894,8 +1880,7 @@ pub async fn update_network_posts(
             .filter(sigint_network_post::Column::NetworkId.eq(req.network_id))
             .filter(sigint_network_post::Column::PostId.is_in(to_delete))
             .exec(&txn)
-            .await
-            .context(h!())?;
+            .await?;
     }
 
     // 5. Insert missing ones
@@ -1907,7 +1892,7 @@ pub async fn update_network_posts(
             deleted: NotSet,
             created_at: NotSet,
         };
-        network_post.insert(&txn).await.context(h!())?;
+        network_post.insert(&txn).await?;
     }
 
     // 6. Update the network's updated_at timestamp()
@@ -1915,7 +1900,7 @@ pub async fn update_network_posts(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by = Set(Some(user.id()?.to_string()));
-        network_model.update(&txn).await.context(h!())?;
+        network_model.update(&txn).await?;
     }
 
     // Now fetch the updated network with all posts to return
