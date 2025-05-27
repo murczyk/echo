@@ -1,5 +1,7 @@
 ## NEXT
 
+- [#904](https://github.com/echoua/echo/issues/904) Звіт перехоплення додати теги
+
 ## 2025-05-05
 
 - [#806](https://github.com/echoua/echo/issues/806) Мережі: Новий звіт Еталонка 
