@@ -289,7 +289,7 @@ pub async fn report_xlsx_kind_interception(
         .set_column_format(9, &format_brown_wrap)
         .context(h!())?; // Set format
 
-    let tags = {
+    let all_tags = {
         let tags_vec = tag::Entity::find()
             .columns([tag::Column::Id, tag::Column::Title])
             .into_tuple::<(i64, String)>()
@@ -363,7 +363,7 @@ pub async fn report_xlsx_kind_interception(
             .unwrap_or(&vec![])
             .into_iter()
             .filter_map(|x| x.as_i64())
-            .filter_map(|x| tags.get(&x))
+            .filter_map(|x| all_tags.get(&x))
             .map(|s| s.to_string())
             .join(",");
         sheet1.write_string(i, 9, &mes_tags).context(h!())?;
