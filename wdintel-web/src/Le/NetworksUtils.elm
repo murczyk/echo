@@ -27,7 +27,7 @@ renderNetwork network masterUnits =
     div []
         [ div []
             [ --text <| networkKindVHFMapping network.kind
-             text " р/м "
+              text " р/м "
             , text network.name
             , text " "
             , text <|
@@ -99,3 +99,12 @@ networkKindToLabel networkKind =
 
         VHF ->
             "УКХ"
+
+
+networkStringToLabel networkString =
+    case networkString of
+        "VHF" ->
+            "УКХ"
+
+        a ->
+            a
