@@ -102,12 +102,12 @@ func main() {
 	log = waLog.Stdout("Main", logLevel, true)
 
 	dbLog := waLog.Stdout("Database", logLevel, true)
-	storeContainer, err := sqlstore.New(*dbDialect, *dbAddress, dbLog)
+	storeContainer, err := sqlstore.New(context.Background(), *dbDialect, *dbAddress, dbLog)
 	if err != nil {
 		log.Errorf("Failed to connect to database: %v", err)
 		return
 	}
-	device, err := storeContainer.GetFirstDevice()
+	device, err := storeContainer.GetFirstDevice(context.Background())
 	if err != nil {
 		log.Errorf("Failed to get device: %v", err)
 		return
@@ -225,7 +225,7 @@ func handleCmd(cmd string, args []string) {
 			log.Errorf("Usage: pair-phone <number>")
 			return
 		}
-		linkingCode, err := cli.PairPhone(args[0], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+		linkingCode, err := cli.PairPhone(context.Background(), args[0], true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil {
 			panic(err)
 		}
@@ -237,7 +237,7 @@ func handleCmd(cmd string, args []string) {
 			log.Errorf("Failed to connect: %v", err)
 		}
 	case "logout":
-		err := cli.Logout()
+		err := cli.Logout(context.Background())
 		if err != nil {
 			log.Errorf("Error logging out: %v", err)
 		} else {
@@ -254,7 +254,7 @@ func handleCmd(cmd string, args []string) {
 		}
 		resync := len(args) > 1 && args[1] == "resync"
 		for _, name := range names {
-			err := cli.FetchAppState(name, resync, false)
+			err := cli.FetchAppState(context.Background(), name, resync, false)
 			if err != nil {
 				log.Errorf("Failed to sync app state: %v", err)
 			}
@@ -341,7 +341,7 @@ func handleCmd(cmd string, args []string) {
 		jid, _ := types.ParseJID(args[0])
 		fmt.Println(cli.SendChatPresence(jid, types.ChatPresence(args[1]), types.ChatPresenceMedia(args[2])))
 	case "privacysettings":
-		resp, err := cli.TryFetchPrivacySettings(false)
+		resp, err := cli.TryFetchPrivacySettings(context.Background(), false)
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -354,7 +354,7 @@ func handleCmd(cmd string, args []string) {
 		}
 		setting := types.PrivacySettingType(args[0])
 		value := types.PrivacySetting(args[1])
-		resp, err := cli.SetPrivacySetting(setting, value)
+		resp, err := cli.SetPrivacySetting(context.Background(), setting, value)
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -382,7 +382,7 @@ func handleCmd(cmd string, args []string) {
 			}
 		}
 	case "mediaconn":
-		conn, err := cli.DangerousInternals().RefreshMediaConn(false)
+		conn, err := cli.DangerousInternals().RefreshMediaConn(context.Background(), false)
 
 		if err != nil {
 			log.Errorf("Failed to get media connection: %v", err)
@@ -883,7 +883,7 @@ func handleCmd(cmd string, args []string) {
 			log.Errorf("Usage: setpushname <name>")
 			return
 		}
-		err := cli.SendAppState(appstate.BuildSettingPushName(strings.Join(args, " ")))
+		err := cli.SendAppState(context.Background(), appstate.BuildSettingPushName(strings.Join(args, " ")))
 		if err != nil {
 			log.Errorf("Error setting push name: %v", err)
 		} else {
@@ -915,7 +915,7 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 
-		err = cli.SendAppState(appstate.BuildArchive(target, action, time.Time{}, nil))
+		err = cli.SendAppState(context.Background(), appstate.BuildArchive(target, action, time.Time{}, nil))
 		if err != nil {
 			log.Errorf("Error changing chat's archive state: %v", err)
 		}
@@ -934,7 +934,7 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 
-		err = cli.SendAppState(appstate.BuildMute(target, action, 1*time.Hour))
+		err = cli.SendAppState(context.Background(), appstate.BuildMute(target, action, 1*time.Hour))
 		if err != nil {
 			log.Errorf("Error changing chat's mute state: %v", err)
 		}
@@ -953,7 +953,7 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 
-		err = cli.SendAppState(appstate.BuildPin(target, action))
+		err = cli.SendAppState(context.Background(), appstate.BuildPin(target, action))
 		if err != nil {
 			log.Errorf("Error changing chat's pin state: %v", err)
 		}
@@ -1010,7 +1010,7 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 
-		err = cli.SendAppState(appstate.BuildLabelChat(jid, labelID, action))
+		err = cli.SendAppState(context.Background(), appstate.BuildLabelChat(jid, labelID, action))
 		if err != nil {
 			log.Errorf("Error changing chat's label state: %v", err)
 		}
@@ -1031,7 +1031,7 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 
-		err = cli.SendAppState(appstate.BuildLabelMessage(jid, labelID, messageID, action))
+		err = cli.SendAppState(context.Background(), appstate.BuildLabelMessage(jid, labelID, messageID, action))
 		if err != nil {
 			log.Errorf("Error changing message's label state: %v", err)
 		}
@@ -1053,7 +1053,7 @@ func handleCmd(cmd string, args []string) {
 			return
 		}
 
-		err = cli.SendAppState(appstate.BuildLabelEdit(labelID, name, int32(color), action))
+		err = cli.SendAppState(context.Background(), appstate.BuildLabelEdit(labelID, name, int32(color), action))
 		if err != nil {
 			log.Errorf("Error editing label: %v", err)
 		}
@@ -1195,7 +1195,7 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 			}
 
 			if evt.Message.GetPollUpdateMessage() != nil {
-				decrypted, err := cli.DecryptPollVote(evt)
+				decrypted, err := cli.DecryptPollVote(context.Background(), evt)
 				if err != nil {
 					log.Errorf("Failed to decrypt vote: %v", err)
 				} else {
@@ -1205,7 +1205,7 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 					}
 				}
 			} else if evt.Message.GetEncReactionMessage() != nil {
-				decrypted, err := cli.DecryptReaction(evt)
+				decrypted, err := cli.DecryptReaction(context.Background(), evt)
 				if err != nil {
 					log.Errorf("Failed to decrypt encrypted reaction: %v", err)
 				} else {
@@ -1215,7 +1215,7 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 
 			img := evt.Message.GetImageMessage()
 			if img != nil {
-				data, err := cli.Download(img)
+				data, err := cli.Download(context.Background(), img)
 				if err != nil {
 					log.Errorf("Failed to download image: %v", err)
 					return
@@ -1245,7 +1245,7 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 
 //         video := evt.Message.GetVideoMessage()
 //         if video != nil {
-//             data, err := cli.Download(video)
+//             data, err := cli.Download(context.Background(), video)
 //             if err != nil {
 //                 log.Errorf("Failed to download video: %v", err)
 //                 return
@@ -1275,7 +1275,7 @@ func mkHandler(dbpool *pgxpool.Pool, lastGroupInfoSync time.Time, groupsSeen map
 //
 //         document := evt.Message.GetDocumentMessage()
 //         if document != nil {
-//             data, err := cli.Download(document)
+//             data, err := cli.Download(context.Background(), document)
 //             if err != nil {
 //                 log.Errorf("Failed to download document: %v", err)
 //                 return

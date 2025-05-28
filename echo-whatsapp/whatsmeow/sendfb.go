@@ -24,6 +24,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
+	armadillo "go.mau.fi/whatsmeow/proto"
+	"go.mau.fi/whatsmeow/proto/waArmadilloApplication"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
 	"go.mau.fi/whatsmeow/proto/waMsgApplication"
@@ -35,15 +37,20 @@ import (
 const FBMessageVersion = 3
 const FBMessageApplicationVersion = 2
 const FBConsumerMessageVersion = 1
+const FBArmadilloMessageVersion = 1
 
 // SendFBMessage sends the given v3 message to the given JID.
 func (cli *Client) SendFBMessage(
 	ctx context.Context,
 	to types.JID,
-	message *waConsumerApplication.ConsumerApplication,
+	message armadillo.RealMessageApplicationSub,
 	metadata *waMsgApplication.MessageApplication_Metadata,
 	extra ...SendRequestExtra,
 ) (resp SendResponse, err error) {
+	if cli == nil {
+		err = ErrClientIsNil
+		return
+	}
 	var req SendRequestExtra
 	if len(extra) > 1 {
 		err = errors.New("only one extra parameter may be provided to SendMessage")
@@ -51,9 +58,37 @@ func (cli *Client) SendFBMessage(
 	} else if len(extra) == 1 {
 		req = extra[0]
 	}
-	consumerMessage, err := proto.Marshal(message)
-	if err != nil {
-		err = fmt.Errorf("failed to marshal consumer message: %w", err)
+	var subproto waMsgApplication.MessageApplication_SubProtocolPayload
+	subproto.FutureProof = waCommon.FutureProofBehavior_PLACEHOLDER.Enum()
+	switch typedMsg := message.(type) {
+	case *waConsumerApplication.ConsumerApplication:
+		var consumerMessage []byte
+		consumerMessage, err = proto.Marshal(typedMsg)
+		if err != nil {
+			err = fmt.Errorf("failed to marshal consumer message: %w", err)
+			return
+		}
+		subproto.SubProtocol = &waMsgApplication.MessageApplication_SubProtocolPayload_ConsumerMessage{
+			ConsumerMessage: &waCommon.SubProtocol{
+				Payload: consumerMessage,
+				Version: proto.Int32(FBConsumerMessageVersion),
+			},
+		}
+	case *waArmadilloApplication.Armadillo:
+		var armadilloMessage []byte
+		armadilloMessage, err = proto.Marshal(typedMsg)
+		if err != nil {
+			err = fmt.Errorf("failed to marshal armadillo message: %w", err)
+			return
+		}
+		subproto.SubProtocol = &waMsgApplication.MessageApplication_SubProtocolPayload_Armadillo{
+			Armadillo: &waCommon.SubProtocol{
+				Payload: armadilloMessage,
+				Version: proto.Int32(FBArmadilloMessageVersion),
+			},
+		}
+	default:
+		err = fmt.Errorf("unsupported message type %T", message)
 		return
 	}
 	if metadata == nil {
@@ -65,15 +100,7 @@ func (cli *Client) SendFBMessage(
 	messageAppProto := &waMsgApplication.MessageApplication{
 		Payload: &waMsgApplication.MessageApplication_Payload{
 			Content: &waMsgApplication.MessageApplication_Payload_SubProtocol{
-				SubProtocol: &waMsgApplication.MessageApplication_SubProtocolPayload{
-					SubProtocol: &waMsgApplication.MessageApplication_SubProtocolPayload_ConsumerMessage{
-						ConsumerMessage: &waCommon.SubProtocol{
-							Payload: consumerMessage,
-							Version: proto.Int32(FBConsumerMessageVersion),
-						},
-					},
-					FutureProof: waCommon.FutureProofBehavior_PLACEHOLDER.Enum(),
-				},
+				SubProtocol: &subproto,
 			},
 		},
 		Metadata: metadata,
@@ -170,9 +197,9 @@ func (cli *Client) SendFBMessage(
 	if len(expectedPHash) > 0 && phash != expectedPHash {
 		cli.Log.Warnf("Server returned different participant list hash when sending to %s. Some devices may not have received the message.", to)
 		// TODO also invalidate device list caches
-		cli.groupParticipantsCacheLock.Lock()
-		delete(cli.groupParticipantsCache, to)
-		cli.groupParticipantsCacheLock.Unlock()
+		cli.groupCacheLock.Lock()
+		delete(cli.groupCache, to)
+		cli.groupCacheLock.Unlock()
 	}
 	return
 }
@@ -187,11 +214,11 @@ func (cli *Client) sendGroupV3(
 	frankingTag []byte,
 	timings *MessageDebugTimings,
 ) (string, []byte, error) {
-	var participants []types.JID
+	var groupMeta *groupMetaCache
 	var err error
 	start := time.Now()
 	if to.Server == types.GroupServer {
-		participants, err = cli.getGroupMembers(ctx, to)
+		groupMeta, err = cli.getCachedGroupData(ctx, to)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to get group members: %w", err)
 		}
@@ -201,7 +228,7 @@ func (cli *Client) sendGroupV3(
 	start = time.Now()
 	builder := groups.NewGroupSessionBuilder(cli.Store, pbSerializer)
 	senderKeyName := protocol.NewSenderKeyName(to.String(), ownID.SignalAddress())
-	signalSKDMessage, err := builder.Create(senderKeyName)
+	signalSKDMessage, err := builder.Create(ctx, senderKeyName)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create sender key distribution message to send %s to %s: %w", id, to, err)
 	}
@@ -238,14 +265,16 @@ func (cli *Client) sendGroupV3(
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to marshal message transport: %w", err)
 	}
-	encrypted, err := cipher.Encrypt(plaintext)
+	encrypted, err := cipher.Encrypt(ctx, plaintext)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to encrypt group message to send %s to %s: %w", id, to, err)
 	}
 	ciphertext := encrypted.SignedSerialize()
 	timings.GroupEncrypt = time.Since(start)
 
-	node, allDevices, err := cli.prepareMessageNodeV3(ctx, to, ownID, id, nil, skdm, msgAttrs, frankingTag, participants, timings)
+	node, allDevices, err := cli.prepareMessageNodeV3(
+		ctx, to, ownID, id, nil, skdm, msgAttrs, frankingTag, groupMeta.Members, timings,
+	)
 	if err != nil {
 		return "", nil, err
 	}
@@ -310,7 +339,20 @@ type messageAttrs struct {
 	PollType    string
 }
 
-func getAttrsFromFBMessage(msg *waConsumerApplication.ConsumerApplication) (attrs messageAttrs) {
+func getAttrsFromFBMessage(msg armadillo.MessageApplicationSub) (attrs messageAttrs) {
+	switch typedMsg := msg.(type) {
+	case *waConsumerApplication.ConsumerApplication:
+		return getAttrsFromFBConsumerMessage(typedMsg)
+	case *waArmadilloApplication.Armadillo:
+		attrs.Type = "media"
+		attrs.MediaType = "document"
+	default:
+		attrs.Type = "text"
+	}
+	return
+}
+
+func getAttrsFromFBConsumerMessage(msg *waConsumerApplication.ConsumerApplication) (attrs messageAttrs) {
 	switch payload := msg.GetPayload().GetPayload().(type) {
 	case *waConsumerApplication.ConsumerApplication_Payload_Content:
 		switch content := payload.Content.GetContent().(type) {
@@ -486,11 +528,12 @@ func (cli *Client) encryptMessageForDevicesV3(
 			}
 			dsmForDevice = dsm
 		}
-		encrypted, err := cli.encryptMessageForDeviceAndWrapV3(payload, skdm, dsmForDevice, jid, nil, encAttrs)
+		encrypted, err := cli.encryptMessageForDeviceAndWrapV3(ctx, payload, skdm, dsmForDevice, jid, nil, encAttrs)
 		if errors.Is(err, ErrNoSession) {
 			retryDevices = append(retryDevices, jid)
 			continue
 		} else if err != nil {
+			// TODO return these errors if it's a fatal one (like context cancellation or database)
 			cli.Log.Warnf("Failed to encrypt %s for %s: %v", id, jid, err)
 			continue
 		}
@@ -511,8 +554,9 @@ func (cli *Client) encryptMessageForDevicesV3(
 				if jid.User == ownID.User {
 					dsmForDevice = dsm
 				}
-				encrypted, err := cli.encryptMessageForDeviceAndWrapV3(payload, skdm, dsmForDevice, jid, resp.bundle, encAttrs)
+				encrypted, err := cli.encryptMessageForDeviceAndWrapV3(ctx, payload, skdm, dsmForDevice, jid, resp.bundle, encAttrs)
 				if err != nil {
+					// TODO return these errors if it's a fatal one (like context cancellation or database)
 					cli.Log.Warnf("Failed to encrypt %s for %s (retry): %v", id, jid, err)
 					continue
 				}
@@ -524,6 +568,7 @@ func (cli *Client) encryptMessageForDevicesV3(
 }
 
 func (cli *Client) encryptMessageForDeviceAndWrapV3(
+	ctx context.Context,
 	payload *waMsgTransport.MessageTransport_Payload,
 	skdm *waMsgTransport.MessageTransport_Protocol_Ancillary_SenderKeyDistributionMessage,
 	dsm *waMsgTransport.MessageTransport_Protocol_Integral_DeviceSentMessage,
@@ -531,7 +576,7 @@ func (cli *Client) encryptMessageForDeviceAndWrapV3(
 	bundle *prekey.Bundle,
 	encAttrs waBinary.Attrs,
 ) (*waBinary.Node, error) {
-	node, err := cli.encryptMessageForDeviceV3(payload, skdm, dsm, to, bundle, encAttrs)
+	node, err := cli.encryptMessageForDeviceV3(ctx, payload, skdm, dsm, to, bundle, encAttrs)
 	if err != nil {
 		return nil, err
 	}
@@ -543,6 +588,7 @@ func (cli *Client) encryptMessageForDeviceAndWrapV3(
 }
 
 func (cli *Client) encryptMessageForDeviceV3(
+	ctx context.Context,
 	payload *waMsgTransport.MessageTransport_Payload,
 	skdm *waMsgTransport.MessageTransport_Protocol_Ancillary_SenderKeyDistributionMessage,
 	dsm *waMsgTransport.MessageTransport_Protocol_Integral_DeviceSentMessage,
@@ -553,16 +599,21 @@ func (cli *Client) encryptMessageForDeviceV3(
 	builder := session.NewBuilderFromSignal(cli.Store, to.SignalAddress(), pbSerializer)
 	if bundle != nil {
 		cli.Log.Debugf("Processing prekey bundle for %s", to)
-		err := builder.ProcessBundle(bundle)
+		err := builder.ProcessBundle(ctx, bundle)
 		if cli.AutoTrustIdentity && errors.Is(err, signalerror.ErrUntrustedIdentity) {
 			cli.Log.Warnf("Got %v error while trying to process prekey bundle for %s, clearing stored identity and retrying", err, to)
-			cli.clearUntrustedIdentity(to)
-			err = builder.ProcessBundle(bundle)
+			err = cli.clearUntrustedIdentity(ctx, to)
+			if err != nil {
+				return nil, fmt.Errorf("failed to clear untrusted identity: %w", err)
+			}
+			err = builder.ProcessBundle(ctx, bundle)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to process prekey bundle: %w", err)
 		}
-	} else if !cli.Store.ContainsSession(to.SignalAddress()) {
+	} else if contains, err := cli.Store.ContainsSession(ctx, to.SignalAddress()); err != nil {
+		return nil, err
+	} else if !contains {
 		return nil, ErrNoSession
 	}
 	cipher := session.NewCipher(builder, to.SignalAddress())
@@ -584,7 +635,7 @@ func (cli *Client) encryptMessageForDeviceV3(
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal message transport: %w", err)
 	}
-	ciphertext, err := cipher.Encrypt(plaintext)
+	ciphertext, err := cipher.Encrypt(ctx, plaintext)
 	if err != nil {
 		return nil, fmt.Errorf("cipher encryption failed: %w", err)
 	}

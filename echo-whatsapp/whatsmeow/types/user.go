@@ -9,13 +9,13 @@ package types
 import (
 	"time"
 
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waVnameCert"
 )
 
 // VerifiedName contains verified WhatsApp business details.
 type VerifiedName struct {
-	Certificate *waProto.VerifiedNameCertificate
-	Details     *waProto.VerifiedNameCertificate_Details
+	Certificate *waVnameCert.VerifiedNameCertificate
+	Details     *waVnameCert.VerifiedNameCertificate_Details
 }
 
 // UserInfo contains info about a WhatsApp user.
@@ -24,6 +24,29 @@ type UserInfo struct {
 	Status       string
 	PictureID    string
 	Devices      []JID
+}
+
+type BotListInfo struct {
+	BotJID    JID
+	PersonaID string
+}
+
+type BotProfileInfo struct {
+	JID                 JID
+	Name                string
+	Attributes          string
+	Description         string
+	Category            string
+	IsDefault           bool
+	Prompts             []string
+	PersonaID           string
+	Commands            []BotProfileCommand
+	CommandsDescription string
+}
+
+type BotProfileCommand struct {
+	Name        string
+	Description string
 }
 
 // ProfilePictureInfo contains the ID and URL for a WhatsApp user's profile picture or group's photo.
