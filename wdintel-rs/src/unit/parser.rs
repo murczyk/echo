@@ -9,7 +9,7 @@ use regex::{Regex, RegexBuilder};
 use std::slice::Iter;
 
 pub fn extract_unit(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     inp: &str,
     callsigns: Vec<String>,
 ) -> Result<UnitAndLoc, AppError> {
@@ -93,7 +93,7 @@ pub fn extract_unit(
 }
 
 fn try_lookup_next_line_loc_with_prefix(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     remaining_lines: &mut Iter<String>,
     locality: Option<String>,
     locality_v2: Option<Vec<String>>,
@@ -124,7 +124,7 @@ fn cleanup_line(ltrim: &str) -> String {
 }
 
 fn extract_locality(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     line: String,
     locality: Option<String>,
 ) -> Result<(Option<String>, Option<Vec<String>>), AppError> {
@@ -144,6 +144,12 @@ fn extract_locality(
             locality = Some(line.clone());
         }
     }
+    let locality_v2 = match locality_v2 {
+        None => None,
+        Some(data) => {
+            Some(data.into_iter().map(|(location, _)| location).collect())
+        }
+    };
     Ok((locality, locality_v2))
 }
 
@@ -603,7 +609,7 @@ fn try_remove_commintify_header(lines: Vec<String>) -> Vec<String> {
 }
 
 fn try_extract_standard_unit_and_location(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     inp: &str,
 ) -> Result<Option<UnitAndLoc>, AppError> {
     '_if: {

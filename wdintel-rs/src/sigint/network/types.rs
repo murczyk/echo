@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, FromQueryResult)]
 pub struct NetworkDesc {
     pub id: i64,
-    pub kind: String,
     pub name: String,
     pub location: String,
     pub comment: String,
@@ -23,8 +22,6 @@ pub struct NetworkDesc {
     pub updated_at: NaiveDateTime,
     pub active_from: NaiveDateTime,
     pub active_to: Option<NaiveDateTime>,
-    pub modulation_id: Option<i32>,
-    pub modulation_name: Option<String>,
 }
 
 #[derive(
@@ -32,9 +29,8 @@ pub struct NetworkDesc {
 )]
 pub struct Network {
     pub id: i64,
-    pub freqs: Vec<String>,
+    pub freqs: Vec<NetworkFreq>,
     pub unit_ids: Vec<i64>,
-    pub kind: String,
     pub name: String,
     pub location: String,
     pub comment: String,
@@ -48,8 +44,6 @@ pub struct Network {
     pub last_updated_by: Option<String>,
     pub active_from: i64,
     pub active_to: Option<i64>,
-    pub modulation_id: Option<i32>,
-    pub modulation_name: Option<String>,
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<NetworkDescription>,
 }
@@ -66,9 +60,8 @@ pub struct UpdateFreqNetworksReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateNetworkReq {
-    pub freqs: Option<Vec<String>>,
+    pub freqs: Option<Vec<AddNetworkFreq>>,
     pub unit_ids: Vec<i64>,
-    pub kind: String,
     pub name: String,
     pub location: String,
     pub comment: String,
@@ -79,7 +72,6 @@ pub struct CreateNetworkReq {
     pub operation_period: Option<String>,
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
-    pub modulation_id: Option<i32>,
     pub post_ids: Vec<i64>,
     pub descriptions: Option<Vec<AddNetworkDescription>>,
 }
@@ -94,7 +86,6 @@ pub struct UpdateNetworkReq {
     // pub unit_ids: Vec<i64>,
     // pub post_ids: Vec<i64>,
     // pub descriptions: Vec<NetworkDescription>,
-    pub kind: String,
     pub name: String,
     pub location: String,
     pub comment: String,
@@ -106,6 +97,7 @@ pub struct UpdateNetworkReq {
     pub active_from: i64,
     pub active_to: Option<i64>,
     pub modulation_id: Option<i32>,
+    pub descriptions: Option<Vec<UpdateNetworkDescriptionReq>>,
 }
 
 #[derive(
@@ -196,12 +188,12 @@ pub struct ListNetworkPointsRsp {
 pub struct UpdFreqNetwork {
     pub id: Option<i64>,
     pub unit_ids: Vec<i64>,
-    pub kind: String,
     pub name: String,
     pub location: String,
     pub comment: String,
     pub radio_station: Option<String>,
     pub confirmation: Option<String>,
+    pub description: Option<UpdateNetworkDescriptionReq>,
 }
 
 #[derive(
@@ -228,7 +220,7 @@ pub enum ListNetworksSortBy {
 )]
 pub struct AddNetworkFreqReq {
     pub network_id: i64,
-    pub freq: String,
+    pub freq_rec: AddNetworkFreq,
 }
 
 #[derive(
@@ -333,6 +325,7 @@ pub struct NetworkDescription {
 pub struct AddNetworkDescription {
     pub descr_type: NetworkDescrType,
     pub description: String,
+    pub network_frequency_id: Option<i64>,
     // pub comment: Option<String>,
 }
 
@@ -349,6 +342,7 @@ pub struct AddNetworkDescriptionsReq {
 )]
 pub struct UpdateNetworkDescriptionReq {
     pub network_id: i64,
+    pub network_freq_id: Option<i64>,
     pub description_id: i64,
     pub descr_type: NetworkDescrType,
     pub description: String,
@@ -361,4 +355,26 @@ pub struct UpdateNetworkDescriptionReq {
 pub struct DeleteNetworkDescriptionReq {
     pub network_id: i64,
     pub description_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkFreq {
+    pub id: i64,
+    pub network_id: i64,
+    pub freq: String,
+    pub deleted: bool,
+    pub created_at: i64,
+    pub kind: String,
+    pub modulation_id: Option<i32>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AddNetworkFreq {
+    pub freq: String,
+    pub kind: String,
+    pub modulation_id: Option<i32>,
 }

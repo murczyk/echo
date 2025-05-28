@@ -31,7 +31,7 @@ pub struct Env {
     pub rq: reqwest::Client,
     pub mil_geo: MilGeo,
     pub redis: Option<redis::aio::ConnectionManager>,
-    pub settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    pub settlements: Arc<RwLock<crate::location::SettlementsData>>,
 }
 
 impl ToString for Mode {

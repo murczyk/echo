@@ -186,15 +186,14 @@ update shared msg model =
                 postsSelect =
                     model.editPostsSelect
 
-                kindSelect2 =
-                    { kindSelect | selected = EUtils.networkKindFromString res.kind }
-
+                --kindSelect2 =
+                --TODO{ kindSelect | selected = EUtils.networkKindFromString res.kind }
                 postsSelect2 =
                     { postsSelect | selected = res.postIds }
             in
             ( { model
                 | network = Success res
-                , editKindSelect = kindSelect2
+                , editKindSelect = kindSelect
                 , editPostsSelect = postsSelect2
               }
             , E.batch
@@ -271,7 +270,8 @@ update shared msg model =
                         | mode =
                             Editing
                                 { id = network.id
-                                , kind = network.kind
+
+                                --, kind = network.kind
                                 , name = network.name
                                 , location = network.location
                                 , comment = network.comment
@@ -282,7 +282,8 @@ update shared msg model =
                                 , operationPeriod = network.operationPeriod
                                 , activeFrom = network.activeFrom
                                 , activeTo = network.activeTo
-                                , modulationId = network.modulationId
+                                , descriptions = Nothing --TODO
+                                , modulationId = Nothing --TODO
                                 }
                       }
                     , E.none
@@ -345,7 +346,7 @@ update shared msg model =
                     in
                     ( { model
                         | editKindSelect = kindSelect2
-                        , mode = Editing { updNetworkReq | kind = EUtils.networkKindToString updatedNetworkKind }
+                        , mode = Editing updNetworkReq --{ updNetworkReq | kind = EUtils.networkKindToString updatedNetworkKind }
                       }
                     , E.sendCmd <|
                         Cmd.map
@@ -429,6 +430,7 @@ update shared msg model =
 
                                 B.Sign ->
                                     model.addSignsInp
+                      , networkFrequencyId = Nothing --TODO
                       }
                     ]
                 }
@@ -496,6 +498,7 @@ update shared msg model =
                 , descriptionId = description.id
                 , descrType = description.descrType
                 , description = description.description
+                , networkFreqId = Nothing --TOOD
                 }
             )
 
@@ -548,7 +551,7 @@ mainInfoBlock network shared model =
             ]
         , div [ class "border-t-1 border-border py-[8px] flex h-[52px]! " ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Вид передачі:" ]
-            , span [] [ text <| networkKindVHFMapping network.kind ]
+            , span [] [ text <| "" ] -- networkKindVHFMapping network.kind ]
             ]
         , div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]

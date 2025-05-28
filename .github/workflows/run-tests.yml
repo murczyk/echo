@@ -2,12 +2,14 @@ name: CI Run Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
+    # Only run this job if the repository is echoua/echo
+    if: github.repository == 'echoua/echo'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3

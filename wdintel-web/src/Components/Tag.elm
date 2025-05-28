@@ -40,8 +40,8 @@ view label (Config config) =
     div
         [ class " border-1 border-border rounded-sm text-text py-1 px-2 pointer relative"
         , classList
-            [ ( "bg-tag-selected border-1 border-border-selected", config.isActive )
-            , ( "hover-unmuted bg-tag", not config.isActive )
+            [ ( "bg-tag-selected text-black border-1 border-border-selected", config.isActive )
+            , ( "opacity-75 hover:opacity-100 bg-tag", not config.isActive )
             ]
         , onClick <| config.onToggle
         ]

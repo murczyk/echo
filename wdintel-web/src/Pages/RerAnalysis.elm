@@ -568,7 +568,7 @@ extractMetaInfo inboxRsp model =
 
         freqNetworkIds2 =
             inboxRsp.networks
-                |> List.concatMap (\x -> List.map (\freq -> ( freq, Set.singleton x.id )) x.freqs)
+                |> List.concatMap (\x -> List.map (\freq -> ( freq.freq, Set.singleton x.id )) x.freqs)
                 |> (\v -> v ++ Dict.toList model.freqNetworkIds)
                 |> DE.fromListDedupe Set.union
 
@@ -2668,7 +2668,7 @@ update user shared route msg model =
             let
                 freqNetworkIds2 =
                     networks
-                        |> List.concatMap (\x -> List.map (\freq -> ( freq, Set.singleton x.id )) x.freqs)
+                        |> List.concatMap (\x -> List.map (\freq -> ( freq.freq, Set.singleton x.id )) x.freqs)
                         |> (\v -> v ++ Dict.toList model.freqNetworkIdsSumTable)
                         |> DE.fromListDedupe Set.union
             in

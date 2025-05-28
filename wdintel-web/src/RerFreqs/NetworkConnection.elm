@@ -1,0 +1,726 @@
+module RerFreqs.NetworkConnection exposing (view)
+
+import Bindings as B
+import Bytes exposing (Bytes)
+import Components.Button as Button
+import Components.Watermark as Watermark exposing (Watermark)
+import Debounce exposing (Debounce)
+import Dict exposing (Dict)
+import Effect as E exposing (Effect)
+import Html exposing (..)
+import Html.Attributes as Attr exposing (..)
+import Html.Events exposing (..)
+import Html.Extra as HtmlX
+import Html.Styled as Styled
+import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Le.Block.Select
+import Le.Block.Spinner
+import Le.Block.Unit as Unit
+import Le.NetworksUtils as NetworksUtils
+import Le.RemoteData as RD exposing (RemoteData(..))
+import Le.Time
+import Le.Utils exposing (..)
+import List.Extra as ListX
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ReportCreation(..), TextLocation(..))
+import RerFreqs.Msg exposing (Msg(..))
+import RerFreqs.Utils as Utils
+import Route exposing (Route)
+import Select
+import Shared
+import Time exposing (Posix)
+import Time.Extra
+import View exposing (View)
+
+
+view : Model -> Shared.Model -> List (Html Msg)
+view model shared =
+    case model.networkAddStatus of
+        NotStarted ->
+            []
+
+        _ ->
+            createNetworkSidebarContent model shared
+
+
+createNetworkSidebarContent : Model -> Shared.Model -> List (Html Msg)
+createNetworkSidebarContent model shared =
+    [ div [ class "p-4 w-full flex flex-col overflow-y-auto max-h-screen" ]
+        ([ h2 [] [ text "Прив'язка мережі до частоти" ]
+         ]
+            ++ (case model.networkAddStatus of
+                    CreateNewNetwork freq addState ->
+                        createNetworkSidebarForm addState model shared
+
+                    SelectFromExistingNetwork freq mSelectedNetworkId ->
+                        createNetworkSidebarStart freq mSelectedNetworkId model shared
+
+                    EditExistingNetwork freq editState ->
+                        editNetworkSidebarForm editState model shared
+
+                    NotStarted ->
+                        []
+               )
+        )
+    ]
+
+
+createNetworkSidebarForm : B.CreateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
+createNetworkSidebarForm addState model shared =
+    [ h3 [] [ text "Створення нової мережі" ]
+    , div [ class "grid grid-cols-4  gap-y-2 gap-x-4" ]
+        [ div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Назва:*" ]
+            , input
+                [ class "form-control "
+                , type_ "text"
+                , value addState.name
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | name = v }
+                ]
+                []
+            ]
+        , div [ class "flex flex-col gap-1 col-span-1" ]
+            [ label [] [ text "Тип" ]
+            , let
+                selectedItem =
+                    (\item ->
+                        Select.basicMenuItem
+                            { item = item
+                            , label = NetworksUtils.networkKindToLabel item
+                            }
+                    )
+                        model.addKindSelect.selected
+
+                defaultOptions =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+
+                do2 =
+                    { defaultOptions | clearable = False }
+              in
+              Html.map NetworkAddKindSelMsg <|
+                Styled.toUnstyled <|
+                    Le.Block.Select.renderSelectSingle
+                        (Just selectedItem)
+                        model.addKindSelect.state
+                        model.addKindSelect.items
+                        "жоден"
+                        do2
+            ]
+        , div [ class "col-span-1" ]
+            [ label [ class "mb-1" ] [ text "Вид передачі" ]
+            , let
+                selectedItem =
+                    Maybe.map
+                        (\item ->
+                            Select.basicMenuItem
+                                { item = item
+                                , label =
+                                    RD.withDefault [] model.modulations
+                                        |> List.filter (\mod -> mod.id == item)
+                                        |> List.head
+                                        |> Maybe.map .name
+                                        |> Maybe.withDefault ""
+                                }
+                        )
+                        model.addModulationSelect.selected
+
+                defaultOptions =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+
+                do2 =
+                    { defaultOptions | clearable = False }
+              in
+              Html.map NetworkAddModulationSelMsg <|
+                Styled.toUnstyled <|
+                    Le.Block.Select.renderSelectSingle
+                        selectedItem
+                        model.addModulationSelect.state
+                        model.addModulationSelect.items
+                        "жоден"
+                        do2
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Пости" ]
+            , let
+                selectedItems =
+                    List.map
+                        (\postId ->
+                            Select.basicMenuItem
+                                { item = postId
+                                , label =
+                                    case shared.posts of
+                                        Success posts ->
+                                            Dict.get postId posts
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ""
+
+                                        _ ->
+                                            ""
+                                }
+                        )
+                        model.addPostsSelect.selected
+
+                defaultOptions =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+
+                do2 =
+                    { defaultOptions | clearable = False }
+              in
+              Html.map NetworkAddPostsSelMsg <|
+                Styled.toUnstyled <|
+                    Le.Block.Select.renderSelect
+                        selectedItems
+                        model.addPostsSelect.state
+                        model.addPostsSelect.items
+                        "жоден"
+                        do2
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Локація" ]
+            , input
+                [ class "form-control"
+                , type_ "text"
+                , value <| addState.location
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | location = v }
+                ]
+                []
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Коментар" ]
+            , input
+                [ class "form-control"
+                , value <| addState.comment
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | comment = v }
+                ]
+                []
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Радіостанція" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" addState.radioStation)
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | radioStation = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "типи радіостанцій, що використовуються підрозділом" ]
+            ]
+
+        -- , div [ class "col-span-2" ]
+        --     [ label [ class "mb-1" ] [ text "Підтвердження" ]
+        --     , input
+        --         [ class "form-control"
+        --         , value (Maybe.withDefault "" addState.confirmation)
+        --         , onInput <|
+        --             \v ->
+        --                 NetworkAddMsg
+        --                     { addState | confirmation = Just v }
+        --         ]
+        --         []
+        --     , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
+        --     ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Призначення" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" addState.purpose)
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | purpose = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Характер роботи" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" addState.operationType)
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | operationType = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Режим роботи" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" addState.operationMode)
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | operationMode = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Період функціонування" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" addState.operationPeriod)
+                , onInput <|
+                    \v ->
+                        NetworkAddMsg
+                            { addState | operationPeriod = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+
+        -- , div [ class "col-span-4" ]
+        --     [ label [ class "mb-1" ] [ text "Ознаки" ]
+        --     , input
+        --         [ class "form-control"
+        --         , value (Maybe.withDefault "" addState.signs)
+        --         , onInput <|
+        --             \v ->
+        --                 NetworkAddMsg
+        --                     { addState | signs = Just v }
+        --         ]
+        --         []
+        --     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
+        --     ]
+        , section [ class "col-span-4 h-[200px]" ]
+            [ h4 []
+                [ text "Активність мережі" ]
+            , div [ class "flex gap-[16px] h-full" ]
+                [ div
+                    []
+                    [ label [ class "mb-1" ] [ text "Активна з" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control w-[150px]!"
+                        , required True
+                        , Maybe.map (\activeFrom -> Time.millisToPosix activeFrom) addState.activeFrom
+                            |> (\mActiveFrom ->
+                                    case mActiveFrom of
+                                        Just activeFrom ->
+                                            Le.Time.renderDateF4 shared.timeZone activeFrom
+
+                                        Nothing ->
+                                            ""
+                               )
+                            |> value
+                        , onInput <|
+                            NetworkAddMsg
+                                << (\v ->
+                                        { addState
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        addState.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , let
+                    groupsMessageCountByDayJson =
+                        B.freqDailyActivityCountEncoder (RD.withDefault { dataPerDate = Dict.empty } model.freqGroupsActivityForNetworkAdd)
+                  in
+                  div []
+                    [ span [] [ text "Активність частоти за місяць" ]
+                    , Html.node "bar-chart-2"
+                        [ Attr.property "data" <| groupsMessageCountByDayJson
+                        , class "w-[300px]"
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "flex gap-2 justify-end col-span-4 mt-4" ]
+            [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
+            , Button.new { label = "Зберегти", onClick = NetworkCreate } |> Button.view
+            ]
+        ]
+    ]
+
+
+createNetworkSidebarStart : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
+createNetworkSidebarStart freq mSelectedNetworkId model shared =
+    [ div [ class "flex flex-col grow relative" ]
+        [ HtmlX.viewIf model.networkAddLoading <|
+            span [ class "absolute top-[50%] left-[50%] -translate-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
+        , let
+            networksWithThisFreq =
+                ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                    |> (\mFreq ->
+                            case mFreq of
+                                Just freq_ ->
+                                    Just freq_.networkIds
+
+                                Nothing ->
+                                    Nothing
+                       )
+                    |> (\mNetworkIds ->
+                            case mNetworkIds of
+                                Just ids_ ->
+                                    List.filterMap (\id_ -> Dict.get id_ model.networks) ids_
+
+                                Nothing ->
+                                    []
+                       )
+
+            networksWithThisFreqBlock =
+                networksWithThisFreq
+                    |> List.map
+                        (\network_ ->
+                            div
+                                [ class "w-full p-2  border-1 border-border rounded-sm text-text flex justify-between"
+                                ]
+                                [ NetworksUtils.renderNetwork network_ model.masterUnits
+                                , div [ class "flex gap-2" ]
+                                    [ i [ class "bi bi-pencil cursor-pointer", onClick <| NetworkStartEditingFlow network_ ] []
+                                    , i [ class "bi bi-trash cursor-pointer", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
+                                    ]
+                                ]
+                        )
+          in
+          HtmlX.viewIf (List.length networksWithThisFreq > 0) <|
+            div [ class "mb-2" ]
+                [ span [] [ text "Уже прив'язані до цієї частоти:" ]
+                , div [] networksWithThisFreqBlock
+                ]
+        , div [ class "min-h-[200px] flex flex-col" ]
+            [ let
+                selectItem =
+                    model.networkDialogUnitSelect.selected
+                        |> Maybe.map
+                            (\unitId ->
+                                Select.basicMenuItem
+                                    { item = unitId
+                                    , label = Unit.unitName model.masterUnits unitId
+                                    }
+                            )
+              in
+              div [ class "" ]
+                [ label [] [ text "Пошук існуючих по підрозділу:" ]
+                , Html.map NetworkAddUnitSelMsg <|
+                    Styled.toUnstyled <|
+                        Le.Block.Select.renderSelectSingle
+                            selectItem
+                            model.networkDialogUnitSelect.state
+                            model.networkDialogUnitSelect.items
+                            "жоден"
+                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                ]
+            , div [ class "grow-1 mt-4" ]
+                (let
+                    d =
+                        Utils.findConnectedNetworks model.networkDialogUnitSelect.selected model.networks model.masterUnits
+                 in
+                 if List.length d > 0 then
+                    [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length d) ++ " співпадінь знайдено" ] ]
+                        ++ List.map
+                            (\network ->
+                                let
+                                    isActive =
+                                        case mSelectedNetworkId of
+                                            Just id ->
+                                                id == network.id
+
+                                            Nothing ->
+                                                False
+                                in
+                                div
+                                    [ class "w-full p-2  border-1 border-border rounded-sm text-text  pointer "
+                                    , classList
+                                        [ ( "bg-tag-selected border-1 border-border-selected", isActive )
+                                        , ( "hover-unmuted bg-tag", not isActive )
+                                        ]
+                                    , onClick <| NetworkAddToggleExistingId network.id
+                                    ]
+                                    [ NetworksUtils.renderNetwork network model.masterUnits
+                                    ]
+                            )
+                            d
+
+                 else
+                    [ div [ class "w-full h-full flex justify-center items-center" ]
+                        [ span [] [ text "Співпадінь не виявлено" ]
+                        ]
+                    ]
+                )
+            , div [ class "flex justify-end mb-2" ]
+                []
+            ]
+        , div [ class "flex gap-2 justify-end border-t-1 pt-2 border-[var(--neutral-400)]" ]
+            [ Button.new { label = "Назад", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
+            , Button.new { label = "Створити нову мережу", onClick = NetworkStartCreatingFlow }
+                |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing)
+                |> (\b ->
+                        case mSelectedNetworkId of
+                            Just id ->
+                                Button.withStyleSecondary b
+
+                            Nothing ->
+                                b
+                   )
+                |> Button.view
+            , case mSelectedNetworkId of
+                Just id ->
+                    Button.new { label = "Використати цю мережу", onClick = FreqAddToExistingNetwork freq id }
+                        |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing)
+                        |> Button.view
+
+                Nothing ->
+                    text ""
+            ]
+        ]
+    ]
+
+
+editNetworkSidebarForm : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
+editNetworkSidebarForm editState model shared =
+    [ h3 [] [ text "Редагування існуючої мережі" ]
+    , div [ class "grid grid-cols-4  gap-y-2 gap-x-4" ]
+        [ div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Назва:*" ]
+            , input
+                [ class "form-control "
+                , type_ "text"
+                , value editState.name
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | name = v }
+                ]
+                []
+            ]
+        , div [ class "flex flex-col gap-1 col-span-1" ]
+            [ label [] [ text "Тип" ]
+            , let
+                selectedItem =
+                    (\item ->
+                        Select.basicMenuItem
+                            { item = item
+                            , label =
+                                NetworksUtils.networkKindToLabel item
+                            }
+                    )
+                        model.editKindSelect.selected
+
+                defaultOptions =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+
+                do2 =
+                    { defaultOptions | clearable = False }
+              in
+              Html.map NetworkEditKindSelMsg <|
+                Styled.toUnstyled <|
+                    Le.Block.Select.renderSelectSingle
+                        (Just selectedItem)
+                        model.editKindSelect.state
+                        model.editKindSelect.items
+                        "жоден"
+                        do2
+            ]
+        , div [ class "col-span-1" ]
+            [ label [ class "mb-1" ] [ text "Вид передачі" ]
+            , let
+                selectedItem =
+                    Maybe.map
+                        (\item ->
+                            Select.basicMenuItem
+                                { item = item
+                                , label =
+                                    RD.withDefault [] model.modulations
+                                        |> List.filter (\mod -> mod.id == item)
+                                        |> List.head
+                                        |> Maybe.map .name
+                                        |> Maybe.withDefault ""
+                                }
+                        )
+                        model.editModulationSelect.selected
+
+                defaultOptions =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+
+                do2 =
+                    { defaultOptions | clearable = False }
+              in
+              Html.map NetworkEditModulationSelMsg <|
+                Styled.toUnstyled <|
+                    Le.Block.Select.renderSelectSingle
+                        selectedItem
+                        model.editModulationSelect.state
+                        model.editModulationSelect.items
+                        "жоден"
+                        do2
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Пости" ]
+            , let
+                selectedItems =
+                    List.map
+                        (\postId ->
+                            Select.basicMenuItem
+                                { item = postId
+                                , label =
+                                    RD.withDefault Dict.empty shared.posts
+                                        |> Dict.get postId
+                                        |> Maybe.map .name
+                                        |> Maybe.withDefault ""
+                                }
+                        )
+                        model.editPostsSelect.selected
+
+                defaultOptions =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+
+                do2 =
+                    { defaultOptions | clearable = False }
+              in
+              Html.map NetworkEditPostsSelMsg <|
+                Styled.toUnstyled <|
+                    Le.Block.Select.renderSelect
+                        selectedItems
+                        model.editPostsSelect.state
+                        model.editPostsSelect.items
+                        "жоден"
+                        do2
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Локація" ]
+            , input
+                [ class "form-control"
+                , type_ "text"
+                , value <| editState.location
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | location = v }
+                ]
+                []
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Коментар" ]
+            , input
+                [ class "form-control"
+                , value <| editState.comment
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | comment = v }
+                ]
+                []
+            ]
+        , div [ class "col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Радіостанція" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" editState.radioStation)
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | radioStation = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "типи радіостанцій, що використовуються підрозділом" ]
+            ]
+
+        -- , div [ class "col-span-2" ]
+        --     [ label [ class "mb-1" ] [ text "Підтвердження" ]
+        --     , input
+        --         [ class "form-control"
+        --         , value (Maybe.withDefault "" editState.confirmation)
+        --         , onInput <|
+        --             \v ->
+        --                 NetworkEditMsg
+        --                     { editState | confirmation = Just v }
+        --         ]
+        --         []
+        --     , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
+        --     ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Призначення" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" editState.purpose)
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | purpose = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Характер роботи" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" editState.operationType)
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | operationType = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Режим роботи радіомережі" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" editState.operationMode)
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | operationMode = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+        , div [ class " col-span-2" ]
+            [ label [ class "mb-1" ] [ text "Період функціонування" ]
+            , input
+                [ class "form-control"
+                , value (Maybe.withDefault "" editState.operationPeriod)
+                , onInput <|
+                    \v ->
+                        NetworkEditMsg
+                            { editState | operationPeriod = Just v }
+                ]
+                []
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
+            ]
+
+        -- , div [ class "col-span-4" ]
+        --     [ label [ class "mb-1" ] [ text "Ознаки" ]
+        --     , input
+        --         [ class "form-control"
+        --         , value (Maybe.withDefault "" editState.signs)
+        --         , onInput <|
+        --             \v ->
+        --                 NetworkEditMsg
+        --                     { editState | signs = Just v }
+        --         ]
+        --         []
+        --     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
+        --     ]
+        , div [ class "flex gap-2 justify-end col-span-4 mb-2" ]
+            [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
+            , Button.new { label = "Зберегти", onClick = NetworkUpdate } |> Button.view
+            ]
+        ]
+    ]

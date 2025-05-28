@@ -428,7 +428,7 @@ pub fn aggregate_network_units(
 }
 
 pub async fn submit_upsert_inbox_item(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     txn: &DatabaseTransaction,
     id: i64,
     message: &InboxMessage,
@@ -538,7 +538,7 @@ pub async fn submit_upsert_inbox_item(
             let locations =
                 crate::location::parse_location(settlements.clone(), location)
                     .context(h!())?;
-            Some(utils::format_locations_list(locations))
+            Some(utils::format_settlements_list(locations))
         }
         None => location.clone(), //fallback
     };

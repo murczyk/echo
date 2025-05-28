@@ -585,7 +585,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                             location,
                         )
                         .context(h!())?;
-                        Some(utils::format_locations_list(locations))
+                        Some(utils::format_settlements_list(locations))
                     }
                     _ => None,
                 };

@@ -58,7 +58,7 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
 }
 
 async fn receive_thread_signal_restapi_nofail(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     datasource_id: i64,
@@ -79,7 +79,7 @@ async fn receive_thread_signal_restapi_nofail(
 }
 
 async fn receive_thread_signal_restapi(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     datasource_id: i64,
@@ -247,7 +247,7 @@ pub async fn do_sync_state(
 }
 
 pub async fn process_incoming_message_restapi(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     rq: &reqwest::Client,

@@ -243,7 +243,7 @@ pub async fn get_inbox_messages_report_network(
         .column_as(sigint_network_freq::Column::Freq, "freq")
         .column_as(sigint_comment::Column::Comment, "comment")
         .column_as(sigint_network::Column::Id, "network_id")
-        .column(sigint_network::Column::Kind)
+        .column(sigint_network_freq::Column::Kind)
         .column(sigint_network::Column::Location)
         .join(
             JoinType::InnerJoin,

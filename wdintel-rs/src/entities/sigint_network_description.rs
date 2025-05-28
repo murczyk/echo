@@ -18,6 +18,7 @@ pub struct Model {
     pub comment: Option<String>,
     pub deleted: bool,
     pub created_at: DateTime,
+    pub sigint_network_freq_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -38,6 +39,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintNetwork,
+    #[sea_orm(
+        belongs_to = "super::sigint_network_freq::Entity",
+        from = "Column::SigintNetworkFreqId",
+        to = "super::sigint_network_freq::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SigintNetworkFreq,
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -49,6 +58,12 @@ impl Related<super::login::Entity> for Entity {
 impl Related<super::sigint_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetwork.def()
+    }
+}
+
+impl Related<super::sigint_network_freq::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkFreq.def()
     }
 }
 

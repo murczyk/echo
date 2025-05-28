@@ -2089,7 +2089,7 @@ update shared user msg model =
                 freqNetworkIds2 =
                     networks
                         --TODO: переосмислити в майбутньому, зараз зробив щоб з новими типами працювала стара логіка
-                        |> List.concatMap (\x -> List.map (\freq -> ( freq, Set.singleton x.id )) x.freqs)
+                        |> List.concatMap (\x -> List.map (\freq -> ( freq.freq, Set.singleton x.id )) x.freqs)
                         |> (\v -> v ++ Dict.toList model.freqNetworkIds)
                         |> DE.fromListDedupe Set.union
             in

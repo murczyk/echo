@@ -26,7 +26,7 @@ async fn rer_callsign_info_single(
     dbx: &sea_orm::DatabaseConnection,
     callsign: &String,
 ) -> Result<Vec<CallsignInfo>, AppError> {
-    let res: Vec<CallsignInfo> = sigint_callsign::Entity::find()
+    let callsigns_data = sigint_callsign::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_callsign::Column::Callsign.eq(callsign.to_lowercase()))
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -34,7 +34,16 @@ async fn rer_callsign_info_single(
         .filter(sigint_callsign::Column::Deleted.eq(false))
         .all(dbx)
         .await
-        .context(h!())?
+        .context(h!())?;
+    let callsign_ids = callsigns_data
+        .iter()
+        .map(|(x, _)| x.id.clone())
+        .collect::<Vec<_>>();
+    let reported_networks_per_callsign =
+        collect_reported_networks_per_callsign(callsign_ids, dbx)
+            .await
+            .context(h!())?;
+    let res: Vec<CallsignInfo> = callsigns_data
         .into_iter()
         .filter_map(|(callsign, is_unit)| {
             is_unit.map(|unit| CallsignInfo {
@@ -49,10 +58,48 @@ async fn rer_callsign_info_single(
                 unit_1: unit.name,
                 unit_2: "".to_string(),
                 unit_id: Some(unit.id),
+                network_ids_reported_id: reported_networks_per_callsign
+                    .get(&callsign.id)
+                    .cloned()
+                    .unwrap_or(vec![]),
             })
         })
         .collect::<Vec<CallsignInfo>>();
     Ok(res)
+}
+
+async fn collect_reported_networks_per_callsign(
+    callsign_ids: Vec<i64>,
+    dbx: &sea_orm::DatabaseConnection,
+) -> Result<BTreeMap<i64, Vec<i64>>, AppError> {
+    let reported_in = crate::entities::sigint_network_callsign::Entity::find()
+        .filter(
+            crate::entities::sigint_network_callsign::Column::SigintCallsignId
+                .is_in(callsign_ids),
+        )
+        .filter(
+            crate::entities::sigint_network_callsign::Column::Deleted.eq(false),
+        )
+        .filter(
+            crate::entities::sigint_network_callsign::Column::IsReported
+                .eq(true),
+        )
+        .all(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|x| (x.sigint_network_id, x.sigint_callsign_id))
+        .collect::<Vec<_>>();
+    let mut reported_networks_per_callsign: BTreeMap<i64, Vec<i64>> =
+        BTreeMap::new();
+    for (sigint_network_id, sigint_callsign_id) in reported_in {
+        let mut network_ids = reported_networks_per_callsign
+            .remove(&sigint_callsign_id)
+            .unwrap_or(vec![]);
+        network_ids.push(sigint_network_id);
+        reported_networks_per_callsign.insert(sigint_callsign_id, network_ids);
+    }
+    Ok(reported_networks_per_callsign)
 }
 
 #[post("/api/rer/callsign-info-batch-old")]
@@ -124,6 +171,16 @@ pub async fn load_callsigns(
             .for_each(|c| callsigns.push(c));
     }
 
+    let callsign_ids = callsigns
+        .iter()
+        .map(|(x, _)| x.id.clone())
+        .collect::<Vec<_>>();
+
+    let reported_networks_per_callsign =
+        collect_reported_networks_per_callsign(callsign_ids, dbx)
+            .await
+            .context(h!())?;
+
     for c in callsigns_txt.iter() {
         let mut res_single = CallsignInfoRes {
             callsign: c.clone(),
@@ -144,6 +201,10 @@ pub async fn load_callsigns(
                         unit_1: unit.name.clone(),
                         unit_2: "".to_string(),
                         unit_id: Some(unit.id),
+                        network_ids_reported_id: reported_networks_per_callsign
+                            .get(&callsign.id)
+                            .cloned()
+                            .unwrap_or(vec![]),
                     });
                 }
             }

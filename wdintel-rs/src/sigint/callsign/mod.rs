@@ -494,6 +494,53 @@ pub async fn update_callsign_bind(
     Ok(Json(res_vec))
 }
 
+#[post("/api/sigint/callsign-reporting/update")]
+pub async fn update_callsign_reporting(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateCallsignReportingReq>,
+) -> Result<Json<bool>, AppError> {
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
+
+    let callsign_id = req.callsign_id;
+    let network_id = req.network_id;
+
+    let existing_callsign = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_callsign::Column::SigintCallsignId.eq(callsign_id),
+        )
+        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
+        .one(&env.dbx)
+        .await
+        .context(h!())?;
+    match existing_callsign {
+        Some(c) => {
+            let mut model = c.into_active_model();
+            model.is_reported = Set(req.is_reported);
+            model.deleted = Set(req.deleted);
+            model.is_reported = Set(req.is_reported);
+            model.update(&env.dbx).await.context(h!())?;
+        }
+        None => {
+            sigint_network_callsign::ActiveModel {
+                id: NotSet,
+                sigint_network_id: Set(network_id),
+                sigint_callsign_id: Set(callsign_id),
+                deleted: Set(req.deleted),
+                is_reported: Set(req.is_reported),
+                created_at: NotSet,
+            }
+            .insert(&env.dbx)
+            .await
+            .context(h!())?;
+        }
+    }
+    Ok(Json(true))
+}
+
 #[post("/api/sigint/callsign-bind/delete")]
 pub async fn delete_callsign_bind(
     user: actix_identity::Identity,

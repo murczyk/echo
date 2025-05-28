@@ -523,7 +523,7 @@ pub async fn oneoff_sigint_import_mouse(
 
 /// See process_incoming_message_restapi for inspiration
 async fn xlsx_import_process_one(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     ps: &crate::OneoffSigintImportMousePs,
     dbx: &sea_orm::DatabaseConnection,
     rq: &reqwest::Client,

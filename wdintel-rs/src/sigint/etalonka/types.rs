@@ -73,7 +73,6 @@ pub struct NetworkEtalonkaRes {
     pub unit_name: String,
     pub active_from: NaiveDateTime,
     pub active_to: Option<NaiveDateTime>,
-    pub modulation_name: Option<String>,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -89,16 +88,6 @@ pub struct FreqStatsRes {
     pub confirmation: Option<String>,
     pub first_time: Option<NaiveDateTime>,
     pub message_count: i64,
-}
-
-#[derive(Debug, FromQueryResult)]
-pub struct NetworkFreqDesc {
-    pub freq: String,
-    pub message_count: i64,
-    pub callsigns: Vec<String>,
-    pub last_datetime: Option<NaiveDateTime>,
-    pub created_at: Option<NaiveDateTime>,
-    pub deleted: bool,
 }
 
 #[derive(

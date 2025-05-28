@@ -30,8 +30,8 @@ boldMasterUnit : Dict Int B.Unit -> B.Network -> Html msg
 boldMasterUnit masterUnits network =
     div [ class "fw-semibold" ]
         [ div []
-            [ text <| Utils.networkKindVHFMapping network.kind
-            , text " р/м "
+            [ -- text <| Utils.networkKindVHFMapping network.kind
+              text " р/м "
             , text network.name
             , text " "
             , text <|

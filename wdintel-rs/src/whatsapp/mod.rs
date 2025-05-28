@@ -6,7 +6,7 @@ use sea_orm::*;
 pub mod types;
 
 pub async fn receive_thread_nofail(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     datasource: &datasource::Model,
@@ -26,7 +26,7 @@ pub async fn receive_thread_nofail(
 }
 
 async fn receive_thread(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     datasource: &datasource::Model,
@@ -51,7 +51,7 @@ async fn receive_thread(
 }
 
 async fn receive_once(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     rq: &reqwest::Client,

@@ -3,18 +3,23 @@ use crate::types::*;
 use crate::utils::m_cap_s;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use milgeo_rs::coordinates::Wgs84;
 use regex::Regex;
 use std::fs;
 
 pub(crate) mod peleng;
-pub mod trie;
+mod trie;
 pub mod utils;
 pub mod worker;
 
+pub type SettlementsData = (Vec<String>, Trie<SettlementData>);
+pub type SettlementDetails = (String, SettlementData);
+pub type SettlementData = Option<Wgs84>;
+
 pub fn parse_location(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<SettlementsData>>,
     location: String,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<Vec<SettlementDetails>> {
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
@@ -89,9 +94,15 @@ fn trim_tail(name: String) -> String {
         name_vec.pop();
         name_vec.pop();
         name_vec.pop();
-    } else if name.ends_with("ОЇ") || name.ends_with("ІВ") {
+        name_vec.push('Е')
+    } else if name.ends_with("ОЇ") {
         name_vec.pop();
         name_vec.pop();
+        name_vec.push('А')
+    } else if name.ends_with("ІВ") {
+        name_vec.pop();
+        name_vec.pop();
+        name_vec.push('И')
     }
     let name: String = name_vec.iter().collect();
     name
@@ -99,13 +110,13 @@ fn trim_tail(name: String) -> String {
 
 fn find_matching_settlements(
     words: Vec<String>,
-    config: &(Vec<String>, Trie),
-) -> anyhow::Result<Vec<String>> {
+    config: &SettlementsData,
+) -> anyhow::Result<Vec<SettlementDetails>> {
     let (regions, trie) = config;
     if words.is_empty() {
         return Ok(vec![]);
     }
-    let mut result = BTreeSet::new();
+    let mut result = BTreeMap::new();
     let mut cache = vec![];
     for word in words.clone() {
         let res = match_settlement(&word, trie);
@@ -125,30 +136,31 @@ fn find_matching_settlements(
     let remainder = words.len() - i;
     if remainder == 1 {
         let new_data = cache.get(i).context(h!())?.to_owned().1.data;
-        for row in new_data {
-            result.insert(row);
+        for (row, coords) in new_data {
+            result.insert(row, coords);
         }
     } else {
         handle_two_words_group(&regions, trie, &mut result, &mut cache, i)
             .context(h!())?;
     }
     let mut result = result.into_iter().collect_vec();
-    result.sort();
+    result.sort_by_key(|(key, _data)| key.clone());
     Ok(result)
 }
 
 fn handle_two_words_group(
     regions: &Vec<String>,
-    trie: &Trie,
-    result: &mut BTreeSet<String>,
-    cache: &mut Vec<(String, trie::Result)>,
+    trie: &Trie<SettlementData>,
+    result: &mut BTreeMap<String, SettlementData>,
+    cache: &mut Vec<(String, trie::Result<SettlementData>)>,
     i: usize,
 ) -> anyhow::Result<()> {
     let (word0, res0) = cache.get(i).context(h!())?;
     let (word1, res1) = cache.get(i + 1).context(h!())?;
     let query = &format!("{} {}", word0, word1);
     let joined_res = match_settlement(query, trie);
-    let is_region = joined_res.data.iter().any(|row| regions.contains(row));
+    let is_region =
+        joined_res.data.iter().any(|(row, _)| regions.contains(row));
     if is_region {
         return Ok(());
     }
@@ -157,17 +169,17 @@ fn handle_two_words_group(
     } else {
         joined_res.data
     };
-    for rec in data {
-        result.insert(rec);
+    for (rec, coords) in data {
+        result.insert(rec, coords);
     }
     Ok(())
 }
 
 fn handle_three_words_group(
     regions: &Vec<String>,
-    trie: &Trie,
-    result: &mut BTreeSet<String>,
-    cache: &mut Vec<(String, trie::Result)>,
+    trie: &Trie<SettlementData>,
+    result: &mut BTreeMap<String, SettlementData>,
+    cache: &mut Vec<(String, trie::Result<SettlementData>)>,
     i: usize,
 ) -> anyhow::Result<usize> {
     let (word0, res0) = cache.get(i).context(h!())?;
@@ -177,7 +189,8 @@ fn handle_three_words_group(
     let joined_res = match_settlement(&joined0, trie);
     let data = if !joined_res.data.is_empty() {
         i += 1;
-        let is_region = joined_res.data.iter().any(|row| regions.contains(row));
+        let is_region =
+            joined_res.data.iter().any(|(row, _)| regions.contains(row));
         if is_region {
             vec![]
         } else {
@@ -186,8 +199,8 @@ fn handle_three_words_group(
     } else {
         res0.data.clone()
     };
-    for rec in data {
-        result.insert(rec);
+    for (k, v) in data {
+        result.insert(k, v);
     }
     Ok(i)
 }
@@ -202,7 +215,7 @@ fn trim(string: String) -> String {
 
 pub fn load_from_file(
     settlements_paths: Vec<String>,
-) -> anyhow::Result<(Vec<String>, Trie)> {
+) -> anyhow::Result<SettlementsData> {
     let mut trie = Trie::new();
     let mut regions = vec![];
 
@@ -229,26 +242,29 @@ pub fn load_from_file(
             }
         };
         trace!("[{}] loaded source successfully", &source);
-        let data: BTreeMap<String, Vec<String>> =
+        let data: BTreeMap<String, Vec<(String, SettlementData)>> =
             serde_json::from_str(&*text).context(h!())?;
 
         for (region, rows) in data {
-            for row in rows {
-                trie.insert(&*row.to_uppercase());
+            for (row, details) in rows {
+                trie.insert(&*row.to_uppercase(), details);
             }
             let region = region.to_uppercase();
             let region_trimmed = region.clone().replace("ОБЛАСТЬ", "ОБЛ");
             regions.push(region.clone());
             regions.push(region_trimmed.clone());
-            trie.insert(&*region);
-            trie.insert(&*region_trimmed);
+            trie.insert(&*region, SettlementData::default());
+            trie.insert(&*region_trimmed, SettlementData::default());
         }
     }
 
     Ok((regions, trie))
 }
 
-fn match_settlement(query: &String, trie: &Trie) -> trie::Result {
+fn match_settlement(
+    query: &String,
+    trie: &Trie<SettlementData>,
+) -> trie::Result<SettlementData> {
     let len = query.chars().count();
     let distance = if len > 3 {
         Some(1 + (len / 7)) // tweaked based on experiments
@@ -314,6 +330,17 @@ fn collect_blacklist() -> Vec<&'static str> {
 mod tests {
     use super::*;
 
+    fn test_settlements_array(
+        data: Vec<(String, SettlementData)>,
+    ) -> Vec<String> {
+        let mut result = vec![];
+        for (rec, coords) in data {
+            result.push(rec);
+            assert!(coords.is_some());
+        }
+        result
+    }
+
     #[test]
     pub fn test1() {
         let config = crate::config::read_config(Mode::Debug).unwrap();
@@ -338,6 +365,7 @@ mod tests {
             String::from("СТЕПНЕ - МИРНЕ-НЕСТЕРЯНКА"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["МИРНЕ", "НЕСТЕРЯНКА", "СТЕПНЕ"], result);
     }
 
@@ -350,6 +378,7 @@ mod tests {
         ));
         let result =
             parse_location(settlements, String::from("рн Миколаївка")).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["МИКОЛАЇВКА",], result);
     }
 
@@ -363,6 +392,7 @@ mod tests {
         let result =
             parse_location(settlements, String::from("УКРАЇНСЬКЕ-БАГАТЕ"))
                 .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["БАГАТЕ", "УКРАЇНСЬКЕ",], result);
     }
 
@@ -390,6 +420,7 @@ mod tests {
             String::from("РЕМІВКА-СТЕПОВЕ-ПРИЮТНЕ"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ПРИЮТНЕ", "РЕМІВКА", "СТЕПОВЕ",], result);
     }
 
@@ -402,6 +433,7 @@ mod tests {
         ));
         let result =
             parse_location(settlements, String::from("СТЕПОВЕ")).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["СТЕПОВЕ",], result);
     }
 
@@ -417,6 +449,7 @@ mod tests {
             String::from("Завітне Бажання, Старомлинівка"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЗАВІТНЕ БАЖАННЯ", "СТАРОМЛИНІВКА",], result);
     }
 
@@ -432,6 +465,7 @@ mod tests {
             String::from("3123132 vsd сх. Соледар, Донецька обл"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["СОЛЕДАР",], result);
     }
 
@@ -453,6 +487,7 @@ mod tests {
             String::from("сх. Соледар, Донецька обл."),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["СОЛЕДАР",], result);
     }
 
@@ -468,6 +503,7 @@ mod tests {
             String::from("ОЧЕРЕТУВАТЕ-СОЛОДКА БАЛКА"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ОЧЕРЕТУВАТЕ", "СОЛОДКА БАЛКА",], result);
     }
 
@@ -481,6 +517,7 @@ mod tests {
         let result =
             parse_location(settlements, String::from("Півд. Мала Токмачка"))
                 .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["МАЛА ТОКМАЧКА",], result);
     }
 
@@ -494,6 +531,7 @@ mod tests {
         let result =
             parse_location(settlements, String::from("ЛУГОВЕ - ЖЕРЕБ"))
                 .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЛУГОВЕ",], result);
     }
 
@@ -506,6 +544,7 @@ mod tests {
         ));
         let result =
             parse_location(settlements, String::from("Робоботине")).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["РОБОТИНЕ",], result);
     }
 
@@ -521,6 +560,7 @@ mod tests {
             String::from("Соледар, Донцька обл., Завітне Бажання"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЗАВІТНЕ БАЖАННЯ", "СОЛЕДАР"], result);
     }
 
@@ -536,6 +576,7 @@ mod tests {
             String::from("Соледар, Донецкая обл., Завітне Божання"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЗАВІТНЕ БАЖАННЯ", "СОЛЕДАР"], result);
     }
 
@@ -551,6 +592,7 @@ mod tests {
             String::from("Завітне Божання, Соледар, Донецьк. обл."),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЗАВІТНЕ БАЖАННЯ", "СОЛЕДАР"], result);
     }
 
@@ -566,6 +608,7 @@ mod tests {
             String::from("Соледар, Донецька обл., Зивітне Божання"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЗАВІТНЕ БАЖАННЯ", "СОЛЕДАР"], result);
     }
 
@@ -581,6 +624,7 @@ mod tests {
             String::from("Зивітне Божання, Qоледар, Донецька обл."),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ЗАВІТНЕ БАЖАННЯ", "СОЛЕДАР"], result);
     }
 
@@ -598,6 +642,7 @@ mod tests {
             ),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ГОГОЛІВКА", "НОВОСЕЛІВКА", "СМІЛЕ"], result);
     }
 
@@ -610,6 +655,7 @@ mod tests {
         ));
         let result =
             parse_location(settlements, String::from("Бабиного")).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
 
@@ -621,6 +667,7 @@ mod tests {
                 .unwrap(),
         ));
         let result = parse_location(settlements, String::from(r#"УКХ р\м НВ підрозділу 435.25 йм. західніше Роботиного, та Вербове-Романівське"#)).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ВЕРБОВЕ", "РОБОТИНЕ", "РОМАНІВСЬКЕ"], result);
     }
 
@@ -636,6 +683,7 @@ mod tests {
             String::from("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"], result);
     }
 
@@ -647,6 +695,7 @@ mod tests {
                 .unwrap(),
         ));
         let result = parse_location(settlements, String::from(r#"УКХ Центр ( гсабатр гсадн 30 мсп 72 мсд 44 АК ЛВО ров (р-н Щебекіно))"#)).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ШЕБЕКИНО"], result);
     }
 
@@ -661,6 +710,7 @@ mod tests {
             r#"УКХ р/м НВ арт. підрозділу ( Пеленг Яснізорі- Устинка) Analog"#,
         ))
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["УСТИНКА", "ЯСНІ ЗОРІ"], result);
     }
 
@@ -676,6 +726,7 @@ mod tests {
             String::from(r#"    УКХ р/м ім. ТГр 45 абр ВП"#),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(result, Vec::<String>::new());
     }
 
@@ -700,6 +751,7 @@ mod tests {
         ));
         let result =
             parse_location(settlements, String::from("р-н Водяного")).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ВОДЯНЕ",], result);
     }
 
@@ -713,6 +765,7 @@ mod tests {
         let result =
             parse_location(settlements, String::from("рай. Кремінної"))
                 .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["КРЕМІННА",], result);
     }
 
@@ -726,6 +779,7 @@ mod tests {
         let result =
             parse_location(settlements, String::from("район Вугледара"))
                 .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ВУГЛЕДАР",], result);
     }
 
@@ -739,6 +793,7 @@ mod tests {
         let result =
             parse_location(settlements, String::from("укх   йм район Пісків"))
                 .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ПІСКИ",], result);
     }
 
@@ -751,6 +806,7 @@ mod tests {
         ));
         let result =
             parse_location(settlements, String::from("біля Бабиного")).unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
 
@@ -766,6 +822,7 @@ mod tests {
             String::from("УКХ р/м Не встановлена мережа (ЦфП_101)"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(Vec::<String>::new(), result);
     }
 
@@ -781,6 +838,7 @@ mod tests {
             String::from("13 зсб 252 мсп (урочище Новоєгорівка - Долгоє)"),
         )
         .unwrap();
+        let result = test_settlements_array(result);
         assert_eq!(vec!["ДОЛГОЄ", "НОВОЄГОРІВКА"], result);
     }
 }

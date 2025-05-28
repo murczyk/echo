@@ -270,7 +270,7 @@ pub struct DeltaCsvFreqRec {
 }
 
 pub async fn rer_delta_csv_import_go(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     dbx: &sea_orm::DatabaseConnection,
     config: &Config,
     rq: &reqwest::Client,

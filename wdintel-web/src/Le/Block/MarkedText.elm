@@ -43,7 +43,7 @@ view prioritizedCallsignsDict signals networks mFreq (Model config) =
                         a3 =
                             case mFreq of
                                 Just freq ->
-                                    case networks |> List.filter (\x -> List.member freq x.freqs) |> List.head |> Maybe.map .unitIds |> Maybe.andThen List.head of
+                                    case networks |> List.filter (\x -> List.map .freq x.freqs |> List.member freq ) |> List.head |> Maybe.map .unitIds |> Maybe.andThen List.head of
                                         Just unitId ->
                                             Dict.insert "unitId" (String.fromInt unitId) a2
 

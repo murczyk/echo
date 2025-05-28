@@ -702,6 +702,330 @@ pub async fn list_freqs(
         freqs,
     }))
 }
+/// This API is slow. DO NOT USE FOR POPULAR PAGES TO GET FREQ INFO. Only intended for admin pages.
+#[post("/api/sigint/freqs-v2")]
+pub async fn list_freqs_v2(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListFreqsReq>,
+) -> Result<Json<ListFreqsV2Rsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
+        .await?;
+    let login = user.id()?;
+    const LIMIT: usize = 30;
+    /// Period designating how many days are considered that freq is inactive
+    const PERIOD_DAYS: i64 = 14;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+
+    #[derive(FromQueryResult)]
+    struct FreqRes {
+        post_id: Option<i64>,
+        freq: Option<String>,
+        message_count: i64,
+        location_v2: Option<String>,
+    }
+
+    let freqs_period = match &req.filter_callsigns {
+        Some(filter_callsigns) => {
+            if let Err(ref e) = validate_callsigns(filter_callsigns) {
+                println!("> error validating collsings for filter: {}", e);
+                return Err(AppError::BL { msg: e.to_string() });
+            }
+
+            let callsings_postgres_array = format!(
+                "ARRAY[{}]",
+                filter_callsigns
+                    .iter()
+                    .map(|s| format!("'{}'", s.replace('\'', "''")))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+
+            let mut subquery = signal_message::Entity::find()
+                .join_as(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SigintInboxItem.def(),
+                    Alias::new("sigint_inbox_item"),
+                )
+                .select_only()
+                // .column_as(signal_message::Column::Id.count(), "message_count")
+                .column(sigint_inbox_item::Column::PostId)
+                .column_as(
+                    SimpleExpr::Custom("sigint_inbox_item.freq".to_string()),
+                    "freq",
+                )
+                .column_as(
+                    SimpleExpr::Custom(
+                        "string_agg(sigint_inbox_item.location_v2, '')"
+                            .to_string(),
+                    ),
+                    "location_v2",
+                )
+                .column_as(
+                    SimpleExpr::Custom(
+                        "jsonb_array_elements_text(sigint_inbox_item.callsigns)"
+                            .to_string(),
+                    ),
+                    "callsign",
+                );
+
+            subquery = filters_list_freq_search(
+                subquery,
+                &env,
+                &user,
+                dt_since,
+                dt_till,
+                &req.filter_freq,
+                &req.filter_unit,
+                &req.filter_group_master_keys,
+                &req.filter_sender_profile_ids,
+            )
+            .await?;
+
+            subquery = subquery.filter(Expr::cust(format!(
+                "\"sigint_inbox_item\".\"callsigns\" ?| {}",
+                callsings_postgres_array
+            )));
+
+            subquery = subquery.group_by(sigint_inbox_item::Column::Freq);
+            subquery = subquery.group_by(Expr::cust("callsign".to_string()));
+
+            let cte_alias = Alias::new("unique_callsigns");
+
+            let unique_callsigns_cte = CommonTableExpression::new()
+                .query(subquery.into_query().to_owned())
+                .table_name(cte_alias.clone())
+                .to_owned();
+
+            let main_query = Query::select()
+                .expr_as(
+                    Expr::cust("unique_callsigns.freq".to_string()),
+                    Alias::new("freq"),
+                )
+                .expr_as(
+                    Expr::cust(
+                        "string_agg(unique_callsigns.location_v2, '')"
+                            .to_string(),
+                    ),
+                    Alias::new("location_v2"),
+                )
+                .expr_as(
+                    Expr::cust("count(*)".to_string()),
+                    Alias::new("message_count"),
+                )
+                .from(Alias::new("unique_callsigns"))
+                .and_where(Expr::cust(format!(
+                    "unique_callsigns.callsign = ANY({})",
+                    callsings_postgres_array
+                )))
+                .add_group_by(vec![Expr::cust("freq"), Expr::cust("post_id")])
+                .order_by_expr(Expr::cust("message_count"), Order::Desc)
+                .to_owned();
+
+            let combined_query = Query::with()
+                .cte(unique_callsigns_cte)
+                .clone()
+                .query(main_query);
+
+            &combined_query.to_string(PostgresQueryBuilder)
+        }
+        None => {
+            let mut freqs_per = signal_message::Entity::find()
+                .join_as(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SigintInboxItem.def(),
+                    Alias::new("sigint_inbox_item"),
+                )
+                .select_only()
+                .column(sigint_inbox_item::Column::PostId)
+                .column_as(signal_message::Column::Id.count(), "message_count")
+                .column_as(
+                    SimpleExpr::Custom("sigint_inbox_item.freq".to_string()),
+                    "freq",
+                )
+                .column_as(
+                    SimpleExpr::Custom(
+                        "string_agg(sigint_inbox_item.location_v2, '')"
+                            .to_string(),
+                    ),
+                    "location_v2",
+                );
+
+            freqs_per = filters_list_freq_search(
+                freqs_per,
+                &env,
+                &user,
+                dt_since,
+                dt_till,
+                &req.filter_freq,
+                &req.filter_unit,
+                &req.filter_group_master_keys,
+                &req.filter_sender_profile_ids,
+            )
+            .await?;
+
+            freqs_per = freqs_per.group_by(sigint_inbox_item::Column::Freq);
+
+            freqs_per = if let Some(sort_by) = &req.sort_by {
+                sort_by.iter().fold(freqs_per, |freqs_per, sort_by| {
+                    match sort_by {
+                        ListFreqsSortBy::FreqAsc => freqs_per
+                            .order_by_asc(sigint_inbox_item::Column::Freq),
+                        ListFreqsSortBy::FreqDesc => freqs_per
+                            .order_by_desc(sigint_inbox_item::Column::Freq),
+                        ListFreqsSortBy::MessageCountAsc => freqs_per
+                            .order_by_asc(signal_message::Column::Id.count()),
+                        ListFreqsSortBy::MessageCountDesc => freqs_per
+                            .order_by_desc(signal_message::Column::Id.count()),
+                    }
+                })
+            } else {
+                freqs_per.order_by_asc(sigint_inbox_item::Column::Freq)
+            };
+            &freqs_per.build(DbBackend::Postgres).to_string()
+        }
+    };
+
+    // let freqs_period_count: u64 =
+    //     freqs_period.clone().count(&env.dbx).await?;
+    // println!("> freqs in period count: {}", freqs_period_count);
+    // freqs_period = freqs_period.limit(LIMIT);
+    trace!("> freqs sql: {}", freqs_period);
+
+    let freqs_period: Vec<(String, i64, Option<String>, Option<i64>)> = env
+        .dbx
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            freqs_period.to_string(),
+        ))
+        .await?
+        .iter()
+        .flat_map(|row| {
+            let freq_res = FreqRes::from_query_result(row, "").unwrap();
+            freq_res.freq.clone().map(|f| {
+                (
+                    f,
+                    freq_res.message_count,
+                    freq_res.location_v2.clone(),
+                    freq_res.post_id,
+                )
+            })
+        })
+        .collect();
+    // println!("> freqs in period count: {}", freqs_period.len());
+
+    #[derive(FromQueryResult)]
+    struct BeforeRes {
+        freq: Option<String>,
+    }
+
+    let before_since = dt_since - chrono::Duration::days(PERIOD_DAYS);
+    let before_till = dt_since.clone();
+    let before_res = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+        .filter(signal_message::Column::GroupMasterKey.is_in(
+            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+        ))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
+        .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
+        .order_by_asc(sigint_inbox_item::Column::Freq);
+    // let before_count: u64 = before_res.clone().count(&env.dbx).await?;
+    // println!("> before count: {}", before_count);
+    // before_res = before_res.limit(LIMIT);
+    // println!(
+    //     "> before sql: {}",
+    //     before_res.build(DbBackend::Postgres).to_string()
+    // );
+    let before_res: BTreeSet<String> = before_res
+        .into_model::<BeforeRes>()
+        .all(&env.dbx)
+        .await?
+        .iter()
+        .flat_map(|x| x.freq.clone())
+        .collect();
+    // println!("> before count: {}", before_res.len());
+
+    let mut show_load_more = false;
+
+    let mut freqs = vec![];
+    let mut need_skip = false;
+    if let Some(_after_freq_nonincl) = &req.after_freq_nonincl {
+        need_skip = true;
+    }
+    let mut last_freq = String::from("");
+    for (freq, message_count, location_v2, post_id) in freqs_period {
+        if show_load_more {
+            if !last_freq.eq(&freq) {
+                break;
+            }
+        }
+        if need_skip {
+            if req.after_freq_nonincl == Some(freq) {
+                need_skip = false;
+            }
+            continue;
+        }
+
+        let networks = sigint_network::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_network::Relation::SigintNetworkFreq.def(),
+            )
+            .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
+            .filter(sigint_network::Column::Deleted.eq(false))
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .order_by_asc(sigint_network::Column::CreatedAt)
+            .all(&env.dbx)
+            .await?;
+        let created_at = networks
+            .first()
+            .map(|x| x.created_at.and_utc().timestamp_millis());
+
+        let last_updated_network = networks.iter().max_by_key(|n| n.updated_at);
+
+        let is_new = !before_res.contains(&freq);
+        let network_ids = networks.iter().map(|x| x.id).collect();
+        let last_updated_by =
+            last_updated_network.map(|x| x.updated_by.clone()).flatten();
+        let last_updated_at = last_updated_network
+            .map(|x| x.updated_at)
+            .map(|t| t.and_utc().timestamp_millis());
+        let mut locations = BTreeSet::new();
+        if let Some(location_v2) = location_v2 {
+            locations.extend(to_location_list(&location_v2));
+        }
+        let freq_clone = freq.clone();
+        freqs.push(FreqV2 {
+            freq,
+            post_id,
+            locations,
+            message_count,
+            network_ids,
+            created_at,
+            is_new,
+            last_updated_at,
+            last_updated_by,
+        });
+
+        if freqs.len() >= LIMIT {
+            show_load_more = true;
+            last_freq = freq_clone; // we want to collect remaining rows for this freq but different posts and only then skip
+        }
+    }
+
+    Ok(Json(ListFreqsV2Rsp {
+        show_load_more,
+        freqs,
+    }))
+}
 
 pub async fn filters_list_freq_search<Q>(
     q: Q,

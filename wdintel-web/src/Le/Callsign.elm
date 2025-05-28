@@ -3,6 +3,7 @@ module Le.Callsign exposing (extractCallsignsInfo, filterNetworksByFreq, getAllU
 import Bindings as B
 import Dict
 import Le.Block.Unit as Unit
+import List.Extra as ListX
 import Set
 
 
@@ -54,15 +55,14 @@ filterNetworksByFreq networks mFreq =
         |> Dict.values
         |> List.filterMap
             (\network ->
-                case mFreq of
+                case mFreq of 
                     Just freq ->
-                        if List.member freq network.freqs then
-                            Just network
-
-                        else
-                            Nothing
-
-                    _ ->
+                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of 
+                            Just a ->
+                                Just network 
+                            Nothing ->
+                                Nothing
+                    Nothing ->
                         Nothing
             )
 

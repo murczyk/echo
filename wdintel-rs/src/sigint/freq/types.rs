@@ -20,6 +20,21 @@ pub struct Freq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct FreqV2 {
+    pub locations: BTreeSet<String>,
+    pub freq: String,
+    pub message_count: i64,
+    pub network_ids: Vec<i64>,
+    pub created_at: Option<i64>,
+    pub is_new: bool,
+    pub last_updated_at: Option<i64>,
+    pub last_updated_by: Option<String>,
+    pub post_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListFreqsReq {
     pub since_date_inclusive_ms: i64,
     pub till_date_noninclusive_ms: i64,
@@ -59,6 +74,14 @@ pub enum ListFreqsSortBy {
 pub struct ListFreqsRsp {
     pub show_load_more: bool,
     pub freqs: Vec<Freq>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListFreqsV2Rsp {
+    pub show_load_more: bool,
+    pub freqs: Vec<FreqV2>,
 }
 
 #[derive(

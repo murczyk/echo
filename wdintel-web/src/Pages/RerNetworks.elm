@@ -317,7 +317,18 @@ generatePreview x =
 
         --, confirmation = concatUniqueMaybe networkTo.confirmation networkFrom.confirmation
         , radioStation = concatUniqueMaybe networkTo.radioStation networkFrom.radioStation
-        , freqs = networkTo.freqs ++ networkFrom.freqs |> Set.fromList |> Set.toList
+        , freqs =
+            networkTo.freqs
+                ++ networkFrom.freqs
+                |> List.foldl
+                    (\curr acc ->
+                        if List.member curr acc then
+                            acc
+
+                        else
+                            acc ++ [ curr ]
+                    )
+                    []
     }
 
 
@@ -842,7 +853,7 @@ renderNetworkTr shared model network =
 
         freqsTd =
             td []
-                [ div [ class "flex flex-col" ] (List.map (\freq -> span [] [ text freq ]) network.freqs)
+                [ div [ class "flex flex-col" ] (List.map (\freq -> span [] [ text freq.freq ]) network.freqs)
                 ]
     in
     tr [ class "" ]
@@ -1276,7 +1287,7 @@ networksMergeSidebarContent model =
                             ]
                         , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
                             [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Частоти:" ]
-                            , span [] [ text <| String.join ", " preview.freqs ]
+                            , span [] [ preview.freqs |> List.map .freq |> String.join ", " |> text ]
                             ]
                         , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
                             [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Коментар" ]

@@ -57,14 +57,8 @@ pub async fn network_list(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network::Relation::Modulation.def(),
-            Alias::new("modulation"),
-        )
         .select_only()
         .column(sigint_network::Column::Id)
-        .column(sigint_network::Column::Kind)
         .column(sigint_network::Column::Name)
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::Comment)
@@ -78,9 +72,7 @@ pub async fn network_list(
         .column(sigint_network::Column::UpdatedBy)
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)
-        .column(sigint_network::Column::ModulationId)
         .column_as(sigint_unit::Column::Name, "unit_name")
-        .column_as(modulation::Column::Name, "modulation_name")
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if let Some(filter_unit) = &req.filter_unit {
@@ -180,7 +172,6 @@ pub async fn network_list(
             id: network.id,
             freqs,
             unit_ids,
-            kind: network.kind,
             name: network.name,
             location: network.location,
             comment: network.comment,
@@ -196,8 +187,6 @@ pub async fn network_list(
             active_to: network
                 .active_to
                 .map(|d| d.and_utc().timestamp_millis()),
-            modulation_id: network.modulation_id,
-            modulation_name: network.modulation_name,
             post_ids,
             descriptions,
         });
@@ -257,16 +246,11 @@ pub async fn network_info_one(
 }
 
 async fn render_networks(
-    network_models_with_modulation: Vec<(
-        sigint_network::Model,
-        Option<modulation::Model>,
-    )>,
+    networks: Vec<sigint_network::Model>,
     txn: &DatabaseTransaction,
 ) -> Result<Vec<Network>, AppError> {
     let mut networks_res = vec![];
-    for network_with_modulation in network_models_with_modulation {
-        let (network, network_modulation) = network_with_modulation;
-
+    for network in networks {
         let freqs = get_network_freqs(txn, network.id).await.context(h!())?;
         let unit_ids =
             get_network_units(txn, network.id).await.context(h!())?;
@@ -282,7 +266,6 @@ async fn render_networks(
             id: network.id,
             freqs,
             unit_ids,
-            kind: network.kind.to_value(),
             name: network.name,
             location: network.location,
             comment: network.comment,
@@ -298,8 +281,6 @@ async fn render_networks(
             active_to: network
                 .active_to
                 .map(|d| d.and_utc().timestamp_millis()),
-            modulation_id: network.modulation_id,
-            modulation_name: network_modulation.map(|x| x.name),
             post_ids,
             descriptions,
         });
@@ -320,9 +301,7 @@ pub async fn bl_network_info_freqs(
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::Freq.is_in(&freqs));
 
-    let networks_with_modulation = sigint_network::Entity::find()
-        .left_join(modulation::Entity)
-        .select_also(modulation::Entity)
+    let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(Expr::exists(
             sel.select_only()
@@ -336,20 +315,15 @@ pub async fn bl_network_info_freqs(
     //     networks_with_modulation.clone().build(DbBackend::Postgres).to_string()
     // );
 
-    let networks_with_modulation =
-        networks_with_modulation.all(txn).await.context(h!())?;
-    Ok(render_networks(networks_with_modulation, txn)
-        .await
-        .context(h!())?)
+    let networks = networks.all(txn).await.context(h!())?;
+    Ok(render_networks(networks, txn).await.context(h!())?)
 }
 
 pub async fn bl_network_info_batch(
     network_ids: Vec<i64>,
     txn: &DatabaseTransaction,
 ) -> Result<Vec<Network>, AppError> {
-    let networks_with_modulation = sigint_network::Entity::find()
-        .left_join(modulation::Entity)
-        .select_also(modulation::Entity)
+    let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Id.is_in(network_ids));
     // .order_by_asc(sigint_network::Column::Freq);
@@ -359,11 +333,8 @@ pub async fn bl_network_info_batch(
     //     networks_with_modulation.clone().build(DbBackend::Postgres).to_string()
     // );
 
-    let networks_with_modulation =
-        networks_with_modulation.all(txn).await.context(h!())?;
-    Ok(render_networks(networks_with_modulation, txn)
-        .await
-        .context(h!())?)
+    let networks = networks.all(txn).await.context(h!())?;
+    Ok(render_networks(networks, txn).await.context(h!())?)
 }
 
 #[post("/api/sigint/create-network")]
@@ -384,7 +355,6 @@ pub async fn create_network(
 
     let network = sigint_network::ActiveModel {
         id: NotSet,
-        kind: Set(SigintNetworkKind::try_from_value(&req.kind)?),
         name: Set(req.name.clone()),
         location: Set(req.location.clone()),
         deleted: Set(false),
@@ -407,7 +377,6 @@ pub async fn create_network(
             .active_to
             .map(|dt| dt_from_millis(dt))
             .transpose()?),
-        modulation_id: Set(req.modulation_id.clone()),
     }
     .insert(&txn)
     .await
@@ -433,19 +402,24 @@ pub async fn create_network(
     .await
     .context(h!())?;
 
-    let network_freq: Vec<sigint_network_freq::ActiveModel> = req
-        .freqs
-        .clone()
-        .unwrap_or(vec![])
-        .into_iter()
-        .map(|freq| sigint_network_freq::ActiveModel {
-            id: NotSet,
-            network_id: Set(network.id),
-            freq: Set(freq),
-            deleted: Set(false),
-            created_at: NotSet,
-        })
-        .collect();
+    let network_freq: Result<Vec<sigint_network_freq::ActiveModel>, AppError> =
+        req.freqs
+            .clone()
+            .unwrap_or(vec![])
+            .into_iter()
+            .map(|x| {
+                Ok(sigint_network_freq::ActiveModel {
+                    id: NotSet,
+                    network_id: Set(network.id),
+                    freq: Set(x.freq),
+                    deleted: Set(false),
+                    created_at: NotSet,
+                    kind: Set(SigintNetworkKind::try_from_value(&x.kind)?),
+                    modulation_id: Set(x.modulation_id),
+                })
+            })
+            .collect();
+    let network_freq = network_freq.context(h!())?;
     if !network_freq.is_empty() {
         sigint_network_freq::Entity::insert_many(network_freq)
             .exec(&txn)
@@ -501,6 +475,7 @@ pub async fn create_network(
             login: Set(user_login.clone()),
             r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
             description: Set(descr.description),
+            sigint_network_freq_id: Set(descr.network_frequency_id),
             comment: NotSet, // Set(descr.comment),
             deleted: Set(false),
             created_at: NotSet,
@@ -513,11 +488,7 @@ pub async fn create_network(
             .context(h!())?;
     }
 
-    let modulation_name =
-        get_modulation_name_by_id(network.modulation_id, &txn)
-            .await
-            .context(h!())?;
-
+    let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
     let descriptions = get_network_descriptions(&txn, network.id)
         .await
         .context(h!())?;
@@ -526,9 +497,8 @@ pub async fn create_network(
 
     Ok(Json(Network {
         id: network.id,
-        freqs: req.freqs.clone().unwrap_or(vec![]),
+        freqs,
         unit_ids: req.unit_ids.clone(),
-        kind: network.kind.to_value(),
         name: network.name,
         location: network.location,
         comment: network.comment,
@@ -542,8 +512,6 @@ pub async fn create_network(
         last_updated_by: network.updated_by,
         active_from: network.active_from.and_utc().timestamp_millis(),
         active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
-        modulation_id: network.modulation_id,
-        modulation_name: modulation_name,
         post_ids: req.post_ids.clone(),
         descriptions,
     }))
@@ -572,7 +540,6 @@ pub async fn update_network(
         .ok_or(AppError::NotFound)?;
 
     let mut network_model = network.into_active_model();
-    network_model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
     network_model.name = Set(req.name.clone());
     network_model.location = Set(req.location.clone());
     network_model.comment = Set(req.comment.clone());
@@ -583,13 +550,42 @@ pub async fn update_network(
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.updated_by = Set(Some(user.id()?.to_string()));
     network_model.updated_at = NotSet; // Let the database update this automatically
-    network_model.modulation_id = Set(req.modulation_id.clone());
 
     network_model.active_from = Set(dt_from_millis(req.active_from)?);
     network_model.active_to =
         Set(req.active_to.map(|dt| dt_from_millis(dt)).transpose()?);
 
     let network = network_model.update(&txn).await.context(h!())?;
+
+    if let Some(description_patches) = &req.descriptions {
+        for p in description_patches {
+            let descr_model = sigint_network_description::Entity::find_by_id(
+                p.description_id,
+            )
+            .filter(
+                sigint_network_description::Column::NetworkId.eq(p.network_id),
+            )
+            .filter(sigint_network_description::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .context(h!())?;
+
+            if let Some(descr_model) = descr_model {
+                let mut model = descr_model.into_active_model();
+                model.r#type =
+                    Set(NetworkDescriptionType::from(p.descr_type.clone()));
+                model.description = Set(p.description.clone());
+                model.sigint_network_freq_id = Set(p.network_freq_id.clone());
+                model.comment = NotSet; // Set(p.comment.clone());
+                model.update(&txn).await.context(h!())?;
+            } else {
+                debug!(
+                    "Description {} not found for network {}, no action needed",
+                    p.description_id, p.network_id
+                );
+            }
+        }
+    }
 
     let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
     let unit_ids = get_network_units(&txn, network.id).await.context(h!())?;
@@ -598,18 +594,12 @@ pub async fn update_network(
         .await
         .context(h!())?;
 
-    let modulation_name =
-        get_modulation_name_by_id(network.modulation_id, &txn)
-            .await
-            .context(h!())?;
-
     txn.commit().await.context(h!())?;
 
     Ok(Json(Network {
         id: network.id,
         freqs,
         unit_ids,
-        kind: network.kind.to_value(),
         name: network.name,
         location: network.location,
         comment: network.comment,
@@ -623,8 +613,6 @@ pub async fn update_network(
         last_updated_by: network.updated_by,
         active_from: network.active_from.and_utc().timestamp_millis(),
         active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
-        modulation_id: network.modulation_id,
-        modulation_name: modulation_name,
         post_ids,
         descriptions,
     }))
@@ -992,7 +980,8 @@ pub async fn update_freq_networks(
     }
 
     for req_network in &req.networks {
-        if let Some(id) = req_network.id {
+        let network_id = if let Some(id) = req_network.id {
+            let network_id = id.clone();
             let network = sigint_network::Entity::find_by_id(id)
                 .one(&txn)
                 .await
@@ -1005,8 +994,6 @@ pub async fn update_freq_networks(
                     .context(h!())?;
 
                 let mut network = network.into_active_model();
-                network.kind =
-                    Set(SigintNetworkKind::try_from_value(&req_network.kind)?);
                 network.name = Set(req_network.name.clone());
                 network.location = Set(req_network.location.clone());
                 network.comment = Set(req_network.comment.clone());
@@ -1026,11 +1013,9 @@ pub async fn update_freq_networks(
                     network_unit.save(&txn).await.context(h!())?;
                 }
             }
+            network_id
         } else {
             let network = sigint_network::ActiveModel {
-                kind: Set(SigintNetworkKind::try_from_value(
-                    &req_network.kind,
-                )?),
                 name: Set(req_network.name.clone()),
                 location: Set(req_network.location.clone()),
                 comment: Set(req_network.comment.clone()),
@@ -1041,22 +1026,52 @@ pub async fn update_freq_networks(
                 created_at: NotSet,
                 ..Default::default()
             };
-            let network_id = sigint_network::Entity::insert(network)
+            let new_network_id = sigint_network::Entity::insert(network)
                 .exec(&txn)
                 .await
                 .context(h!())?
                 .last_insert_id;
-            info!("inserted new network with id {}", network_id);
+            info!("inserted new network with id {}", new_network_id);
+            let network_id = new_network_id.clone();
 
             for unit_id in &req_network.unit_ids {
                 let network_unit = sigint_network_unit::ActiveModel {
                     id: NotSet,
-                    network_id: Set(network_id),
+                    network_id: Set(new_network_id),
                     unit_id: Set(*unit_id),
                     created_at: NotSet,
                 };
                 let _updated_entry =
                     network_unit.save(&txn).await.context(h!())?;
+            }
+            network_id
+        };
+
+        if let Some(req) = req_network.description.clone() {
+            let descr_model = sigint_network_description::Entity::find_by_id(
+                req.description_id,
+            )
+            .filter(
+                sigint_network_description::Column::NetworkId.eq(network_id),
+            )
+            .filter(sigint_network_description::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .context(h!())?;
+
+            if let Some(descr_model) = descr_model {
+                let mut model = descr_model.into_active_model();
+                model.r#type =
+                    Set(NetworkDescriptionType::from(req.descr_type.clone()));
+                model.description = Set(req.description.clone());
+                model.sigint_network_freq_id = Set(req.network_freq_id.clone());
+                model.comment = NotSet; // Set(req.comment.clone());
+                model.update(&txn).await.context(h!())?;
+            } else {
+                debug!(
+                    "Description {} not found for network {}, no action needed",
+                    req.description_id, req.network_id
+                );
             }
         }
     }
@@ -1100,7 +1115,7 @@ pub async fn add_network_freq(
 
     info!(
         "Adding frequency {} to network {}; user={}",
-        req.freq,
+        req.freq_rec.freq,
         req.network_id,
         user.id()?
     );
@@ -1118,7 +1133,7 @@ pub async fn add_network_freq(
     // Check if frequency link already exists
     let existing_freq = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
-        .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
+        .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .one(&txn)
         .await
@@ -1128,22 +1143,24 @@ pub async fn add_network_freq(
         // The frequency link doesn't exist, create it
         info!(
             "Adding frequency {} to network {}",
-            req.freq, req.network_id
+            req.freq_rec.freq, req.network_id
         );
 
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
-            freq: Set(req.freq.clone()),
+            freq: Set(req.freq_rec.freq.clone()),
             deleted: Set(false),
             created_at: NotSet,
+            kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
+            modulation_id: Set(req.freq_rec.modulation_id),
         };
 
         network_freq.insert(&txn).await.context(h!())?;
     } else {
         debug!(
             "Frequency {} already exists for network {}, no action needed",
-            req.freq, req.network_id
+            req.freq_rec.freq, req.network_id
         );
     }
 
@@ -1332,7 +1349,6 @@ async fn cleanup_networks_worker_1(
         pub network_id: i64,
         pub freq: String,
         pub location: String,
-        pub kind: SigintNetworkKind,
         pub name: String,
     }
 
@@ -1346,7 +1362,6 @@ async fn cleanup_networks_worker_1(
         .column(sigint_network_freq::Column::NetworkId)
         .column(sigint_network_freq::Column::Freq)
         .column(sigint_network::Column::Location)
-        .column(sigint_network::Column::Kind)
         .column(sigint_network::Column::Name)
         .filter(
             Condition::any().add(
@@ -1430,16 +1445,11 @@ async fn cleanup_networks_worker_1(
             .filter(|x| !x.is_empty())
             .map(|x| format!("({})", x))
             .unwrap_or(String::from(""));
-        let desc = vec![
-            sigint_network_freq.kind.to_value().to_string(),
-            sigint_network_freq.name.clone(),
-            unit_desc,
-            location,
-        ]
-        .into_iter()
-        .filter(|x| !x.is_empty())
-        .collect::<Vec<String>>()
-        .join(" ");
+        let desc = vec![sigint_network_freq.name.clone(), unit_desc, location]
+            .into_iter()
+            .filter(|x| !x.is_empty())
+            .collect::<Vec<String>>()
+            .join(" ");
 
         info!(
             "removing network freq: freq {}, description: {}",
@@ -1634,17 +1644,12 @@ pub async fn merge_network(
     .await
     .context(h!())?;
 
-    let network_with_modulation =
-        sigint_network::Entity::find_by_id(req.network_id_to)
-            .filter(sigint_network::Column::Deleted.eq(false))
-            .left_join(modulation::Entity)
-            .select_also(modulation::Entity)
-            .one(&txn)
-            .await
-            .context(h!())?
-            .ok_or(AppError::NotFound)?;
-
-    let (network, network_modulation) = network_with_modulation;
+    let network = sigint_network::Entity::find_by_id(req.network_id_to)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
 
     let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
     let unit_ids = get_network_units(&txn, network.id).await.context(h!())?;
@@ -1664,7 +1669,6 @@ pub async fn merge_network(
         id: network.id,
         freqs,
         unit_ids,
-        kind: network.kind.to_value(),
         name: network.name,
         location: network.location,
         comment: network.comment,
@@ -1678,8 +1682,6 @@ pub async fn merge_network(
         last_updated_by: network.updated_by,
         active_from: network.active_from.and_utc().timestamp_millis(),
         active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
-        modulation_id: network.modulation_id,
-        modulation_name: network_modulation.map(|x| x.name),
         post_ids,
         descriptions,
     }))
@@ -1984,6 +1986,7 @@ pub async fn add_network_descriptions(
             login: Set(user_login.clone()),
             r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
             description: Set(descr.description),
+            sigint_network_freq_id: Set(descr.network_frequency_id),
             comment: NotSet, // Set(descr.comment),
             deleted: Set(false),
             created_at: NotSet,
@@ -2063,6 +2066,7 @@ pub async fn update_network_description(
         model.r#type =
             Set(NetworkDescriptionType::from(req.descr_type.clone()));
         model.description = Set(req.description.clone());
+        model.sigint_network_freq_id = Set(req.network_freq_id.clone());
         model.comment = NotSet; // Set(req.comment.clone());
         model.update(&txn).await.context(h!())?;
     } else {
@@ -2326,9 +2330,7 @@ pub async fn merge_two_networks(
 
     if perform_merge_check {
         // Validate if merge is allowed (Names should match)
-        if network_from.name != network_to.name
-            || network_from.kind != network_to.kind
-        {
+        if network_from.name != network_to.name {
             return Err(AppError::BL {
                 msg: "Networks names or kinds mismatch".to_string(),
             });
@@ -2370,6 +2372,8 @@ pub async fn merge_two_networks(
 
         // Clone freq before moving it into active model
         let freq_clone = freq.freq.clone();
+        let kind_clone = freq.kind.clone();
+        let modulation_id_clone = freq.modulation_id.clone();
 
         // Mark the original frequency as deleted
         let mut network_freq = freq.into_active_model();
@@ -2381,6 +2385,8 @@ pub async fn merge_two_networks(
             id: ActiveValue::NotSet, // New row, let DB assign an ID
             network_id: ActiveValue::Set(network_id_to),
             freq: ActiveValue::Set(freq_clone),
+            kind: ActiveValue::Set(kind_clone),
+            modulation_id: ActiveValue::Set(modulation_id_clone),
             deleted: ActiveValue::Set(false), // New freq should NOT be deleted
             ..Default::default()
         };
@@ -2466,6 +2472,7 @@ pub async fn merge_two_networks(
         let new_description = sigint_network_description::ActiveModel {
             id: NotSet,
             network_id: Set(network_id_to),
+            sigint_network_freq_id: Set(description.sigint_network_freq_id),
             r#type: Set(description.r#type.clone()),
             description: Set(description.description.clone()),
             comment: Set(description.comment.clone()),
@@ -2555,7 +2562,7 @@ pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
 async fn get_network_freqs<'a, 'async_trait, C>(
     txn: &'a C,
     network_id: i64,
-) -> Result<Vec<String>, AppError>
+) -> Result<Vec<NetworkFreq>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -2566,7 +2573,15 @@ where
         .await
         .context(h!())?
         .iter()
-        .map(|x| x.freq.clone())
+        .map(|x| NetworkFreq {
+            id: x.id,
+            network_id: x.network_id,
+            freq: x.freq.clone(),
+            deleted: x.deleted,
+            created_at: x.created_at.and_utc().timestamp_millis(),
+            kind: x.kind.to_value(),
+            modulation_id: x.modulation_id,
+        })
         .collect())
 }
 

@@ -1206,11 +1206,13 @@ pub async fn report_networks(
                     .add_paragraph(Paragraph::new());
             }
 
-            doc = add_field(
-                doc,
-                "7. Вид передачі: ",
-                &network.modulation_name.clone().unwrap_or_default(),
-            );
+            let modulations = freqs
+                .iter()
+                .filter_map(|f| f.modulation.clone())
+                .collect::<Vec<String>>();
+            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
+
+            doc = add_field(doc, "7. Вид передачі: ", &unique_modulation);
             doc = add_field(
                 doc,
                 "8. Режим роботи радіомережі: ",

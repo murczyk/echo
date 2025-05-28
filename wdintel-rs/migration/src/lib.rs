@@ -85,6 +85,9 @@ mod m20250418_103016_add_logging_for_networks;
 mod m20250424_191053_add_modulation_to_network;
 mod m20250430_090456_add_sigint_post;
 mod m20250502_124932_network_description;
+mod m20250525_151839_add_kind_and_modulation_to_network_freqs;
+mod m20250525_195819_add_sigint_network_description_freq;
+mod m20250526_141346_add_sigint_network_callsign;
 
 pub struct Migrator;
 
@@ -177,6 +180,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20250424_191053_add_modulation_to_network::Migration),
             Box::new(m20250430_090456_add_sigint_post::Migration),
             Box::new(m20250502_124932_network_description::Migration),
+            Box::new(m20250525_151839_add_kind_and_modulation_to_network_freqs::Migration),
+            Box::new(m20250525_195819_add_sigint_network_description_freq::Migration),
+            Box::new(m20250526_141346_add_sigint_network_callsign::Migration),
         ]
     }
 }

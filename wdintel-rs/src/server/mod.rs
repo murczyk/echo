@@ -284,7 +284,9 @@ pub async fn main_server(
             .service(crate::sigint::callsign::create_callsign_bind)
             .service(crate::sigint::callsign::update_callsign_bind)
             .service(crate::sigint::callsign::delete_callsign_bind)
+            .service(crate::sigint::callsign::update_callsign_reporting)
             .service(crate::sigint::freq::list_freqs)
+            .service(crate::sigint::freq::list_freqs_v2)
             .service(crate::sigint::freq::list_callsigns_by_freqs)
             .service(crate::sigint::freq::list_points_by_freq)
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)
@@ -334,6 +336,7 @@ pub async fn main_server(
             .service(crate::rer_importer::reports::report_docx)
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
+            .service(crate::log_api::log_error)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
     .bind(("0.0.0.0", 8081))?

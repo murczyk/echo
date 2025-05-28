@@ -9,7 +9,7 @@ use chrono_tz::Europe::Kyiv;
 use sea_orm::*;
 
 pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,
@@ -42,7 +42,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
 }
 
 async fn inbox_item_worker_1<'a, 'async_trait, C>(
-    settlements: Arc<RwLock<(Vec<String>, crate::location::trie::Trie)>>,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,
@@ -138,7 +138,7 @@ where
             let locations =
                 crate::location::parse_location(settlements.clone(), location)
                     .context(h!())?;
-            Some(utils::format_locations_list(locations))
+            Some(utils::format_settlements_list(locations))
         }
         _ => None,
     };

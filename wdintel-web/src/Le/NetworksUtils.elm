@@ -1,5 +1,7 @@
 module Le.NetworksUtils exposing (..)
 
+import Bindings as B
+import Dict exposing (Dict)
 import Html exposing (..)
 import Le.Block.Unit as Unit
 import Le.Utils exposing (networkKindVHFMapping)
@@ -20,11 +22,12 @@ renderNetworkNameWithoutType network masterUnits =
         ]
 
 
+renderNetwork : B.Network -> Dict Int B.Unit -> Html msg
 renderNetwork network masterUnits =
     div []
         [ div []
-            [ text <| networkKindVHFMapping network.kind
-            , text " р/м "
+            [ --text <| networkKindVHFMapping network.kind
+             text " р/м "
             , text network.name
             , text " "
             , text <|

@@ -5,37 +5,39 @@ use std::collections::HashMap;
 type FxHashMap<K, V> = HashMap<K, V, FxBuildHasher>;
 
 #[derive(Default, Debug)]
-struct TrieNode {
+struct TrieNode<D> {
     is_end_of_word: bool,
-    children: FxHashMap<char, TrieNode>,
+    children: FxHashMap<char, TrieNode<D>>,
+    data: D,
 }
 
 #[derive(Default, Debug)]
-pub struct Trie {
-    root: TrieNode,
+pub struct Trie<D> {
+    root: TrieNode<D>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Result {
+pub struct Result<D> {
     pub query: String,
-    pub data: Vec<String>,
+    pub data: Vec<(String, D)>,
     pub distance: usize,
 }
 
-impl Trie {
+impl<D: Default + Clone> Trie<D> {
     pub fn new() -> Self {
         Trie {
             root: TrieNode::default(),
         }
     }
 
-    pub fn insert(&mut self, word: &str) {
+    pub fn insert(&mut self, word: &str, data: D) {
         let mut current_node = &mut self.root;
 
         for c in word.chars() {
             current_node = current_node.children.entry(c).or_default();
         }
         current_node.is_end_of_word = true;
+        current_node.data = data;
     }
 
     // max_distance arg is Levenshtein distance, if 0 - performs exact search
@@ -43,7 +45,7 @@ impl Trie {
         &self,
         word: &String,
         max_distance: Option<usize>,
-    ) -> Result {
+    ) -> Result<D> {
         let query = word.clone();
         let mut word = word.clone();
         let max_distance = max_distance.unwrap_or(0);
@@ -68,11 +70,11 @@ impl Trie {
     }
 
     fn try_find_match(
-        current_node: &TrieNode,
+        current_node: &TrieNode<D>,
         word: &mut String,
         prefix: &mut String,
         collector: &String,
-        result: &mut Result,
+        result: &mut Result<D>,
     ) {
         let current_distance = levenshtein(&collector, &result.query);
         if !word.is_empty() {
@@ -85,7 +87,9 @@ impl Trie {
                 result.distance = current_distance
             }
             if current_distance == result.distance {
-                result.data.push(String::from(collector));
+                result
+                    .data
+                    .push((String::from(collector), current_node.data.clone()));
             }
         }
 
@@ -148,10 +152,10 @@ mod tests {
         let dist2 = levenshtein("Запоріжя", "Запоріжжя");
         assert!(dist1 > dist2);
 
-        let mut trie = Trie::new();
+        let mut trie = Trie::<i32>::new();
 
-        trie.insert("Заорілля");
-        trie.insert("Запоріжжя");
+        trie.insert("Заорілля", 1);
+        trie.insert("Запоріжжя", 2);
 
         let result = trie.find_matches(&String::from("Запоріжя"), None);
         assert_eq!(0, result.distance);
@@ -159,11 +163,11 @@ mod tests {
 
         let result = trie.find_matches(&String::from("Запоріжя"), Some(1));
         assert_eq!(1, result.distance);
-        assert_eq!(vec!["Запоріжжя"], result.data);
+        assert_eq!(vec![("Запоріжжя".to_string(), 2)], result.data);
 
         let result = trie.find_matches(&String::from("Запоріжя"), Some(20));
         assert_eq!(1, result.distance);
-        assert_eq!(vec!["Запоріжжя"], result.data);
+        assert_eq!(vec![("Запоріжжя".to_string(), 2)], result.data);
 
         let result = trie.find_matches(&String::from("Запоріжя"), Some(0));
         assert!(result.data.is_empty());
@@ -171,45 +175,45 @@ mod tests {
 
     #[test]
     pub fn test_trie2() {
-        let mut trie = Trie::new();
+        let mut trie = Trie::<i32>::new();
 
-        trie.insert("Степ");
-        trie.insert("Степне");
-        trie.insert("Степове");
+        trie.insert("Степ", 1);
+        trie.insert("Степне", 2);
+        trie.insert("Степове", 3);
 
         let result = trie.find_matches(&String::from("Стипне"), None);
         assert!(result.data.is_empty());
 
         let result = trie.find_matches(&String::from("Стипне"), Some(1));
         assert_eq!(1, result.distance);
-        assert_eq!(vec!["Степне"], result.data);
+        assert_eq!(vec![("Степне".to_string(), 2)], result.data);
 
         let result = trie.find_matches(&String::from("Степове"), None);
         assert_eq!(0, result.distance);
-        assert_eq!(vec!["Степове"], result.data);
+        assert_eq!(vec![("Степове".to_string(), 3)], result.data);
     }
 
     #[test]
     pub fn test_trie3() {
-        let mut trie = Trie::new();
-        trie.insert("БОР");
-        trie.insert("ГОРІЛЕ");
-        trie.insert("ЗОРІ");
-        trie.insert("ЗОРЯ");
-        trie.insert("ПОДІЛ");
-        trie.insert("ПОДИ");
-        trie.insert("ПОДОЛ");
-        trie.insert("ХОРОЛ");
+        let mut trie = Trie::<i32>::new();
+        trie.insert("БОР", 1);
+        trie.insert("ГОРІЛЕ", 2);
+        trie.insert("ЗОРІ", 3);
+        trie.insert("ЗОРЯ", 4);
+        trie.insert("ПОДІЛ", 5);
+        trie.insert("ПОДИ", 6);
+        trie.insert("ПОДОЛ", 7);
+        trie.insert("ХОРОЛ", 8);
         let result = trie.find_matches(&String::from("ПОРТЛЕНД"), Some(2));
-        assert_eq!(Vec::<String>::new(), result.data);
+        assert_eq!(Vec::<(String, i32)>::new(), result.data);
     }
 
     #[test]
     pub fn test_trie4() {
-        let mut trie = Trie::new();
-        trie.insert("Роботине");
+        let mut trie = Trie::<i32>::new();
+        trie.insert("Роботине", 1);
         let result = trie.find_matches(&String::from("Робоботине"), Some(2));
-        assert_eq!(vec!["Роботине"], result.data);
+        assert_eq!(vec![("Роботине".to_string(), 1)], result.data);
         let result = trie.find_matches(&String::from("Робоботине"), Some(0));
         assert!(result.data.is_empty());
         let result = trie.find_matches(&String::from("Робоботине"), None);

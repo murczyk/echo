@@ -23,6 +23,7 @@ mod install;
 pub mod kml;
 pub mod kv;
 mod location;
+pub mod log_api;
 pub mod migration;
 pub mod ml;
 pub mod nlp;

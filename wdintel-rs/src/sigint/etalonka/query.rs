@@ -49,7 +49,6 @@ pub enum SigintNetwork {
     Table,
     Id,
     Deleted,
-    ModulationId,
 }
 
 #[derive(Iden)]
@@ -74,6 +73,7 @@ pub enum SigintNetworkFreq {
     Freq,
     Deleted,
     CreatedAt,
+    ModulationId,
 }
 
 #[derive(Iden)]
@@ -109,7 +109,7 @@ pub async fn load_freqs_per_unit(
         .column_as(sigint_network::Column::Name, "name")
         .column_as(sigint_network::Column::Name, "name_updated")
         .column_as(signal_message::Column::Id.count(), "message_count")
-        .column(sigint_network::Column::Kind)
+        .column(sigint_network_freq::Column::Kind)
         .column(sigint_network::Column::Comment)
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::RadioStation)
@@ -446,7 +446,7 @@ async fn query_active_freqs(
     .join(
         JoinType::LeftJoin,
         Modulation::Table,
-        Expr::col((SigintNetwork::Table, SigintNetwork::ModulationId))
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ModulationId))
             .equals((Modulation::Table, Modulation::Id)),
     )
     .and_where(
@@ -607,7 +607,7 @@ async fn query_inactive_freqs(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_network::Relation::Modulation.def(),
+            sigint_network_freq::Relation::Modulation.def(),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -779,10 +779,10 @@ pub async fn load_callsigns(
         Alias::new("callsign"),
     )
     .expr_as(
-        Expr::cust(r#"CASE 
-                WHEN ("sigint_network"."name" IS NOT NULL) AND ("sigint_network"."name" <> '') 
-                THEN CONCAT('р/м ', "sigint_network"."name") 
-                ELSE NULL 
+        Expr::cust(r#"CASE
+                WHEN ("sigint_network"."name" IS NOT NULL) AND ("sigint_network"."name" <> '')
+                THEN CONCAT('р/м ', "sigint_network"."name")
+                ELSE NULL
             END"#.to_string()),
         Alias::new("network_name"),
     );
@@ -1156,7 +1156,7 @@ async fn build_callsigns_full_query(
     let main_query: sea_query::SelectStatement = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("null"), Alias::new("position"))
-        .expr_as(Expr::cust("null"), Alias::new("comment"))        
+        .expr_as(Expr::cust("null"), Alias::new("comment"))
         .expr_as(
             Expr::cust(
                 "(SELECT datetime FROM callsigns c WHERE c.callsign = unique_callsigns.callsign ORDER BY datetime DESC LIMIT 1)"
@@ -1690,11 +1690,6 @@ pub async fn load_networks(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network::Relation::Modulation.def(),
-            Alias::new("modulation"),
-        )
         .select_only()
         .column(sigint_network::Column::Id)
         .expr_as(
@@ -1705,9 +1700,9 @@ pub async fn load_networks(
         .column(sigint_network::Column::Purpose)
         //sklad
         .expr_as(
-            Expr::cust(r#"(select string_agg(snf.freq, ', ') 
-                            from sigint_network_freq snf 
-                            where snf.network_id = "sigint_network"."id" 
+            Expr::cust(r#"(select string_agg(snf.freq, ', ')
+                            from sigint_network_freq snf
+                            where snf.network_id = "sigint_network"."id"
                             and snf.deleted = false)"#.to_string()),
             "freqs",
         )
@@ -1718,7 +1713,6 @@ pub async fn load_networks(
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)
-        .column_as(modulation::Column::Name, "modulation_name")
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if let Some(filter_unit) = &req.filter_unit {
