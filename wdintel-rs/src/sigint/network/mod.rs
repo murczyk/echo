@@ -1242,6 +1242,77 @@ pub async fn network_unit_stats(
     Ok(Json(NetworkUnitStatsRsp { units: res }))
 }
 
+#[post("/api/sigint/network/update-freq")]
+pub async fn update_network_freq(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateNetworkFreqReq>,
+) -> Result<Json<Network>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_login = user.id()?.to_string();
+
+    info!(
+        "Updating frequency record {} for network {}; user={}",
+        req.network_freq_id, req.network_id, user_login
+    );
+
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    // Check if network exists
+    let network = sigint_network::Entity::find_by_id(req.network_id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    // Find the frequency for this network
+    let network_freq_model =
+        sigint_network_freq::Entity::find_by_id(req.network_freq_id)
+            .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .context(h!())?;
+
+    if let Some(network_freq_model) = network_freq_model {
+        let mut model = network_freq_model.into_active_model();
+        model.freq = Set(req.freq.clone());
+        model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
+        model.modulation_id = Set(req.modulation_id);
+        model.update(&txn).await.context(h!())?;
+    } else {
+        debug!(
+            "Frequency record {} not found for network {}, no action needed",
+            req.network_freq_id, req.network_id
+        );
+    }
+
+    // Update the network's updated_at timestamp
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_login.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    // Now fetch the updated network with all descriptions, units and freqs to return
+    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(network_detail[0].clone()))
+}
+
 #[post("/api/sigint/network/delete-freq")]
 pub async fn delete_network_freq(
     user: actix_identity::Identity,
