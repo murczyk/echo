@@ -912,7 +912,7 @@ update shared msg model =
                                 , selected = updatedNetworkModulation
                             }
                     in
-                    ( { model | editModulationSelect = modulationSelect2, networkAddStatus = EditExistingNetwork freq editNetworkState }
+                    ( { model | editModulationSelect = modulationSelect2 }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkEditModulationSelMsg
@@ -940,11 +940,8 @@ update shared msg model =
                                 | state = imodel
                                 , selected = updatedNetworkKind
                             }
-
-                        --ns2 =
-                        -- { editNetworkState | kind = NetworksUtils.networkKindToString updatedNetworkKind }
                     in
-                    ( { model | editKindSelect = kindSelect2, networkAddStatus = EditExistingNetwork freq editNetworkState }
+                    ( { model | editKindSelect = kindSelect2 }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkEditKindSelMsg
@@ -1424,40 +1421,55 @@ update shared msg model =
 
         NetworkStartEditingFlow network ->
             let
-                ( networkAddStatus, modulationSelected ) =
+                m1 =
                     case model.networkAddStatus of
                         SelectFromExistingNetwork freq _ ->
-                            ( EditExistingNetwork freq
-                                { id = network.id
-                                , name = network.name
-                                , location = network.location
-                                , comment = network.comment
-                                , radioStation = network.radioStation
-                                , operationType = network.operationType
-                                , operationMode = network.operationMode
-                                , purpose = network.purpose
-                                , operationPeriod = network.operationPeriod
-                                , activeTo = network.activeTo
-                                , activeFrom = network.activeFrom
-                                , descriptions = Nothing
-                                }
-                            , --network.modulationId
-                              Nothing
-                            )
+                            let
+                                mFreqObj =
+                                    ListX.find (\x -> x.freq == freq) network.freqs
+
+                                ems =
+                                    model.editModulationSelect
+
+                                ems2 =
+                                    { ems | selected = Maybe.andThen .modulationId mFreqObj }
+
+                                eks =
+                                    model.editKindSelect
+
+                                eks2 =
+                                    { eks
+                                        | selected =
+                                            Maybe.map .kind mFreqObj
+                                                |> Maybe.andThen (\a ->  Just (NetworksUtils.networkKindFromString a))
+                                                |> Maybe.withDefault NetworksUtils.VHF
+                                    }
+                            in
+                            { model
+                                | networkAddStatus =
+                                    EditExistingNetwork freq
+                                        { id = network.id
+                                        , name = network.name
+                                        , location = network.location
+                                        , comment = network.comment
+                                        , radioStation = network.radioStation
+                                        , operationType = network.operationType
+                                        , operationMode = network.operationMode
+                                        , purpose = network.purpose
+                                        , operationPeriod = network.operationPeriod
+                                        , activeTo = network.activeTo
+                                        , activeFrom = network.activeFrom
+                                        , descriptions = Nothing
+                                        }
+                                , editModulationSelect = ems2
+                                , editKindSelect = eks2
+                            }
 
                         _ ->
-                            ( model.networkAddStatus, Nothing )
-
-                ems =
-                    model.editModulationSelect
-
-                ems2 =
-                    { ems | selected = modulationSelected }
+                            model
             in
-            ( { model
-                | networkAddStatus = networkAddStatus
-                , editModulationSelect = ems2
-                , editPostsSelect =
+            ( { m1
+                | editPostsSelect =
                     Le.Block.Select.updateSelectSelected
                         (\_ -> network.postIds)
                         model.editPostsSelect
@@ -1648,9 +1660,22 @@ update shared msg model =
             Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
 
         NetworkPostsUpdated freq editState (Ok r) ->
-            ( model, E.updateNetwork (NetworkUpdated freq) editState )
+            ( model
+            , E.updateNetworkFreq (NetworkFreqUpdated freq editState)
+                { networkId = editState.id
+                , freq = freq
+                , kind = NetworksUtils.networkKindToString model.editKindSelect.selected
+                , modulationId = model.editModulationSelect.selected
+                }
+            )
 
         NetworkPostsUpdated _ _ (Err err) ->
+            Api.handleHttpError ToastMsg err model
+
+        NetworkFreqUpdated freq editState (Ok r) ->
+            ( model, E.updateNetwork (NetworkUpdated freq) editState )
+
+        NetworkFreqUpdated _ _ (Err err) ->
             Api.handleHttpError ToastMsg err model
 
 
