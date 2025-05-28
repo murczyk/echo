@@ -35,14 +35,16 @@ pub async fn network_list(
     req: Json<ListNetworksReq>,
 ) -> Result<Json<Vec<Network>>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     let mut networks = sigint_network::Entity::find()
         .join_as(
@@ -67,13 +69,11 @@ pub async fn network_list(
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::Comment)
         .column(sigint_network::Column::RadioStation)
-        .column(sigint_network::Column::Confirmation)
         .column(sigint_network::Column::CreatedAt)
         .column(sigint_network::Column::Purpose)
         .column(sigint_network::Column::OperationMode)
         .column(sigint_network::Column::OperationType)
         .column(sigint_network::Column::OperationPeriod)
-        .column(sigint_network::Column::Signs)
         .column(sigint_network::Column::UpdatedAt)
         .column(sigint_network::Column::UpdatedBy)
         .column(sigint_network::Column::ActiveFrom)
@@ -155,37 +155,26 @@ pub async fn network_list(
     //     networks.clone().build(DbBackend::Postgres).to_string()
     // );
 
-    let networks = networks.into_model::<NetworkDesc>().all(&env.dbx).await?;
+    let networks = networks
+        .into_model::<NetworkDesc>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
     let mut networks_res = vec![];
     for network in networks {
-        let units = sigint_network_unit::Entity::find()
-            .filter(
-                sigint_network_unit::Column::NetworkId.eq(network.id.clone()),
-            )
-            .all(&env.dbx)
-            .await?
-            .iter()
-            .map(|x| x.unit_id)
-            .collect();
-        let unit_ids = units;
+        let freqs = get_network_freqs(&env.dbx, network.id)
+            .await
+            .context(h!())?;
+        let unit_ids = get_network_units(&env.dbx, network.id)
+            .await
+            .context(h!())?;
 
-        let freqs = sigint_network_freq::Entity::find()
-            .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .all(&env.dbx)
-            .await?
-            .iter()
-            .map(|x| x.freq.clone())
-            .collect();
-
-        let post_ids = sigint_network_post::Entity::find()
-            .filter(sigint_network_post::Column::NetworkId.eq(network.id))
-            .filter(sigint_network_post::Column::Deleted.eq(false))
-            .all(&env.dbx)
-            .await?
-            .iter()
-            .map(|x| x.post_id.clone())
-            .collect();
+        let post_ids = get_network_posts(&env.dbx, network.id)
+            .await
+            .context(h!())?;
+        let descriptions = get_network_descriptions(&env.dbx, network.id)
+            .await
+            .context(h!())?;
 
         networks_res.push(Network {
             id: network.id,
@@ -196,13 +185,11 @@ pub async fn network_list(
             location: network.location,
             comment: network.comment,
             radio_station: network.radio_station,
-            confirmation: network.confirmation,
             created_at: network.created_at.and_utc().timestamp_millis(),
             purpose: network.purpose,
             operation_mode: network.operation_mode,
             operation_type: network.operation_type,
             operation_period: network.operation_period,
-            signs: network.signs,
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
             last_updated_by: network.updated_by,
             active_from: network.active_from.and_utc().timestamp_millis(),
@@ -212,6 +199,7 @@ pub async fn network_list(
             modulation_id: network.modulation_id,
             modulation_name: network.modulation_name,
             post_ids,
+            descriptions,
         });
     }
     Ok(Json(networks_res))
@@ -224,7 +212,8 @@ pub async fn network_info_batch_freq(
     req: Json<Vec<String>>,
 ) -> Result<Json<Vec<Network>>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_freqs(req.into_inner(), &txn)
         .await
@@ -240,7 +229,8 @@ pub async fn network_info_batch_id(
     req: Json<Vec<i64>>,
 ) -> Result<Json<Vec<Network>>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(req.clone(), &txn)
         .await
@@ -256,7 +246,8 @@ pub async fn network_info_one(
     req: Json<i64>,
 ) -> Result<Json<Network>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(vec![req.0], &txn)
         .await
@@ -275,36 +266,17 @@ async fn render_networks(
     let mut networks_res = vec![];
     for network_with_modulation in network_models_with_modulation {
         let (network, network_modulation) = network_with_modulation;
-        let units = sigint_network_unit::Entity::find()
-            .filter(
-                sigint_network_unit::Column::NetworkId.eq(network.id.clone()),
-            )
-            .all(txn)
-            .await?
-            .iter()
-            .map(|x| x.unit_id)
-            .collect();
-        let unit_ids = units;
 
-        let freqs = sigint_network_freq::Entity::find()
-            .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .all(txn)
-            .await?
-            .iter()
-            .map(|x| x.freq.clone())
-            .collect();
+        let freqs = get_network_freqs(txn, network.id).await.context(h!())?;
+        let unit_ids =
+            get_network_units(txn, network.id).await.context(h!())?;
 
-        let post_ids = sigint_network_post::Entity::find()
-            .filter(
-                sigint_network_post::Column::NetworkId.eq(network.id.clone()),
-            )
-            .filter(sigint_network_post::Column::Deleted.eq(false))
-            .all(txn)
-            .await?
-            .iter()
-            .map(|x| x.post_id)
-            .collect();
+        let post_ids =
+            get_network_posts(txn, network.id).await.context(h!())?;
+
+        let descriptions = get_network_descriptions(txn, network.id)
+            .await
+            .context(h!())?;
 
         networks_res.push(Network {
             id: network.id,
@@ -315,13 +287,11 @@ async fn render_networks(
             location: network.location,
             comment: network.comment,
             radio_station: network.radio_station,
-            confirmation: network.confirmation,
             created_at: network.created_at.and_utc().timestamp_millis(),
             purpose: network.purpose,
             operation_mode: network.operation_mode,
             operation_type: network.operation_type,
             operation_period: network.operation_period,
-            signs: network.signs,
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
             last_updated_by: network.updated_by,
             active_from: network.active_from.and_utc().timestamp_millis(),
@@ -331,6 +301,7 @@ async fn render_networks(
             modulation_id: network.modulation_id,
             modulation_name: network_modulation.map(|x| x.name),
             post_ids,
+            descriptions,
         });
     }
     Ok(networks_res)
@@ -401,10 +372,15 @@ pub async fn create_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_login = user.id()?.to_string();
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.context(h!())?;
 
     let network = sigint_network::ActiveModel {
         id: NotSet,
@@ -414,15 +390,13 @@ pub async fn create_network(
         deleted: Set(false),
         created_at: NotSet,
         comment: Set(req.comment.clone()),
-        updated_by: Set(Some(user.id()?.to_string())),
+        updated_by: Set(Some(user_login.clone())),
         updated_at: NotSet,
         radio_station: Set(req.radio_station.clone()),
-        confirmation: Set(req.confirmation.clone()),
         purpose: Set(req.purpose.clone()),
         operation_mode: Set(req.operation_mode.clone()),
         operation_type: Set(req.operation_type.clone()),
         operation_period: Set(req.operation_period.clone()),
-        signs: Set(req.signs.clone()),
         merged_to: NotSet,
         active_from: Set(req
             .active_from
@@ -436,17 +410,19 @@ pub async fn create_network(
         modulation_id: Set(req.modulation_id.clone()),
     }
     .insert(&txn)
-    .await?;
+    .await
+    .context(h!())?;
 
     let network_json = sigint_network::Entity::find_by_id(network.id)
         .into_json()
         .one(&txn)
-        .await?
+        .await
+        .context(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     let _changelog = sigint_network_changelog::ActiveModel {
         id: NotSet,
         sigint_network_id: Set(network.id),
-        login: Set(user.id()?.to_string()),
+        login: Set(user_login.clone()),
         action: Set(ChangelogActionEnum::Create),
         created_at: NotSet,
         new_value: Set(Some(network_json)),
@@ -454,7 +430,8 @@ pub async fn create_network(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
     }
     .insert(&txn)
-    .await?;
+    .await
+    .context(h!())?;
 
     let network_freq: Vec<sigint_network_freq::ActiveModel> = req
         .freqs
@@ -469,9 +446,12 @@ pub async fn create_network(
             created_at: NotSet,
         })
         .collect();
-    sigint_network_freq::Entity::insert_many(network_freq)
-        .exec(&txn)
-        .await?;
+    if !network_freq.is_empty() {
+        sigint_network_freq::Entity::insert_many(network_freq)
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
 
     let network_units: Vec<sigint_network_unit::ActiveModel> = req
         .unit_ids
@@ -484,9 +464,12 @@ pub async fn create_network(
             created_at: NotSet,
         })
         .collect();
-    sigint_network_unit::Entity::insert_many(network_units)
-        .exec(&txn)
-        .await?;
+    if !network_units.is_empty() {
+        sigint_network_unit::Entity::insert_many(network_units)
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
 
     let network_posts: Vec<sigint_network_post::ActiveModel> = req
         .post_ids
@@ -500,16 +483,46 @@ pub async fn create_network(
             created_at: NotSet,
         })
         .collect();
-    sigint_network_post::Entity::insert_many(network_posts)
-        .exec(&txn)
-        .await?;
+    if !network_posts.is_empty() {
+        sigint_network_post::Entity::insert_many(network_posts)
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    let network_descr: Vec<sigint_network_description::ActiveModel> = req
+        .descriptions
+        .clone()
+        .unwrap_or(vec![])
+        .into_iter()
+        .map(|descr| sigint_network_description::ActiveModel {
+            id: NotSet,
+            network_id: Set(network.id),
+            login: Set(user_login.clone()),
+            r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
+            description: Set(descr.description),
+            comment: NotSet, // Set(descr.comment),
+            deleted: Set(false),
+            created_at: NotSet,
+        })
+        .collect();
+    if !network_descr.is_empty() {
+        sigint_network_description::Entity::insert_many(network_descr)
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
 
     let modulation_name =
         get_modulation_name_by_id(network.modulation_id, &txn)
             .await
             .context(h!())?;
 
-    txn.commit().await?;
+    let descriptions = get_network_descriptions(&txn, network.id)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
 
     Ok(Json(Network {
         id: network.id,
@@ -520,13 +533,11 @@ pub async fn create_network(
         location: network.location,
         comment: network.comment,
         radio_station: network.radio_station,
-        confirmation: network.confirmation,
         created_at: network.created_at.and_utc().timestamp_millis(),
         purpose: network.purpose,
         operation_mode: network.operation_mode,
         operation_type: network.operation_type,
         operation_period: network.operation_period,
-        signs: network.signs,
         last_updated_at: network.updated_at.and_utc().timestamp_millis(),
         last_updated_by: network.updated_by,
         active_from: network.active_from.and_utc().timestamp_millis(),
@@ -534,6 +545,7 @@ pub async fn create_network(
         modulation_id: network.modulation_id,
         modulation_name: modulation_name,
         post_ids: req.post_ids.clone(),
+        descriptions,
     }))
 }
 
@@ -543,8 +555,12 @@ pub async fn update_network(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
 
     let txn = env.dbx.begin().await.context(h!())?;
 
@@ -561,12 +577,10 @@ pub async fn update_network(
     network_model.location = Set(req.location.clone());
     network_model.comment = Set(req.comment.clone());
     network_model.radio_station = Set(req.radio_station.clone());
-    network_model.confirmation = Set(req.confirmation.clone());
     network_model.purpose = Set(req.purpose.clone());
     network_model.operation_mode = Set(req.operation_mode.clone());
     network_model.operation_type = Set(req.operation_type.clone());
     network_model.operation_period = Set(req.operation_period.clone());
-    network_model.signs = Set(req.signs.clone());
     network_model.updated_by = Set(Some(user.id()?.to_string()));
     network_model.updated_at = NotSet; // Let the database update this automatically
     network_model.modulation_id = Set(req.modulation_id.clone());
@@ -577,31 +591,12 @@ pub async fn update_network(
 
     let network = network_model.update(&txn).await.context(h!())?;
 
-    let freqs = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|x| x.freq.clone())
-        .collect();
-
-    let unit_ids = sigint_network_unit::Entity::find()
-        .filter(sigint_network_unit::Column::NetworkId.eq(network.id))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|x| x.unit_id)
-        .collect();
-
-    let post_ids = sigint_network_post::Entity::find()
-        .filter(sigint_network_post::Column::NetworkId.eq(network.id))
-        .filter(sigint_network_post::Column::Deleted.eq(false))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|x| x.post_id)
-        .collect();
+    let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
+    let unit_ids = get_network_units(&txn, network.id).await.context(h!())?;
+    let post_ids = get_network_posts(&txn, network.id).await.context(h!())?;
+    let descriptions = get_network_descriptions(&txn, network.id)
+        .await
+        .context(h!())?;
 
     let modulation_name =
         get_modulation_name_by_id(network.modulation_id, &txn)
@@ -619,13 +614,11 @@ pub async fn update_network(
         location: network.location,
         comment: network.comment,
         radio_station: network.radio_station,
-        confirmation: network.confirmation,
         created_at: network.created_at.and_utc().timestamp_millis(),
         purpose: network.purpose,
         operation_mode: network.operation_mode,
         operation_type: network.operation_type,
         operation_period: network.operation_period,
-        signs: network.signs,
         last_updated_at: network.updated_at.and_utc().timestamp_millis(),
         last_updated_by: network.updated_by,
         active_from: network.active_from.and_utc().timestamp_millis(),
@@ -633,6 +626,7 @@ pub async fn update_network(
         modulation_id: network.modulation_id,
         modulation_name: modulation_name,
         post_ids,
+        descriptions,
     }))
 }
 
@@ -658,7 +652,9 @@ pub async fn network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
 
     let mut query = Query::select();
     query
@@ -704,7 +700,8 @@ pub async fn network_callsigns(
                         &user,
                         &env.config,
                     )
-                    .await?,
+                    .await
+                    .context(h!())?,
                 ),
         )
         .and_where(
@@ -795,7 +792,9 @@ async fn network_group_activity_bl(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkGroupsActivityReq>,
 ) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let dt_till = if let Some(till) = req.till_date_noninclusive_ms {
         dt_from_millis(till)?
     } else {
@@ -838,7 +837,7 @@ async fn network_group_activity_bl(
                     &user,
                     &env.config,
                 )
-                    .await?,
+                    .await.context(h!())?,
             ),
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -866,7 +865,8 @@ async fn network_group_activity_bl(
     for row in callsigns
         .into_model::<NetwrorkGroupsMessageCountByDay>()
         .all(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
     {
         let network_id = row.network_id.to_string();
         let day = row.day.to_string();
@@ -892,7 +892,9 @@ pub async fn list_network_points(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkPointsReq>,
 ) -> Result<Json<ListNetworkPointsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let mut query = signal_message::Entity::find()
         .join_as(
@@ -923,7 +925,8 @@ pub async fn list_network_points(
                     &user,
                     &env.config,
                 )
-                .await?,
+                .await
+                .context(h!())?,
             ),
         )
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -936,7 +939,11 @@ pub async fn list_network_points(
     }
 
     Ok(Json(ListNetworkPointsRsp {
-        points: query.into_model::<NetworkPoint>().all(&env.dbx).await?,
+        points: query
+            .into_model::<NetworkPoint>()
+            .all(&env.dbx)
+            .await
+            .context(h!())?,
     }))
 }
 
@@ -946,8 +953,12 @@ pub async fn update_freq_networks(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateFreqNetworksReq>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
 
     info!(
         "update freq networks; login = {}; req = {:?}",
@@ -955,7 +966,7 @@ pub async fn update_freq_networks(
         req
     );
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.context(h!())?;
     let networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -976,14 +987,16 @@ pub async fn update_freq_networks(
             network.updated_by = Set(Some(user.id()?.to_string()));
             network.updated_at = NotSet;
             network.deleted = Set(true);
-            network.save(&txn).await?;
+            network.save(&txn).await.context(h!())?;
         }
     }
 
     for req_network in &req.networks {
         if let Some(id) = req_network.id {
-            let network =
-                sigint_network::Entity::find_by_id(id).one(&txn).await?;
+            let network = sigint_network::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .context(h!())?;
             if let Some(network) = network {
                 sigint_network_unit::Entity::delete_many()
                     .filter(sigint_network_unit::Column::NetworkId.eq(id))
@@ -998,7 +1011,6 @@ pub async fn update_freq_networks(
                 network.location = Set(req_network.location.clone());
                 network.comment = Set(req_network.comment.clone());
                 network.radio_station = Set(req_network.radio_station.clone());
-                network.confirmation = Set(req_network.confirmation.clone());
                 network.deleted = Set(false);
                 network.updated_by = Set(Some(user.id()?.to_string()));
                 network.updated_at = NotSet;
@@ -1023,7 +1035,6 @@ pub async fn update_freq_networks(
                 location: Set(req_network.location.clone()),
                 comment: Set(req_network.comment.clone()),
                 radio_station: Set(req_network.radio_station.clone()),
-                confirmation: Set(req_network.confirmation.clone()),
                 updated_by: Set(Some(user.id()?.to_string())),
                 updated_at: NotSet,
                 deleted: Set(false),
@@ -1032,7 +1043,8 @@ pub async fn update_freq_networks(
             };
             let network_id = sigint_network::Entity::insert(network)
                 .exec(&txn)
-                .await?
+                .await
+                .context(h!())?
                 .last_insert_id;
             info!("inserted new network with id {}", network_id);
 
@@ -1043,7 +1055,8 @@ pub async fn update_freq_networks(
                     unit_id: Set(*unit_id),
                     created_at: NotSet,
                 };
-                let _updated_entry = network_unit.save(&txn).await?;
+                let _updated_entry =
+                    network_unit.save(&txn).await.context(h!())?;
             }
         }
     }
@@ -1067,7 +1080,7 @@ pub async fn update_freq_networks(
             .context(h!())?,
     );
 
-    txn.commit().await?;
+    txn.commit().await.context(h!())?;
 
     Ok(result_json)
 }
@@ -1078,8 +1091,12 @@ pub async fn add_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
 
     info!(
         "Adding frequency {} to network {}; user={}",
@@ -1088,7 +1105,7 @@ pub async fn add_network_freq(
         user.id()?
     );
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
     let network = sigint_network::Entity::find_by_id(req.network_id)
@@ -1104,7 +1121,8 @@ pub async fn add_network_freq(
         .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .one(&txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     if existing_freq.is_none() {
         // The frequency link doesn't exist, create it
@@ -1121,7 +1139,7 @@ pub async fn add_network_freq(
             created_at: NotSet,
         };
 
-        network_freq.insert(&txn).await?;
+        network_freq.insert(&txn).await.context(h!())?;
     } else {
         debug!(
             "Frequency {} already exists for network {}, no action needed",
@@ -1133,7 +1151,7 @@ pub async fn add_network_freq(
     let mut network_model = network.into_active_model();
     network_model.updated_at = Set(Utc::now().naive_utc());
     network_model.updated_by = Set(Some(user.id()?.to_string()));
-    network_model.update(&txn).await?;
+    network_model.update(&txn).await.context(h!())?;
 
     // Now fetch the updated network with all frequencies to return
     let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
@@ -1154,7 +1172,9 @@ pub async fn network_unit_stats(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<NetworkUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -1190,7 +1210,11 @@ pub async fn network_unit_stats(
         .group_by(sigint_unit::Column::Battalion)
         .group_by(sigint_unit::Column::Company);
     // println!("> sql: {}", units.build(DbBackend::Postgres).to_string());
-    let units = units.into_model::<Row>().all(&env.dbx).await?;
+    let units = units
+        .into_model::<Row>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
     let mut res = vec![];
     for unit in units {
         res.push(NetworkUnitStatRow {
@@ -1207,8 +1231,12 @@ pub async fn delete_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
 
     info!(
         "Removing frequency {} from network {}; user={}",
@@ -1217,7 +1245,7 @@ pub async fn delete_network_freq(
         user.id()?
     );
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
     let network = sigint_network::Entity::find_by_id(req.network_id)
@@ -1233,7 +1261,8 @@ pub async fn delete_network_freq(
         .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(&txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     if freq_records.is_empty() {
         debug!(
@@ -1360,8 +1389,9 @@ async fn cleanup_networks_worker_1(
         .iter()
         .map(|n| n.network_id)
         .collect();
-    let networks_desc =
-        load_networks_units_desc(ids.clone(), dbx, h!()).await?;
+    let networks_desc = load_networks_units_desc(ids.clone(), dbx, h!())
+        .await
+        .context(h!())?;
 
     let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Id.is_in(network_ids.clone()))
@@ -1377,7 +1407,7 @@ async fn cleanup_networks_worker_1(
             if is_deleted {
                 let mut model = network_freq.into_active_model();
                 model.deleted = Set(true); // TODO here set sigint_network_freq.active_to = now() as well
-                model.update(dbx).await?;
+                model.update(dbx).await.context(h!())?;
             } else {
                 if !network_freq.deleted {
                     deactivate_network = false;
@@ -1387,7 +1417,7 @@ async fn cleanup_networks_worker_1(
         if deactivate_network {
             let mut network = network.into_active_model();
             network.active_to = Set(Some(start_time.naive_utc()));
-            network.update(dbx).await?;
+            network.update(dbx).await.context(h!())?;
         }
     }
 
@@ -1584,8 +1614,12 @@ pub async fn merge_network(
     req: Json<MergeNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
     let login = user.id()?.to_string();
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
 
     // debug!("> merge networks");
     let txn = env.dbx.begin().await.context(h!())?;
@@ -1612,31 +1646,12 @@ pub async fn merge_network(
 
     let (network, network_modulation) = network_with_modulation;
 
-    let freqs = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|x| x.freq.clone())
-        .collect();
-
-    let unit_ids = sigint_network_unit::Entity::find()
-        .filter(sigint_network_unit::Column::NetworkId.eq(network.id))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|x| x.unit_id)
-        .collect();
-
-    let post_ids = sigint_network_post::Entity::find()
-        .filter(sigint_network_post::Column::NetworkId.eq(network.id))
-        .filter(sigint_network_post::Column::Deleted.eq(false))
-        .all(&txn)
-        .await?
-        .into_iter()
-        .map(|x| x.post_id)
-        .collect();
+    let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
+    let unit_ids = get_network_units(&txn, network.id).await.context(h!())?;
+    let post_ids = get_network_posts(&txn, network.id).await.context(h!())?;
+    let descriptions = get_network_descriptions(&txn, network.id)
+        .await
+        .context(h!())?;
 
     txn.commit().await.context(h!())?;
 
@@ -1654,13 +1669,11 @@ pub async fn merge_network(
         location: network.location,
         comment: network.comment,
         radio_station: network.radio_station,
-        confirmation: network.confirmation,
         created_at: network.created_at.and_utc().timestamp_millis(),
         purpose: network.purpose,
         operation_mode: network.operation_mode,
         operation_type: network.operation_type,
         operation_period: network.operation_period,
-        signs: network.signs,
         last_updated_at: network.updated_at.and_utc().timestamp_millis(),
         last_updated_by: network.updated_by,
         active_from: network.active_from.and_utc().timestamp_millis(),
@@ -1668,6 +1681,7 @@ pub async fn merge_network(
         modulation_id: network.modulation_id,
         modulation_name: network_modulation.map(|x| x.name),
         post_ids,
+        descriptions,
     }))
 }
 
@@ -1678,7 +1692,8 @@ pub async fn network_callsigns_list(
     req: Json<SingleNetworkCallsignsReq>,
 ) -> Result<Json<SingleNetworkCallsignsListRsp>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
 
     let network = sigint_network::Entity::find_by_id(req.network_id.clone())
         .filter(sigint_network::Column::Deleted.eq(false))
@@ -1735,7 +1750,8 @@ pub async fn network_freqs_list(
     req: Json<SingleNetworkFreqsReq>,
 ) -> Result<Json<SingleNetworkFreqsListRsp>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
 
     let network = sigint_network::Entity::find_by_id(req.network_id.clone())
         .filter(sigint_network::Column::Deleted.eq(false))
@@ -1785,8 +1801,12 @@ pub async fn modulations_list(
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<ModulationRec>>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
-    let modulations = modulation::Entity::find().all(&env.dbx).await?;
+        .await
+        .context(h!())?;
+    let modulations = modulation::Entity::find()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
     let mut res: Vec<ModulationRec> = vec![];
     for modulation in modulations {
         res.push(ModulationRec {
@@ -1807,7 +1827,8 @@ pub async fn network_signals_list(
     req: Json<NetworkSignalsListReq>,
 ) -> Result<Json<NetworkSignalsListRes>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
 
     let signals = load_signals_per_network(&env.dbx, req.network_id)
         .await
@@ -1826,8 +1847,12 @@ pub async fn update_network_posts(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkPostsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
     let user_login = user.id()?.to_string();
 
     info!(
@@ -1837,7 +1862,7 @@ pub async fn update_network_posts(
         user_login
     );
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
     let network = sigint_network::Entity::find_by_id(req.network_id)
@@ -1880,7 +1905,8 @@ pub async fn update_network_posts(
             .filter(sigint_network_post::Column::NetworkId.eq(req.network_id))
             .filter(sigint_network_post::Column::PostId.is_in(to_delete))
             .exec(&txn)
-            .await?;
+            .await
+            .context(h!())?;
     }
 
     // 5. Insert missing ones
@@ -1892,7 +1918,7 @@ pub async fn update_network_posts(
             deleted: NotSet,
             created_at: NotSet,
         };
-        network_post.insert(&txn).await?;
+        network_post.insert(&txn).await.context(h!())?;
     }
 
     // 6. Update the network's updated_at timestamp()
@@ -1900,10 +1926,231 @@ pub async fn update_network_posts(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by = Set(Some(user.id()?.to_string()));
-        network_model.update(&txn).await?;
+        network_model.update(&txn).await.context(h!())?;
     }
 
     // Now fetch the updated network with all posts to return
+    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(network_detail[0].clone()))
+}
+
+#[post("/api/sigint/network/add-descriptions")]
+pub async fn add_network_descriptions(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AddNetworkDescriptionsReq>,
+) -> Result<Json<Network>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_login = user.id()?.to_string();
+
+    trace!(
+        "Adding {} descriptions to network {}; user={}",
+        req.descriptions.len(),
+        req.network_id,
+        user_login
+    );
+
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    // Check if network exists
+    let network = sigint_network::Entity::find_by_id(req.network_id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let network_descr: Vec<sigint_network_description::ActiveModel> = req
+        .descriptions
+        .clone()
+        .into_iter()
+        .map(|descr| sigint_network_description::ActiveModel {
+            id: NotSet,
+            network_id: Set(network.id),
+            login: Set(user_login.clone()),
+            r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
+            description: Set(descr.description),
+            comment: NotSet, // Set(descr.comment),
+            deleted: Set(false),
+            created_at: NotSet,
+        })
+        .collect();
+
+    if !network_descr.is_empty() {
+        sigint_network_description::Entity::insert_many(network_descr)
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    // Update the network's updated_at timestamp
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_login.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    // Now fetch the updated network with all descriptions, units and freqs to return
+    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(network_detail[0].clone()))
+}
+
+#[post("/api/sigint/network/update-description")]
+pub async fn update_network_description(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateNetworkDescriptionReq>,
+) -> Result<Json<Network>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_login = user.id()?.to_string();
+
+    info!(
+        "Updating description {} for network {}; user={}",
+        req.description_id, req.network_id, user_login
+    );
+
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    // Check if network exists
+    let network = sigint_network::Entity::find_by_id(req.network_id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    // Find the description for this network
+    let descr_model =
+        sigint_network_description::Entity::find_by_id(req.description_id)
+            .filter(
+                sigint_network_description::Column::NetworkId
+                    .eq(req.network_id),
+            )
+            .filter(sigint_network_description::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .context(h!())?;
+
+    if let Some(descr_model) = descr_model {
+        let mut model = descr_model.into_active_model();
+        model.r#type =
+            Set(NetworkDescriptionType::from(req.descr_type.clone()));
+        model.description = Set(req.description.clone());
+        model.comment = NotSet; // Set(req.comment.clone());
+        model.update(&txn).await.context(h!())?;
+    } else {
+        debug!(
+            "Description {} not found for network {}, no action needed",
+            req.description_id, req.network_id
+        );
+    }
+
+    // Update the network's updated_at timestamp
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_login.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    // Now fetch the updated network with all descriptions, units and freqs to return
+    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(network_detail[0].clone()))
+}
+
+#[post("/api/sigint/network/delete-description")]
+pub async fn delete_network_description(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DeleteNetworkDescriptionReq>,
+) -> Result<Json<Network>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_login = user.id()?.to_string();
+
+    info!(
+        "Removing description {} from network {}; user={}",
+        req.description_id, req.network_id, user_login
+    );
+
+    let txn = env.dbx.begin().await?;
+
+    // Check if network exists
+    let network = sigint_network::Entity::find_by_id(req.network_id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    // Find the description for this network
+    let descr_model =
+        sigint_network_description::Entity::find_by_id(req.description_id)
+            .filter(
+                sigint_network_description::Column::NetworkId
+                    .eq(req.network_id),
+            )
+            .filter(sigint_network_description::Column::Deleted.eq(false))
+            .one(&txn)
+            .await
+            .context(h!())?;
+
+    if let Some(descr_model) = descr_model {
+        let mut model = descr_model.into_active_model();
+        model.deleted = Set(true);
+        model.update(&txn).await.context(h!())?;
+    } else {
+        debug!(
+            "Description {} not found for network {}, no action needed",
+            req.description_id, req.network_id
+        );
+    }
+
+    // Update the network's updated_at timestamp
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_login.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    // Now fetch the updated network with all descriptions, units and freqs to return
     let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
         .await
         .context(h!())?;
@@ -1922,8 +2169,8 @@ pub async fn oneoff_merge_all_possible_networks(
     mode: crate::types::Mode,
 ) -> anyhow::Result<(), AppError> {
     info!("> merge_all_possible_networks start");
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
-    let txn = dbx.begin().await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let txn = dbx.begin().await.context(h!())?;
 
     // Fetch all active networks (deleted = false) with their unit_id
     let networks_list = sigint_network::Entity::find()
@@ -1943,7 +2190,8 @@ pub async fn oneoff_merge_all_possible_networks(
         .order_by_asc(sigint_network::Column::Id)
         .into_tuple::<(i64, String, i64)>()
         .all(&txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     // Group networks by (name, unit_id)
     let mut grouped_networks: HashMap<(String, i64), Vec<i64>> =
@@ -1998,7 +2246,7 @@ pub async fn oneoff_merge_all_possible_networks(
     }
 
     println!("Network merging process completed.");
-    txn.commit().await?;
+    txn.commit().await.context(h!())?;
     Ok(())
 }
 
@@ -2009,8 +2257,8 @@ pub async fn oneoff_merge_two_networks(
 ) -> anyhow::Result<(), AppError> {
     debug!("> oneoff_merge_networks");
 
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
-    let txn = dbx.begin().await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let txn = dbx.begin().await.context(h!())?;
     match merge_two_networks(
         &txn,
         MERGE_NETWORKS_API_LOGIN.to_string(),
@@ -2021,14 +2269,14 @@ pub async fn oneoff_merge_two_networks(
     .await
     {
         Ok(_) => {
-            txn.commit().await?;
+            txn.commit().await.context(h!())?;
             println!(
                 "✅ Merge successful! Merged network {} into {}",
                 ps.network_id_from, ps.network_id_to
             );
         }
         Err(e) => {
-            txn.rollback().await?;
+            txn.rollback().await.context(h!())?;
             eprintln!("❌ Merge failed: {:?}", e);
         }
     }
@@ -2047,12 +2295,14 @@ pub async fn merge_two_networks(
     // Fetch both networks
     let network_from = sigint_network::Entity::find_by_id(network_id_from)
         .one(txn)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
 
     let network_to = sigint_network::Entity::find_by_id(network_id_to)
         .one(txn)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
 
     // Fetch units for both networks
@@ -2062,7 +2312,8 @@ pub async fn merge_two_networks(
         .column(sigint_network_unit::Column::UnitId)
         .into_tuple::<i64>()
         .one(txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     let unit_to = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::NetworkId.eq(network_id_to))
@@ -2070,7 +2321,8 @@ pub async fn merge_two_networks(
         .column(sigint_network_unit::Column::UnitId)
         .into_tuple::<i64>()
         .one(txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     if perform_merge_check {
         // Validate if merge is allowed (Names should match)
@@ -2104,14 +2356,16 @@ pub async fn merge_two_networks(
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::Freq.not_in_subquery(freqs_to))
         .all(txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     for freq in freqs_from {
         let id = freq.id;
         let json_old = sigint_network_freq::Entity::find_by_id(id)
             .into_json()
             .one(txn)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
 
         // Clone freq before moving it into active model
@@ -2130,13 +2384,14 @@ pub async fn merge_two_networks(
             deleted: ActiveValue::Set(false), // New freq should NOT be deleted
             ..Default::default()
         };
-        new_freq.insert(txn).await?;
+        new_freq.insert(txn).await.context(h!())?;
 
         // Log the change of an old dentork in the changelog
         let json_new = sigint_network_freq::Entity::find_by_id(id)
             .into_json()
             .one(txn)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
         sigint_network_freq_changelog::ActiveModel {
             id: NotSet,
@@ -2175,26 +2430,55 @@ pub async fn merge_two_networks(
         .filter(sigint_network_post::Column::Deleted.eq(false))
         .filter(sigint_network_post::Column::Id.not_in_subquery(posts_to))
         .all(txn)
-        .await?;
+        .await
+        .context(h!())?;
 
     for post in posts_from {
-        // Clone post before moving it into active model
-        let post_id_clone = post.id.clone();
+        // Create a new post for a target network
+        let new_post = sigint_network_post::ActiveModel {
+            id: NotSet,
+            network_id: Set(network_id_to),
+            post_id: Set(post.id.clone()),
+            deleted: Set(false),
+            ..Default::default()
+        };
+        new_post.insert(txn).await.context(h!())?;
 
         // Mark the original network post as deleted
         let mut network_post = post.into_active_model();
         network_post.deleted = Set(true);
         network_post.update(txn).await.context(h!())?;
+    }
 
-        // Create a new post for a target network
-        let new_post = sigint_network_post::ActiveModel {
-            id: NotSet, // New row, let DB assign an ID
+    // Merge Descriptions
+    // Step 1: Copy descriptions to new network_id (with deleted = false)
+    let descriptions_from = sigint_network_description::Entity::find()
+        .filter(
+            sigint_network_description::Column::NetworkId.eq(network_id_from),
+        )
+        .filter(sigint_network_description::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    for description in descriptions_from {
+        // Create a new description for a target network
+        let new_description = sigint_network_description::ActiveModel {
+            id: NotSet,
             network_id: Set(network_id_to),
-            post_id: Set(post_id_clone),
-            deleted: Set(false), // New freq should NOT be deleted
-            ..Default::default()
+            r#type: Set(description.r#type.clone()),
+            description: Set(description.description.clone()),
+            comment: Set(description.comment.clone()),
+            login: Set(login.clone()),
+            deleted: Set(false),
+            created_at: NotSet,
         };
-        new_post.insert(txn).await?;
+        new_description.insert(txn).await.context(h!())?;
+
+        // Mark the original network post as deleted
+        let mut network_description_from = description.into_active_model();
+        network_description_from.deleted = Set(true);
+        network_description_from.update(txn).await.context(h!())?;
     }
 
     // Update network_to attributes by concatenating only unique values
@@ -2206,10 +2490,6 @@ pub async fn merge_two_networks(
         Some(network_to.comment.clone()),
         Some(network_from.comment.clone()),
     );
-    let new_confirmation = concat_unique(
-        network_to.confirmation.clone(),
-        network_from.confirmation.clone(),
-    );
     let new_radio_station = concat_unique(
         network_to.radio_station.clone(),
         network_from.radio_station.clone(),
@@ -2220,7 +2500,6 @@ pub async fn merge_two_networks(
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());
     network_to_model.comment = Set(new_comment.unwrap_or_default());
-    network_to_model.confirmation = Set(new_confirmation);
     network_to_model.radio_station = Set(new_radio_station);
     network_to_model.updated_at = Set(Utc::now().naive_utc());
     network_to_model.updated_by = Set(Some(login.clone()));
@@ -2271,4 +2550,86 @@ pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
             msg: "Unknown network type!".to_string(),
         }),
     }
+}
+
+async fn get_network_freqs<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .context(h!())?
+        .iter()
+        .map(|x| x.freq.clone())
+        .collect())
+}
+
+async fn get_network_units<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_network_unit::Entity::find()
+        .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|x| x.unit_id)
+        .collect())
+}
+
+async fn get_network_posts<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id.clone()))
+        .filter(sigint_network_post::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .context(h!())?
+        .iter()
+        .map(|x| x.post_id)
+        .collect())
+}
+
+pub async fn get_network_descriptions<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<Vec<NetworkDescription>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_network_description::Entity::find()
+        .filter(sigint_network_description::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_description::Column::Deleted.eq(false))
+        .order_by_asc(sigint_network_description::Column::Type)
+        .order_by_asc(sigint_network_description::Column::CreatedAt)
+        .all(txn)
+        .await
+        .context(h!())
+        .context(h!())?
+        .iter()
+        .map(|x| NetworkDescription {
+            id: x.id,
+            network_id: x.network_id,
+            descr_type: NetworkDescrType::from(x.r#type.clone()),
+            description: x.description.clone(),
+            // comment: x.comment.clone(),
+            login: x.login.clone(),
+            created_at: x.created_at.and_utc().timestamp_millis(),
+        })
+        .collect())
 }

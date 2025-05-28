@@ -66,7 +66,7 @@ pub async fn report_xlsx_kind_senders(
     let q = build_inbox_query(&login, &logins, env, &req).await?;
 
     let q = format!(
-        r#"SELECT count(*) as quantity, "B_post" as post, "A_sender" as sender, to_char(("B_datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({}) q group by "B_post", "A_sender", ("B_datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#,
+        r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({}) q group by "post_name", "sender", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#,
         q.build(DbBackend::Postgres)
     );
     let query_res: Vec<QueryResult> = env

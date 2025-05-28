@@ -1,6 +1,5 @@
 use crate::delta::login::oauth::build_auth_url;
 use crate::delta::login::types::UserInfo;
-use crate::entities::delta_login::Model;
 use crate::entities::*;
 use crate::types::*;
 use crate::users::validate_login;
@@ -9,6 +8,7 @@ use actix_web::dev::Extensions;
 use actix_web::web::{Data, Json};
 use actix_web::{get, HttpMessage, HttpRequest, HttpResponse};
 use anyhow::Error;
+use echo_migration::Expr;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
 use std::cell::Ref;
@@ -23,10 +23,14 @@ pub struct DeltaLoginUrl {
 
 #[get("/api/fetch-redirect-url")]
 pub async fn fetch_redirect_url(
+    req: HttpRequest,
     env: actix_web::web::Data<Env>,
 ) -> HttpResponse {
     let config = &env.config;
-    match build_auth_url(config).await.context(h!()) {
+    let authority = crate::utils::http::extract_authority_header(&req);
+    let is_echoua =
+        authority.clone().filter(|x| x.contains("echoua")).is_some();
+    match build_auth_url(config, is_echoua).await.context(h!()) {
         Ok(url) => {
             HttpResponse::Ok().json(Json(DeltaLoginUrl { url: Some(url) }))
         }
@@ -81,42 +85,34 @@ async fn perform_login(
 ) -> Result<(), Error> {
     let username = user_info.user_name;
     info!("delta: logging in as '{}'", username);
-    let delta_login = load_delta_login(&env, &username).await.context(h!())?;
 
-    let login = login::Entity::find()
-        .filter(login::Column::DeltaLoginId.eq(delta_login.id))
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .context(h!())?;
-    let delta_login = delta_login.login;
-    if !delta_login.eq(&username) {
-        warn!(
-            "delta login: expected '{}' (in database), got '{}' from Delta API",
-            delta_login, username
-        )
-    }
-    let login = validate_login(&env.dbx, &login.login).await.context(h!())?;
-    Identity::login(&extensions, login.login)?;
-    Ok(())
-}
-
-async fn load_delta_login(
-    env: &&Data<Env>,
-    username: &String,
-) -> Result<Model, Error> {
     let delta_logins = delta_login::Entity::find()
+        .find_with_related(login::Entity)
+        .filter(Expr::cust_with_values(
+            "lower(delta_login.login) = $1",
+            vec![username.to_lowercase()],
+        ))
+        .order_by_desc(delta_login::Column::CreatedAt)
         .all(&env.dbx)
         .await
         .context(h!())?;
-    let mut m_delta_login = None;
-    let username_lowercase = username.to_lowercase();
-    for login in delta_logins {
-        let delta_login = &login.login.to_lowercase();
-        let delta_login = delta_login.trim();
-        if delta_login.eq(&username_lowercase) {
-            m_delta_login = Some(login);
+    let mut result_login = None;
+    for (delta_login, logins) in &delta_logins {
+        if logins.is_empty() {
+            continue;
+        }
+        if result_login.is_some() || logins.len() > 1 {
+            warn!(
+                "multiple logins for delta login {}: {:?}",
+                delta_login.login, delta_logins
+            );
+        } else {
+            result_login = logins.iter().next().clone();
         }
     }
-    m_delta_login.context("delta login not found")
+
+    let login = result_login.context(h!())?;
+    let login = validate_login(&env.dbx, &login.login).await.context(h!())?;
+    Identity::login(&extensions, login.login)?;
+    Ok(())
 }

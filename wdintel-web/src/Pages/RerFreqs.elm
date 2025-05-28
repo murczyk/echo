@@ -1431,10 +1431,8 @@ update shared msg model =
                                 , location = ""
                                 , comment = ""
                                 , radioStation = Nothing
-                                , confirmation = Nothing
                                 , operationType = Just "дуплексний"
                                 , operationMode = Just "цілодобово, за потреби"
-                                , signs = Nothing
                                 , purpose = Just "для управління підлеглим особовим складом"
                                 , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
                                 , unitIds = [ unitId ]
@@ -1444,6 +1442,7 @@ update shared msg model =
                                 , activeFrom = Nothing
                                 , modulationId = model.addModulationSelect.selected
                                 , postIds = []
+                                , descriptions = Nothing
                                 }
 
                         _ ->
@@ -1463,10 +1462,8 @@ update shared msg model =
                                 , location = network.location
                                 , comment = network.comment
                                 , radioStation = network.radioStation
-                                , confirmation = network.confirmation
                                 , operationType = network.operationType
                                 , operationMode = network.operationMode
-                                , signs = network.signs
                                 , purpose = network.purpose
                                 , kind = network.kind
                                 , modulationId = network.modulationId
@@ -2041,7 +2038,7 @@ renderFreqTr shared model user rowIndex freq =
             [ div []
                 (case alternativeUnits of
                     Just units ->
-                        List.map (\u -> span [ style "display" "block" ] [ text u.unit ]) units
+                        List.map (\u -> p [ class "mb-0" ] [ text u.unit ]) units
 
                     Nothing ->
                         [ text "" ]
@@ -2251,19 +2248,20 @@ contentBlock shared model user =
                         []
                     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "типи радіостанцій, що використовуються підрозділом" ]
                     ]
-                , div [ class "col-span-2" ]
-                    [ label [ class "mb-1" ] [ text "Підтвердження" ]
-                    , input
-                        [ class "form-control"
-                        , value (Maybe.withDefault "" editState.confirmation)
-                        , onInput <|
-                            \v ->
-                                NetworkEditMsg
-                                    { editState | confirmation = Just v }
-                        ]
-                        []
-                    , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
-                    ]
+
+                -- , div [ class "col-span-2" ]
+                --     [ label [ class "mb-1" ] [ text "Підтвердження" ]
+                --     , input
+                --         [ class "form-control"
+                --         , value (Maybe.withDefault "" editState.confirmation)
+                --         , onInput <|
+                --             \v ->
+                --                 NetworkEditMsg
+                --                     { editState | confirmation = Just v }
+                --         ]
+                --         []
+                --     , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
+                --     ]
                 , div [ class " col-span-2" ]
                     [ label [ class "mb-1" ] [ text "Призначення" ]
                     , input
@@ -2303,19 +2301,20 @@ contentBlock shared model user =
                         []
                     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
                     ]
-                , div [ class "col-span-4" ]
-                    [ label [ class "mb-1" ] [ text "Ознаки" ]
-                    , input
-                        [ class "form-control"
-                        , value (Maybe.withDefault "" editState.signs)
-                        , onInput <|
-                            \v ->
-                                NetworkEditMsg
-                                    { editState | signs = Just v }
-                        ]
-                        []
-                    , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
-                    ]
+
+                -- , div [ class "col-span-4" ]
+                --     [ label [ class "mb-1" ] [ text "Ознаки" ]
+                --     , input
+                --         [ class "form-control"
+                --         , value (Maybe.withDefault "" editState.signs)
+                --         , onInput <|
+                --             \v ->
+                --                 NetworkEditMsg
+                --                     { editState | signs = Just v }
+                --         ]
+                --         []
+                --     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
+                --     ]
                 , div [ class "flex gap-2 justify-end col-span-4 mb-2" ]
                     [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
                     , Button.new { label = "Зберегти", onClick = NetworkUpdate } |> Button.view
@@ -2474,19 +2473,20 @@ contentBlock shared model user =
                         []
                     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "типи радіостанцій, що використовуються підрозділом" ]
                     ]
-                , div [ class "col-span-2" ]
-                    [ label [ class "mb-1" ] [ text "Підтвердження" ]
-                    , input
-                        [ class "form-control"
-                        , value (Maybe.withDefault "" addState.confirmation)
-                        , onInput <|
-                            \v ->
-                                NetworkAddMsg
-                                    { addState | confirmation = Just v }
-                        ]
-                        []
-                    , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
-                    ]
+
+                -- , div [ class "col-span-2" ]
+                --     [ label [ class "mb-1" ] [ text "Підтвердження" ]
+                --     , input
+                --         [ class "form-control"
+                --         , value (Maybe.withDefault "" addState.confirmation)
+                --         , onInput <|
+                --             \v ->
+                --                 NetworkAddMsg
+                --                     { addState | confirmation = Just v }
+                --         ]
+                --         []
+                --     , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
+                --     ]
                 , div [ class " col-span-2" ]
                     [ label [ class "mb-1" ] [ text "Призначення" ]
                     , input
@@ -2526,19 +2526,20 @@ contentBlock shared model user =
                         []
                     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
                     ]
-                , div [ class "col-span-4" ]
-                    [ label [ class "mb-1" ] [ text "Ознаки" ]
-                    , input
-                        [ class "form-control"
-                        , value (Maybe.withDefault "" addState.signs)
-                        , onInput <|
-                            \v ->
-                                NetworkAddMsg
-                                    { addState | signs = Just v }
-                        ]
-                        []
-                    , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
-                    ]
+
+                -- , div [ class "col-span-4" ]
+                --     [ label [ class "mb-1" ] [ text "Ознаки" ]
+                --     , input
+                --         [ class "form-control"
+                --         , value (Maybe.withDefault "" addState.signs)
+                --         , onInput <|
+                --             \v ->
+                --                 NetworkAddMsg
+                --                     { addState | signs = Just v }
+                --         ]
+                --         []
+                --     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
+                --     ]
                 , section [ class "col-span-4 h-[200px]" ]
                     [ h4 []
                         [ text "Активність мережі" ]

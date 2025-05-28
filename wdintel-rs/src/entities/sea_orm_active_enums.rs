@@ -19,6 +19,18 @@ pub enum ChangelogActionEnum {
     Merge,
 }
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "network_description_type"
+)]
+pub enum NetworkDescriptionType {
+    #[sea_orm(string_value = "Confirmation")]
+    Confirmation,
+    #[sea_orm(string_value = "Sign")]
+    Sign,
+}
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "settlement_kind")]
 pub enum SettlementKind {
     #[sea_orm(string_value = "City")]

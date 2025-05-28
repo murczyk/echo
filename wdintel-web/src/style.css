@@ -1474,7 +1474,7 @@ dialog::backdrop {
 }
 
 .form__field {
-  width: 300px;
+    width: 300px;
   border: 0;
   border-bottom: 2px solid var(--border-color);
   outline: 0;
@@ -1492,4 +1492,20 @@ dialog::backdrop {
 
 .network-list-container > * {
     height: 42px;
+}
+
+.textarea__field {
+    width: 100%;
+  border: 0;
+  border: 1px solid var(--border-color);
+  outline: 0;
+  background: transparent;
+  transition: border-color 0.2s;
+  border-radius: 6px;
+  padding: 4px;
+  height: 70px;
+}
+
+.textarea__field:focus {
+    border-color: var(--ochre-normal);
 }

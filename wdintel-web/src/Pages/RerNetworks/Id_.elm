@@ -3,6 +3,7 @@ module Pages.RerNetworks.Id_ exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -71,6 +72,10 @@ type alias Model =
     , mode : Mode
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty EUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
+    , addConfirmationInp : String
+    , addSignsInp : String
+    , signals : RemoteData ApiError (List B.NetworkSignalsRes)
+    , descriptionsEditDict : Dict Int B.NetworkDescription
     }
 
 
@@ -104,6 +109,10 @@ init route shared () =
             , items = []
             , selected = []
             }
+      , addConfirmationInp = ""
+      , addSignsInp = ""
+      , signals = NotAsked
+      , descriptionsEditDict = Dict.empty
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -135,6 +144,17 @@ type Msg
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | EditNetworkKindSelMsg (Select.Msg EUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
+    | DescriptionAddClickedByUser Int B.NetworkDescrType
+    | NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
+    | ConfirmationInputChangedByUser String
+    | SignsInputChangedByUser String
+    | SignalsForNetworkLoaded (Result ApiError B.NetworkSignalsListRes)
+    | DescriptionDeleteClickedByUser B.NetworkDescription
+    | DescriptionEditClickedByUser B.NetworkDescription
+    | DescriptionEditSave B.NetworkDescription
+    | DescriptionEditUpdated Int (Result ApiError B.Network)
+    | DescriptionEditedByUser Int String
+    | DescriptionDeleted (Result ApiError B.Network)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -172,7 +192,11 @@ update shared msg model =
                 postsSelect2 =
                     { postsSelect | selected = res.postIds }
             in
-            ( { model | network = Success res, editKindSelect = kindSelect2, editPostsSelect = postsSelect2 }
+            ( { model
+                | network = Success res
+                , editKindSelect = kindSelect2
+                , editPostsSelect = postsSelect2
+              }
             , E.batch
                 [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = res.id }
                 , E.getNetworkPoints MapPointsReturnedByApi
@@ -192,6 +216,7 @@ update shared msg model =
 
                 --TODO: do not load if loaded already
                 , E.loadPostsFromShared { sortBy = Nothing }
+                , E.getSignalsForNetwork SignalsForNetworkLoaded { networkId = res.id }
                 ]
             )
 
@@ -251,12 +276,10 @@ update shared msg model =
                                 , location = network.location
                                 , comment = network.comment
                                 , radioStation = network.radioStation
-                                , confirmation = network.confirmation
                                 , purpose = network.purpose
                                 , operationMode = network.operationMode
                                 , operationType = network.operationType
                                 , operationPeriod = network.operationPeriod
-                                , signs = network.signs
                                 , activeFrom = network.activeFrom
                                 , activeTo = network.activeTo
                                 , modulationId = network.modulationId
@@ -393,6 +416,101 @@ update shared msg model =
                 _ ->
                     ( model, E.none )
 
+        DescriptionAddClickedByUser networkId descType ->
+            ( model
+            , E.networkAddDescription (NetworkDescriptionAdded descType)
+                { networkId = networkId
+                , descriptions =
+                    [ { descrType = descType
+                      , description =
+                            case descType of
+                                B.Confirmation ->
+                                    model.addConfirmationInp
+
+                                B.Sign ->
+                                    model.addSignsInp
+                      }
+                    ]
+                }
+            )
+
+        NetworkDescriptionAdded _ (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        NetworkDescriptionAdded descType (Ok network) ->
+            let
+                m1 =
+                    { model
+                        | addConfirmationInp =
+                            case descType of
+                                B.Confirmation ->
+                                    ""
+
+                                B.Sign ->
+                                    model.addConfirmationInp
+                        , addSignsInp =
+                            case descType of
+                                B.Confirmation ->
+                                    model.addSignsInp
+
+                                B.Sign ->
+                                    ""
+                    }
+            in
+            ( { m1 | network = Success network }, E.none )
+
+        ConfirmationInputChangedByUser inp ->
+            ( { model | addConfirmationInp = inp }, E.none )
+
+        SignsInputChangedByUser inp ->
+            ( { model | addSignsInp = inp }, E.none )
+
+        SignalsForNetworkLoaded (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        SignalsForNetworkLoaded (Ok res) ->
+            ( { model | signals = Success res.signals }, E.none )
+
+        DescriptionDeleteClickedByUser description ->
+            ( model, E.networkDeleteDescription DescriptionDeleted { descriptionId = description.id, networkId = description.networkId } )
+
+        DescriptionEditClickedByUser description ->
+            ( { model | descriptionsEditDict = Dict.insert description.id description model.descriptionsEditDict }, E.none )
+
+        DescriptionEditedByUser descId newDescription ->
+            let
+                descEditDict =
+                    case Dict.get descId model.descriptionsEditDict of
+                        Just d ->
+                            Dict.update descId (\_ -> Just { d | description = newDescription }) model.descriptionsEditDict
+
+                        Nothing ->
+                            model.descriptionsEditDict
+            in
+            ( { model | descriptionsEditDict = descEditDict }, E.none )
+
+        DescriptionEditSave description ->
+            ( model
+            , E.networkUpdateDescription (DescriptionEditUpdated description.id)
+                { networkId = description.networkId
+                , descriptionId = description.id
+                , descrType = description.descrType
+                , description = description.description
+                }
+            )
+
+        DescriptionEditUpdated _ (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        DescriptionEditUpdated descrId (Ok res) ->
+            ( { model | network = Success res, descriptionsEditDict = Dict.remove descrId model.descriptionsEditDict }, E.none )
+
+        DescriptionDeleted (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        DescriptionDeleted (Ok res) ->
+            ( { model | network = Success res }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -409,8 +527,11 @@ subscriptions model =
 
 mainInfoBlock : B.Network -> Shared.Model -> Model -> List (Html Msg)
 mainInfoBlock network shared model =
-    [ h5 [ class "mb-[8px]" ]
-        [ text "Форма № 1.5.4/ГУР" ]
+    [ div [ class "mb-[8px] flex justify-between items-center" ]
+        [ h5 []
+            [ text "Згідно форми" ]
+        , i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
+        ]
     , div
         [ class "network-list-container" ]
         [ div [ class "border-t-1 border-border py-[8px] flex" ]
@@ -437,7 +558,7 @@ mainInfoBlock network shared model =
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Характер роботи:" ]
             , span [] [ text <| Maybe.withDefault "" network.operationType ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
+        , div [ class "border-y-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
             , span [] [ text <| Maybe.withDefault "" network.operationPeriod ]
             ]
@@ -488,8 +609,11 @@ mainInfoBlock network shared model =
 
 mainInfoEditBlock : B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
 mainInfoEditBlock updNetworkReq shared model =
-    [ h5 [ class "mb-[8px]" ]
-        [ text "Форма № 1.5.4/ГУР" ]
+    [ div [ class "mb-[8px] flex justify-between items-center" ]
+        [ h5 []
+            [ text "Згідно форми" ]
+        , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
+        ]
     , div
         [ class "network-list-container" ]
         [ div [ class "border-t-1 border-border py-[8px] flex" ]
@@ -671,19 +795,11 @@ mainInfoEditBlock updNetworkReq shared model =
 
 contentBlock : Shared.Model -> B.Network -> Model -> List (Html Msg)
 contentBlock shared network model =
-    [ div [ class "flex justify-between items-center" ]
-        [ h2 []
-            [ EUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
-            ]
-        , case model.mode of
-            Readonly ->
-                i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
-
-            Editing _ ->
-                i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
+    [ h2 []
+        [ EUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
-        [ div [ class "col-span-8 grid  gap-[30px]", style "grid-template-rows" "460px 320px" ]
+        [ div [ class "col-span-7 grid  gap-[30px]", style "grid-template-rows" "520px 370px" ]
             [ div [ class "col-span-8 bg-w dark:bg-[#1C1C21] p-[16px]" ]
                 (case model.mode of
                     Readonly ->
@@ -767,39 +883,120 @@ contentBlock shared network model =
                         Le.Block.Spinner.loadingSpinnerSm
                 ]
             ]
-        , div [ class "col-span-4 bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        , let
+            ( confirmations, signs ) =
+                List.partition (\description -> description.descrType == B.Confirmation) network.descriptions
+          in
+          div [ class "col-span-5 bg-w dark:bg-[#1C1C21] p-[16px]" ]
             [ div [ class "mb-[16px]" ]
-                [ h5 [ class "border-b-1 border-border py-[8px]" ] [ text "Обґрунтування прив’язки" ]
-                , div [ class "py-[4px] min-h-[200px]" ]
-                    [ case model.mode of
-                        Readonly ->
-                            text <| Maybe.withDefault "" network.confirmation
-
-                        Editing updNetworkReq ->
-                            textarea
-                                [ value <| Maybe.withDefault "" updNetworkReq.confirmation
-                                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | confirmation = Just v })
-                                , class "form__field"
-                                , placeholder "введіть обґрунтування прив'язки"
-                                ]
-                                []
+                [ h5 [ class "" ] [ text "Обґрунтування прив’язки" ]
+                , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+                    [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
+                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation } |> Button.withOutlined True |> Button.view
                     ]
+                , div [ class "max-h-[200px] overflow-y-auto" ]
+                    (List.map
+                        (\description ->
+                            div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                                [ div [ class "flex justify-between items-center " ]
+                                    [ div [ class "opacity-70 flex gap-[4px] items-center" ]
+                                        [ span [] [ text description.login ]
+                                        , span [] [ text "|" ]
+                                        , span [ class "text-[13px]" ] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                        ]
+                                    , div [ class "flex gap-[8px]" ]
+                                        [ case Dict.get description.id model.descriptionsEditDict of
+                                            Just desc ->
+                                                i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+
+                                            Nothing ->
+                                                i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
+                                        , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                        ]
+                                    ]
+                                , div []
+                                    [ case Dict.get description.id model.descriptionsEditDict of
+                                        Just desc ->
+                                            textarea
+                                                [ class "textarea__field"
+                                                , placeholder "Введіть обґрунтування прив'язки"
+                                                , value desc.description
+                                                , onInput <| DescriptionEditedByUser desc.id
+                                                ]
+                                                []
+
+                                        Nothing ->
+                                            text description.description
+                                    ]
+                                ]
+                        )
+                        (List.sortWith
+                            (\a b ->
+                                if a.createdAt > b.createdAt then
+                                    LT
+
+                                else
+                                    GT
+                            )
+                            confirmations
+                        )
+                    )
                 ]
             , div []
-                [ h5 [ class "border-b-1 border-border py-[8px]" ] [ text "Розвідувальні ознаки" ]
-                , div [ class "py-[4px] min-h-[200px]" ]
-                    [ case model.mode of
-                        Readonly ->
-                            text <| Maybe.withDefault "" network.signs
-
-                        Editing updNetworkReq ->
-                            textarea
-                                [ value <| Maybe.withDefault "" updNetworkReq.signs
-                                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | signs = Just v })
-                                , class "form__field"
-                                , placeholder "введіть розвідувальні ознаки"
+                [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
+                , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+                    [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
+                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign } |> Button.withOutlined True |> Button.view
+                    ]
+                , div [ class "max-h-[200px] overflow-y-auto" ]
+                    (List.map
+                        (\description ->
+                            div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                                [ div [ class "flex justify-between items-center " ]
+                                    [ div [ class "opacity-70 flex gap-[4px] items-center" ]
+                                        [ span [] [ text description.login ]
+                                        , span [] [ text "|" ]
+                                        , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                        ]
+                                    , div [ class "flex gap-[8px]" ]
+                                        [ i [ class "bi bi-pencil cursor-pointer" ] []
+                                        , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                        ]
+                                    ]
+                                , div []
+                                    [ text description.description
+                                    ]
                                 ]
-                                []
+                        )
+                        (List.sortWith
+                            (\a b ->
+                                if a.createdAt > b.createdAt then
+                                    LT
+
+                                else
+                                    GT
+                            )
+                            signs
+                        )
+                    )
+                , section [ class "mt-[8px]" ]
+                    [ h5 [] [ text "Сигнали" ]
+                    , div [ class "h-[100px] overflow-y-auto" ]
+                        (List.map
+                            (\signalsForUnit ->
+                                if List.length signalsForUnit.signals > 0 then
+                                    div []
+                                        [ div []
+                                            [ span [ class "font-medium" ] [ text signalsForUnit.unitName ]
+                                            , div [ class "grid grid-cols-2 gap-[8px]" ] (List.map (\s -> div [ class "" ] [ span [ class "w-[50px] mr-[8px]" ] [ text s.text ], span [] [ text <| Maybe.withDefault "" s.meaning ] ]) signalsForUnit.signals)
+                                            ]
+                                        ]
+
+                                else
+                                    text "Відсутні прив'язані до підрозділів сигнали"
+                            )
+                            (RD.withDefault [] model.signals)
+                        )
                     ]
                 ]
             ]

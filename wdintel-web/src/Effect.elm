@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkPoints, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, toggleDarkMode, updateNetwork, updateNetworkPosts
+    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkPoints, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, toggleDarkMode, updateNetwork, updateNetworkPosts
     )
 
 {-|
@@ -128,6 +128,10 @@ type Effect msg
     | PostCreate (Result ApiError B.Post -> msg) B.CreatePostReq
     | PostUpdate (Result ApiError B.Post -> msg) B.UpdatePostReq
     | PostDelete (Result ApiError () -> msg) B.DeletePostReq
+    | NetworkAddDescription (Result ApiError B.Network -> msg) B.AddNetworkDescriptionsReq
+    | NetworkDeleteDescription (Result ApiError B.Network -> msg) B.DeleteNetworkDescriptionReq
+    | NetworkUpdateDescription (Result ApiError B.Network -> msg) B.UpdateNetworkDescriptionReq
+    | GetSignalsForNetwork (Result ApiError B.NetworkSignalsListRes -> msg) B.NetworkSignalsListReq
 
 
 
@@ -531,6 +535,22 @@ postDelete toMsg payload =
     PostDelete toMsg payload
 
 
+networkAddDescription toMsg payload =
+    NetworkAddDescription toMsg payload
+
+
+networkDeleteDescription toMsg payload =
+    NetworkDeleteDescription toMsg payload
+
+
+networkUpdateDescription toMsg payload =
+    NetworkUpdateDescription toMsg payload
+
+
+getSignalsForNetwork toMsg payload =
+    GetSignalsForNetwork toMsg payload
+
+
 
 -- INTERNALS
 
@@ -768,6 +788,18 @@ map fn effect =
 
         PostDelete toMsg payload ->
             PostDelete (fn << toMsg) payload
+
+        NetworkAddDescription toMsg payload ->
+            NetworkAddDescription (fn << toMsg) payload
+
+        NetworkUpdateDescription toMsg payload ->
+            NetworkUpdateDescription (fn << toMsg) payload
+
+        NetworkDeleteDescription toMsg payload ->
+            NetworkDeleteDescription (fn << toMsg) payload
+
+        GetSignalsForNetwork toMsg payload ->
+            GetSignalsForNetwork (fn << toMsg) payload
 
 
 {-| Elm Land depends on this function to perform your effects.
@@ -1251,6 +1283,34 @@ toCmd options effect =
                 { url = "/api/sigint/post/delete"
                 , body = Http.jsonBody (B.deletePostReqEncoder payload)
                 , expect = leExpectJson toMsg (Decode.succeed ())
+                }
+
+        NetworkAddDescription toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network/add-descriptions"
+                , body = Http.jsonBody (B.addNetworkDescriptionsReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkDecoder
+                }
+
+        NetworkDeleteDescription toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network/delete-description"
+                , body = Http.jsonBody (B.deleteNetworkDescriptionReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkDecoder
+                }
+
+        NetworkUpdateDescription toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network/update-description"
+                , body = Http.jsonBody (B.updateNetworkDescriptionReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkDecoder
+                }
+
+        GetSignalsForNetwork toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network-signals-list"
+                , body = Http.jsonBody (B.networkSignalsListReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkSignalsListResDecoder
                 }
 
         FocusHtmlElement payload ->

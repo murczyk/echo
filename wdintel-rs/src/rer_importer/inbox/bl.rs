@@ -469,10 +469,11 @@ pub async fn submit_upsert_inbox_item(
                 Mgrs::from_latlon(&LatLon::create(lat, lng).context(h!())?, 6)
                     .to_string();
             Some(Coords {
-                text,
+                text: text.clone(),
                 lat,
                 lng,
                 mgrs,
+                capture: text.clone(),
             })
         }
         _ => None,
@@ -514,7 +515,7 @@ pub async fn submit_upsert_inbox_item(
                 .await?;
             }
             Some(comment) => {
-                println!(
+                debug!(
                     "> updating comment for message {}: old: {}, new: {}",
                     comment.signal_message_id, comment.comment, extended_form
                 );

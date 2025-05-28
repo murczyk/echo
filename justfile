@@ -185,7 +185,7 @@ copy-db:
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-kharkiv" ]]; then \
         just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-sumy2" ]]; then \
+    elif [[ "{{ server }}" == "echo-siversk" ]]; then \
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-kherson2" ]]; then \
         just server={{ server }} _copy-db; \
@@ -210,9 +210,11 @@ _copy-db:
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
     scp {{ server }}:~/Downloads/wd-{{ dt1 }}.pgrestore ~/Downloads/
     ssh -t {{ server }} 'rm ~/Downloads/wd-{{ dt1 }}.pgrestore'
-    sudo -u postgres dropdb --force wd
-    sudo -u postgres psql -c "CREATE DATABASE wd"
-    echo "now run: pg_restore -U wd -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
+    set +x
+    echo "Run: sudo -u postgres dropdb --force wd"
+    echo "Run: sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
+    echo "Run: pg_restore -U wd -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
+    set -x
 
 copy-db-echo-tgt-art:
     #!/bin/bash
@@ -382,7 +384,7 @@ deploy-geo-screenshot:
     rsync --progress ~/Downloads/geo-screenshot_0.1.0-1_amd64.deb {{ server }}:Downloads/
     ssh {{ server }} 'sudo apt-get install -y xvfb libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
     ssh {{ server }} 'cd Downloads && sudo dpkg -i geo-screenshot_0.1.0-1_amd64.deb'
-    echo "geo-screenshot deploy completed succesfully"    
+    echo "geo-screenshot deploy completed succesfully"
 
 builder-build-signal-cli-native:
     #!/bin/bash

@@ -467,8 +467,7 @@ where
         }
         for ilike in search_parts.ilike {
             q2 = q2.filter(
-                sea_query::Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
-                .ilike(ilike),
+                sea_query::Expr::col(signal_message::Column::Body).ilike(ilike),
             );
         }
         for not_ilike in search_parts.not_ilike {

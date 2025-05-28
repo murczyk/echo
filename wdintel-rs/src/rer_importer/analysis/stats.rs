@@ -393,7 +393,7 @@ pub async fn fetch_freqs(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    let instant = std::time::Instant::now();
+    let _instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
     struct FreqsRes {
@@ -402,10 +402,10 @@ pub async fn fetch_freqs(
     }
     let freqs_res =
         build_freqs_query(&req, &user, dt_since, dt_till, master_keys)?;
-    debug!(
-        "> freqs_res: {}",
-        freqs_res.build(DbBackend::Postgres).to_string()
-    );
+    // debug!(
+    //     "> freqs_res: {}",
+    //     freqs_res.build(DbBackend::Postgres).to_string()
+    // );
 
     let new_freqs = get_new_freqs(&env.dbx, dt_since, dt_till)
         .await
@@ -423,7 +423,7 @@ pub async fn fetch_freqs(
         })
         .collect::<Vec<AnalysisStatsFreq>>();
 
-    debug!("freqs op took: {:?}", instant.elapsed());
+    // debug!("freqs op took: {:?}", instant.elapsed());
     Ok(freqs)
 }
 

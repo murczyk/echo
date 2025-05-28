@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 pub mod grafana;
+pub mod http;
 pub mod json;
 pub mod multipart;
 pub mod orm;

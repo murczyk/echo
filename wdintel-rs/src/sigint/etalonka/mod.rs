@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::sigint::network::types::{NetworkDescrType, NetworkDescription};
 use crate::types::*;
 use crate::utils::*;
 use actix_web::web::Json;
@@ -1239,17 +1240,29 @@ pub async fn report_networks(
             );
 
             if !req.networks_only {
+                let network_descriptions =
+                    crate::sigint::network::get_network_descriptions(
+                        &env.dbx, network.id,
+                    )
+                    .await
+                    .context(h!())?;
+
                 doc = add_field(
                     doc,
                     "Розвідувальні ознаки підрозділу: ",
-                    network
-                        .signs
-                        .as_ref()
-                        .map(String::as_str)
-                        .unwrap_or_default(),
+                    &String::default(),
                 );
 
                 if req.include_sigint_signs {
+                    // first add network description with Sign type
+                    doc = add_network_description_table(
+                        doc,
+                        &network_descriptions,
+                        NetworkDescrType::Sign,
+                        width_unit,
+                    );
+
+                    // then add network unit signals for each unit in network
                     let network_unit_signals =
                         load_signals_per_network(&env.dbx, network.id)
                             .await
@@ -1311,15 +1324,19 @@ pub async fn report_networks(
                 }
 
                 if req.include_confirmation {
+                    // first add network comments
                     doc = add_field(
                         doc,
                         "Примітки (аргументація): ",
-                        format!(
-                            "{} {}",
-                            network.confirmation.as_deref().unwrap_or_default(),
-                            network.comment
-                        )
-                        .as_str(),
+                        &network.comment,
+                    );
+
+                    // then add network description with Confitmation type
+                    doc = add_network_description_table(
+                        doc,
+                        &network_descriptions,
+                        NetworkDescrType::Confirmation,
+                        width_unit,
                     );
                 }
 
@@ -1509,4 +1526,46 @@ where
     } else {
         String::new()
     }
+}
+
+pub fn add_network_description_table(
+    mut doc: Docx,
+    network_descriptions: &Vec<NetworkDescription>,
+    filter_type: NetworkDescrType,
+    width_unit: usize,
+) -> Docx {
+    let filtered_descriptions = network_descriptions
+        .iter()
+        .filter(|desc| desc.descr_type == filter_type)
+        .collect::<Vec<_>>();
+
+    if !filtered_descriptions.is_empty() {
+        let table = Table::new(
+            filtered_descriptions
+                .iter()
+                .map(|descr| {
+                    TableRow::new(vec![
+                        create_table_data_cell(
+                            width_unit * 48,
+                            &descr.description,
+                            None,
+                            false,
+                        ),
+                        // create_table_data_cell(
+                        //     width_unit * 15,
+                        //     &descr.comment.clone().unwrap_or_default(),
+                        //     None,
+                        //     false,
+                        // ),
+                    ])
+                })
+                .collect(),
+        )
+        .width(width_unit * 48, WidthType::Dxa)
+        .set_borders(TableBorders::with_empty());
+
+        doc = doc.add_table(table).add_paragraph(Paragraph::new());
+    }
+
+    doc
 }

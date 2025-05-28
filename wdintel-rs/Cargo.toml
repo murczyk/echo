@@ -11,32 +11,32 @@ echo-migration = { version = "*", path = "./migration" }
 echo-install-utils = { git = "ssh://git@github.com/echoua/echo-install-utils.git", rev = "dbd41364acc23ea96d793ba2cc92943915116fcd" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.133"
-quick-xml = { version = "0.37.4", features = ["serialize", "overlapped-lists"] }
-actix-web = "4.9.0"
+quick-xml = { version = "0.37.5", features = ["serialize", "overlapped-lists"] }
+actix-web = "4.11.0"
 actix-files = "0.6.6"
 actix-multipart = "0.7.2"
 actix-identity = "0.8.0"
 actix-session = { version = "0.10.1", features = ["cookie-session"] }
-clap = { version = "4.5.36", features = ["derive"] }
+clap = { version = "4.5.38", features = ["derive"] }
 dirs = "6.0.0"
 elm_rs = "0.2.3"
 log = "0.4.27"
 thiserror = "2.0.12"
 anyhow = "1.0.98"
 uuid = { version = "1.11.0", features = ["v4", "v7"] }
-chrono = "0.4.40"
+chrono = "0.4.41"
 chrono-tz = "0.10.3"
 lazy_static = "1.5.0"
 regex = { version = "1.11.1", features = ["pattern"] }
 tempdir = "~0.3"
-tempfile = "3.13.0"
+tempfile = "3.20.0"
 walkdir = "^2.5.0"
-zip = "2.5.0"
-zip-extract = "^0.1.3"
+zip = "3.0.0"
+zip-extract = "0.2.3"
 serial_test = "3.2.0"
-aws-sdk-s3 = { version = "^1.25", features = ["behavior-version-latest"] }
-tokio = { version = "1.44.2" }
-tokio-util = { version = "0.7.14", features = ["io"] }
+aws-sdk-s3 = { version = "1.86.0", features = ["behavior-version-latest"] }
+tokio = { version = "1.45.0" }
+tokio-util = { version = "0.7.15", features = ["io"] }
 nipper = "0.1"
 futures-util = "0.3.30"
 futures = "0.3.31"
@@ -44,7 +44,7 @@ fs_extra = "~1.3"
 tl = "~0.7.8"
 reqwest = { version = "^0.12.9", default-features = false, features = ["json", "multipart", "blocking", "rustls-tls"] }
 csv = "1.3.1"
-rust_xlsxwriter = "0.86.0"
+rust_xlsxwriter = "0.87.0"
 # https://github.com/tafia/calamine/issues/498
 calamine = "0.27.0"
 # calamine = { git = "https://github.com/prophittcorey/calamine", rev = "2fc1a8df0d0519f352a4393660c54627c1e50cc2" }
@@ -57,27 +57,27 @@ sqlx = { version = "0.8.5", features = [
 ] }
 rand = "0.9.1"
 sha256 = "1.6.0"
-sea-orm = { version = "1.1.10", features = [
+sea-orm = { version = "1.1.11", features = [
 	"debug-print",
 	"runtime-tokio-rustls",
 	"sqlx-postgres",
 	"sea-orm-internal",
 	"postgres-array",
 ] }
-sea-orm-migration = "1.1.10"
+sea-orm-migration = "1.1.11"
 base64 = "^0.22"
 notify = "8.0.0"
 env_logger = "0.11.8"
 substring = "~1.4.5"
 unicode-segmentation = "1.12.0"
 indicatif = "0.17.9"
-redis = { version = "0.29.5", features = ["tokio-comp", "connection-manager"] }
-redis-macros = "0.5.2"
+redis = { version = "0.31.0", features = ["tokio-comp", "connection-manager"] }
+redis-macros = "0.5.3"
 rust-argon2 = "^2.1.0"
 bytes = "1.9.0"
 docx-rs = "^0.4.17"
 async-recursion = "^1.1.1"
-toml = "^0.8.12"
+toml = "0.8.22"
 xshell = "0.2.7"
 itertools = "0.14.0"
 cached = { version = "0.55.1", features = ["async"] }
@@ -90,7 +90,7 @@ pest_derive = "2.7.14"
 oauth2 = { version = "5.0.0-rc.1", features = ["reqwest-blocking"] }
 ctor = "0.4.1"
 urlencoding = "2.1.3"
-syn = "2.0.100"
+syn = "2.0.101"
 deadpool-postgres = { version = "0.14.1", default-features = false, features = [ "rt_tokio_1" ] }
 tokio-postgres = { version = "0.7.13", default-features = false, features = [
 	"with-chrono-0_4",
@@ -98,7 +98,7 @@ tokio-postgres = { version = "0.7.13", default-features = false, features = [
 ] }
 time = "0.3.41"
 cmd_lib = "1.9.5"
-rustls = { version = "0.23.26", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+rustls = { version = "0.23.27", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 ssh2 = "0.9.5"
 demoji = "0.0.3"
 
@@ -108,7 +108,7 @@ rev = "ca7501a3b640ff2f4eb46384808f1d39908a8853"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
-rev = "4d03c40e65ac9e46302e52088de91fc1625f42ab"
+rev = "26aa3cae488271ddab42791823e366cbe27f4832"
 
 [dependencies.opencv]
 git = "https://github.com/twistedfall/opencv-rust"

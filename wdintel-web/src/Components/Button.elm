@@ -57,7 +57,7 @@ view : Button msg -> Html msg
 view (Settings settings) =
     button
         [ onClick settings.onClick
-        , class "border-1 rounded-lg! px-[16px] py-[8px] font-medium flex gap-[4px] items-center cursor-pointer disabled:bg-[var(--neutral-400)] disabled:cursor-default disabled:border-[var(--neutral-400)]"
+        , class "border-1 rounded-[6px]! leading-[120%]! font-medium px-[16px] py-[8px] flex gap-[4px] items-center cursor-pointer disabled:bg-[var(--neutral-400)] disabled:cursor-default disabled:border-[var(--neutral-400)]"
         , classList
             [ ( "bg-w dark:bg-background border-action text-action ", settings.style == Primary && settings.isOutlined == True )
             , ( "bg-action border-action text-button-text", settings.style == Primary && settings.isOutlined == False )

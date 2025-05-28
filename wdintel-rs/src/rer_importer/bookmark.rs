@@ -25,7 +25,8 @@ async fn bookmark_add(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let txn = env.dbx.begin().await?;
-    sigint_bookmark::Entity::insert_many(
+
+    let bookmarks =
         crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
             .await?
             .into_iter()
@@ -36,10 +37,13 @@ async fn bookmark_add(
                 deleted: Set(false),
                 created_at: NotSet,
             })
-            .collect::<Vec<sigint_bookmark::ActiveModel>>(),
-    )
-    .exec(&env.dbx)
-    .await?;
+            .collect::<Vec<sigint_bookmark::ActiveModel>>();
+
+    if !bookmarks.is_empty() {
+        sigint_bookmark::Entity::insert_many(bookmarks)
+            .exec(&env.dbx)
+            .await?;
+    }
 
     println!(
         "Bookmark added for message_id: {} by {}",

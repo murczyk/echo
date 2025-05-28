@@ -43,7 +43,7 @@ pub async fn record_new_session(
             };
 
             let stmt = match client.prepare(
-                "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload) 
+                "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
                  VALUES ($1, $2, $3, $4, $5, $6)"
             ).await {
                 Ok(stmt) => stmt,
@@ -62,13 +62,13 @@ pub async fn record_new_session(
                         &public_host,
                         &username,
                         &Option::<String>::None,
-                        &Option::<serde_json::Value>::None,
+                        &Option::<Vec<u8>>::None,
                     ],
                 )
                 .await;
 
             if let Err(e) = res {
-                warn!("Failed to insert activity_page_visit: {:?}", e);
+                warn!("Failed to insert activity_page_visit: {:?} {}", e, h!());
             }
         });
     }
@@ -112,7 +112,7 @@ pub async fn record_page_visit(
             };
 
             let stmt = match client.prepare(
-                "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload) 
+                "INSERT INTO activity_page_visit (ts, id, public_host, username, page, payload)
                  VALUES ($1, $2, $3, $4, $5, $6)"
             ).await {
                 Ok(stmt) => stmt,
@@ -130,7 +130,11 @@ pub async fn record_page_visit(
                 .await;
 
             if let Err(e) = res {
-                warn!("Failed to insert activity_page_visit: {:?}", e);
+                warn!(
+                    "Failed to insert activity_page_visit: {:?}, {}",
+                    e,
+                    h!()
+                );
             }
         });
     }

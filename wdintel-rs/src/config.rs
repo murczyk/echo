@@ -142,6 +142,7 @@ pub struct SecretConfig {
     pub delta_api_url: String,
     pub user_agent: String,
     pub userinfo_endpoint: String,
+    pub redirect_url_echoua: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

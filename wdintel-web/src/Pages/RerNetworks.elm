@@ -314,7 +314,8 @@ generatePreview x =
     { networkTo
         | location = concatUnique networkTo.location networkFrom.location
         , comment = concatUnique networkTo.comment networkFrom.comment
-        , confirmation = concatUniqueMaybe networkTo.confirmation networkFrom.confirmation
+
+        --, confirmation = concatUniqueMaybe networkTo.confirmation networkFrom.confirmation
         , radioStation = concatUniqueMaybe networkTo.radioStation networkFrom.radioStation
         , freqs = networkTo.freqs ++ networkFrom.freqs |> Set.fromList |> Set.toList
     }
@@ -1004,7 +1005,7 @@ filterPanel shared model =
                         , p [] [ text "Еталонка по фільтру дата/частота/підрозділ" ]
                         , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
                             ([ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Форма №1.5.4/ГУР" ] ]
+                                |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
                                 |> Checkbox.view
                              , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
                                 |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]

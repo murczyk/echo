@@ -46,6 +46,8 @@ pub enum Relation {
     SigintComment,
     #[sea_orm(has_many = "super::sigint_network::Entity")]
     SigintNetwork,
+    #[sea_orm(has_many = "super::sigint_network_description::Entity")]
+    SigintNetworkDescription,
     #[sea_orm(has_many = "super::sigint_signal_changelog::Entity")]
     SigintSignalChangelog,
     #[sea_orm(has_many = "super::sigint_unit_changelog::Entity")]
@@ -101,6 +103,12 @@ impl Related<super::sigint_comment::Entity> for Entity {
 impl Related<super::sigint_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetwork.def()
+    }
+}
+
+impl Related<super::sigint_network_description::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkDescription.def()
     }
 }
 

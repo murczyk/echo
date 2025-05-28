@@ -23,8 +23,6 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub radio_station: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub confirmation: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
     pub purpose: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub operation_mode: Option<String>,
@@ -32,8 +30,6 @@ pub struct Model {
     pub operation_type: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub operation_period: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub signs: Option<String>,
     pub merged_to: Option<i64>,
     pub active_from: DateTime,
     pub active_to: Option<DateTime>,
@@ -60,6 +56,8 @@ pub enum Relation {
     Modulation,
     #[sea_orm(has_many = "super::sigint_network_changelog::Entity")]
     SigintNetworkChangelog,
+    #[sea_orm(has_many = "super::sigint_network_description::Entity")]
+    SigintNetworkDescription,
     #[sea_orm(has_many = "super::sigint_network_freq::Entity")]
     SigintNetworkFreq,
     #[sea_orm(has_many = "super::sigint_network_post::Entity")]
@@ -83,6 +81,12 @@ impl Related<super::modulation::Entity> for Entity {
 impl Related<super::sigint_network_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkChangelog.def()
+    }
+}
+
+impl Related<super::sigint_network_description::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkDescription.def()
     }
 }
 

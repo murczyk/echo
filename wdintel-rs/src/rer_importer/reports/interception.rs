@@ -22,7 +22,6 @@ struct InboxMessage {
     body: Option<String>,
     comment: Option<String>,
     coords: Option<String>,
-    tags: Option<JsonValue>,
 }
 
 async fn get_inbox_messages_report(
@@ -41,7 +40,6 @@ async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Tags)
         .column(signal_message::Column::Body)
         .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
         .column_as(
@@ -197,9 +195,6 @@ pub async fn report_xlsx_kind_interception(
     let coltitle_green = coltitle_base
         .clone()
         .set_background_color(Color::RGB(0x77bc65));
-    let coltitle_brown = coltitle_base
-        .clone()
-        .set_background_color(Color::RGB(0xf67315));
 
     let format_blue = Format::new()
         .set_background_color(Color::RGB(0x5b9bd5))
@@ -220,10 +215,6 @@ pub async fn report_xlsx_kind_interception(
         .set_text_wrap();
     let format_green_wrap = Format::new()
         .set_background_color(Color::RGB(0x77bc65))
-        .set_border(FormatBorder::Thin)
-        .set_text_wrap();
-    let format_brown_wrap = Format::new()
-        .set_background_color(Color::RGB(0xf67315))
         .set_border(FormatBorder::Thin)
         .set_text_wrap();
 
@@ -281,27 +272,6 @@ pub async fn report_xlsx_kind_interception(
     sheet1
         .set_column_format(8, &format_green_wrap)
         .context(h!())?; // Set format
-    sheet1
-        .write_string_with_format(0, 9, "теги", &coltitle_brown)
-        .context(h!())?;
-    sheet1.set_column_width(9, 30.0).context(h!())?; // Set width
-    sheet1
-        .set_column_format(9, &format_brown_wrap)
-        .context(h!())?; // Set format
-
-    let all_tags = {
-        let tags_vec = tag::Entity::find()
-            .columns([tag::Column::Id, tag::Column::Title])
-            .into_tuple::<(i64, String)>()
-            .all(&env.dbx)
-            .await
-            .context(h!())?;
-        let mut tags = HashMap::new();
-        for tag in tags_vec {
-            tags.insert(tag.0, tag.1);
-        }
-        tags
-    };
 
     let mut i = 1;
     for m in get_inbox_messages_report(user, &env, &req.req)
@@ -354,19 +324,6 @@ pub async fn report_xlsx_kind_interception(
         sheet1
             .write_string(i, 8, &m.coords.clone().unwrap_or("".to_string()))
             .context(h!())?;
-
-        let mes_tags = m
-            .tags
-            .clone()
-            .unwrap_or(json!([]))
-            .as_array()
-            .unwrap_or(&vec![])
-            .into_iter()
-            .filter_map(|x| x.as_i64())
-            .filter_map(|x| all_tags.get(&x))
-            .map(|s| s.to_string())
-            .join(",");
-        sheet1.write_string(i, 9, &mes_tags).context(h!())?;
 
         i += 1;
     }

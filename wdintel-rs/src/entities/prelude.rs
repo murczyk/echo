@@ -31,6 +31,7 @@ pub use super::sigint_important::Entity as SigintImportant;
 pub use super::sigint_inbox_item::Entity as SigintInboxItem;
 pub use super::sigint_network::Entity as SigintNetwork;
 pub use super::sigint_network_changelog::Entity as SigintNetworkChangelog;
+pub use super::sigint_network_description::Entity as SigintNetworkDescription;
 pub use super::sigint_network_freq::Entity as SigintNetworkFreq;
 pub use super::sigint_network_freq_changelog::Entity as SigintNetworkFreqChangelog;
 pub use super::sigint_network_post::Entity as SigintNetworkPost;

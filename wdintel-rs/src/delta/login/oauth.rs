@@ -15,11 +15,15 @@ pub async fn handle_receive_code(
     env: actix_web::web::Data<Env>,
     req: actix_web::HttpRequest,
 ) -> anyhow::Result<UserInfo> {
+    let authority = crate::utils::http::extract_authority_header(&req);
+    let is_echoua =
+        authority.clone().filter(|x| x.contains("echoua")).is_some();
+
     let query_str = req.query_string().to_owned();
     let params = Query::<Params>::from_query(&query_str)
         .context("failed to parse params")?;
     let code = &params.code;
-    let result = login(&env.config, code.clone()).await;
+    let result = login(&env.config, code.clone(), is_echoua).await;
     let (token, _) = result.context("bad request")?;
     let user_info =
         decode_token(&token).context("failed to extract user info")?;
@@ -29,8 +33,10 @@ pub async fn handle_receive_code(
 pub async fn login(
     config: &Config,
     code: String,
+    is_echoua: bool,
 ) -> anyhow::Result<(String, Option<String>)> {
-    let (http_client, client) = build_clients(config).context(h!())?;
+    let (http_client, client) =
+        build_clients(config, is_echoua).context(h!())?;
 
     let code = AuthorizationCode::new(code.clone());
 
@@ -58,8 +64,11 @@ pub async fn login(
     }
 }
 
-pub async fn build_auth_url(config: &Config) -> anyhow::Result<String> {
-    let (_, client) = build_clients(config).context(h!())?;
+pub async fn build_auth_url(
+    config: &Config,
+    is_echoua: bool,
+) -> anyhow::Result<String> {
+    let (_, client) = build_clients(config, is_echoua).context(h!())?;
 
     let mut url_builder = client.authorize_url(CsrfToken::new_random);
     let api_config = config.secret_config().context(h!())?;
@@ -74,15 +83,27 @@ pub async fn build_auth_url(config: &Config) -> anyhow::Result<String> {
     Ok(res)
 }
 
-pub fn build_clients(main_config: &Config) -> anyhow::Result<Clients> {
+pub fn build_clients(
+    main_config: &Config,
+    is_echoua: bool,
+) -> anyhow::Result<Clients> {
     let config = main_config.secret_config().context(h!())?;
+    let auth_url = config.auth_url.clone();
+
     let client_id = ClientId::new(config.client_id.clone());
     let client_secret = ClientSecret::new(config.client_secret.clone());
-    let auth_url = AuthUrl::new(config.auth_url.clone()).context(h!())?;
+    let auth_url = AuthUrl::new(auth_url).context(h!())?;
     let token_url =
         TokenUrl::new(config.token_endpoint.clone()).context(h!())?;
 
-    let redirect_url = config.redirect_url.clone();
+    let redirect_url = if is_echoua {
+        match config.redirect_url_echoua.clone() {
+            Some(url) => url,
+            None => config.redirect_url.clone(),
+        }
+    } else {
+        config.redirect_url.clone()
+    };
     debug!("redirect url: {}", redirect_url);
     let client: Oauth2Cli = BasicClient::new(client_id)
         .set_client_secret(client_secret)

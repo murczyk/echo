@@ -670,17 +670,18 @@ contentBlock shared model user =
                         "disabled"
                 ]
                 [ td [ title (String.fromInt signal.id) ] [ text signal.text ]
-                , td [class "relative"] [ text <| Maybe.withDefault "" signal.meaning 
-                                        , Watermark.new user.name
-                                            |> Watermark.withRotate -10
-                                            |> Watermark.withPositioning (1, 1)
-                                            |> Watermark.withFontSize "2rem"
-                                            |> Watermark.withOpacity 0.3
-                                            |> Watermark.view
-                                            |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
-                ]
+                , td [ class "relative" ]
+                    [ text <| Maybe.withDefault "" signal.meaning
+                    , Watermark.new user.name
+                        |> Watermark.withRotate -10
+                        |> Watermark.withPositioning ( 1, 1 )
+                        |> Watermark.withFontSize "2rem"
+                        |> Watermark.withOpacity 0.3
+                        |> Watermark.view
+                        |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
+                    ]
                 , td [] [ text <| Maybe.withDefault "" <| Maybe.map .name <| ListX.find (\u -> u.id == Maybe.withDefault 0 signal.unit) model.units ]
-                , td [  ]
+                , td []
                     [ text <| Maybe.withDefault "" signal.coordinates
                     ]
                 , td []
@@ -1074,12 +1075,12 @@ view _ shared user model =
                         ]
                     ]
                 , div
-                    [ class "border-start"
+                    [ class "border-start grow-1"
                     , style "height" "calc(-50px + 100vh)"
                     , style "overflow-y" "scroll"
                     ]
                     [ h1 [ class "py-2 ps-4" ]
-                        [ span [ class "me-2" ] [ text "сигнали" ]
+                        [ span [ class "me-2" ] [ text "Сигнали" ]
                         , button
                             [ type_ "button"
                             , class "inline-block btn btn-outline-secondary me-2"

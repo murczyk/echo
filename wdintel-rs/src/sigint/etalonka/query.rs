@@ -113,7 +113,6 @@ pub async fn load_freqs_per_unit(
         .column(sigint_network::Column::Comment)
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::RadioStation)
-        .column(sigint_network::Column::Confirmation)
         .column_as(sigint_unit::Column::Name, "unit")
         .column_as(sigint_inbox_item::Column::Datetime.min(), "first_time")
         .join(
@@ -1715,9 +1714,7 @@ pub async fn load_networks(
         .column(sigint_network::Column::OperationMode)
         .column(sigint_network::Column::OperationType)
         .column(sigint_network::Column::OperationPeriod)
-        .column(sigint_network::Column::Signs)
         .column(sigint_network::Column::Comment)
-        .column(sigint_network::Column::Confirmation)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)

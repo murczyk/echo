@@ -1,3 +1,4 @@
+use crate::entities::sea_orm_active_enums::*;
 use crate::sigint::etalonka::types::*;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -12,13 +13,11 @@ pub struct NetworkDesc {
     pub location: String,
     pub comment: String,
     pub radio_station: Option<String>,
-    pub confirmation: Option<String>,
     pub created_at: NaiveDateTime,
     pub purpose: Option<String>,
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub signs: Option<String>,
     pub unit_name: String,
     pub updated_by: Option<String>,
     pub updated_at: NaiveDateTime,
@@ -40,13 +39,11 @@ pub struct Network {
     pub location: String,
     pub comment: String,
     pub radio_station: Option<String>,
-    pub confirmation: Option<String>,
     pub created_at: i64,
     pub purpose: Option<String>,
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub signs: Option<String>,
     pub last_updated_at: i64,
     pub last_updated_by: Option<String>,
     pub active_from: i64,
@@ -54,6 +51,7 @@ pub struct Network {
     pub modulation_id: Option<i32>,
     pub modulation_name: Option<String>,
     pub post_ids: Vec<i64>,
+    pub descriptions: Vec<NetworkDescription>,
 }
 
 #[derive(
@@ -75,16 +73,15 @@ pub struct CreateNetworkReq {
     pub location: String,
     pub comment: String,
     pub radio_station: Option<String>,
-    pub confirmation: Option<String>,
     pub purpose: Option<String>,
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub signs: Option<String>,
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
     pub modulation_id: Option<i32>,
     pub post_ids: Vec<i64>,
+    pub descriptions: Option<Vec<AddNetworkDescription>>,
 }
 
 #[derive(
@@ -92,21 +89,20 @@ pub struct CreateNetworkReq {
 )]
 pub struct UpdateNetworkReq {
     pub id: i64,
-    // use a separate API to add/remove freqs, units and posts
+    // use a separate API to add/remove freqs, units, posts and descriptions
     // pub freqs: Option<Vec<String>>,
     // pub unit_ids: Vec<i64>,
     // pub post_ids: Vec<i64>,
+    // pub descriptions: Vec<NetworkDescription>,
     pub kind: String,
     pub name: String,
     pub location: String,
     pub comment: String,
     pub radio_station: Option<String>,
-    pub confirmation: Option<String>,
     pub purpose: Option<String>,
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub signs: Option<String>,
     pub active_from: i64,
     pub active_to: Option<i64>,
     pub modulation_id: Option<i32>,
@@ -279,10 +275,90 @@ pub struct ModulationRec {
     pub right: i32,
     pub enabled: bool,
 }
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct UpdateNetworkPostsReq {
     pub network_id: i64,
     pub post_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum NetworkDescrType {
+    Confirmation,
+    Sign,
+}
+
+impl From<NetworkDescriptionType> for NetworkDescrType {
+    fn from(db_enum: NetworkDescriptionType) -> Self {
+        match db_enum {
+            NetworkDescriptionType::Confirmation => {
+                NetworkDescrType::Confirmation
+            }
+            NetworkDescriptionType::Sign => NetworkDescrType::Sign,
+        }
+    }
+}
+
+impl From<NetworkDescrType> for NetworkDescriptionType {
+    fn from(db_enum: NetworkDescrType) -> Self {
+        match db_enum {
+            NetworkDescrType::Confirmation => {
+                NetworkDescriptionType::Confirmation
+            }
+            NetworkDescrType::Sign => NetworkDescriptionType::Sign,
+        }
+    }
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkDescription {
+    pub id: i64,
+    pub network_id: i64,
+    pub descr_type: NetworkDescrType,
+    pub description: String,
+    // pub comment: Option<String>,
+    pub login: String,
+    pub created_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AddNetworkDescription {
+    pub descr_type: NetworkDescrType,
+    pub description: String,
+    // pub comment: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AddNetworkDescriptionsReq {
+    pub network_id: i64,
+    pub descriptions: Vec<AddNetworkDescription>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateNetworkDescriptionReq {
+    pub network_id: i64,
+    pub description_id: i64,
+    pub descr_type: NetworkDescrType,
+    pub description: String,
+    // pub comment: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteNetworkDescriptionReq {
+    pub network_id: i64,
+    pub description_id: i64,
 }

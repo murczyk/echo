@@ -25,7 +25,7 @@ async fn important_add(
     let login = user.id()?;
     crate::users::has_role(&env.dbx, &login, "Rer").await?;
     let txn = env.dbx.begin().await?;
-    sigint_important::Entity::insert_many(
+    let important_to_insert =
         crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
             .await?
             .into_iter()
@@ -36,10 +36,12 @@ async fn important_add(
                 deleted: Set(false),
                 created_at: NotSet,
             })
-            .collect::<Vec<sigint_important::ActiveModel>>(),
-    )
-    .exec(&env.dbx)
-    .await?;
+            .collect::<Vec<sigint_important::ActiveModel>>();
+    if !important_to_insert.is_empty() {
+        sigint_important::Entity::insert_many(important_to_insert)
+            .exec(&env.dbx)
+            .await?;
+    }
 
     println!(
         "Message {} marked as important by {}",

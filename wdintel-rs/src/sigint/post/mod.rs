@@ -1,13 +1,9 @@
+use self::types::*;
 use crate::entities::*;
-use crate::error::AppError;
-use crate::h;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
-use anyhow::Context;
 use sea_orm::*;
-
-use self::types::*;
 
 pub mod types;
 
@@ -45,7 +41,7 @@ pub async fn get_or_create_post_id<C>(
 where
     C: ConnectionTrait,
 {
-    if let Some(id) = get_post_id(txn, post_name).await? {
+    if let Some(id) = get_post_id(txn, post_name).await.context(h!())? {
         return Ok(Some(id));
     }
 
@@ -59,8 +55,18 @@ where
         ..Default::default()
     };
 
-    let inserted = new_post.insert(txn).await?;
-    Ok(Some(inserted.id))
+    match sigint_post::Entity::insert(new_post)
+        .on_conflict(
+            sea_query::OnConflict::columns([sigint_post::Column::Name])
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec(txn)
+        .await
+    {
+        Err(sea_orm::error::DbErr::RecordNotInserted) => Ok(None),
+        res => Ok(Some(res.context(h!())?.last_insert_id)),
+    }
 }
 
 #[post("/api/sigint/posts")]
@@ -70,7 +76,8 @@ pub async fn post_list(
     req: Json<ListPostsReq>,
 ) -> Result<Json<Vec<Post>>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
-        .await?;
+        .await
+        .context(h!())?;
 
     let posts = sigint_post::Entity::find()
         .filter(sigint_post::Column::Deleted.eq(false))
@@ -109,7 +116,9 @@ pub async fn create_post(
     env: actix_web::web::Data<Env>,
     req: Json<CreatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .context(h!())?;
 
     let post = sigint_post::ActiveModel {
         id: NotSet,
@@ -139,12 +148,15 @@ pub async fn update_post(
     env: actix_web::web::Data<Env>,
     req: Json<UpdatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .context(h!())?;
 
     let post_obj = sigint_post::Entity::find()
         .filter(sigint_post::Column::Id.eq(req.id))
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
 
     let mut post_model = post_obj.into_active_model();
@@ -177,7 +189,9 @@ pub async fn delete_post(
     env: actix_web::web::Data<Env>,
     req: Json<DeletePostReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .context(h!())?;
 
     let post_obj = sigint_post::Entity::find()
         .filter(sigint_post::Column::Id.eq(req.id.clone()))

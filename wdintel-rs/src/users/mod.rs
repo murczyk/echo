@@ -3,9 +3,9 @@ use self::types::*;
 use crate::entities::login::Model;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::types::*;
 // use crate::utils::*;
 use crate::session::{record_new_session, record_page_visit};
+use crate::types::*;
 use actix_identity::Identity;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
@@ -873,6 +873,26 @@ async fn register_delta_user(
     sigint_zone: Option<i64>,
     organism_id: Option<i64>,
 ) -> Result<Login, AppError> {
+    let existing_delta_logins = delta_login::Entity::find()
+        .find_with_related(login::Entity)
+        .filter(delta_login::Column::Login.eq(login.clone()))
+        .all(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|(_, logins)| logins.into_iter())
+        .map(|x| x.login)
+        .collect::<BTreeSet<_>>();
+
+    if !existing_delta_logins.is_empty() {
+        let existing_logins = existing_delta_logins.into_iter().join(", ");
+        let msg = format!(
+            "delta login {} is already in use by user(s) {}",
+            login, existing_logins
+        );
+        return Err(AppError::BL { msg });
+    }
+
     let delta_login = delta_login::ActiveModel {
         id: NotSet,
         login: Set(login.clone()),
