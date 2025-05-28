@@ -96,7 +96,6 @@ pub struct UpdateNetworkReq {
     pub operation_period: Option<String>,
     pub active_from: i64,
     pub active_to: Option<i64>,
-    pub modulation_id: Option<i32>,
     pub descriptions: Option<Vec<UpdateNetworkDescriptionReq>>,
 }
 
