@@ -63,6 +63,8 @@ type alias Model =
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
+    , addExistingKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
+    , addExistingModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , addPostsSelect : Le.Block.Select.SelectType Int
     , editPostsSelect : Le.Block.Select.SelectType Int
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind

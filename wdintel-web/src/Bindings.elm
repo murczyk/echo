@@ -2052,6 +2052,7 @@ type alias CallsignInfo =
     , unit1 : String
     , unit2 : String
     , unitId : Maybe Int
+    , networkIdsReportedId : List Int
     }
 
 
@@ -2065,6 +2066,7 @@ callsignInfoEncoder struct =
         , ( "unit_1", Json.Encode.string struct.unit1 )
         , ( "unit_2", Json.Encode.string struct.unit2 )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.unitId )
+        , ( "network_ids_reported_id", Json.Encode.list Json.Encode.int struct.networkIdsReportedId )
         ]
 
 
@@ -4110,7 +4112,6 @@ type alias UpdateNetworkReq =
     , operationPeriod : Maybe String
     , activeFrom : Int
     , activeTo : Maybe Int
-    , modulationId : Maybe Int
     , descriptions : Maybe (List UpdateNetworkDescriptionReq)
     }
 
@@ -4129,7 +4130,6 @@ updateNetworkReqEncoder struct =
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
         , ( "active_from", Json.Encode.int struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
-        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.modulationId )
         , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list updateNetworkDescriptionReqEncoder)) struct.descriptions )
         ]
 
@@ -4189,6 +4189,24 @@ addNetworkFreqReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "freq_rec", addNetworkFreqEncoder struct.freqRec )
+        ]
+
+
+type alias UpdateNetworkFreqReq =
+    { networkId : Int
+    , freq : String
+    , kind : String
+    , modulationId : Maybe Int
+    }
+
+
+updateNetworkFreqReqEncoder : UpdateNetworkFreqReq -> Json.Encode.Value
+updateNetworkFreqReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "freq", Json.Encode.string struct.freq )
+        , ( "kind", Json.Encode.string struct.kind )
+        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.modulationId )
         ]
 
 
@@ -5915,6 +5933,7 @@ callsignInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_1" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_2" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids_reported_id" (Json.Decode.list Json.Decode.int)))
 
 
 callsignInfoResDecoder : Json.Decode.Decoder CallsignInfoRes
@@ -7096,7 +7115,6 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list updateNetworkDescriptionReqDecoder))))
 
 
@@ -7113,6 +7131,15 @@ addNetworkFreqReqDecoder =
     Json.Decode.succeed AddNetworkFreqReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_rec" addNetworkFreqDecoder))
+
+
+updateNetworkFreqReqDecoder : Json.Decode.Decoder UpdateNetworkFreqReq
+updateNetworkFreqReqDecoder =
+    Json.Decode.succeed UpdateNetworkFreqReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable Json.Decode.int)))
 
 
 deleteNetworkFreqReqDecoder : Json.Decode.Decoder DeleteNetworkFreqReq

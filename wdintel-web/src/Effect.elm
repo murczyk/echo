@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkPoints, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, toggleDarkMode, updateNetwork, updateNetworkPosts
+    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkPoints, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, toggleDarkMode, updateNetwork, updateNetworkFreq, updateNetworkPosts
     )
 
 {-|
@@ -132,6 +132,7 @@ type Effect msg
     | NetworkDeleteDescription (Result ApiError B.Network -> msg) B.DeleteNetworkDescriptionReq
     | NetworkUpdateDescription (Result ApiError B.Network -> msg) B.UpdateNetworkDescriptionReq
     | GetSignalsForNetwork (Result ApiError B.NetworkSignalsListRes -> msg) B.NetworkSignalsListReq
+    | UpdateNetworkFreq (Result ApiError B.Network -> msg) B.UpdateNetworkFreqReq
 
 
 
@@ -551,6 +552,10 @@ getSignalsForNetwork toMsg payload =
     GetSignalsForNetwork toMsg payload
 
 
+updateNetworkFreq toMsg payload =
+    UpdateNetworkFreq toMsg payload
+
+
 
 -- INTERNALS
 
@@ -800,6 +805,9 @@ map fn effect =
 
         GetSignalsForNetwork toMsg payload ->
             GetSignalsForNetwork (fn << toMsg) payload
+
+        UpdateNetworkFreq toMsg payload ->
+            UpdateNetworkFreq (fn << toMsg) payload
 
 
 {-| Elm Land depends on this function to perform your effects.
@@ -1311,6 +1319,13 @@ toCmd options effect =
                 { url = "/api/sigint/network-signals-list"
                 , body = Http.jsonBody (B.networkSignalsListReqEncoder payload)
                 , expect = leExpectJson toMsg B.networkSignalsListResDecoder
+                }
+
+        UpdateNetworkFreq toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network/update-freq"
+                , body = Http.jsonBody (B.updateNetworkFreqReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkDecoder
                 }
 
         FocusHtmlElement payload ->

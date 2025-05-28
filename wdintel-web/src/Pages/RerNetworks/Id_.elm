@@ -16,7 +16,7 @@ import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..)
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.Block.Toast
-import Le.NetworksUtils as EUtils
+import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
@@ -25,6 +25,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Select
+import Set
 import Shared
 import Time
 import Time.Extra
@@ -70,7 +71,7 @@ type alias Model =
     , toasts : Le.Block.Toast.Model
     , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode
-    , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty EUtils.NetworkKind
+    , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
     , addConfirmationInp : String
     , addSignsInp : String
@@ -94,15 +95,15 @@ init route shared () =
       , editKindSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
             , items =
-                EUtils.networkKinds
+                NetworksUtils.networkKinds
                     |> List.map
                         (\kind ->
                             Select.basicMenuItem
                                 { item = kind
-                                , label = EUtils.networkKindToLabel kind
+                                , label = NetworksUtils.networkKindToLabel kind
                                 }
                         )
-            , selected = EUtils.VHF
+            , selected = NetworksUtils.VHF
             }
       , editPostsSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
@@ -142,7 +143,7 @@ type Msg
     | NetworkEditingMsg B.UpdateNetworkReq
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
-    | EditNetworkKindSelMsg (Select.Msg EUtils.NetworkKind)
+    | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
     | DescriptionAddClickedByUser Int B.NetworkDescrType
     | NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
@@ -270,8 +271,6 @@ update shared msg model =
                         | mode =
                             Editing
                                 { id = network.id
-
-                                --, kind = network.kind
                                 , name = network.name
                                 , location = network.location
                                 , comment = network.comment
@@ -283,7 +282,6 @@ update shared msg model =
                                 , activeFrom = network.activeFrom
                                 , activeTo = network.activeTo
                                 , descriptions = Nothing --TODO
-                                , modulationId = Nothing --TODO
                                 }
                       }
                     , E.none
@@ -551,7 +549,14 @@ mainInfoBlock network shared model =
             ]
         , div [ class "border-t-1 border-border py-[8px] flex h-[52px]! " ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Вид передачі:" ]
-            , span [] [ text <| "" ] -- networkKindVHFMapping network.kind ]
+            , span []
+                [ List.map (\freqObj -> freqObj.kind) network.freqs
+                    |> List.map NetworksUtils.networkStringToLabel
+                    |> Set.fromList
+                    |> Set.toList
+                    |> String.join ", "
+                    |> text
+                ]
             ]
         , div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]
@@ -610,8 +615,8 @@ mainInfoBlock network shared model =
     ]
 
 
-mainInfoEditBlock : B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
-mainInfoEditBlock updNetworkReq shared model =
+mainInfoEditBlock : B.UpdateNetworkReq -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
+mainInfoEditBlock updNetworkReq networkFreqs shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 []
             [ text "Згідно форми" ]
@@ -645,31 +650,38 @@ mainInfoEditBlock updNetworkReq shared model =
             ]
         , div [ class "border-t-1 border-border py-[8px] flex h-[52px]! " ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Вид передачі:" ]
-            , let
-                selectedItem =
-                    (\item ->
-                        Select.basicMenuItem
-                            { item = item
-                            , label =
-                                EUtils.networkKindToLabel item
-                            }
-                    )
-                        model.editKindSelect.selected
+            , span []
+                [ List.map (\freqObj -> freqObj.kind) networkFreqs
+                    |> List.map NetworksUtils.networkStringToLabel
+                    |> Set.fromList
+                    |> Set.toList
+                    |> String.join ", "
+                    |> text
+                ]
 
-                defaultOptions =
-                    Le.Block.Select.defaultOptions shared.isDarkMode
-
-                do2 =
-                    { defaultOptions | clearable = False }
-              in
-              Html.map EditNetworkKindSelMsg <|
-                Styled.toUnstyled <|
-                    Le.Block.Select.renderSelectSingle
-                        (Just selectedItem)
-                        model.editKindSelect.state
-                        model.editKindSelect.items
-                        "жоден"
-                        do2
+            -- , let
+            --     selectedItem =
+            --         (\item ->
+            --             Select.basicMenuItem
+            --                 { item = item
+            --                 , label =
+            --                     EUtils.networkKindToLabel item
+            --                 }
+            --         )
+            --             model.editKindSelect.selected
+            --     defaultOptions =
+            --         Le.Block.Select.defaultOptions shared.isDarkMode
+            --     do2 =
+            --         { defaultOptions | clearable = False }
+            --   in
+            --   Html.map EditNetworkKindSelMsg <|
+            --     Styled.toUnstyled <|
+            --         Le.Block.Select.renderSelectSingle
+            --             (Just selectedItem)
+            --             model.editKindSelect.state
+            --             model.editKindSelect.items
+            --             "жоден"
+            --             do2
             ]
         , div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]
@@ -799,7 +811,7 @@ mainInfoEditBlock updNetworkReq shared model =
 contentBlock : Shared.Model -> B.Network -> Model -> List (Html Msg)
 contentBlock shared network model =
     [ h2 []
-        [ EUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
+        [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
         [ div [ class "col-span-7 grid  gap-[30px]", style "grid-template-rows" "520px 370px" ]
@@ -809,7 +821,7 @@ contentBlock shared network model =
                         mainInfoBlock network shared model
 
                     Editing eNetwork ->
-                        mainInfoEditBlock eNetwork shared model
+                        mainInfoEditBlock eNetwork network.freqs shared model
                 )
             , div [ class "row-start-2 bg-w dark:bg-[#1C1C21] col-start-1 col-end-9 p-[16px] flex flex-col" ]
                 [ h4 [ class "" ] [ text "Частоти" ]
