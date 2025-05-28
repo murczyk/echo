@@ -44,7 +44,7 @@ view model shared =
 
 createNetworkSidebarContent : Model -> Shared.Model -> List (Html Msg)
 createNetworkSidebarContent model shared =
-    [ div [ class "p-4 w-full flex flex-col overflow-y-auto max-h-screen" ]
+    [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
         ([ h2 [] [ text "Прив'язка мережі до частоти" ]
          ]
             ++ (case model.networkAddStatus of
@@ -454,6 +454,69 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
                                     ]
                             )
                             d
+                        ++ [ div [ class "flex gap-[8px] mt-[8px]" ]
+                                [ div [ class "flex flex-col gap-1 col-span-1" ]
+                                    [ label [] [ text "Тип" ]
+                                    , let
+                                        selectedItem =
+                                            (\item ->
+                                                Select.basicMenuItem
+                                                    { item = item
+                                                    , label = NetworksUtils.networkKindToLabel item
+                                                    }
+                                            )
+                                                model.addKindSelect.selected
+
+                                        defaultOptions =
+                                            Le.Block.Select.defaultOptions shared.isDarkMode
+
+                                        do2 =
+                                            { defaultOptions | clearable = False }
+                                      in
+                                      Html.map NetworkAddExistingKindSelMsg <|
+                                        Styled.toUnstyled <|
+                                            Le.Block.Select.renderSelectSingle
+                                                (Just selectedItem)
+                                                model.addExistingKindSelect.state
+                                                model.addExistingKindSelect.items
+                                                "жоден"
+                                                do2
+                                    ]
+                                , div [ class "" ]
+                                    [ label [ class "mb-1" ] [ text "Вид передачі" ]
+                                    , let
+                                        selectedItem =
+                                            Maybe.map
+                                                (\item ->
+                                                    Select.basicMenuItem
+                                                        { item = item
+                                                        , label =
+                                                            RD.withDefault [] model.modulations
+                                                                |> List.filter (\mod -> mod.id == item)
+                                                                |> List.head
+                                                                |> Maybe.map .name
+                                                                |> Maybe.withDefault ""
+                                                        }
+                                                )
+                                                model.addExistingModulationSelect.selected
+
+                                        defaultOptions =
+                                            Le.Block.Select.defaultOptions shared.isDarkMode
+
+                                        do2 =
+                                            { defaultOptions | clearable = False }
+                                      in
+                                      Html.map NetworkAddExistingModulationSelMsg <|
+                                        Styled.toUnstyled <|
+                                            Le.Block.Select.renderSelectSingle
+                                                selectedItem
+                                                model.addExistingModulationSelect.state
+                                                model.addExistingModulationSelect.items
+                                                "жоден"
+                                                do2
+                                    ]
+                                ]
+                           ]
 
                  else
                     [ div [ class "w-full h-full flex justify-center items-center" ]

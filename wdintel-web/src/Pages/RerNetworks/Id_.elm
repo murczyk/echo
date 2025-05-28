@@ -270,8 +270,6 @@ update shared msg model =
                         | mode =
                             Editing
                                 { id = network.id
-
-                                --, kind = network.kind
                                 , name = network.name
                                 , location = network.location
                                 , comment = network.comment
@@ -283,7 +281,6 @@ update shared msg model =
                                 , activeFrom = network.activeFrom
                                 , activeTo = network.activeTo
                                 , descriptions = Nothing --TODO
-                                , modulationId = Nothing --TODO
                                 }
                       }
                     , E.none

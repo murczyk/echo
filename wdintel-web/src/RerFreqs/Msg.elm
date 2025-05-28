@@ -1,54 +1,28 @@
 module RerFreqs.Msg exposing (Msg(..))
 
 import Api
-import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Components.Button as Button
-import Components.ModalDialog as ModalDialog
-import Components.Sidebar as Sidebar
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
-import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
-import Html.Extra as HtmlX
-import Html.Styled as Styled
-import Json.Decode as Decode
-import Json.Encode as Encode
-import Layouts
-import Le.Auth
-import Le.Block.ActionMenu
-import Le.Block.Callsign
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.DateTime
-import Le.Block.Popup
-import Le.Block.Select
-import Le.Block.Spinner
 import Le.Block.Toast
-import Le.Block.Unit as Unit
-import Le.Callsign
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Time
 import Le.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Le.Utils exposing (..)
-import List.Extra as ListX
 import Page exposing (Page)
-import PagePorts.RerFreqsPorts as Ports
 import RerFreqs.Model exposing (FilterState)
 import Route exposing (Route)
 import Select
-import Set
-import Shared
-import Task
 import Time exposing (Posix)
-import Time.Extra
 import TimeZone
-import Url.Builder
 import View exposing (View)
 
 
@@ -65,6 +39,8 @@ type Msg
     | NetworkAddUnitSelMsg (Select.Msg Int)
     | NetworkAddKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkAddModulationSelMsg (Select.Msg Int)
+    | NetworkAddExistingKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
+    | NetworkAddExistingModulationSelMsg (Select.Msg Int)
     | NetworkAddPostsSelMsg (Select.Msg Int)
     | NetworkEditPostsSelMsg (Select.Msg Int)
     | NetworkEditKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
