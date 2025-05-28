@@ -377,3 +377,14 @@ pub struct AddNetworkFreq {
     pub kind: String,
     pub modulation_id: Option<i32>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateNetworkFreqReq {
+    pub network_id: i64,
+    pub network_freq_id: i64,
+    pub freq: String,
+    pub kind: String,
+    pub modulation_id: Option<i32>,
+}
