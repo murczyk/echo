@@ -220,6 +220,7 @@ pub enum ListNetworksSortBy {
 pub struct AddNetworkFreqReq {
     pub network_id: i64,
     pub freq_rec: AddNetworkFreq,
+    pub description: Option<AddNetworkDescription>,
 }
 
 #[derive(

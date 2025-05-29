@@ -1106,10 +1106,11 @@ pub async fn add_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+    let user_login = user.id()?;
+    crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &user_login, "UnitsEditor")
         .await
         .context(h!())?;
 
@@ -1139,7 +1140,7 @@ pub async fn add_network_freq(
         .await
         .context(h!())?;
 
-    if existing_freq.is_none() {
+    let network_freq = if existing_freq.is_none() {
         // The frequency link doesn't exist, create it
         info!(
             "Adding frequency {} to network {}",
@@ -1156,19 +1157,39 @@ pub async fn add_network_freq(
             modulation_id: Set(req.freq_rec.modulation_id),
         };
 
-        network_freq.insert(&txn).await.context(h!())?;
+        network_freq.insert(&txn).await.context(h!())?
     } else {
         debug!(
             "Frequency {} already exists for network {}, no action needed",
             req.freq_rec.freq, req.network_id
         );
-    }
+        existing_freq.context(h!())?
+    };
 
     // Update the network's updated_at timestamp
+    let network_id = network.id.clone();
+
     let mut network_model = network.into_active_model();
     network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user.id()?.to_string()));
+    network_model.updated_by = Set(Some(user_login.to_string()));
     network_model.update(&txn).await.context(h!())?;
+
+    if let Some(description) = req.description.clone() {
+        sigint_network_description::ActiveModel {
+            id: NotSet,
+            network_id: Set(network_id),
+            login: Set(user_login),
+            r#type: Set(NetworkDescriptionType::from(description.descr_type)),
+            description: Set(description.description),
+            sigint_network_freq_id: Set(Some(network_freq.id)),
+            comment: NotSet, // Set(descr.comment),
+            deleted: Set(false),
+            created_at: NotSet,
+        }
+        .insert(&txn)
+        .await
+        .context(h!())?;
+    }
 
     // Now fetch the updated network with all frequencies to return
     let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
