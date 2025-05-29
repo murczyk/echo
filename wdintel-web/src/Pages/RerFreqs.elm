@@ -1508,6 +1508,7 @@ update shared msg model =
                             , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
                             , modulationId = model.addExistingModulationSelect.selected
                             }
+                        , description = Nothing
                         }
                     )
 

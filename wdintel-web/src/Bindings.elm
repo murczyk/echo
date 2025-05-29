@@ -4181,6 +4181,7 @@ networkGroupsActivityReqEncoder struct =
 type alias AddNetworkFreqReq =
     { networkId : Int
     , freqRec : AddNetworkFreq
+    , description : Maybe AddNetworkDescription
     }
 
 
@@ -4189,6 +4190,7 @@ addNetworkFreqReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "freq_rec", addNetworkFreqEncoder struct.freqRec )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map addNetworkDescriptionEncoder) struct.description )
         ]
 
 
@@ -7131,6 +7133,7 @@ addNetworkFreqReqDecoder =
     Json.Decode.succeed AddNetworkFreqReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_rec" addNetworkFreqDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable addNetworkDescriptionDecoder)))
 
 
 updateNetworkFreqReqDecoder : Json.Decode.Decoder UpdateNetworkFreqReq
