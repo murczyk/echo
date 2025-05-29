@@ -1,3 +1,4 @@
+use crate::location::SettlementDetails;
 use crate::sigint::network::types::Network;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -938,7 +939,7 @@ pub struct MessageComment {
 pub struct UnitAndLoc {
     pub unit: Option<String>,
     pub locality: Option<String>,
-    pub locality_v2: Option<Vec<String>>,
+    pub locality_v2: Option<Vec<SettlementDetails>>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]

@@ -26,7 +26,6 @@ pub async fn main_server(
     let dbx6 = dbx.clone();
     let dbx8 = dbx.clone();
     let dbx9 = dbx.clone();
-    let dbx10 = dbx.clone();
     let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
     let m_greptimedb = match e_greptimedb {
         Ok(greptimedb) => Some(greptimedb),
@@ -71,9 +70,6 @@ pub async fn main_server(
                     &dbx8, mil_geo2,
                 )
                 .await;
-            });
-            tokio::spawn(async move {
-                crate::unit::worker::process_unit_v2_worker(&dbx10).await;
             });
         }
     }

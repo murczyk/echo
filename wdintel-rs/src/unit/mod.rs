@@ -8,7 +8,6 @@ use std::cell::OnceCell;
 
 mod const_units;
 pub mod parser;
-pub mod worker;
 
 const NAMES_RE: OnceCell<Regex> = OnceCell::new();
 const DIVISIONS_RE: OnceCell<Regex> = OnceCell::new();

@@ -8,6 +8,8 @@ use chrono::prelude::*;
 use chrono_tz::Europe::Kyiv;
 use sea_orm::*;
 
+const CAPACITY: usize = 2000;
+
 pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     txn: &'a C,
@@ -17,6 +19,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
 ) where
     C: ConnectionTrait + 'async_trait,
 {
+    let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
     while !recs.is_empty() {
         let Some(message_id) = recs.pop() else {
@@ -28,6 +31,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
             rq,
             &config,
             message_id,
+            &mut cache,
         )
         .await
         {
@@ -47,6 +51,7 @@ async fn inbox_item_worker_1<'a, 'async_trait, C>(
     rq: &reqwest::Client,
     config: &Config,
     message_id: i64,
+    cache: &mut TopKCache<String, String>,
 ) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -129,19 +134,21 @@ where
         all_callsigns,
     )?;
     let unit = unit_and_loc.unit;
+    let unit_v2 = find_unit_v2(txn, cache, &unit).await.context(h!())?;
     let location = unit_and_loc.locality.clone();
-    let location_v2 = match (unit_and_loc.locality, unit_and_loc.locality_v2) {
-        (Some(_), Some(locations)) => {
-            Some(utils::format_locations_list(locations))
-        }
-        (Some(location), None) => {
-            let locations =
-                crate::location::parse_location(settlements.clone(), location)
-                    .context(h!())?;
-            Some(utils::format_settlements_list(locations))
-        }
-        _ => None,
-    };
+    let settlement_list =
+        match (unit_and_loc.locality, unit_and_loc.locality_v2) {
+            (Some(_), Some(locations)) => locations,
+            (Some(location), None) => {
+                let locations = crate::location::parse_location(
+                    settlements.clone(),
+                    location,
+                )
+                .context(h!())?;
+                locations
+            }
+            _ => vec![],
+        };
 
     if crate::rer_importer::important::is_important(&body) {
         sigint_important::Entity::insert(sigint_important::ActiveModel {
@@ -156,6 +163,27 @@ where
     }
 
     let message = try_set_commintify_sender(&body, message, txn).await?;
+
+    let settlements = settlement_list.clone();
+
+    let mut location_v2 = if settlement_list.is_empty() {
+        None
+    } else {
+        Some(utils::format_settlements_list(settlement_list))
+    };
+
+    if let Some(location) = location.clone() {
+        let settlements =
+            crate::sigint::settlement::processed_parsed_settlement_list(
+                location,
+                post_id,
+                settlements,
+                txn,
+            )
+            .await
+            .context(h!())?;
+        location_v2 = Some(utils::format_locations_list(settlements));
+    };
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
@@ -193,8 +221,8 @@ where
             serde_json::to_value(signal_tokens).context(h!())?,
         )),
         post_id: Set(post_id),
-        unit_v2: NotSet,
-        parsed_unit_v2: NotSet,
+        unit_v2: Set(unit_v2),
+        parsed_unit_v2: Set(true),
     }
     .insert(txn)
     .await?;
@@ -294,4 +322,28 @@ where
     let mut signal_message = signal_message.clone().into_active_model();
     signal_message.sender = Set(Some(oper_id));
     Ok(signal_message.update(txn).await.context(h!())?)
+}
+
+async fn find_unit_v2<'a, 'async_trait, C>(
+    txn: &'a C,
+    cache: &mut TopKCache<String, String>,
+    unit: &Option<String>,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let Some(unit) = unit else {
+        return Ok(None);
+    };
+    let mut cached_m_unit = cache.get(&unit).cloned();
+    if cached_m_unit.is_none() {
+        let parsed_unit = crate::unit::parse_unit(&unit, txn)
+            .await
+            .context(h!())?
+            .unwrap_or("".to_string());
+        cache.put(unit.clone(), parsed_unit.clone());
+        cached_m_unit = Some(parsed_unit);
+    }
+    let m_unit = cached_m_unit.filter(|u| !u.is_empty());
+    Ok(m_unit)
 }

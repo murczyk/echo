@@ -577,7 +577,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
             let location_v2 =
                 match (result.locality.clone(), result.locality_v2.clone()) {
                     (_, Some(locations)) => {
-                        Some(utils::format_locations_list(locations))
+                        Some(utils::format_settlements_list(locations))
                     }
                     (Some(location), None) => {
                         let locations = crate::location::parse_location(

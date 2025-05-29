@@ -1,3 +1,4 @@
+use crate::location::SettlementDetails;
 use crate::rer_importer::types::UnitAndLoc;
 use crate::types::*;
 use crate::unit::has_unit;
@@ -96,9 +97,9 @@ fn try_lookup_next_line_loc_with_prefix(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     remaining_lines: &mut Iter<String>,
     locality: Option<String>,
-    locality_v2: Option<Vec<String>>,
+    locality_v2: Option<Vec<SettlementDetails>>,
     callsigns: &Vec<String>,
-) -> Result<(Option<String>, Option<Vec<String>>), AppError> {
+) -> Result<(Option<String>, Option<Vec<SettlementDetails>>), AppError> {
     let location_line = remaining_lines.next().cloned();
     if let Some(location_line) = location_line {
         if let Some(loc) =
@@ -127,7 +128,7 @@ fn extract_locality(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     line: String,
     locality: Option<String>,
-) -> Result<(Option<String>, Option<Vec<String>>), AppError> {
+) -> Result<(Option<String>, Option<Vec<SettlementDetails>>), AppError> {
     let mut locality = locality;
     let mut locality_v2 = None;
     if let Some(local) = locality.clone() {
@@ -144,12 +145,6 @@ fn extract_locality(
             locality = Some(line.clone());
         }
     }
-    let locality_v2 = match locality_v2 {
-        None => None,
-        Some(data) => {
-            Some(data.into_iter().map(|(location, _)| location).collect())
-        }
-    };
     Ok((locality, locality_v2))
 }
 
@@ -1112,7 +1107,8 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"1 мсб 123 омсбр"#);
         assert_eq!(res.locality.unwrap(), "р-н Берестове-Спірне".to_string());
-        assert_eq!(res.locality_v2.unwrap(), vec!["БЕРЕСТОВЕ", "СПІРНЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["БЕРЕСТОВЕ", "СПІРНЕ"]);
     }
 
     #[test]
@@ -1146,7 +1142,8 @@ mod tests {
             "йм. підрозділ БпЛА 114 мсп 127 мсд 5 А(р-н Любимівка - Орлинське)"
                 .to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["ЛЮБИМІВКА", "ОРЛИНСЬКЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА", "ОРЛИНСЬКЕ"]);
         assert_eq!(
             vec!["114 мсп 127 мсд 5 А"],
             parse_library_unit(&String::from(body))
@@ -1175,7 +1172,8 @@ mod tests {
             res.locality.unwrap(),
             "р-н Пн. Захід від ПРИЮТНЕ".to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["ПРИЮТНЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ПРИЮТНЕ"]);
     }
 
     #[test]
@@ -1205,7 +1203,8 @@ mod tests {
             res.locality.unwrap(),
             "13 зсб 252 мсп (урочище Новоєгорівка - Долгоє)".to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["ДОЛГОЄ", "НОВОЄГОРІВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ДОЛГОЄ", "НОВОЄГОРІВКА"]);
         assert_eq!(
             vec!["13 зсб 252 мсп"],
             parse_library_unit(&String::from(body))
@@ -1234,7 +1233,8 @@ mod tests {
             "УКХ р/м НВ підрозділу (DMR) (р-н н.п. Володимирівка - Попів ліс)"
         );
         assert_eq!(res.locality.unwrap(), "УКХ р/м НВ підрозділу (DMR) (р-н н.п. Володимирівка - Попів ліс) (28.10.2024)".to_string());
-        assert_eq!(res.locality_v2.unwrap(), vec!["ВОЛОДИМИРІВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ВОЛОДИМИРІВКА"]);
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))
@@ -1262,7 +1262,8 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м пн. сх. н.п. Веріговка 8 мсб 27 омсбр ймовірно\u{a0}арт.\u{a0}батарєя 444.550 МГц 06.09.24 50,2090 37,6695 \\ 50,2061 37,6612");
         assert_eq!(res.locality.unwrap(), "УКХ р/м пн. сх. н.п. Веріговка 8 мсб 27 омсбр ймовірно\u{a0}арт.\u{a0}батарєя 444.550 МГц 06.09.24 50,2090 37,6695 \\ 50,2061 37,6612".to_string());
-        assert_eq!(res.locality_v2.unwrap(), vec!["ВЄРІГОВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ВЄРІГОВКА"]);
         assert_eq!(
             vec!["8 мсб 27 омсбр"],
             parse_library_unit(&String::from(body))
@@ -1291,7 +1292,8 @@ mod tests {
             res.locality.unwrap(),
             "Цаповка, Бєлгородської обл.)".to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["ЦАПОВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ЦАПОВКА"]);
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))
@@ -1323,7 +1325,8 @@ mod tests {
             "УКХ р/м управління сб 103 осп район пд.-сх. окол. Торецьк"
                 .to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["ТОРЕЦЬК"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ТОРЕЦЬК"]);
         assert_eq!(vec!["103 осп"], parse_library_unit(&String::from(body)));
     }
 
@@ -1352,10 +1355,8 @@ mod tests {
             res.locality.unwrap(),
             "р-н Краснополівка-Федорівка".to_string()
         );
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["КРАСНОПОЛІВКА", "ФЕДОРІВКА"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["КРАСНОПОЛІВКА", "ФЕДОРІВКА"]);
         assert_eq!(
             vec!["1 мсб 85 омсбр"],
             parse_library_unit(&String::from(body))
@@ -1381,7 +1382,8 @@ mod tests {
             res.locality.unwrap(),
             "р-н Білогорівка-Берестове".to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["БІЛОГОРІВКА", "БЕРЕСТОВЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["БІЛОГОРІВКА", "БЕРЕСТОВЕ"]);
         assert_eq!(vec!["123 омсбр"], parse_library_unit(&String::from(body)));
     }
 
@@ -1409,7 +1411,8 @@ mod tests {
             r#"УКХ р/м НВ підрозділу йм. зі складу 7 омсбр"#
         );
         assert_eq!(res.locality.unwrap(), "БІЛОГОРІВКА(В".to_string());
-        assert_eq!(res.locality_v2.unwrap(), vec!["БІЛОГОРІВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["БІЛОГОРІВКА"]);
         assert_eq!(vec!["7 омсбр"], parse_library_unit(&String::from(body)));
     }
 
@@ -1436,10 +1439,8 @@ mod tests {
                 .to_string()
         );
         assert_eq!(res.locality, Some("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК".to_string()));
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"]);
     }
 
     #[test]
@@ -1464,10 +1465,8 @@ mod tests {
             "ймовірно 2 мсб 70 мсп 42 мсд 58 А".to_string()
         );
         assert_eq!(res.locality, Some("Новопрокопівка-Пшеничне".to_string()));
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["НОВОПРОКОПІВКА", "ПШЕНИЧНЕ"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["НОВОПРОКОПІВКА", "ПШЕНИЧНЕ"]);
     }
 
     #[test]
@@ -1486,7 +1485,8 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м НВ підрозділу(DMR)".to_string());
         assert_eq!(res.locality, Some("ОЧЕРЕТИНЕ, КЕРАМІК".to_string()));
-        assert_eq!(res.locality_v2.unwrap(), vec!["КЕРАМІК", "ОЧЕРЕТИНЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["КЕРАМІК", "ОЧЕРЕТИНЕ"]);
     }
 
     #[test]
@@ -1512,10 +1512,8 @@ mod tests {
                 .to_string()
         );
         assert_eq!(res.locality, Some("ОГІРЦЕВЕ-ГАТИЩЕ-ВОВЧАНСЬК".to_string()));
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ВОВЧАНСЬК", "ГАТИЩЕ", "ОГІРЦЕВЕ"]);
     }
 
     #[test]
@@ -1540,10 +1538,8 @@ mod tests {
             "ймовірно 2 мсб 70 мсп 42 мсд 58 А".to_string()
         );
         assert_eq!(res.locality, Some("Новопрокопівка-Пшеничне".to_string()));
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["НОВОПРОКОПІВКА", "ПШЕНИЧНЕ"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["НОВОПРОКОПІВКА", "ПШЕНИЧНЕ"]);
     }
 
     #[test]
@@ -1565,7 +1561,8 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м йм. гсабатр гсадн 30 мсп\u{a0}72\u{a0}мсд\u{a0}44\u{a0}АК (р-н Шебекіно)".to_string());
         assert_eq!(res.locality, Some("ВУ по м. Вовчанськ".to_string()));
-        assert_eq!(res.locality_v2.unwrap(), vec!["ВОВЧАНСЬК"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ВОВЧАНСЬК"]);
     }
 
     #[test]
@@ -1584,7 +1581,8 @@ mod tests {
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м НВ підрозділу(DMR)".to_string());
         assert_eq!(res.locality, Some("ОЧЕРЕТИНЕ, КЕРАМІК".to_string()));
-        assert_eq!(res.locality_v2.unwrap(), vec!["КЕРАМІК", "ОЧЕРЕТИНЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["КЕРАМІК", "ОЧЕРЕТИНЕ"]);
     }
 
     #[test]
@@ -1614,7 +1612,8 @@ mod tests {
             res.locality,
             Some("йм. 20 загін БАРС(р-н Зх. від Красноселівка)".to_string())
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["КРАСНОСЕЛІВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["КРАСНОСЕЛІВКА"]);
     }
 
     #[ignore]
@@ -1641,7 +1640,8 @@ Az-155
             res.locality,
             Some("околиці Новооєлизаветівки (уточнюється)".to_string())
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["Новооєлизаветівки"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["Новооєлизаветівки"]);
     }
 
     #[ignore]
@@ -1663,7 +1663,8 @@ Az-155
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА".to_string());
         assert_eq!(res.locality, Some("КОЖУМ'ЯКИ - МАЛА ЛЕПЕТИХА".to_string()));
-        assert_eq!(res.locality_v2.unwrap(), vec!["Новооєлизаветівки"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["Новооєлизаветівки"]);
     }
 
     #[test]
@@ -1921,7 +1922,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             "УКХ р/м йм. управління гсадн 60 омсбр 5 А".to_string()
         );
         assert_eq!(res.locality.unwrap(), "УКХ р/м йм. управління гсадн 60 омсбр 5 А р-н ЛЮБИМІВКА 403.125 МГц".to_string());
-        assert_eq!(res.locality_v2.unwrap(), vec!["ЛЮБИМІВКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА"]);
         assert_eq!(
             vec!["60 омсбр 5 А"],
             parse_library_unit(&String::from(body))
@@ -1954,7 +1956,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             res.locality.unwrap(),
             "            (ймовірно, район: СОЛОДКОВОДНЕ))".to_string()
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["СОЛОДКОВОДНЕ".to_string()]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["СОЛОДКОВОДНЕ".to_string()]);
         assert_eq!(vec!["36 А"], parse_library_unit(&String::from(body)));
     }
 
@@ -1985,10 +1988,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             "УКХ р/м йм. управління гсадн зі складу 60 омсбр 5 А (район: ЛЮБИМІВКА-СТАРОМЛИНІВКА)".to_string()
         );
 
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["ЛЮБИМІВКА", "СТАРОМЛИНІВКА"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ЛЮБИМІВКА", "СТАРОМЛИНІВКА"]);
         assert_eq!(
             vec!["60 омсбр 5 А"],
             parse_library_unit(&String::from(body))
@@ -2015,7 +2016,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             "Не встановлений підрозділ з числа 336 обмп 3 А".to_string()
         );
         assert_eq!(res.locality.unwrap(), "Не встановлений підрозділ з числа 336 обмп 3 А (Красноселівка) (ЦфП_103)".to_string());
-        assert_eq!(res.locality_v2.unwrap(), vec!["КРАСНОСЕЛІВКА".to_string()]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["КРАСНОСЕЛІВКА".to_string()]);
         assert_eq!(
             vec!["336 обмп 3 А"],
             parse_library_unit(&String::from(body))
@@ -2051,10 +2053,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             parse_library_unit(&String::from(body))
         );
         assert_eq!(res.locality.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)");
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["ГОГОЛІВКА", "НОВОСЕЛІВКА", "СМІЛЕ"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ГОГОЛІВКА", "НОВОСЕЛІВКА", "СМІЛЕ"]);
     }
 
     #[test]
@@ -2077,7 +2077,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert!(res.unit.is_none());
         assert_eq!(res.locality.unwrap(), "р-н Стипове");
-        assert_eq!(res.locality_v2.unwrap(), vec!["СТЕПОВЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["СТЕПОВЕ"]);
     }
 
     #[test]
@@ -2110,7 +2111,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             res.locality.unwrap(),
             "йм. 64 осмбр 25 п 35 А(р-н Пд. від Дорожнянка)"
         );
-        assert_eq!(res.locality_v2.unwrap(), vec!["ДОРОЖНЯНКА"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ДОРОЖНЯНКА"]);
     }
 
     #[test]
@@ -2165,7 +2167,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             parse_library_unit(&String::from(body))
         );
         assert_eq!(res.locality.unwrap(), "ПІВНІЧНЕ");
-        assert_eq!(res.locality_v2.unwrap(), vec!["ПІВНІЧНЕ"]);
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ПІВНІЧНЕ"]);
     }
 
     #[test]
@@ -2189,10 +2192,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             res.locality.unwrap(),
             "Напрямок: Суджа, Снагість, Обухівка"
         );
-        assert_eq!(
-            res.locality_v2.unwrap(),
-            vec!["ОБУХІВКА", "СНАГОСТЬ", "СУДЖА"]
-        );
+        let locality_v2_txt = validate_locality_v2(res.locality_v2);
+        assert_eq!(locality_v2_txt, vec!["ОБУХІВКА", "СНАГОСТЬ", "СУДЖА"]);
     }
 
     #[test]
@@ -2294,5 +2295,20 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
                 None::<String>.as_deref()
             );
         }
+    }
+
+    fn validate_locality_v2(
+        m_locality: Option<Vec<SettlementDetails>>,
+    ) -> Vec<String> {
+        assert!(m_locality.is_some());
+        let mut localities = vec![];
+        for (locality, coords) in m_locality.unwrap() {
+            assert!(coords.is_some());
+            let coords = coords.unwrap();
+            assert!(coords.lat > 1.0);
+            assert!(coords.lng > 1.0);
+            localities.push(locality);
+        }
+        localities
     }
 }
