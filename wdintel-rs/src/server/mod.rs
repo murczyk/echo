@@ -239,6 +239,8 @@ pub async fn main_server(
             .service(crate::rer_importer::callsigns::callsigns_graph)
             .service(crate::rer_importer::gdoc::rer_callsign_info)
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
+            .service(crate::location::find_locations)
+            .service(crate::location::fetch_regions)
             .service(crate::users::user_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)

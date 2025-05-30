@@ -22,7 +22,7 @@ pub fn format_settlements_list(result: Vec<SettlementDetails>) -> String {
         "|{}|",
         result
             .into_iter()
-            .map(|(name, _)| name)
+            .map(|row| row.name)
             .collect::<Vec<_>>()
             .join("|")
     )

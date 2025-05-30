@@ -694,6 +694,7 @@ pub fn try_extract_comm_operator(body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::location::SettlementDetails;
     use crate::unit::parse_library_unit;
 
     #[test]
@@ -1234,7 +1235,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "УКХ р/м НВ підрозділу (DMR) (р-н н.п. Володимирівка - Попів ліс) (28.10.2024)".to_string());
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
-        assert_eq!(locality_v2_txt, vec!["ВОЛОДИМИРІВКА"]);
+        assert_eq!(locality_v2_txt, vec!["ВОЛОДИМИРІВКА", "ПОПІВ"]);
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))
@@ -1274,7 +1275,7 @@ mod tests {
     fn extract_unit_26() {
         let body = r#"30-10 23:38:43
 162.975
-УКХ Варяг (р/м НВ підрозділу (р-н н.п. Цаповка, Бєлгородської обл.))
+УКХ Варяг (р/м НВ підрозділу (р-н н.п. Цаповка, Бєлгородська обл.))
 НВ
 НВ
 
@@ -1290,10 +1291,10 @@ mod tests {
         assert_eq!(res.unit.unwrap(), r#"УКХ Варяг (р/м НВ підрозділу"#);
         assert_eq!(
             res.locality.unwrap(),
-            "Цаповка, Бєлгородської обл.)".to_string()
+            "Цаповка, Бєлгородська обл.)".to_string()
         );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
-        assert_eq!(locality_v2_txt, vec!["ЦАПОВКА"]);
+        assert_eq!(locality_v2_txt, vec!["БЄЛГОРОДКА", "ХАПОВКА"]);
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))
@@ -2302,12 +2303,13 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
     ) -> Vec<String> {
         assert!(m_locality.is_some());
         let mut localities = vec![];
-        for (locality, coords) in m_locality.unwrap() {
-            assert!(coords.is_some());
-            let coords = coords.unwrap();
-            assert!(coords.lat > 1.0);
-            assert!(coords.lng > 1.0);
-            localities.push(locality);
+        for row in m_locality.unwrap() {
+            let name = row.name.clone();
+            assert!(row.coords.is_some());
+            let (lat, lng) = row.coords.unwrap();
+            assert!(lat > 1.0);
+            assert!(lng > 1.0);
+            localities.push(name);
         }
         localities
     }

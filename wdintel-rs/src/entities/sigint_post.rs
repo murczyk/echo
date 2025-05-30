@@ -23,10 +23,6 @@ pub enum Relation {
     SigintInboxItem,
     #[sea_orm(has_many = "super::sigint_network_post::Entity")]
     SigintNetworkPost,
-    #[sea_orm(has_many = "super::sigint_settlement_at_post::Entity")]
-    SigintSettlementAtPost,
-    #[sea_orm(has_many = "super::sigint_settlement_token::Entity")]
-    SigintSettlementToken,
 }
 
 impl Related<super::sigint_inbox_item::Entity> for Entity {
@@ -38,18 +34,6 @@ impl Related<super::sigint_inbox_item::Entity> for Entity {
 impl Related<super::sigint_network_post::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkPost.def()
-    }
-}
-
-impl Related<super::sigint_settlement_at_post::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintSettlementAtPost.def()
-    }
-}
-
-impl Related<super::sigint_settlement_token::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintSettlementToken.def()
     }
 }
 

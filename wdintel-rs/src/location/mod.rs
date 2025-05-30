@@ -1,20 +1,125 @@
 use crate::location::trie::Trie;
+pub(crate) use crate::location::types::{
+    FindSettlementReq, SettlementDetails, SettlementFileRow,
+};
 use crate::types::*;
-use crate::utils::m_cap_s;
+use actix_web::web::Json;
+use actix_web::{get, post, HttpRequest};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use milgeo_rs::coordinates::Wgs84;
 use regex::Regex;
 use std::fs;
 
-pub(crate) mod peleng;
-mod trie;
+pub mod peleng;
+pub mod trie;
+pub mod types;
 pub mod utils;
 pub mod worker;
 
-pub type SettlementsData = (Vec<String>, Trie<SettlementData>);
-pub type SettlementDetails = (String, SettlementData);
-pub type SettlementData = Option<Wgs84>;
+pub type SettlementsData = (
+    Vec<String>,
+    Vec<String>,
+    Trie<SettlementDetails>,
+    BTreeMap<i32, SettlementDetails>,
+);
+
+#[post("/api/settlement/find")]
+async fn find_locations(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<FindSettlementReq>,
+) -> Result<Json<Vec<SettlementDetails>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let req = req.into_inner();
+    let locations = find_locations_by_name(
+        env.settlements.clone(),
+        req.query,
+        req.region,
+        req.related_coordinates,
+    )
+    .context(h!())?;
+    Ok(Json(locations))
+}
+
+#[get("/api/rer-importer/attachment/")]
+async fn fetch_regions(
+    user: actix_identity::Identity,
+    _http_req: HttpRequest,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<String>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let region_names =
+        get_region_names(env.settlements.clone()).context(h!())?;
+    Ok(Json(region_names))
+}
+
+fn get_region_names(
+    settlements: Arc<RwLock<SettlementsData>>,
+) -> anyhow::Result<Vec<String>> {
+    let settlements_lock = settlements
+        .read()
+        .map_err(|e| AppError::from(format!("{e:?}")))
+        .context(h!())?;
+    let config: &SettlementsData = &settlements_lock;
+    let (region_names, _, _, _) = config;
+    Ok(region_names.clone())
+}
+
+fn find_locations_by_name(
+    settlements: Arc<RwLock<SettlementsData>>,
+    query: String,
+    m_region: Option<String>,
+    m_src_coords: Option<(f64, f64)>,
+) -> anyhow::Result<Vec<SettlementDetails>> {
+    let settlements_lock = settlements
+        .read()
+        .map_err(|e| AppError::from(format!("{e:?}")))
+        .context(h!())?;
+    let config: &SettlementsData = &settlements_lock;
+    let (_, _, _, settlements) = config;
+    let mut matches: Vec<SettlementDetails> = Vec::new();
+    for (_, s) in settlements {
+        if s.name.contains(&query.to_uppercase()) {
+            matches.push(s.clone());
+        }
+    }
+    if let Some(region) = m_region {
+        if matches.len() > 0 {
+            let mut filtered = vec![];
+            for m in matches {
+                if m.region.eq(&region) {
+                    filtered.push(m);
+                }
+            }
+            matches = filtered;
+        }
+    }
+    if let Some((lat, lon)) = m_src_coords {
+        if matches.len() > 1 {
+            let mut new_result = vec![];
+            let mut min_distance = -1.0;
+            for m in matches {
+                if let Some((lat_a, lon_a)) = m.coords {
+                    let new_distance =
+                        (lat - lat_a).abs() + (lon - lon_a).abs();
+                    if min_distance < 0.0 || min_distance / new_distance > 5.0 {
+                        min_distance = new_distance;
+                        new_result = vec![m];
+                    } else {
+                        if new_distance < min_distance {
+                            min_distance = new_distance;
+                            new_result.insert(0, m);
+                        } else {
+                            new_result.push(m);
+                        }
+                    }
+                }
+            }
+            matches = new_result;
+        }
+    }
+    Ok(matches)
+}
 
 pub fn parse_location(
     settlements: Arc<RwLock<SettlementsData>>,
@@ -31,8 +136,6 @@ pub fn parse_location(
             &*r#"\W($s1)"#.replace("$s1", &*collect_blacklist().join("|"))
         )
         .unwrap();
-        static ref NEAR_SETTLEMENT_RE: Regex =
-            Regex::new(r#"(РАЙОН|ВІД|БІЛЯ) (?<name>\w+)"#).unwrap();
     }
     let location = location
         .to_uppercase()
@@ -42,9 +145,13 @@ pub fn parse_location(
         .replace("Р-Н. ", "РАЙОН ")
         .replace("Р-Н ", "РАЙОН ")
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
-    let location = JUNK_WORD_RE.replace_all(&*location, " ").to_string();
-    let location =
-        update_if_match(location, &NEAR_SETTLEMENT_RE).context(h!())?;
+    let mut location = JUNK_WORD_RE.replace_all(&*location, " ").to_string();
+    for rec in collect_near() {
+        let rec = &format!("{} ", rec);
+        if location.contains(rec) {
+            location = location.replace(rec, "")
+        }
+    }
     let location = JUNK_CHAR_RE.replace_all(&*location, " ").to_string();
     let location = JUNK_WORD_RE.replace_all(&*location, " ").to_string();
     let location = trim(location);
@@ -52,7 +159,7 @@ pub fn parse_location(
     let words = location
         .split_whitespace()
         .into_iter()
-        .map(|s| trim_tail(String::from(s)))
+        .map(|x| x.to_string())
         .collect_vec();
     let result =
         find_matching_settlements(words, &settlements_lock).context(h!())?;
@@ -68,24 +175,6 @@ fn try_append_trimmed_location_name(location: String) -> String {
         return format!("{} {}", location_fixed, location);
     }
     location
-}
-
-fn update_if_match(location: String, regex: &Regex) -> anyhow::Result<String> {
-    if let Some(cap) = regex.captures(&*location.clone()) {
-        if let Some(name) = m_cap_s(&cap, "name") {
-            let name = trim_tail(name);
-            let capture = cap
-                .iter()
-                .next()
-                .flatten()
-                .context(h!())?
-                .as_str()
-                .to_string();
-            let location = location.replace(&*capture, &*name);
-            return update_if_match(location, regex);
-        }
-    }
-    Ok(location)
 }
 
 fn trim_tail(name: String) -> String {
@@ -112,7 +201,7 @@ fn find_matching_settlements(
     words: Vec<String>,
     config: &SettlementsData,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
-    let (regions, trie) = config;
+    let (_region_names, regions, trie, _) = config;
     if words.is_empty() {
         return Ok(vec![]);
     }
@@ -135,7 +224,7 @@ fn find_matching_settlements(
     }
     let remainder = words.len() - i;
     if remainder == 1 {
-        let new_data = cache.get(i).context(h!())?.to_owned().1.data;
+        let new_data = cache.get(i).cloned().context(h!())?.to_owned().1.data;
         for (row, coords) in new_data {
             result.insert(row, coords);
         }
@@ -145,14 +234,18 @@ fn find_matching_settlements(
     }
     let mut result = result.into_iter().collect_vec();
     result.sort_by_key(|(key, _data)| key.clone());
-    Ok(result)
+    let mut result_data = vec![];
+    for (_, row) in result {
+        result_data.push(row);
+    }
+    Ok(result_data)
 }
 
 fn handle_two_words_group(
     regions: &Vec<String>,
-    trie: &Trie<SettlementData>,
-    result: &mut BTreeMap<String, SettlementData>,
-    cache: &mut Vec<(String, trie::Result<SettlementData>)>,
+    trie: &Trie<SettlementDetails>,
+    result: &mut BTreeMap<String, SettlementDetails>,
+    cache: &mut Vec<(String, trie::Result<SettlementDetails>)>,
     i: usize,
 ) -> anyhow::Result<()> {
     let (word0, res0) = cache.get(i).context(h!())?;
@@ -177,9 +270,9 @@ fn handle_two_words_group(
 
 fn handle_three_words_group(
     regions: &Vec<String>,
-    trie: &Trie<SettlementData>,
-    result: &mut BTreeMap<String, SettlementData>,
-    cache: &mut Vec<(String, trie::Result<SettlementData>)>,
+    trie: &Trie<SettlementDetails>,
+    result: &mut BTreeMap<String, SettlementDetails>,
+    cache: &mut Vec<(String, trie::Result<SettlementDetails>)>,
     i: usize,
 ) -> anyhow::Result<usize> {
     let (word0, res0) = cache.get(i).context(h!())?;
@@ -216,7 +309,7 @@ fn trim(string: String) -> String {
 pub fn load_from_file(
     settlements_paths: Vec<String>,
 ) -> anyhow::Result<SettlementsData> {
-    let mut trie = Trie::new();
+    let mut trie = Trie::<SettlementDetails>::new();
     let mut regions = vec![];
 
     let root_dir = if Path::new("/etc/echo").exists() {
@@ -224,6 +317,9 @@ pub fn load_from_file(
     } else {
         Path::new(std::env!("CARGO_MANIFEST_DIR"))
     };
+    let mut region_names = BTreeSet::new();
+
+    let mut settlements = BTreeMap::new();
 
     for source in settlements_paths {
         info!("[{}] loading source", &source);
@@ -242,31 +338,62 @@ pub fn load_from_file(
             }
         };
         trace!("[{}] loaded source successfully", &source);
-        let data: BTreeMap<String, Vec<(String, SettlementData)>> =
+        let data: BTreeMap<String, Vec<SettlementFileRow>> =
             serde_json::from_str(&*text).context(h!())?;
 
         for (region, rows) in data {
-            for (row, details) in rows {
-                trie.insert(&*row.to_uppercase(), details);
+            region_names.insert(region.clone());
+            for d in rows {
+                let name = d.name.clone().to_uppercase();
+                let details = SettlementDetails {
+                    name: name.clone(),
+                    id: d.id,
+                    region: region.clone(),
+                    coords: d.coords,
+                };
+                if let Some(id) = &d.id {
+                    settlements.insert(*id, details.clone());
+                }
+                trie.insert(&*name.clone(), details);
             }
             let region = region.to_uppercase();
             let region_trimmed = region.clone().replace("ОБЛАСТЬ", "ОБЛ");
             regions.push(region.clone());
             regions.push(region_trimmed.clone());
-            trie.insert(&*region, SettlementData::default());
-            trie.insert(&*region_trimmed, SettlementData::default());
+            trie.insert(
+                &*region,
+                SettlementDetails {
+                    name: region.clone(),
+                    id: None,
+                    coords: None,
+                    region: region.clone(),
+                },
+            );
+            let key = region_trimmed.clone();
+            trie.insert(
+                &*key,
+                SettlementDetails {
+                    name: region_trimmed,
+                    id: None,
+                    coords: None,
+                    region,
+                },
+            );
         }
     }
 
-    Ok((regions, trie))
+    let mut region_names = region_names.into_iter().collect_vec();
+    region_names.sort();
+
+    Ok((region_names, regions, trie, settlements))
 }
 
 fn match_settlement(
     query: &String,
-    trie: &Trie<SettlementData>,
-) -> trie::Result<SettlementData> {
+    trie: &Trie<SettlementDetails>,
+) -> trie::Result<SettlementDetails> {
     let len = query.chars().count();
-    let distance = if len > 3 {
+    let distance = if len > 5 {
         Some(1 + (len / 7)) // tweaked based on experiments
     } else {
         None
@@ -279,6 +406,18 @@ fn match_settlement(
         result.data = vec![result.data[0].clone()] // drop alternative names to avoid junk
     }
     result
+}
+
+fn collect_near() -> Vec<&'static str> {
+    vec![
+        "РАЙОН",
+        "ВІД",
+        "БІЛЯ",
+        "ПІВДЕННІШЕ",
+        "ПІВНІЧНІШЕ",
+        "СХІДНІШЕ",
+        "ЗАХІДНІШЕ",
+    ]
 }
 
 fn collect_blacklist() -> Vec<&'static str> {
@@ -323,6 +462,8 @@ fn collect_blacklist() -> Vec<&'static str> {
         "АЗОВСЬКОГО",
         "МОРЯ",
         "КРАСНОДАРСЬКИЙ",
+        "БАТАРЕЯ",
+        "БАТАРЄЯ",
     ]
 }
 
@@ -330,13 +471,12 @@ fn collect_blacklist() -> Vec<&'static str> {
 mod tests {
     use super::*;
 
-    fn test_settlements_array(
-        data: Vec<(String, SettlementData)>,
-    ) -> Vec<String> {
+    fn test_settlements_array(data: Vec<SettlementDetails>) -> Vec<String> {
         let mut result = vec![];
-        for (rec, coords) in data {
-            result.push(rec);
-            assert!(coords.is_some());
+        for row in data {
+            result.push(row.name.clone());
+            assert!(row.coords.is_some());
+            assert!(row.id.is_some());
         }
         result
     }
