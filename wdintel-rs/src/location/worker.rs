@@ -4,7 +4,6 @@ use crate::location::utils::{format_locations_list, to_location_list};
 use crate::location::*;
 use milgeo_rs::coord_util::{LatLng, Locality};
 use milgeo_rs::MilGeo;
-use sea_orm::*;
 
 pub async fn process_location_v2_coords_worker(
     dbx: &DatabaseConnection,

@@ -45,6 +45,7 @@ pub mod sigint_peleng;
 pub mod sigint_post;
 pub mod sigint_saved_filter;
 pub mod sigint_search;
+pub mod sigint_settlement;
 pub mod sigint_signal;
 pub mod sigint_signal_changelog;
 pub mod sigint_unit;

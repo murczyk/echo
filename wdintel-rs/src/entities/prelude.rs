@@ -42,6 +42,7 @@ pub use super::sigint_peleng::Entity as SigintPeleng;
 pub use super::sigint_post::Entity as SigintPost;
 pub use super::sigint_saved_filter::Entity as SigintSavedFilter;
 pub use super::sigint_search::Entity as SigintSearch;
+pub use super::sigint_settlement::Entity as SigintSettlement;
 pub use super::sigint_signal::Entity as SigintSignal;
 pub use super::sigint_signal_changelog::Entity as SigintSignalChangelog;
 pub use super::sigint_unit::Entity as SigintUnit;
