@@ -6,7 +6,7 @@ use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, FromQueryResult)]
-pub struct NetworkDesc {
+pub struct NetworkDetails {
     pub id: i64,
     pub name: String,
     pub location: String,
@@ -73,7 +73,7 @@ pub struct CreateNetworkReq {
     pub active_from: Option<i64>,
     pub active_to: Option<i64>,
     pub post_ids: Vec<i64>,
-    pub descriptions: Option<Vec<AddNetworkDescription>>,
+    pub descriptions: Vec<AddNetworkDescription>,
 }
 
 #[derive(
@@ -220,7 +220,6 @@ pub enum ListNetworksSortBy {
 pub struct AddNetworkFreqReq {
     pub network_id: i64,
     pub freq_rec: AddNetworkFreq,
-    pub description: Option<AddNetworkDescription>,
 }
 
 #[derive(
@@ -325,7 +324,16 @@ pub struct NetworkDescription {
 pub struct AddNetworkDescription {
     pub descr_type: NetworkDescrType,
     pub description: String,
-    pub network_frequency_id: Option<i64>,
+    // pub comment: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AddNetworkFrequencyDescription {
+    pub descr_type: NetworkDescrType,
+    pub description: String,
+    pub freq: String,
     // pub comment: Option<String>,
 }
 
@@ -334,7 +342,8 @@ pub struct AddNetworkDescription {
 )]
 pub struct AddNetworkDescriptionsReq {
     pub network_id: i64,
-    pub descriptions: Vec<AddNetworkDescription>,
+    pub network_descriptions: Vec<AddNetworkDescription>,
+    pub frequency_descriptions: Vec<AddNetworkFrequencyDescription>,
 }
 
 #[derive(
@@ -377,6 +386,7 @@ pub struct AddNetworkFreq {
     pub freq: String,
     pub kind: String,
     pub modulation_id: Option<i32>,
+    pub description: Option<AddNetworkFrequencyDescription>,
 }
 
 #[derive(

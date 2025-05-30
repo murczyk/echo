@@ -13,6 +13,7 @@ use sea_orm::sea_query::*;
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use self::types::*;
 use actix_web::post;
 use actix_web::web::Json;
 use log::*;
@@ -21,8 +22,6 @@ use sea_orm::{
     QuerySelect,
 };
 use sea_query::{Expr, Query};
-
-use self::types::*;
 
 pub mod types;
 
@@ -148,7 +147,7 @@ pub async fn network_list(
     // );
 
     let networks = networks
-        .into_model::<NetworkDesc>()
+        .into_model::<NetworkDetails>()
         .all(&env.dbx)
         .await
         .context(h!())?;
@@ -343,6 +342,8 @@ pub async fn create_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
+    let mut network_descr: Vec<sigint_network_description::ActiveModel> =
+        vec![];
     crate::users::has_role(&env.dbx, &user.id()?, "Rer")
         .await
         .context(h!())?;
@@ -402,29 +403,28 @@ pub async fn create_network(
     .await
     .context(h!())?;
 
-    let network_freq: Result<Vec<sigint_network_freq::ActiveModel>, AppError> =
-        req.freqs
-            .clone()
-            .unwrap_or(vec![])
-            .into_iter()
-            .map(|x| {
-                Ok(sigint_network_freq::ActiveModel {
-                    id: NotSet,
-                    network_id: Set(network.id),
-                    freq: Set(x.freq),
-                    deleted: Set(false),
-                    created_at: NotSet,
-                    kind: Set(SigintNetworkKind::try_from_value(&x.kind)?),
-                    modulation_id: Set(x.modulation_id),
-                })
-            })
-            .collect();
-    let network_freq = network_freq.context(h!())?;
-    if !network_freq.is_empty() {
-        sigint_network_freq::Entity::insert_many(network_freq)
-            .exec(&txn)
-            .await
-            .context(h!())?;
+    for frequency in req.freqs.clone().unwrap_or(vec![]) {
+        let freq_id = sigint_network_freq::ActiveModel {
+            id: NotSet,
+            network_id: Set(network.id),
+            freq: Set(frequency.freq),
+            deleted: Set(false),
+            created_at: NotSet,
+            kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
+            modulation_id: Set(frequency.modulation_id),
+        }
+        .insert(&txn)
+        .await
+        .context(h!())?
+        .id;
+        if let Some(descr) = frequency.description {
+            network_descr.push(map_add_network_frequency_description(
+                &user_login,
+                &network,
+                freq_id,
+                descr,
+            ));
+        }
     }
 
     let network_units: Vec<sigint_network_unit::ActiveModel> = req
@@ -464,23 +464,13 @@ pub async fn create_network(
             .context(h!())?;
     }
 
-    let network_descr: Vec<sigint_network_description::ActiveModel> = req
-        .descriptions
+    req.descriptions
         .clone()
-        .unwrap_or(vec![])
         .into_iter()
-        .map(|descr| sigint_network_description::ActiveModel {
-            id: NotSet,
-            network_id: Set(network.id),
-            login: Set(user_login.clone()),
-            r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
-            description: Set(descr.description),
-            sigint_network_freq_id: Set(descr.network_frequency_id),
-            comment: NotSet, // Set(descr.comment),
-            deleted: Set(false),
-            created_at: NotSet,
+        .map(|descr| {
+            map_add_network_description(user_login.clone(), &network, descr)
         })
-        .collect();
+        .for_each(|d| network_descr.push(d));
     if !network_descr.is_empty() {
         sigint_network_description::Entity::insert_many(network_descr)
             .exec(&txn)
@@ -1166,30 +1156,22 @@ pub async fn add_network_freq(
         existing_freq.context(h!())?
     };
 
-    // Update the network's updated_at timestamp
-    let network_id = network.id.clone();
+    if let Some(description) = req.freq_rec.clone().description {
+        map_add_network_frequency_description(
+            &user_login,
+            &network,
+            network_freq.id,
+            description,
+        )
+        .insert(&txn)
+        .await
+        .context(h!())?;
+    }
 
     let mut network_model = network.into_active_model();
     network_model.updated_at = Set(Utc::now().naive_utc());
     network_model.updated_by = Set(Some(user_login.to_string()));
     network_model.update(&txn).await.context(h!())?;
-
-    if let Some(description) = req.description.clone() {
-        sigint_network_description::ActiveModel {
-            id: NotSet,
-            network_id: Set(network_id),
-            login: Set(user_login),
-            r#type: Set(NetworkDescriptionType::from(description.descr_type)),
-            description: Set(description.description),
-            sigint_network_freq_id: Set(Some(network_freq.id)),
-            comment: NotSet, // Set(descr.comment),
-            deleted: Set(false),
-            created_at: NotSet,
-        }
-        .insert(&txn)
-        .await
-        .context(h!())?;
-    }
 
     // Now fetch the updated network with all frequencies to return
     let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
@@ -2050,13 +2032,6 @@ pub async fn add_network_descriptions(
         .context(h!())?;
     let user_login = user.id()?.to_string();
 
-    trace!(
-        "Adding {} descriptions to network {}; user={}",
-        req.descriptions.len(),
-        req.network_id,
-        user_login
-    );
-
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
@@ -2068,19 +2043,11 @@ pub async fn add_network_descriptions(
         .ok_or(AppError::NotFound)?;
 
     let network_descr: Vec<sigint_network_description::ActiveModel> = req
-        .descriptions
+        .network_descriptions
         .clone()
         .into_iter()
-        .map(|descr| sigint_network_description::ActiveModel {
-            id: NotSet,
-            network_id: Set(network.id),
-            login: Set(user_login.clone()),
-            r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
-            description: Set(descr.description),
-            sigint_network_freq_id: Set(descr.network_frequency_id),
-            comment: NotSet, // Set(descr.comment),
-            deleted: Set(false),
-            created_at: NotSet,
+        .map(|descr| {
+            map_add_network_description(user_login.clone(), &network, descr)
         })
         .collect();
 
@@ -2738,4 +2705,41 @@ where
             created_at: x.created_at.and_utc().timestamp_millis(),
         })
         .collect())
+}
+
+fn map_add_network_description(
+    user_login: String,
+    network: &sigint_network::Model,
+    descr: AddNetworkDescription,
+) -> sigint_network_description::ActiveModel {
+    sigint_network_description::ActiveModel {
+        id: NotSet,
+        network_id: Set(network.id),
+        login: Set(user_login.clone()),
+        r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
+        description: Set(descr.description),
+        sigint_network_freq_id: Set(None),
+        comment: NotSet, // Set(descr.comment),
+        deleted: Set(false),
+        created_at: NotSet,
+    }
+}
+
+fn map_add_network_frequency_description(
+    user_login: &String,
+    network: &sigint_network::Model,
+    freq_id: i64,
+    descr: AddNetworkFrequencyDescription,
+) -> sigint_network_description::ActiveModel {
+    sigint_network_description::ActiveModel {
+        id: NotSet,
+        network_id: Set(network.id),
+        login: Set(user_login.clone()),
+        r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
+        description: Set(descr.description.clone()),
+        sigint_network_freq_id: Set(Some(freq_id)),
+        comment: NotSet, // Set(descr.comment),
+        deleted: Set(false),
+        created_at: NotSet,
+    }
 }
