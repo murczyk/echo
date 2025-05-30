@@ -150,6 +150,12 @@ where
             _ => vec![],
         };
 
+    let location_v2 = if settlement_list.is_empty() {
+        None
+    } else {
+        Some(utils::format_settlements_list(settlement_list))
+    };
+
     if crate::rer_importer::important::is_important(&body) {
         sigint_important::Entity::insert(sigint_important::ActiveModel {
             id: NotSet,
@@ -163,27 +169,6 @@ where
     }
 
     let message = try_set_commintify_sender(&body, message, txn).await?;
-
-    let settlements = settlement_list.clone();
-
-    let mut location_v2 = if settlement_list.is_empty() {
-        None
-    } else {
-        Some(utils::format_settlements_list(settlement_list))
-    };
-
-    if let Some(location) = location.clone() {
-        let settlements =
-            crate::sigint::settlement::processed_parsed_settlement_list(
-                location,
-                post_id,
-                settlements,
-                txn,
-            )
-            .await
-            .context(h!())?;
-        location_v2 = Some(utils::format_locations_list(settlements));
-    };
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
