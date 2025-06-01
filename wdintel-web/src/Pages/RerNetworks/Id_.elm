@@ -419,7 +419,7 @@ update shared msg model =
             ( model
             , E.networkAddDescription (NetworkDescriptionAdded descType)
                 { networkId = networkId
-                , descriptions =
+                , networkDescriptions =
                     [ { descrType = descType
                       , description =
                             case descType of
@@ -428,9 +428,9 @@ update shared msg model =
 
                                 B.Sign ->
                                     model.addSignsInp
-                      , networkFrequencyId = Nothing --TODO
                       }
                     ]
+                , frequencyDescriptions = []
                 }
             )
 

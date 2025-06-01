@@ -89,3 +89,4 @@ type Msg
     | NetworkFreqUpdated String B.UpdateNetworkReq (Result ApiError B.Network)
     | ConfirmationInputChangedByUser String
     | Confirmation2InputChangedByUser String
+    | NetworkConfirmationAdded (Result ApiError B.Network)

@@ -1339,14 +1339,23 @@ update shared msg model =
             case model.networkAddStatus of
                 CreateNewNetwork freq state ->
                     let
-                        confirmation = 
-                                { descrType = B.Confirmation
-                                , description = model.addConfirmationInp
-                                , networkFrequencyId = Just 0 
-                                }
-
+                        freqs =
+                            ListX.updateIf (\f -> f.freq == freq)
+                                (\oldFreq ->
+                                    let
+                                        desc =
+                                            { descrType = B.Confirmation
+                                            , description = Maybe.withDefault "" model.addConfirmationInp
+                                            , freq = freq
+                                            }
+                                    in
+                                    { oldFreq | description = Just desc }
+                                )
+                                (Maybe.withDefault [] state.freqs)
                     in
-                    ( model, E.createNetwork (NetworkCreated freq) state )
+                    ( model
+                    , E.createNetwork (NetworkCreated freq) { state | freqs = Just freqs }
+                    )
 
                 _ ->
                     ( model, E.none )
@@ -1379,6 +1388,19 @@ update shared msg model =
             , E.none
             )
 
+        NetworkConfirmationAdded (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        NetworkConfirmationAdded (Ok network) ->
+            let
+                m1 =
+                    { model
+                        | addConfirmationInp = Nothing
+                        , networks = Dict.insert network.id network model.networks
+                    }
+            in
+            ( m1, E.none )
+
         NetworkStartCreatingFlow ->
             ( { model
                 | networkAddStatus =
@@ -1400,6 +1422,7 @@ update shared msg model =
                                         [ { freq = freq
                                           , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
                                           , modulationId = model.addModulationSelect.selected
+                                          , description = Nothing
                                           }
                                         ]
                                 , operationPeriod = Nothing
@@ -1408,7 +1431,7 @@ update shared msg model =
 
                                 --, modulationId = model.addmodulationselect.selected
                                 , postIds = []
-                                , descriptions = Nothing
+                                , descriptions = []
                                 }
 
                         _ ->
@@ -1505,18 +1528,18 @@ update shared msg model =
                             { freq = freq
                             , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
                             , modulationId = model.addExistingModulationSelect.selected
-                            }
-                        , description =
-                            case model.addExistingConfirmationInp of
-                                Just inp ->
-                                    Just
-                                        { descrType = B.Confirmation
-                                        , description = inp
-                                        , networkFrequencyId = Just network.id
-                                        }
+                            , description =
+                                case model.addExistingConfirmationInp of
+                                    Just inp ->
+                                        Just
+                                            { descrType = B.Confirmation
+                                            , description = inp
+                                            , freq = freq
+                                            }
 
-                                Nothing ->
-                                    Nothing
+                                    Nothing ->
+                                        Nothing
+                            }
                         }
                     )
 
@@ -1691,7 +1714,7 @@ update shared msg model =
             ( { model | addExistingConfirmationInp = Just val }, E.none )
 
         Confirmation2InputChangedByUser val ->
-            ( { model | addExistingConfirmationInp = Just val }, E.none )
+            ( { model | addConfirmationInp = Just val }, E.none )
 
 
 prepareReportDownloadCmd : Model -> Bool -> Cmd Msg
