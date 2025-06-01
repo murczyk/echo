@@ -2035,21 +2035,46 @@ pub async fn add_network_descriptions(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let (network, network_freqs) =
+        sigint_network::Entity::find_by_id(req.network_id)
+            .find_with_related(sigint_network_freq::Entity)
+            .filter(sigint_network::Column::Deleted.eq(false))
+            .all(&txn)
+            .await
+            .context(h!())?
+            .into_iter()
+            .next()
+            .ok_or(AppError::NotFound)?;
 
-    let network_descr: Vec<sigint_network_description::ActiveModel> = req
-        .network_descriptions
+    let freq_map = network_freqs
+        .into_iter()
+        .map(|x| (x.freq, x.id))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut network_descr = vec![];
+
+    req.network_descriptions
         .clone()
         .into_iter()
         .map(|descr| {
             map_add_network_description(user_login.clone(), &network, descr)
         })
-        .collect();
+        .for_each(|d| network_descr.push(d));
+
+    req.frequency_descriptions
+        .clone()
+        .into_iter()
+        .filter_map(|descr| {
+            freq_map.get(&descr.freq).map(|id| {
+                map_add_network_frequency_description(
+                    &user_login,
+                    &network,
+                    *id,
+                    descr,
+                )
+            })
+        })
+        .for_each(|d| network_descr.push(d));
 
     if !network_descr.is_empty() {
         sigint_network_description::Entity::insert_many(network_descr)
