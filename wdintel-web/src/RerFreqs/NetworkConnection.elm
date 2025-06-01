@@ -45,30 +45,37 @@ view model shared =
 createNetworkSidebarContent : Model -> Shared.Model -> List (Html Msg)
 createNetworkSidebarContent model shared =
     [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
-        ([ h2 [] [ text "Прив'язка мережі до частоти" ]
-         ]
-            ++ (case model.networkAddStatus of
-                    CreateNewNetwork freq addState ->
-                        createNetworkSidebarForm addState model shared
+        (case model.networkAddStatus of
+            CreateNewNetwork freq addState ->
+                h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
+                    :: viewCreateNewNetwork addState freq model shared
 
-                    SelectFromExistingNetwork freq mSelectedNetworkId ->
-                        createNetworkSidebarStart freq mSelectedNetworkId model shared
+            SelectFromExistingNetwork freq mSelectedNetworkId ->
+                h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
+                    :: viewSelectFromExistingNetwork freq mSelectedNetworkId model shared
 
-                    EditExistingNetwork freq editState ->
-                        editNetworkSidebarForm editState model shared
+            EditConnectedNetwork freq editState ->
+                h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
+                    :: viewEditConnectedNetwork editState model shared
 
-                    NotStarted ->
-                        []
-               )
+            NotStarted ->
+                []
         )
     ]
 
 
-createNetworkSidebarForm : B.CreateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
-createNetworkSidebarForm addState model shared =
-    [ h3 [] [ text "Створення нової мережі" ]
-    , div [ class "grid grid-cols-4  gap-y-2 gap-x-4" ]
-        [ div [ class "col-span-2" ]
+viewCreateNewNetwork : B.CreateNetworkReq -> String -> Model -> Shared.Model -> List (Html Msg)
+viewCreateNewNetwork addState freq model shared =
+    let
+        unitName =
+            model.networkDialogUnitSelect.selected |> Maybe.andThen (\id -> Dict.get id model.masterUnits) |> Maybe.map .name
+
+        title =
+            "Створення нової мережі для підрозділу " ++ Maybe.withDefault "" unitName
+    in
+    [ h5 [] [ text title ]
+    , section [ class "grid grid-cols-12  gap-y-2 gap-x-4" ]
+        [ div [ class "col-span-6" ]
             [ label [ class "mb-1" ] [ text "Назва:*" ]
             , input
                 [ class "form-control "
@@ -81,7 +88,7 @@ createNetworkSidebarForm addState model shared =
                 ]
                 []
             ]
-        , div [ class "flex flex-col gap-1 col-span-1" ]
+        , div [ class "flex flex-col gap-1 col-span-3" ]
             [ label [] [ text "Тип" ]
             , let
                 selectedItem =
@@ -108,7 +115,7 @@ createNetworkSidebarForm addState model shared =
                         "жоден"
                         do2
             ]
-        , div [ class "col-span-1" ]
+        , div [ class "col-span-3" ]
             [ label [ class "mb-1" ] [ text "Вид передачі" ]
             , let
                 selectedItem =
@@ -141,7 +148,7 @@ createNetworkSidebarForm addState model shared =
                         "жоден"
                         do2
             ]
-        , div [ class "col-span-2" ]
+        , div [ class "col-span-6" ]
             [ label [ class "mb-1" ] [ text "Пости" ]
             , let
                 selectedItems =
@@ -177,7 +184,7 @@ createNetworkSidebarForm addState model shared =
                         "жоден"
                         do2
             ]
-        , div [ class "col-span-2" ]
+        , div [ class "col-span-6" ]
             [ label [ class "mb-1" ] [ text "Локація" ]
             , input
                 [ class "form-control"
@@ -190,7 +197,7 @@ createNetworkSidebarForm addState model shared =
                 ]
                 []
             ]
-        , div [ class "col-span-2" ]
+        , div [ class "col-span-12" ]
             [ label [ class "mb-1" ] [ text "Коментар" ]
             , input
                 [ class "form-control"
@@ -202,7 +209,10 @@ createNetworkSidebarForm addState model shared =
                 ]
                 []
             ]
-        , div [ class "col-span-2" ]
+        ]
+    , section
+        [ class "grid grid-cols-12  gap-y-2 gap-x-4 my-[16px]" ]
+        [ div [ class "col-span-6" ]
             [ label [ class "mb-1" ] [ text "Радіостанція" ]
             , input
                 [ class "form-control"
@@ -215,21 +225,7 @@ createNetworkSidebarForm addState model shared =
                 []
             , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "типи радіостанцій, що використовуються підрозділом" ]
             ]
-
-        -- , div [ class "col-span-2" ]
-        --     [ label [ class "mb-1" ] [ text "Підтвердження" ]
-        --     , input
-        --         [ class "form-control"
-        --         , value (Maybe.withDefault "" addState.confirmation)
-        --         , onInput <|
-        --             \v ->
-        --                 NetworkAddMsg
-        --                     { addState | confirmation = Just v }
-        --         ]
-        --         []
-        --     , span [ class "text-sm  mt-1 text-[var(--neutral-600)]" ] [ text "р/о, сленг, сигнали управління або інші підтвердження приналежності р/м до підрозділу" ]
-        --     ]
-        , div [ class " col-span-2" ]
+        , div [ class " col-span-6" ]
             [ label [ class "mb-1" ] [ text "Призначення" ]
             , input
                 [ class "form-control"
@@ -242,7 +238,7 @@ createNetworkSidebarForm addState model shared =
                 []
             , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
             ]
-        , div [ class " col-span-2" ]
+        , div [ class " col-span-6" ]
             [ label [ class "mb-1" ] [ text "Характер роботи" ]
             , input
                 [ class "form-control"
@@ -255,7 +251,7 @@ createNetworkSidebarForm addState model shared =
                 []
             , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
             ]
-        , div [ class " col-span-2" ]
+        , div [ class " col-span-6" ]
             [ label [ class "mb-1" ] [ text "Режим роботи" ]
             , input
                 [ class "form-control"
@@ -268,7 +264,7 @@ createNetworkSidebarForm addState model shared =
                 []
             , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
             ]
-        , div [ class " col-span-2" ]
+        , div [ class " col-span-6" ]
             [ label [ class "mb-1" ] [ text "Період функціонування" ]
             , input
                 [ class "form-control"
@@ -295,69 +291,82 @@ createNetworkSidebarForm addState model shared =
         --         []
         --     , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "розвід. ознаки підрозділу: сленг, сигнали управління, р/с, кодування місцевості, тощо" ]
         --     ]
-        , section [ class "col-span-4 h-[200px]" ]
-            [ h4 []
-                [ text "Активність мережі" ]
-            , div [ class "flex gap-[16px] h-full" ]
-                [ div
+        , div [ class "col-span-12" ]
+            [ span [] [ text "Обґрунтування прив'язки для частоти ", span [ class "font-medium" ] [ text freq ] ]
+            , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+                [ textarea
+                    [ class "textarea__field"
+                    , placeholder "Введіть обґрунтування прив'язки"
+                    , value <| Maybe.withDefault "" model.addConfirmationInp
+                    , onInput Confirmation2InputChangedByUser
+                    ]
                     []
-                    [ label [ class "mb-1" ] [ text "Активна з" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control w-[150px]!"
-                        , required True
-                        , Maybe.map (\activeFrom -> Time.millisToPosix activeFrom) addState.activeFrom
-                            |> (\mActiveFrom ->
-                                    case mActiveFrom of
-                                        Just activeFrom ->
-                                            Le.Time.renderDateF4 shared.timeZone activeFrom
-
-                                        Nothing ->
-                                            ""
-                               )
-                            |> value
-                        , onInput <|
-                            NetworkAddMsg
-                                << (\v ->
-                                        { addState
-                                            | activeFrom =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        addState.activeFrom
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                , let
-                    groupsMessageCountByDayJson =
-                        B.freqDailyActivityCountEncoder (RD.withDefault { dataPerDate = Dict.empty } model.freqGroupsActivityForNetworkAdd)
-                  in
-                  div []
-                    [ span [] [ text "Активність частоти за місяць" ]
-                    , Html.node "bar-chart-2"
-                        [ Attr.property "data" <| groupsMessageCountByDayJson
-                        , class "w-[300px]"
-                        ]
-                        []
-                    ]
                 ]
             ]
-        , div [ class "flex gap-2 justify-end col-span-4 mt-4" ]
-            [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
-            , Button.new { label = "Зберегти", onClick = NetworkCreate } |> Button.view
+        ]
+    , section [ class "" ]
+        [ div [ class "" ]
+            [ h6 [ class "mb-0" ]
+                [ text "Активність мережі" ]
+            , span [ class "opacity-70 text-sm" ] [ text "Виберіть дату початку функціонування мережі на основі графіку активності частоти за місяць" ]
             ]
+        , div [ class "grid grid-cols-12 gap-[8px]" ]
+            [ div
+                [ class "col-span-4" ]
+                [ label [ class "mb-1" ] [ text "Активна з" ]
+                , input
+                    [ type_ "date"
+                    , class "form-control w-[150px]!"
+                    , required True
+                    , Maybe.map (\activeFrom -> Time.millisToPosix activeFrom) addState.activeFrom
+                        |> (\mActiveFrom ->
+                                case mActiveFrom of
+                                    Just activeFrom ->
+                                        Le.Time.renderDateF4 shared.timeZone activeFrom
+
+                                    Nothing ->
+                                        ""
+                           )
+                        |> value
+                    , onInput <|
+                        NetworkAddMsg
+                            << (\v ->
+                                    { addState
+                                        | activeFrom =
+                                            case Le.Time.parseDateParts v of
+                                                Err _ ->
+                                                    addState.activeFrom
+
+                                                Ok parts ->
+                                                    Time.Extra.partsToPosix shared.timeZone parts
+                                                        |> Time.posixToMillis
+                                                        |> Just
+                                    }
+                               )
+                    ]
+                    []
+                ]
+            , let
+                groupsMessageCountByDayJson =
+                    B.freqDailyActivityCountEncoder (RD.withDefault { dataPerDate = Dict.empty } model.freqGroupsActivityForNetworkAdd)
+              in
+              div [ class "col-span-8 h-[300px]" ]
+                [ Html.node "bar-chart-2"
+                    [ Attr.property "data" <| groupsMessageCountByDayJson
+                    ]
+                    []
+                ]
+            ]
+        ]
+    , div [ class "flex gap-2 justify-end w-full" ]
+        [ Button.new { label = "Відмінити", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
+        , Button.new { label = "Зберегти", onClick = NetworkCreate } |> Button.view
         ]
     ]
 
 
-createNetworkSidebarStart : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
-createNetworkSidebarStart freq mSelectedNetworkId model shared =
+viewSelectFromExistingNetwork : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
+viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
     [ div [ class "flex flex-col grow relative" ]
         [ HtmlX.viewIf model.networkAddLoading <|
             span [ class "absolute top-[50%] left-[50%] -translate-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
@@ -445,7 +454,7 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
                                 div
                                     [ class "w-full p-2  border-1 border-border rounded-sm text-text  pointer "
                                     , classList
-                                        [ ( "bg-tag-selected border-1 border-border-selected", isActive )
+                                        [ ( "bg-tag-selected border-1 border-border-selected text-black", isActive )
                                         , ( "hover-unmuted bg-tag", not isActive )
                                         ]
                                     , onClick <| NetworkAddToggleExistingId network.id
@@ -454,8 +463,8 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
                                     ]
                             )
                             d
-                        ++ [ div [ class "flex gap-[8px] mt-[8px]" ]
-                                [ div [ class "flex flex-col gap-1 col-span-1" ]
+                        ++ [ div [ class "grid grid-cols-12 gap-[8px] mt-[8px]" ]
+                                [ div [ class "flex flex-col gap-1 col-span-3" ]
                                     [ label [] [ text "Тип" ]
                                     , let
                                         selectedItem =
@@ -465,7 +474,7 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
                                                     , label = NetworksUtils.networkKindToLabel item
                                                     }
                                             )
-                                                model.addKindSelect.selected
+                                                model.addExistingKindSelect.selected
 
                                         defaultOptions =
                                             Le.Block.Select.defaultOptions shared.isDarkMode
@@ -482,7 +491,7 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
                                                 "жоден"
                                                 do2
                                     ]
-                                , div [ class "" ]
+                                , div [ class "col-span-5" ]
                                     [ label [ class "mb-1" ] [ text "Вид передачі" ]
                                     , let
                                         selectedItem =
@@ -514,6 +523,18 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
                                                 model.addExistingModulationSelect.items
                                                 "жоден"
                                                 do2
+                                    ]
+                                , div [ class "row-start-2 col-span-12" ]
+                                    [ span [] [ text "Обґрунтування прив'язки" ]
+                                    , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+                                        [ textarea
+                                            [ class "textarea__field"
+                                            , placeholder "Введіть обґрунтування прив'язки"
+                                            , value <| Maybe.withDefault "" model.addExistingConfirmationInp
+                                            , onInput ConfirmationInputChangedByUser
+                                            ]
+                                            []
+                                        ]
                                     ]
                                 ]
                            ]
@@ -553,9 +574,9 @@ createNetworkSidebarStart freq mSelectedNetworkId model shared =
     ]
 
 
-editNetworkSidebarForm : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
-editNetworkSidebarForm editState model shared =
-    [ h3 [] [ text "Редагування існуючої мережі" ]
+viewEditConnectedNetwork : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
+viewEditConnectedNetwork editState model shared =
+    [ h4 [] [ text "Редагування існуючої мережі" ]
     , div [ class "grid grid-cols-4  gap-y-2 gap-x-4" ]
         [ div [ class "col-span-2" ]
             [ label [ class "mb-1" ] [ text "Назва:*" ]

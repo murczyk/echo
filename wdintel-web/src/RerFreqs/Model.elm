@@ -4,13 +4,11 @@ import Api
 import Bindings as B
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
-import Le.Block.DateRangePicker
 import Le.Block.DateTime
 import Le.Block.Select
 import Le.Block.Toast
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData exposing (RemoteData)
-import Le.RerMessage
 import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Select
 import Set exposing (Set)
@@ -63,6 +61,8 @@ type alias Model =
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
+    , addExistingConfirmationInp : Maybe String
+    , addConfirmationInp : Maybe String
     , addExistingKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addExistingModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , addPostsSelect : Le.Block.Select.SelectType Int
@@ -89,7 +89,7 @@ type ReportCreation
 type NetworkAddStatus
     = NotStarted
     | SelectFromExistingNetwork String (Maybe Int)
-    | EditExistingNetwork String B.UpdateNetworkReq
+    | EditConnectedNetwork String B.UpdateNetworkReq
     | CreateNewNetwork String B.CreateNetworkReq
 
 

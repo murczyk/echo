@@ -175,6 +175,8 @@ init _ =
                 , selected = []
                 , items = []
                 }
+            , addExistingConfirmationInp = Nothing
+            , addConfirmationInp = Nothing
             }
     in
     ( m2
@@ -731,33 +733,28 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkAddExistingModulationSelMsg imsg ->
-            case model.networkAddStatus of
-                SelectFromExistingNetwork freq mSelId ->
-                    let
-                        ( mAct, imodel, icmd ) =
-                            Select.update imsg model.addExistingModulationSelect.state
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.addExistingModulationSelect.state
 
-                        updatedNetworkModulation =
-                            Le.Block.Select.singleUpd mAct model.addExistingModulationSelect.selected
+                updatedNetworkModulation =
+                    Le.Block.Select.singleUpd mAct model.addExistingModulationSelect.selected
 
-                        modulationSelect =
-                            model.addExistingModulationSelect
+                modulationSelect =
+                    model.addExistingModulationSelect
 
-                        modulationSelect2 =
-                            { modulationSelect
-                                | state = imodel
-                                , selected = updatedNetworkModulation
-                            }
-                    in
-                    ( { model | addExistingModulationSelect = modulationSelect2 }
-                    , E.sendCmd <|
-                        Cmd.map
-                            NetworkAddModulationSelMsg
-                            icmd
-                    )
-
-                _ ->
-                    ( model, E.none )
+                modulationSelect2 =
+                    { modulationSelect
+                        | state = imodel
+                        , selected = updatedNetworkModulation
+                    }
+            in
+            ( { model | addExistingModulationSelect = modulationSelect2 }
+            , E.sendCmd <|
+                Cmd.map
+                    NetworkAddModulationSelMsg
+                    icmd
+            )
 
         NetworkAddPostsSelMsg imsg ->
             case model.networkAddStatus of
@@ -793,7 +790,7 @@ update shared msg model =
 
         NetworkEditPostsSelMsg imsg ->
             case model.networkAddStatus of
-                EditExistingNetwork freq editNetworkState ->
+                EditConnectedNetwork freq editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
                             Select.update imsg model.editPostsSelect.state
@@ -810,7 +807,7 @@ update shared msg model =
                                 , selected = updatedNetworkPosts
                             }
                     in
-                    ( { model | editPostsSelect = postsSelect2, networkAddStatus = EditExistingNetwork freq editNetworkState }
+                    ( { model | editPostsSelect = postsSelect2, networkAddStatus = EditConnectedNetwork freq editNetworkState }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkEditPostsSelMsg
@@ -863,39 +860,32 @@ update shared msg model =
                     )
 
         NetworkAddExistingKindSelMsg imsg ->
-            case model.networkAddStatus of
-                SelectFromExistingNetwork freq mSelId ->
-                    let
-                        ( mAct, imodel, icmd ) =
-                            Select.update imsg model.addExistingKindSelect.state
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.addExistingKindSelect.state
 
-                        updatedNetworkKind =
-                            Le.Block.Select.singleUpdWithDefault mAct model.addExistingKindSelect.selected
+                updatedNetworkKind =
+                    Le.Block.Select.singleUpdWithDefault mAct model.addExistingKindSelect.selected
 
-                        kindSelect =
-                            model.addExistingKindSelect
+                kindSelect =
+                    model.addExistingKindSelect
 
-                        kindSelect2 =
-                            { kindSelect
-                                | state = imodel
-                                , selected = updatedNetworkKind
-                            }
-                    in
-                    ( { model | addExistingKindSelect = kindSelect2 }
-                    , E.sendCmd <|
-                        Cmd.map
-                            NetworkAddExistingKindSelMsg
-                            icmd
-                    )
-
-                _ ->
-                    ( model
-                    , E.none
-                    )
+                kindSelect2 =
+                    { kindSelect
+                        | state = imodel
+                        , selected = updatedNetworkKind
+                    }
+            in
+            ( { model | addExistingKindSelect = kindSelect2 }
+            , E.sendCmd <|
+                Cmd.map
+                    NetworkAddExistingKindSelMsg
+                    icmd
+            )
 
         NetworkEditModulationSelMsg imsg ->
             case model.networkAddStatus of
-                EditExistingNetwork freq editNetworkState ->
+                EditConnectedNetwork freq editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
                             Select.update imsg model.editModulationSelect.state
@@ -924,7 +914,7 @@ update shared msg model =
 
         NetworkEditKindSelMsg imsg ->
             case model.networkAddStatus of
-                EditExistingNetwork freq editNetworkState ->
+                EditConnectedNetwork freq editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
                             Select.update imsg model.editKindSelect.state
@@ -970,8 +960,8 @@ update shared msg model =
             ( { model
                 | networkAddStatus =
                     case model.networkAddStatus of
-                        EditExistingNetwork freq _ ->
-                            EditExistingNetwork freq editNetworkState
+                        EditConnectedNetwork freq _ ->
+                            EditConnectedNetwork freq editNetworkState
 
                         _ ->
                             model.networkAddStatus
@@ -1348,7 +1338,24 @@ update shared msg model =
         NetworkCreate ->
             case model.networkAddStatus of
                 CreateNewNetwork freq state ->
-                    ( model, E.createNetwork (NetworkCreated freq) state )
+                    let
+                        freqs =
+                            ListX.updateIf (\f -> f.freq == freq)
+                                (\oldFreq ->
+                                    let
+                                        desc =
+                                            { descrType = B.Confirmation
+                                            , description = Maybe.withDefault "" model.addConfirmationInp
+                                            , freq = freq
+                                            }
+                                    in
+                                    { oldFreq | description = Just desc }
+                                )
+                                (Maybe.withDefault [] state.freqs)
+                    in
+                    ( model
+                    , E.createNetwork (NetworkCreated freq) { state | freqs = Just freqs }
+                    )
 
                 _ ->
                     ( model, E.none )
@@ -1381,6 +1388,19 @@ update shared msg model =
             , E.none
             )
 
+        NetworkConfirmationAdded (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        NetworkConfirmationAdded (Ok network) ->
+            let
+                m1 =
+                    { model
+                        | addConfirmationInp = Nothing
+                        , networks = Dict.insert network.id network model.networks
+                    }
+            in
+            ( m1, E.none )
+
         NetworkStartCreatingFlow ->
             ( { model
                 | networkAddStatus =
@@ -1402,6 +1422,7 @@ update shared msg model =
                                         [ { freq = freq
                                           , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
                                           , modulationId = model.addModulationSelect.selected
+                                          , description = Nothing
                                           }
                                         ]
                                 , operationPeriod = Nothing
@@ -1410,7 +1431,7 @@ update shared msg model =
 
                                 --, modulationId = model.addmodulationselect.selected
                                 , postIds = []
-                                , descriptions = Nothing
+                                , descriptions = []
                                 }
 
                         _ ->
@@ -1441,13 +1462,13 @@ update shared msg model =
                                     { eks
                                         | selected =
                                             Maybe.map .kind mFreqObj
-                                                |> Maybe.andThen (\a ->  Just (NetworksUtils.networkKindFromString a))
+                                                |> Maybe.andThen (\a -> Just (NetworksUtils.networkKindFromString a))
                                                 |> Maybe.withDefault NetworksUtils.VHF
                                     }
                             in
                             { model
                                 | networkAddStatus =
-                                    EditExistingNetwork freq
+                                    EditConnectedNetwork freq
                                         { id = network.id
                                         , name = network.name
                                         , location = network.location
@@ -1507,8 +1528,18 @@ update shared msg model =
                             { freq = freq
                             , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
                             , modulationId = model.addExistingModulationSelect.selected
+                            , description =
+                                case model.addExistingConfirmationInp of
+                                    Just inp ->
+                                        Just
+                                            { descrType = B.Confirmation
+                                            , description = inp
+                                            , freq = freq
+                                            }
+
+                                    Nothing ->
+                                        Nothing
                             }
-                        , description = Nothing
                         }
                     )
 
@@ -1590,7 +1621,7 @@ update shared msg model =
 
         NetworkUpdate ->
             case model.networkAddStatus of
-                EditExistingNetwork freq state ->
+                EditConnectedNetwork freq state ->
                     ( model
                     , E.batch
                         [ E.updateNetworkPosts (NetworkPostsUpdated freq state) { networkId = state.id, postIds = model.editPostsSelect.selected } ]
@@ -1678,6 +1709,12 @@ update shared msg model =
 
         NetworkFreqUpdated _ _ (Err err) ->
             Api.handleHttpError ToastMsg err model
+
+        ConfirmationInputChangedByUser val ->
+            ( { model | addExistingConfirmationInp = Just val }, E.none )
+
+        Confirmation2InputChangedByUser val ->
+            ( { model | addConfirmationInp = Just val }, E.none )
 
 
 prepareReportDownloadCmd : Model -> Bool -> Cmd Msg
