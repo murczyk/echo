@@ -21,6 +21,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
 import Le.Utils exposing (networkKindVHFMapping)
+import List.Extra as ListX
 import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
@@ -74,6 +75,7 @@ type alias Model =
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
     , addConfirmationInp : String
+    , addConfirmationFreqSelect : Le.Block.Select.SelectTypeSingle String
     , addSignsInp : String
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
     , descriptionsEditDict : Dict Int B.NetworkDescription
@@ -111,6 +113,11 @@ init route shared () =
             , selected = []
             }
       , addConfirmationInp = ""
+      , addConfirmationFreqSelect =
+            { state = Select.initState (Select.selectIdentifier "add-confirmation-freq-state")
+            , items = []
+            , selected = Nothing
+            }
       , addSignsInp = ""
       , signals = NotAsked
       , descriptionsEditDict = Dict.empty
@@ -156,6 +163,7 @@ type Msg
     | DescriptionEditUpdated Int (Result ApiError B.Network)
     | DescriptionEditedByUser Int String
     | DescriptionDeleted (Result ApiError B.Network)
+    | AddConfirmationFreqSelMsg (Select.Msg String)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -240,8 +248,14 @@ update shared msg model =
                 callsigns =
                     List.filterMap .callsigns res.freqs
                         |> List.concat
+
+                addConfirmationFreqSelect =
+                    model.addConfirmationFreqSelect
+
+                acfs2 =
+                    { addConfirmationFreqSelect | items = List.map .freq res.freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq }) }
             in
-            ( { model | freqs = Success res.freqs }, E.getCallsignsInfoShared callsigns )
+            ( { model | freqs = Success res.freqs, addConfirmationFreqSelect = acfs2 }, E.getCallsignsInfoShared callsigns )
 
         CallsignsPopupOpenedByUser freq ->
             ( { model | callsignsOpenedPopupId = Just freq }, E.none )
@@ -416,22 +430,45 @@ update shared msg model =
                     ( model, E.none )
 
         DescriptionAddClickedByUser networkId descType ->
-            ( model
-            , E.networkAddDescription (NetworkDescriptionAdded descType)
-                { networkId = networkId
-                , networkDescriptions =
-                    [ { descrType = descType
-                      , description =
-                            case descType of
-                                B.Confirmation ->
-                                    model.addConfirmationInp
+            let
+                desc =
+                    case ( descType, model.addConfirmationFreqSelect.selected ) of
+                        ( B.Confirmation, Just freq ) ->
+                            { networkId = networkId
+                            , networkDescriptions =
+                                []
+                            , frequencyDescriptions =
+                                [ { descrType = B.Confirmation
+                                  , description = model.addConfirmationInp
+                                  , freq = freq
+                                  }
+                                ]
+                            }
 
-                                B.Sign ->
-                                    model.addSignsInp
-                      }
-                    ]
-                , frequencyDescriptions = []
-                }
+                        ( B.Confirmation, Nothing ) ->
+                            { networkId = networkId
+                            , networkDescriptions =
+                                [ { descrType = B.Confirmation
+                                  , description = model.addConfirmationInp
+                                  }
+                                ]
+                            , frequencyDescriptions =
+                                []
+                            }
+
+                        ( B.Sign, _ ) ->
+                            { networkId = networkId
+                            , networkDescriptions =
+                                [ { descrType = B.Sign
+                                  , description = model.addSignsInp
+                                  }
+                                ]
+                            , frequencyDescriptions =
+                                []
+                            }
+            in
+            ( model
+            , E.networkAddDescription (NetworkDescriptionAdded descType) desc
             )
 
         NetworkDescriptionAdded _ (Err e) ->
@@ -511,6 +548,32 @@ update shared msg model =
 
         DescriptionDeleted (Ok res) ->
             ( { model | network = Success res }, E.none )
+
+        AddConfirmationFreqSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.addConfirmationFreqSelect.state
+
+                updatedFreq =
+                    Le.Block.Select.singleUpd mAct model.addConfirmationFreqSelect.selected
+
+                freqsSelect =
+                    model.addConfirmationFreqSelect
+
+                freqsSelect2 =
+                    { freqsSelect
+                        | state = imodel
+                        , selected = updatedFreq
+                    }
+            in
+            ( { model
+                | addConfirmationFreqSelect = freqsSelect2
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    AddConfirmationFreqSelMsg
+                    icmd
+            )
 
 
 
@@ -907,7 +970,33 @@ contentBlock shared network model =
                 [ h5 [ class "" ] [ text "Обґрунтування прив’язки" ]
                 , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
                     [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation } |> Button.withOutlined True |> Button.view
+                    , div [ class "flex justify-between w-full" ]
+                        [ div [ class "w-[200px]" ]
+                            [ let
+                                selectedItem =
+                                    Maybe.map
+                                        (\freq ->
+                                            Select.basicMenuItem
+                                                { item = freq
+                                                , label = freq
+                                                }
+                                        )
+                                        model.addConfirmationFreqSelect.selected
+
+                                defaultOptions =
+                                    Le.Block.Select.defaultOptions shared.isDarkMode
+                              in
+                              Html.map AddConfirmationFreqSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        selectedItem
+                                        model.addConfirmationFreqSelect.state
+                                        model.addConfirmationFreqSelect.items
+                                        "виберіть частоту"
+                                        defaultOptions
+                            ]
+                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation } |> Button.withOutlined True |> Button.view
+                        ]
                     ]
                 , div [ class "max-h-[200px] overflow-y-auto" ]
                     (List.map
@@ -918,6 +1007,22 @@ contentBlock shared network model =
                                         [ span [] [ text description.login ]
                                         , span [] [ text "|" ]
                                         , span [ class "text-[13px]" ] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                        , span [ class "text-[13px]" ]
+                                            [ description.networkFrequencyId
+                                                |> Maybe.andThen
+                                                    (\freqId ->
+                                                        ListX.find (\freq -> freq.id == freqId) network.freqs
+                                                    )
+                                                |> Maybe.map .freq
+                                                |> (\mFreq ->
+                                                        case mFreq of
+                                                            Just f ->
+                                                                text ("| " ++ f)
+
+                                                            Nothing ->
+                                                                text ""
+                                                   )
+                                            ]
                                         ]
                                     , div [ class "flex gap-[8px]" ]
                                         [ case Dict.get description.id model.descriptionsEditDict of
