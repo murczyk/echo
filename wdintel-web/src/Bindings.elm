@@ -4580,6 +4580,7 @@ networkDescrTypeEncoder enum =
 type alias NetworkDescription =
     { id : Int
     , networkId : Int
+    , networkFrequencyId : Maybe Int
     , descrType : NetworkDescrType
     , description : String
     , login : String
@@ -4592,6 +4593,7 @@ networkDescriptionEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
         , ( "network_id", Json.Encode.int struct.networkId )
+        , ( "network_frequency_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.networkFrequencyId )
         , ( "descr_type", networkDescrTypeEncoder struct.descrType )
         , ( "description", Json.Encode.string struct.description )
         , ( "login", Json.Encode.string struct.login )
@@ -7438,6 +7440,7 @@ networkDescriptionDecoder =
     Json.Decode.succeed NetworkDescription
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_frequency_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descr_type" networkDescrTypeDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" Json.Decode.string))
