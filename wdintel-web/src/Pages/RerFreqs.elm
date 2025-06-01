@@ -1722,6 +1722,9 @@ update shared msg model =
         Confirmation2InputChangedByUser val ->
             ( { model | addConfirmationInp = Just val }, E.none )
 
+        UnitsReloadClickedByUser ->
+            ( model, loadUnits )
+
 
 prepareReportDownloadCmd : Model -> Bool -> Cmd Msg
 prepareReportDownloadCmd model fullEtalonka =

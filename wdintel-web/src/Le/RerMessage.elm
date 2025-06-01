@@ -777,7 +777,7 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                     [ result ]
                 , div [ class "ms-1" ]
                     [ i
-                        [ class "bi bi-dash-circle text-actions cursor-pointer"
+                        [ class "bi bi-dash-circle text-action cursor-pointer"
                         , attribute "role" "button"
                         , onClick <| DeleteCallsign msgId j
                         ]
