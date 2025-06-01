@@ -311,6 +311,7 @@ impl From<NetworkDescrType> for NetworkDescriptionType {
 pub struct NetworkDescription {
     pub id: i64,
     pub network_id: i64,
+    pub network_frequency_id: Option<i64>,
     pub descr_type: NetworkDescrType,
     pub description: String,
     // pub comment: Option<String>,

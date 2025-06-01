@@ -2698,6 +2698,7 @@ where
         .map(|x| NetworkDescription {
             id: x.id,
             network_id: x.network_id,
+            network_frequency_id: x.sigint_network_freq_id,
             descr_type: NetworkDescrType::from(x.r#type.clone()),
             description: x.description.clone(),
             // comment: x.comment.clone(),
