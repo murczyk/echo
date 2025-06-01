@@ -62,6 +62,7 @@ type Msg
     | SortByMessageNumber
     | FreqsLoadMore
     | SetFreqToShowAllCallsignsPopup (Maybe String)
+    | SetFreqToShowAllLocationsPopup (Maybe String)
     | SelCallsignMsg (Select.Msg String)
     | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
     | ReportEtalonkaDownload Bool

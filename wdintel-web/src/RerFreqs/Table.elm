@@ -10,12 +10,12 @@ import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Extra as HtmlX
-import Html.Styled as Styled
 import Json.Encode as Encode
 import Layouts
 import Le.Auth
 import Le.Block.ActionMenu
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Le.Block.Popup
 import Le.Block.Spinner
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
@@ -203,38 +203,11 @@ renderFreqTr shared model user rowIndex freq =
         mMap =
             model.locationTexts |> Dict.get freq.freq
 
-        createTextElement textLocation clickable =
-            let
-                styles =
-                    if clickable then
-                        [ style "cursor" "pointer", style "text-decoration" "underline" ]
-
-                    else
-                        []
-
-                events =
-                    if clickable then
-                        [ onClick <| SwitchFromTextToMap freq.freq ]
-
-                    else
-                        []
-            in
-            p
-                (styles ++ events)
-                [ text textLocation ]
-
         alternativeUnits =
             model.altUnitsByFreq |> Dict.get freq.freq
 
         groupsMessageCountByDayJson =
             model.groupsMessageCountByDay |> Dict.get freq.freq |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
-
-        locations =
-            if List.isEmpty freq.locations then
-                "Текстова локація"
-
-            else
-                String.join ", " freq.locations
     in
     tr []
         [ td [ class "flex relative", style "gap" "2px", style "align-items" "baseline" ]
@@ -291,18 +264,112 @@ renderFreqTr shared model user rowIndex freq =
                             []
 
                     ( Just LocationText, False ) ->
-                        createTextElement locations True
+                        p [ class "flex gap-[4px] flex-wrap" ]
+                            (if List.isEmpty freq.locations then
+                                [ span [] [ text "Текстова локація" ] ]
+
+                             else
+                                (List.map (\location -> span [ class "cursor-pointer underline ", onClick <| SwitchFromTextToMap freq.freq ] [ text location ]) freq.locations
+                                    |> List.take 3
+                                )
+                                    ++ (if List.length freq.locations > 3 then
+                                            let
+                                                body =
+                                                    span
+                                                        [ style "font-size" "12px"
+                                                        , style "font-weight" "300"
+                                                        , style "cursor" "pointer"
+                                                        , style "display" "block"
+                                                        , style "padding-right" "6px"
+                                                        , style "text-decoration" "underline"
+                                                        ]
+                                                        [ text ("Показати всі " ++ (freq.locations |> List.length |> String.fromInt)) ]
+
+                                                popupBody =
+                                                    div [ class "d-flex flex-column", style "gap" "20px" ]
+                                                        (List.map (\location -> span [] [ text location ]) freq.locations)
+
+                                                isOpen =
+                                                    case model.showAllLocationsForFreq of
+                                                        Just showAllLocationsForFreq ->
+                                                            showAllLocationsForFreq == freq.freq
+
+                                                        Nothing ->
+                                                            False
+                                            in
+                                            [ Le.Block.Popup.new
+                                                { body = body
+                                                , popupBody = popupBody
+                                                , isOpen = isOpen
+                                                , onClose = SetFreqToShowAllLocationsPopup Nothing
+                                                , onOpen = SetFreqToShowAllLocationsPopup (Just freq.freq)
+                                                , disabled = False
+                                                }
+                                                |> Le.Block.Popup.withFakeAnchor
+                                                |> Le.Block.Popup.withCloseButton
+                                                |> Le.Block.Popup.view
+                                            ]
+
+                                        else
+                                            [ text "" ]
+                                       )
+                            )
 
                     ( Just NoCoords, _ ) ->
-                        createTextElement "Немає координат" False
+                        p []
+                            [ text "Немає координат" ]
 
                     ( Nothing, _ ) ->
-                        p
-                            [ style "cursor" "pointer"
-                            , style "text-decoration" "underline"
-                            , onClick <| SwitchFromTextToMap freq.freq
-                            ]
-                            [ text locations ]
+                        p [ class "flex gap-[4px] flex-wrap" ]
+                            (if List.isEmpty freq.locations then
+                                [ span [] [ text "Текстова локація" ] ]
+
+                             else
+                                (List.map (\location -> span [ class "cursor-pointer underline ", onClick <| SwitchFromTextToMap freq.freq ] [ text location ]) freq.locations
+                                    |> List.take 3
+                                )
+                                    ++ (if List.length freq.locations > 3 then
+                                            let
+                                                body =
+                                                    span
+                                                        [ style "font-size" "12px"
+                                                        , style "font-weight" "300"
+                                                        , style "cursor" "pointer"
+                                                        , style "display" "block"
+                                                        , style "padding-right" "6px"
+                                                        , style "text-decoration" "underline"
+                                                        ]
+                                                        [ text ("Показати всі " ++ (freq.locations |> List.length |> String.fromInt)) ]
+
+                                                popupBody =
+                                                    div [ class "d-flex flex-column", style "gap" "20px" ]
+                                                        (List.map (\location -> span [] [ text location ]) freq.locations)
+
+                                                isOpen =
+                                                    case model.showAllLocationsForFreq of
+                                                        Just showAllLocationsForFreq ->
+                                                            showAllLocationsForFreq == freq.freq
+
+                                                        Nothing ->
+                                                            False
+                                            in
+                                            [ Le.Block.Popup.new
+                                                { body = body
+                                                , popupBody = popupBody
+                                                , isOpen = isOpen
+                                                , onClose = SetFreqToShowAllLocationsPopup Nothing
+                                                , onOpen = SetFreqToShowAllLocationsPopup (Just freq.freq)
+                                                , disabled = False
+                                                }
+                                                |> Le.Block.Popup.withFakeAnchor
+                                                |> Le.Block.Popup.withCloseButton
+                                                |> Le.Block.Popup.view
+                                            ]
+
+                                        else
+                                            [ text "" ]
+                                       )
+                            )
                 ]
             ]
         , td [] <|
