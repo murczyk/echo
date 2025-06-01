@@ -87,6 +87,7 @@ init _ =
             , groupsMessageCountByDay = Dict.empty
             , noMoreToLoad = True
             , showAllCallsignsForFreq = Nothing
+            , showAllLocationsForFreq = Nothing
             , selCallsignState = Select.initState (Select.selectIdentifier "selCallsignState")
             , selCallsignMenu = []
             , callsignsForFilter = NotAsked
@@ -1138,6 +1139,11 @@ update shared msg model =
 
         SetFreqToShowAllCallsignsPopup freqToShowAllCallsignsPopup ->
             ( { model | showAllCallsignsForFreq = freqToShowAllCallsignsPopup }
+            , E.none
+            )
+
+        SetFreqToShowAllLocationsPopup freqToShowAllLocationsPopup ->
+            ( { model | showAllLocationsForFreq = freqToShowAllLocationsPopup }
             , E.none
             )
 

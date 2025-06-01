@@ -37,6 +37,7 @@ type alias Model =
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , showAllCallsignsForFreq : Maybe String
+    , showAllLocationsForFreq : Maybe String
     , selCallsignState : Select.State
     , selCallsignMenu : List (Select.MenuItem String)
     , callsignsForFilter : RemoteData ApiError (List B.FreqCallsign)
