@@ -2,6 +2,27 @@ use crate::types::{Deserialize, Serialize};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Clone,
+    Default,
+)]
+pub enum Language {
+    #[default]
+    Ua,
+    UaTranslit,
+    Ru,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct FindSettlementReq {
@@ -25,6 +46,7 @@ pub struct SettlementDetails {
     pub id: Option<i32>,
     pub name: String,
     pub region: String,
+    pub language: Language,
     pub coords: Option<(f64, f64)>,
 }
 
@@ -33,6 +55,7 @@ pub struct SettlementFileRow {
     pub id: Option<i32>,
     pub name: String,
     pub coords: Option<(f64, f64)>,
+    pub language_details: Option<String>,
 }
 
 #[derive(

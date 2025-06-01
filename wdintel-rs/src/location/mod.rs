@@ -1,6 +1,6 @@
 use crate::entities::sigint_settlement;
 use crate::location::trie::Trie;
-use crate::location::types::CreateSettlementReq;
+use crate::location::types::{CreateSettlementReq, Language};
 pub(crate) use crate::location::types::{
     FindSettlementReq, SettlementDetails, SettlementFileRow,
 };
@@ -176,17 +176,10 @@ pub fn parse_location(
         .replace("Р-Н. ", "РАЙОН ")
         .replace("Р-Н ", "РАЙОН ")
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
-    let mut location = JUNK_WORD_RE.replace_all(&*location, " ").to_string();
-    for rec in collect_near() {
-        let rec = &format!("{} ", rec);
-        if location.contains(rec) {
-            location = location.replace(rec, "")
-        }
-    }
     let location = JUNK_CHAR_RE.replace_all(&*location, " ").to_string();
     let location = JUNK_WORD_RE.replace_all(&*location, " ").to_string();
     let location = trim(location);
-    let location = try_append_trimmed_location_name(location);
+    let location = try_process_nearest_location(location);
     let words = location
         .split_whitespace()
         .into_iter()
@@ -194,18 +187,41 @@ pub fn parse_location(
         .collect_vec();
     let result =
         find_matching_settlements(words, &settlements_lock).context(h!())?;
+    if result.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let result = deduplicate_settlement_names(result);
+
     Ok(result)
 }
 
-fn try_append_trimmed_location_name(location: String) -> String {
-    if location.trim().contains(" ") {
-        return location;
+fn try_process_nearest_location(location: String) -> String {
+    let mut words = location
+        .split_whitespace()
+        .into_iter()
+        .map(|x| x.to_string().to_uppercase())
+        .collect_vec();
+    let mut has_nearest_word = false;
+    for rec in collect_near() {
+        let mut new_words = vec![];
+        for word in words {
+            if word.eq(rec) {
+                has_nearest_word = true;
+            } else {
+                new_words.push(word);
+            }
+        }
+        words = new_words;
     }
-    let location_fixed = trim_tail(location.clone());
-    if !location_fixed.eq(&location) {
-        return format!("{} {}", location_fixed, location);
+    if has_nearest_word {
+        let mut new_words = vec![];
+        for w in words {
+            new_words.push(trim_tail(w));
+        }
+        words = new_words;
     }
-    location
+    words.join(" ")
 }
 
 fn trim_tail(name: String) -> String {
@@ -375,8 +391,14 @@ pub fn load_from_file(
         for (region, rows) in data {
             region_names.insert(region.clone());
             for d in rows {
+                let language = match &d.language_details {
+                    Some(lan) if lan.eq("ru") => Language::Ru,
+                    Some(lan) if lan.eq("translit") => Language::UaTranslit,
+                    _ => Language::Ua,
+                };
                 let name = d.name.clone().to_uppercase();
                 let details = SettlementDetails {
+                    language,
                     name: name.clone(),
                     id: d.id,
                     region: region.clone(),
@@ -398,6 +420,7 @@ pub fn load_from_file(
                     id: None,
                     coords: None,
                     region: region.clone(),
+                    language: Language::Ua,
                 },
             );
             let key = region_trimmed.clone();
@@ -408,6 +431,7 @@ pub fn load_from_file(
                     id: None,
                     coords: None,
                     region,
+                    language: Language::Ua,
                 },
             );
         }
@@ -444,10 +468,14 @@ fn collect_near() -> Vec<&'static str> {
         "РАЙОН",
         "ВІД",
         "БІЛЯ",
-        "ПІВДЕННІШЕ",
-        "ПІВНІЧНІШЕ",
-        "СХІДНІШЕ",
+        "МІЖ",
+        "ОКОЛИЦІ",
+        r#"ОКОЛ\."#,
         "ЗАХІДНІШЕ",
+        "СХІДНІШЕ",
+        "ПІВНІЧНІШЕ",
+        "ПІВДЕННІШЕ",
+        "ПІВДЕНІШЕ",
     ]
 }
 
@@ -469,18 +497,10 @@ fn collect_blacklist() -> Vec<&'static str> {
         "САДН",
         "РОТА",
         "РОТИ",
-        "ЗАХІДНІШЕ",
-        "СХІДНІШЕ",
-        "ПІВНІЧНІШЕ",
-        "ПІВДЕННІШЕ",
-        "ПІВДЕНІШЕ",
         "ТАНКОВОГО",
         "ПІХОТНОГО",
         "СТРІЛЕЦЬКОГО",
         r#"ІМ\."#,
-        "МІЖ",
-        "ОКОЛИЦІ",
-        r#"ОКОЛ\."#,
         "ВІЙСЬКОВА",
         "ВІЙСЬКОВУ",
         "ВІЙСЬКОВОЇ",
@@ -496,6 +516,35 @@ fn collect_blacklist() -> Vec<&'static str> {
         "БАТАРЕЯ",
         "БАТАРЄЯ",
     ]
+}
+
+// removes duplicate names in russian or translit if this settlement is already present in result set
+fn deduplicate_settlement_names(
+    result: Vec<SettlementDetails>,
+) -> Vec<SettlementDetails> {
+    let mut aggregated_result: BTreeMap<i32, Vec<SettlementDetails>> =
+        BTreeMap::new();
+
+    for rec in result {
+        let Some(id) = rec.id.clone() else {
+            continue;
+        };
+        aggregated_result
+            .entry(id)
+            .or_insert_with(Vec::new)
+            .push(rec);
+    }
+    let mut result = vec![];
+    for (_, recs) in aggregated_result {
+        let mut recs = recs;
+        recs.sort_by_key(|x| x.language.clone());
+        if let Some(rec) = recs.into_iter().next() {
+            result.push(rec);
+        }
+    }
+    let mut result = result;
+    result.sort_by_key(|x| x.name.clone());
+    result
 }
 
 #[cfg(test)]
@@ -825,7 +874,7 @@ mod tests {
                 .unwrap(),
         ));
         let result =
-            parse_location(settlements, String::from("Бабиного")).unwrap();
+            parse_location(settlements, String::from("р-н Бабиного")).unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["БАБИНЕ",], result);
     }
@@ -880,7 +929,7 @@ mod tests {
         let result = parse_location(settlements, String::from(
             r#"УКХ р/м НВ арт. підрозділу ( Пеленг Яснізорі- Устинка) Analog"#,
         ))
-        .unwrap();
+            .unwrap();
         let result = test_settlements_array(result);
         assert_eq!(vec!["УСТИНКА", "ЯСНІ ЗОРІ"], result);
     }

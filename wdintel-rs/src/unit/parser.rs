@@ -1235,7 +1235,7 @@ mod tests {
         );
         assert_eq!(res.locality.unwrap(), "УКХ р/м НВ підрозділу (DMR) (р-н н.п. Володимирівка - Попів ліс) (28.10.2024)".to_string());
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
-        assert_eq!(locality_v2_txt, vec!["ВОЛОДИМИРІВКА", "ПОПІВ"]);
+        assert_eq!(locality_v2_txt, vec!["ВОЛОДИМИРІВКА"]);
         assert_eq!(
             Vec::<String>::new(),
             parse_library_unit(&String::from(body))
@@ -1662,10 +1662,10 @@ Az-155
                 .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
-        assert_eq!(res.unit.unwrap(), "УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА".to_string());
-        assert_eq!(res.locality, Some("КОЖУМ'ЯКИ - МАЛА ЛЕПЕТИХА".to_string()));
+        assert_eq!(res.locality, Some("УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА (КОЖУМ'ЯКИ - МАЛА ЛЕПЕТИХА)".to_string()));
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
-        assert_eq!(locality_v2_txt, vec!["Новооєлизаветівки"]);
+        assert_eq!(locality_v2_txt, vec!["КОЖУМ’ЯКИ", "МАЛА ЛЕПЕТИХА"]);
+        assert_eq!(res.unit.unwrap(), "УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА".to_string());
     }
 
     #[test]
