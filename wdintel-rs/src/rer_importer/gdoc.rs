@@ -58,7 +58,7 @@ async fn rer_callsign_info_single(
                 unit_1: unit.name,
                 unit_2: "".to_string(),
                 unit_id: Some(unit.id),
-                network_ids_reported_id: reported_networks_per_callsign
+                network_ids_reported_in: reported_networks_per_callsign
                     .get(&callsign.id)
                     .cloned()
                     .unwrap_or(vec![]),
@@ -201,7 +201,7 @@ pub async fn load_callsigns(
                         unit_1: unit.name.clone(),
                         unit_2: "".to_string(),
                         unit_id: Some(unit.id),
-                        network_ids_reported_id: reported_networks_per_callsign
+                        network_ids_reported_in: reported_networks_per_callsign
                             .get(&callsign.id)
                             .cloned()
                             .unwrap_or(vec![]),

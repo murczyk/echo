@@ -885,7 +885,7 @@ pub struct CallsignInfo {
     pub unit_2: String,
     // will always be filled for in-system callsigns, but not GDocs-based sheet
     pub unit_id: Option<i64>,
-    pub network_ids_reported_id: Vec<i64>,
+    pub network_ids_reported_in: Vec<i64>,
 }
 
 #[derive(
