@@ -2052,7 +2052,7 @@ type alias CallsignInfo =
     , unit1 : String
     , unit2 : String
     , unitId : Maybe Int
-    , networkIdsReportedId : List Int
+    , networkIdsReportedIn : List Int
     }
 
 
@@ -2066,7 +2066,7 @@ callsignInfoEncoder struct =
         , ( "unit_1", Json.Encode.string struct.unit1 )
         , ( "unit_2", Json.Encode.string struct.unit2 )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.unitId )
-        , ( "network_ids_reported_id", Json.Encode.list Json.Encode.int struct.networkIdsReportedId )
+        , ( "network_ids_reported_in", Json.Encode.list Json.Encode.int struct.networkIdsReportedIn )
         ]
 
 
@@ -5953,7 +5953,7 @@ callsignInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_1" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_2" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids_reported_id" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids_reported_in" (Json.Decode.list Json.Decode.int)))
 
 
 callsignInfoResDecoder : Json.Decode.Decoder CallsignInfoRes
