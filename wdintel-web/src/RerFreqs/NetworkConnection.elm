@@ -25,10 +25,12 @@ import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), Rep
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Route exposing (Route)
+import Route.Path
 import Select
 import Shared
 import Time exposing (Posix)
 import Time.Extra
+import Url.Parser exposing (query)
 import View exposing (View)
 
 
@@ -398,17 +400,17 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                 [ class "w-full p-2  border-1 border-border rounded-sm text-text flex justify-between"
                                 ]
                                 [ NetworksUtils.renderNetwork network_ model.masterUnits
-                                , div [ class "flex gap-2" ]
-                                    [ i [ class "bi bi-pencil cursor-pointer", onClick <| NetworkStartEditingFlow network_ ] []
-                                    , i [ class "bi bi-trash cursor-pointer", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
+                                , div [ class "flex gap-[8px]" ]
+                                    [ i [ class "bi bi-pencil cursor-pointer text-action hover:text-action-hovered text-[16px]", title "редагувати", onClick <| NetworkStartEditingFlow network_ ] []
+                                    , i [ class "bi bi-trash cursor-pointer text-[#b94d4d] dark:text-[#f98282] dark:hover:text-[#df7474]  text-[16px]", title "видалити", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
                                     ]
                                 ]
                         )
           in
           HtmlX.viewIf (List.length networksWithThisFreq > 0) <|
             div [ class "mb-2" ]
-                [ span [] [ text "Уже прив'язані до цієї частоти:" ]
-                , div [] networksWithThisFreqBlock
+                [ h5 [ class "" ] [ text ("Уже прив'язані до " ++ freq) ]
+                , div [ class "flex flex-col gap-[4px]" ] networksWithThisFreqBlock
                 ]
         , div [ class "min-h-[200px] flex flex-col" ]
             [ let
@@ -422,16 +424,35 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                     }
                             )
               in
-              div [ class "" ]
-                [ label [] [ text "Пошук існуючих по підрозділу:" ]
-                , Html.map NetworkAddUnitSelMsg <|
-                    Styled.toUnstyled <|
-                        Le.Block.Select.renderSelectSingle
-                            selectItem
-                            model.networkDialogUnitSelect.state
-                            model.networkDialogUnitSelect.items
-                            "жоден"
-                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+              div [ class "flex gap-[8px]" ]
+                [ div [ class "grow-1" ]
+                    [ h5 [] [ text "Пошук існуючих мереж по підрозділу" ]
+                    , Html.map NetworkAddUnitSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.networkDialogUnitSelect.state
+                                model.networkDialogUnitSelect.items
+                                "жоден"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                    ]
+                , div [ class "flex gap-[4px] items-end" ]
+                    [ a
+                        [ title "Додати новий підрозділ"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , Route.href { path = Route.Path.RerUnits, query = Dict.empty, hash = Nothing }
+                        , target "_blank"
+                        ]
+                        [ i [ class "bi bi-plus-lg" ] []
+                        ]
+                    , button
+                        [ title "Оновити список підрозділів"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
+                        , onClick UnitsReloadClickedByUser
+                        ]
+                        [ i [ class "bi bi-arrow-clockwise" ] []
+                        ]
+                    ]
                 ]
             , div [ class "grow-1 mt-4" ]
                 (let

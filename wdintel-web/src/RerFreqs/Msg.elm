@@ -91,3 +91,4 @@ type Msg
     | ConfirmationInputChangedByUser String
     | Confirmation2InputChangedByUser String
     | NetworkConfirmationAdded (Result ApiError B.Network)
+    | UnitsReloadClickedByUser

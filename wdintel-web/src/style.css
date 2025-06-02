@@ -21,7 +21,6 @@
 	--color-border: var(--border-color);
 	--color-border-selected: var(--border-selected-color);
 	--color-separator: var(--separator-color);
-	--color-actions: var(--actions-color);
 	--color-icons: var(--icons-color);
 	--color-tag: var(--tag-color);
 	--color-tag-selected: var(--tag-selected-color);
@@ -29,6 +28,7 @@
 	--color-text-disabled: var(--text-disabled-color);
 	--color-watermark: var(--watermark-color);
 	--color-action: var(--action-color);
+	--color-action-hovered: var(--action-hovered-color);
 	--color-w: #fff;
 	--color-button-text: var(--button-text-color);
 	--color-toggle: var(--toggle-color);
@@ -125,7 +125,6 @@
 	--border-color: var(--link-water-color);
 	--border-selected-color: var(--ochre-normal);
 	--separator-color: var(--link-water-color);
-	--actions-color: var(--teal-blue-normal);
 	--icons-color: var(--lynch-color);
 	--tag-color: white;
 	--tag-selected-color: var(--ochre-light-active);
@@ -134,6 +133,7 @@
 	--watermark-color: var(--neutral-400);
 
 	--action-color: var(--teal-blue-normal);
+	--action-hovered-color: var(--teal-blue-normal-hover);
 	--button-text-color: white;
 	--toggle-color: white;
 	--toggle-ball-color: var(--neutral-400);
@@ -153,13 +153,13 @@ html[data-bs-theme="dark"] {
 	--border-color: var(--mid-gray-color);
 	--border-selected-color: #BC8C56;
 	--separator-color: var(--mid-gray-color);
-	--actions-color: var(--baby-blue-normal);
 	--icons-color: var(--pigeon-post-color);
 	--tag-color: black;
 	--tag-selected-color: #FABA72;
 	--text-color: white;
 	--watermark-color: var(--neutral-600);
 	--action-color: var(--baby-blue-normal);
+	--action-hovered-color: var(--baby-blue-normal-hover);
 	--button-text-color: black;
 	--toggle-color: black;
 	--bw-color: var(--bs-body-bg);
@@ -274,7 +274,7 @@ h6 {
 
 a {
 	text-decoration: none;
-	color: var(--bs-body-color);
+	color: var(--action-color);
 }
 
 sup {

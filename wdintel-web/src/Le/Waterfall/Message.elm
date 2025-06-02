@@ -461,7 +461,7 @@ leftColumn ( messageId, message ) ps model =
                 , onClick <| ForParent (CopyToClipboard msgType)
                 ]
                 [ i
-                    [ class "bi bi-clipboard  text-actions cursor-pointer leading-none"
+                    [ class "bi bi-clipboard  text-action cursor-pointer leading-none"
                     , classList
                         [ ( "bi-clipboard", not copied )
                         , ( "bi-clipboard-check-fill", copied )
@@ -500,8 +500,8 @@ leftColumn ( messageId, message ) ps model =
                     [ i
                         [ class "bi"
                         , classList
-                            [ ( "bi-bookmark text-actions cursor-pointer", not bookmarked )
-                            , ( "bi-bookmark-fill text-actions", bookmarked )
+                            [ ( "bi-bookmark text-action cursor-pointer", not bookmarked )
+                            , ( "bi-bookmark-fill text-action", bookmarked )
                             ]
                         ]
                         []
@@ -519,8 +519,8 @@ leftColumn ( messageId, message ) ps model =
                     [ i
                         [ class "bi"
                         , classList
-                            [ ( "bi-exclamation-triangle text-actions", not important )
-                            , ( "bi-exclamation-triangle-fill text-actions", important )
+                            [ ( "bi-exclamation-triangle text-action", not important )
+                            , ( "bi-exclamation-triangle-fill text-action", important )
                             ]
                         ]
                         []
@@ -532,7 +532,7 @@ leftColumn ( messageId, message ) ps model =
                     , onClick <| ForSelf Edit
                     ]
                     [ i
-                        [ class "bi bi-pencil me-1 text-actions"
+                        [ class "bi bi-pencil me-1 text-action"
                         ]
                         []
                     ]
@@ -546,7 +546,7 @@ leftColumn ( messageId, message ) ps model =
                         , attribute "data-bs-target" "#deleteMessageConfirmation"
                         ]
                         [ i
-                            [ class "bi bi-trash3 text-actions"
+                            [ class "bi bi-trash3 text-action"
                             , onClick <| ForParent (DeleteMessage messageId)
                             ]
                             []
@@ -556,7 +556,7 @@ leftColumn ( messageId, message ) ps model =
                         [ style "font-size" "1rem"
                         ]
                         [ i
-                            [ class "bi bi-tornado text-actions"
+                            [ class "bi bi-tornado text-action"
                             ]
                             []
                         ]
@@ -652,7 +652,7 @@ leftColumn ( messageId, message ) ps model =
                                 [ i [ class "bi bi-bar-chart-line mr-1 text-icons leading-none", title "Аналіз" ] []
                                 , span [] [ text "Аналіз" ]
                                 ]
-                            , a [ href <| analysisHref False, target "_blank" ] [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-actions text-sm", title "Відкрити частоту повідомлення в Аналізі" ] [] ]
+                            , a [ href <| analysisHref False, target "_blank" ] [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm", title "Відкрити частоту повідомлення в Аналізі" ] [] ]
                             ]
                         , div
                             [ class "flex justify-between items-center py-1 px-2"
@@ -660,7 +660,7 @@ leftColumn ( messageId, message ) ps model =
                             [ span [ class "ml-4" ] [ text "Карта" ]
                             , div [ class "flex items-center" ]
                                 [ i [ class "bi bi-map text-sm mr-2 text-text-disabled leading-none", title "Відкрити частоту повідомлення на карті" ] []
-                                , a [ href <| analysisHref True, target "_blank" ] [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-actions text-sm leading-none", title "Відкрити частоту повідомлення на карті в аналізі" ] [] ]
+                                , a [ href <| analysisHref True, target "_blank" ] [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm leading-none", title "Відкрити частоту повідомлення на карті в аналізі" ] [] ]
                                 ]
                             ]
                         ]

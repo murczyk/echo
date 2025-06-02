@@ -3,6 +3,8 @@ module Pages.RerUnits exposing (EditUnitState, Model, Msg, RemovingDuplicateProc
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
+import Components.Checkbox as Checkbox
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -923,36 +925,18 @@ contentBlock shared model =
                     , rows 1
                     ]
                     []
-                , div
-                    [ class "form-check me-2" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , Attr.disabled (not hasEditorOrAdminRole)
-                        , onCheck InpActive
-                        , checked model.inpActive
-                        , id "inpActive"
-                        ]
-                        []
-                    , label
-                        [ class "form-check-label"
-                        , for "inpActive"
-                        ]
-                        [ text "Активий" ]
+                , Checkbox.new { isChecked = model.inpActive, onToggle = InpActive }
+                    |> Checkbox.withContent [ span [] [ text "Активний" ] ]
+                    |> Checkbox.view
+                , div [ class "flex gap-[4px] ml-[4px]" ]
+                    [ Button.new { label = "Очистити", onClick = ClearInputs }
+                        |> Button.withDisabled (not hasEditorOrAdminRole)
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    , Button.new { label = "Додати", onClick = AddUnit }
+                        |> Button.withDisabled (not hasEditorOrAdminRole)
+                        |> Button.view
                     ]
-                , button
-                    [ class "btn btn-primary"
-                    , Attr.disabled (not hasEditorOrAdminRole)
-                    , type_ "button"
-                    , onClick AddUnit
-                    ]
-                    [ text "Додати" ]
-                , button
-                    [ class "btn btn-outline-secondary ms-2"
-                    , type_ "button"
-                    , onClick ClearInputs
-                    ]
-                    [ text "Очистити" ]
                 ]
 
         removingDuplicatesHeader unit =
