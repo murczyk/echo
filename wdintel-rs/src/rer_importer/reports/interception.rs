@@ -7,8 +7,8 @@ use actix_identity::Identity;
 use chrono::prelude::*;
 // Import necessary items from rust_xlsxwriter
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
-use sea_orm::*;
-use sea_query::SimpleExpr;
+use sea_orm::{prelude::Expr, *};
+use sea_query::*;
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -23,6 +23,7 @@ struct InboxMessage {
     comment: Option<String>,
     coords: Option<String>,
     tags: Option<JsonValue>,
+    important: Option<i64>,
 }
 
 async fn get_inbox_messages_report(
@@ -69,6 +70,7 @@ async fn get_inbox_messages_report(
             "comment",
         )
         .column(sigint_inbox_item::Column::Coords)
+        .column_as(sigint_important::Column::SignalMessageId,"important") 
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def(),
@@ -91,6 +93,7 @@ async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
@@ -104,6 +107,18 @@ async fn get_inbox_messages_report(
     }
     if req.report_tags_only_this_unit == Some(true) {
         q = q.filter(sigint_comment::Column::Login.is_in(logins));
+    }
+    if !req.or_important.unwrap_or(false) {
+        q = q.join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintImportant
+                .def()
+                .on_condition(|_left, right| {
+                    Expr::col((right, sigint_important::Column::Deleted))
+                        .not()
+                        .into_condition()
+                }),
+        )
     }
     q = crate::rer_importer::inbox::query::get_order_by(&env, &req, q.clone())
         .await?;
@@ -288,6 +303,11 @@ pub async fn report_xlsx_kind_interception(
     sheet1
         .set_column_format(9, &format_brown_wrap)
         .context(h!())?; // Set format
+    sheet1
+        .write_string_with_format(0, 10, "важливе", &coltitle_gray)
+        .context(h!())?;
+    sheet1.set_column_width(10, 10.0).context(h!())?; // Set width
+    sheet1.set_column_format(10, &format_gray).context(h!())?; // Set format
 
     let all_tags = {
         let tags_vec = tag::Entity::find()
@@ -367,7 +387,9 @@ pub async fn report_xlsx_kind_interception(
             .map(|s| s.to_string())
             .join(",");
         sheet1.write_string(i, 9, &mes_tags).context(h!())?;
-
+        sheet1
+            .write_string(i, 10, m.important.clone().map_or("", |_| "Так"))
+            .context(h!())?;
         i += 1;
     }
 
