@@ -167,6 +167,7 @@ pub async fn load_freqs_per_unit(
         .group_by(sigint_network_freq::Column::Freq)
         .group_by(sigint_network::Column::Id)
         .group_by(sigint_unit::Column::Id)
+        .group_by(sigint_network_freq::Column::Kind)
         .order_by_asc(sigint_network_freq::Column::Freq);
 
     trace!(
