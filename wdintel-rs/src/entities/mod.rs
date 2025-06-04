@@ -33,6 +33,7 @@ pub mod sigint_comment;
 pub mod sigint_important;
 pub mod sigint_inbox_item;
 pub mod sigint_network;
+pub mod sigint_network_activity_history;
 pub mod sigint_network_callsign;
 pub mod sigint_network_changelog;
 pub mod sigint_network_description;

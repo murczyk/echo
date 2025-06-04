@@ -43,6 +43,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(has_many = "super::sigint_network_activity_history::Entity")]
+    SigintNetworkActivityHistory,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
     SigintNetworkCallsign,
     #[sea_orm(has_many = "super::sigint_network_changelog::Entity")]
@@ -60,6 +62,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::sigint_network_activity_history::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkActivityHistory.def()
     }
 }
 

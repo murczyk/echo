@@ -79,6 +79,13 @@ pub struct CreateNetworkReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct RestoreNetworkReq {
+    pub network_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct UpdateNetworkReq {
     pub id: i64,
     // use a separate API to add/remove freqs, units, posts and descriptions

@@ -193,6 +193,53 @@ pub async fn network_list(
     Ok(Json(networks_res))
 }
 
+#[post("/api/sigint/restore-network")]
+pub async fn restore_network(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<RestoreNetworkReq>,
+) -> Result<Json<Network>, AppError> {
+    let user_id = user.id()?;
+    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"])
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.context(h!())?;
+    let network_id = req.into_inner().network_id;
+    let network = sigint_network::Entity::find_by_id(network_id)
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or_else(|| AppError::NotFound)?;
+    if network.deleted && network.active_to.is_some() {
+        if let Some(active_to) = network.active_to.clone() {
+            sigint_network_activity_history::ActiveModel {
+                id: NotSet,
+                sigint_network_id: Set(network.id),
+                active_from: Set(network.active_from.clone()),
+                active_to: Set(active_to),
+                created_at: NotSet,
+            }
+            .insert(&txn)
+            .await
+            .context(h!())?;
+        }
+
+        let mut network = network.into_active_model();
+        network.active_from = Set(Utc::now().naive_utc());
+        network.active_to = Set(None);
+        network.update(&txn).await.context(h!())?;
+    } else {
+        error!("user {} attempted to re-activate already active network, skipping...", user_id);
+    }
+
+    let res = bl_network_info_batch(vec![network_id], &txn)
+        .await
+        .context(h!())?;
+    txn.commit().await.context(h!())?;
+    let res = res.into_iter().next().context(h!())?;
+    Ok(Json(res))
+}
+
 #[post("/api/sigint/network-info-batch-freq")]
 pub async fn network_info_batch_freq(
     user: actix_identity::Identity,

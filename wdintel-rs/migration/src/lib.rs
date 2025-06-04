@@ -91,6 +91,7 @@ mod m20250526_141346_add_sigint_network_callsign;
 mod m20250528_151120_add_sigint_settlement;
 mod m20250530_143601_drop_sigint_settlements;
 mod m20250530_211149_add_sigint_settlement;
+mod m20250604_053059_add_sigint_network_activity_history;
 
 pub struct Migrator;
 
@@ -189,6 +190,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250528_151120_add_sigint_settlement::Migration),
             Box::new(m20250530_143601_drop_sigint_settlements::Migration),
             Box::new(m20250530_211149_add_sigint_settlement::Migration),
+            Box::new(m20250604_053059_add_sigint_network_activity_history::Migration),
         ]
     }
 }
