@@ -14,6 +14,7 @@ use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use self::types::*;
+use crate::entities::sigint_network::Model;
 use actix_web::post;
 use actix_web::web::Json;
 use log::*;
@@ -211,23 +212,7 @@ pub async fn restore_network(
         .context(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     if network.deleted && network.active_to.is_some() {
-        if let Some(active_to) = network.active_to.clone() {
-            sigint_network_activity_history::ActiveModel {
-                id: NotSet,
-                sigint_network_id: Set(network.id),
-                active_from: Set(network.active_from.clone()),
-                active_to: Set(active_to),
-                created_at: NotSet,
-            }
-            .insert(&txn)
-            .await
-            .context(h!())?;
-        }
-
-        let mut network = network.into_active_model();
-        network.active_from = Set(Utc::now().naive_utc());
-        network.active_to = Set(None);
-        network.update(&txn).await.context(h!())?;
+        bl_restore_network(&txn, network).await.context(h!())?;
     } else {
         error!("user {} attempted to re-activate already active network, skipping...", user_id);
     }
@@ -238,6 +223,30 @@ pub async fn restore_network(
     txn.commit().await.context(h!())?;
     let res = res.into_iter().next().context(h!())?;
     Ok(Json(res))
+}
+
+async fn bl_restore_network(
+    txn: &DatabaseTransaction,
+    network: Model,
+) -> Result<sigint_network::Model, AppError> {
+    if let Some(active_to) = network.active_to.clone() {
+        sigint_network_activity_history::ActiveModel {
+            id: NotSet,
+            sigint_network_id: Set(network.id),
+            active_from: Set(network.active_from.clone()),
+            active_to: Set(active_to),
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .context(h!())?;
+    }
+
+    let mut network = network.into_active_model();
+    network.active_from = Set(Utc::now().naive_utc());
+    network.active_to = Set(None);
+    let result = network.update(txn).await.context(h!())?;
+    Ok(result)
 }
 
 #[post("/api/sigint/network-info-batch-freq")]
@@ -569,12 +578,21 @@ pub async fn update_network(
 
     let txn = env.dbx.begin().await.context(h!())?;
 
+    let req: UpdateNetworkReq = req.into_inner();
+    let is_restore_network = req.restore_network.unwrap_or(false);
+
     let network = sigint_network::Entity::find_by_id(req.id)
-        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(is_restore_network))
         .one(&txn)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+
+    let network = if is_restore_network {
+        bl_restore_network(&txn, network).await.context(h!())?
+    } else {
+        network
+    };
 
     let mut network_model = network.into_active_model();
     network_model.name = Set(req.name.clone());
@@ -586,7 +604,7 @@ pub async fn update_network(
     network_model.operation_type = Set(req.operation_type.clone());
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.updated_by = Set(Some(user.id()?.to_string()));
-    network_model.updated_at = NotSet; // Let the database update this automatically
+    network_model.updated_at = Set(Utc::now().naive_utc());
 
     network_model.active_from = Set(dt_from_millis(req.active_from)?);
     network_model.active_to =

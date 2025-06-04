@@ -93,6 +93,7 @@ pub struct UpdateNetworkReq {
     // pub unit_ids: Vec<i64>,
     // pub post_ids: Vec<i64>,
     // pub descriptions: Vec<NetworkDescription>,
+    pub restore_network: Option<bool>,
     pub name: String,
     pub location: String,
     pub comment: String,
