@@ -1,5 +1,6 @@
 ## NEXT
-
+- [#924](https://github.com/echoua/echo/issues/924) Звіт перехоплення. Додано ознаку важливого повідомлення
+- 
 ## 2025-06-02
 
 - [#904](https://github.com/echoua/echo/issues/904) Звіт перехоплення додати теги
