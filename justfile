@@ -224,14 +224,14 @@ copy-db-echo-tgt-art:
     fi
     just server={{ server }} target='tgt-art' copy-db-to-server
 
-copy-db-to-server:
+copy-db-to-target:
     #!/bin/bash
     set -euxo pipefail
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
     if [[ "{{ target }}" == "" ]]; then
-        just _print-servers; exit 1;
+        echo "❌ `target` parameter not recognized. Value: {{ target }}"; exit 1;
     fi
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
     scp {{ server }}:~/Downloads/wd-{{ dt1 }}.pgrestore ~/Downloads/
