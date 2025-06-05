@@ -2712,9 +2712,26 @@ messageTab ps model =
 
                                     groupsSelected =
                                         List.filter (\x -> List.member x model.groupsSelected) model.groups
+
+                                    groupNames =
+                                        groupsSelected |> List.filterMap (\id -> Dict.get id model.groupInfos) |> List.map .name |> Set.fromList |> Set.toList
+
+                                    firstThreeGroups =
+                                        List.take 3 groupNames
+
+                                    remainingCount =
+                                        List.length groupNames - 3
+
+                                    additionalBadge =
+                                        if remainingCount > 0 then
+                                            [ badgeSelectedHtml [ span [] [ text ("+ " ++ String.fromInt remainingCount) ] ] ]
+
+                                        else
+                                            []
                                 in
                                 selectAllOrEmpty
-                                    ++ List.map groupBadge (groupsSelected |> List.filterMap (\id -> Dict.get id model.groupInfos) |> List.map .name |> Set.fromList |> Set.toList)
+                                    ++ List.map groupBadge firstThreeGroups
+                                    ++ additionalBadge
                            )
                 )
                     :: (if model.unfoldSettings then
