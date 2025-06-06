@@ -3479,6 +3479,24 @@ callsignUnitStatRowEncoder struct =
         ]
 
 
+type alias UpdateCallsignReportingReq =
+    { callsignId : Int
+    , networkId : Int
+    , isReported : Bool
+    , deleted : Bool
+    }
+
+
+updateCallsignReportingReqEncoder : UpdateCallsignReportingReq -> Json.Encode.Value
+updateCallsignReportingReqEncoder struct =
+    Json.Encode.object
+        [ ( "callsign_id", Json.Encode.int struct.callsignId )
+        , ( "network_id", Json.Encode.int struct.networkId )
+        , ( "is_reported", Json.Encode.bool struct.isReported )
+        , ( "deleted", Json.Encode.bool struct.deleted )
+        ]
+
+
 type alias EtalonkaReq =
     { listFreqReq : ListFreqsReq
     , fullEtalonkaReport : Bool
@@ -6783,6 +6801,15 @@ createCallsignsBindReqDecoder =
     Json.Decode.succeed CreateCallsignsBindReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bindings" (Json.Decode.list callsignBindOneReqDecoder)))
+
+
+updateCallsignReportingReqDecoder : Json.Decode.Decoder UpdateCallsignReportingReq
+updateCallsignReportingReqDecoder =
+    Json.Decode.succeed UpdateCallsignReportingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
 
 
 etalonkaReqDecoder : Json.Decode.Decoder EtalonkaReq

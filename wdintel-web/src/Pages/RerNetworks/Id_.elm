@@ -62,6 +62,18 @@ type Mode updateReq
     | Editing updateReq
 
 
+type alias CallsignResModified =
+    { callsign : String
+    , knownCallsigns : List B.KnownCallsignShortRes
+    , messageCount : Int
+    , lastDatetime : Maybe Int
+    , freqs : Maybe (List String)
+    , networkNames : Maybe (List String)
+    , isOld : Bool
+    , isReported : Bool
+    }
+
+
 type alias Model =
     { network : RemoteData ApiError B.Network
     , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
@@ -173,7 +185,8 @@ type Msg
     | DescriptionEditedByUser Int String
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
-    | CallsignReportingStatusToggledByUser Int
+    | CallsignReportingStatusToggledByUser CallsignResModified
+    | CallsignReportingStatusUpdatedByApi (Result ApiError Bool)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -703,6 +716,24 @@ update shared msg model =
             ( { model | network = Success network, freqsEditingState = Readonly }, E.none )
         CallsignReportingStatusToggledByUser callsignId ->
             ( model, E.none )
+        CallsignReportingStatusToggledByUser callsign ->
+            case Dict.get callsign.callsign shared.callsignsInfo of
+                Just x ->
+                    ( model
+                    , E.updateCallsignReporting CallsignReportingStatusUpdatedByApi
+                        { callsignId = 0
+                        , networkId = 0
+                        , deleted = False
+                        , isReported = False
+                        }
+                    )
+                Nothing ->
+                (model, E.none)
+        CallsignReportingStatusUpdatedByApi (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        CallsignReportingStatusUpdatedByApi (Ok res) ->
+            (model, E.none)
 
 
 
@@ -1425,14 +1456,7 @@ contentBlock shared network model =
                 div [ class "overflow-y-auto  grow-1" ]
                     [ let
                         renderCallsignMainRow :
-                            { callsign : String
-                            , knownCallsigns : List B.KnownCallsignShortRes
-                            , messageCount : Int
-                            , lastDatetime : Maybe Int
-                            , freqs : Maybe (List String)
-                            , networkNames : Maybe (List String)
-                            , isOld : Bool
-                            }
+                            CallsignResModified
                             -> List (Html Msg)
                         renderCallsignMainRow callsign =
                             let
@@ -1459,9 +1483,9 @@ contentBlock shared network model =
                                         , td [] [ text x.comment ]
                                         , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
                                         , td [] [ text <| x.sourceName ]
-                                        , td []
-                                            [--Toggle.new { onToggle = CallsignReportingStatusToggledByUser, label = "спочатку нові" }
-                                             -- |> Toggle.view x.
+                                        , td [ rowspan rowCount ]
+                                            [ Toggle.new { onToggle = CallsignReportingStatusToggledByUser callsign, label = "" }
+                                                |> Toggle.view callsign.isReported
                                             ]
                                         ]
                                         :: List.map
@@ -1501,6 +1525,7 @@ contentBlock shared network model =
                                     , freqs = callsign.freqs
                                     , networkNames = callsign.networkNames
                                     , isOld = callsign.isOld
+                                    , isReported = callsign.isReported
                                     }
                                 )
                                 callsignsWithUnits
