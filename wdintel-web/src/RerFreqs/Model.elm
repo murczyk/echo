@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), ReportCreation(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), ReportCreation(..), ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -36,8 +36,7 @@ type alias Model =
     , openMapRowId : Maybe String
     , callsignsByFreq : Api.ListCallsignsByFreqsRsp
     , callsignsInfo : Dict String (List B.CallsignInfo)
-    , showAllCallsignsForFreq : Maybe String
-    , showAllLocationsForFreq : Maybe String
+    , rowShowAllPopupStatus : Maybe ( String, ShowAllPopupFor )
     , selCallsignState : Select.State
     , selCallsignMenu : List (Select.MenuItem String)
     , callsignsForFilter : RemoteData ApiError (List B.FreqCallsign)
@@ -101,3 +100,9 @@ type TextLocation
 
 type FilterName
     = CallsignsFilter
+
+
+type ShowAllPopupFor
+    = ShowAllCallsigns
+    | ShowAllLocations
+    | ShowAllAltUnits
