@@ -844,7 +844,7 @@ renderNetworkTr shared model network =
         networkTd =
             td []
                 [ a
-                    [ class "text-action! cursor-pointer"
+                    [ class "cursor-pointer"
                     , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
                     , target "_blank"
                     ]

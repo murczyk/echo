@@ -277,6 +277,10 @@ a {
 	color: var(--action-color);
 }
 
+.rer-duty a {
+	color: var(--bs-body-color);
+}
+
 sup {
 	position: unset;
 	line-height: inherit;
@@ -1479,6 +1483,32 @@ dialog::backdrop {
 
 
 .rer-network table {
+	border-collapse: collapse;
+
+	& :is(td, th) {
+		border-style: solid;
+		padding: 8px;
+		border-bottom: 1px solid var(--border-color);
+
+	}
+
+}
+
+
+.page-rer-freqs table {
+	border-collapse: collapse;
+
+	& :is(td, th) {
+		border-style: solid;
+		padding: 8px;
+		border: 1px solid var(--border-color);
+
+	}
+
+}
+
+
+.page-rer-freqs table {
 	border-collapse: collapse;
 
 	& :is(td, th) {

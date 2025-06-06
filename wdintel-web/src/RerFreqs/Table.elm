@@ -22,9 +22,10 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Utils exposing (..)
 import Page exposing (Page)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ReportCreation(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ReportCreation(..), ShowAllPopupFor(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import Route exposing (Route)
+import Route.Path
 import Shared
 import Time exposing (Posix)
 import Url.Builder
@@ -69,51 +70,51 @@ view shared model user =
     in
     section []
         [ table
-            [ class "table table-bordered table-sm"
+            [ class "table-fixed w-full"
             , style "font-size" ".85rem"
             ]
             [ thead []
                 [ tr []
                     [ th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "width" "120px"
+                        , class ""
+                        , style "width" "8%"
                         ]
                         [ freqsHeader ]
                     , th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "width" "190px"
+                        , class ""
+                        , style "width" "8%"
                         ]
                         [ text "Позивні" ]
                     , th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "width" "190px"
+                        , class ""
+                        , style "width" "12%"
                         ]
                         [ text "Пеленги" ]
                     , th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "min-width" "400px"
+                        , class ""
+                        , style "min-width" "25%"
                         ]
                         [ text "Привʼязки" ]
                     , th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "min-width" "200px"
+                        , class ""
+                        , style "width" "20%"
                         ]
                         [ text "Альтернативні Привʼязки" ]
                     , th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "width" "200px"
+                        , class ""
+                        , style "width" "13%"
                         ]
                         [ text "Активність р/м" ]
                     , th
                         [ scope "col"
-                        , class "nowrap"
-                        , style "width" "150px"
+                        , class ""
+                        , style "width" "9%"
                         ]
                         [ text "Останнє оновлення" ]
                     ]
@@ -210,22 +211,24 @@ renderFreqTr shared model user rowIndex freq =
             model.groupsMessageCountByDay |> Dict.get freq.freq |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
     in
     tr []
-        [ td [ class "flex relative", style "gap" "2px", style "align-items" "baseline" ]
-            [ span [] [ text freq.freq ]
-            , div [ class "flex-grow-1" ]
-                [ span
-                    [ class "badge badge-sm rounded-pill text-bg-secondary"
-                    , style "font-size" "0.6rem"
+        [ td []
+            [ div [ class "flex relative", style "gap" "2px", style "align-items" "baseline" ]
+                [ span [] [ text freq.freq ]
+                , div [ class "flex-grow-1" ]
+                    [ span
+                        [ class "badge badge-sm rounded-pill text-bg-secondary"
+                        , style "font-size" "0.6rem"
+                        ]
+                        [ text <| String.fromInt freq.messageCount
+                        ]
                     ]
-                    [ text <| String.fromInt freq.messageCount
-                    ]
+                , Le.Block.ActionMenu.actionMenu actionMenuBody "bi-three-dots-vertical"
+                , Watermark.new user.name
+                    |> Watermark.withPositioning ( 30, 10 )
+                    |> Watermark.withFontSize "1.5rem"
+                    |> Watermark.view
+                    |> HtmlX.viewIf (Basics.remainderBy 2 rowIndex == 0)
                 ]
-            , Le.Block.ActionMenu.actionMenu actionMenuBody "bi-three-dots-vertical"
-            , Watermark.new user.name
-                |> Watermark.withPositioning ( 30, 10 )
-                |> Watermark.withFontSize "1.5rem"
-                |> Watermark.view
-                |> HtmlX.viewIf (Basics.remainderBy 2 rowIndex == 0)
             ]
         , let
             callsigns =
@@ -237,17 +240,17 @@ renderFreqTr shared model user rowIndex freq =
                         v
 
             isOpen =
-                case model.showAllCallsignsForFreq of
-                    Just showAllCallsignsForFreq ->
-                        showAllCallsignsForFreq == freq.freq
+                case model.rowShowAllPopupStatus of
+                    Just ( freq_, ShowAllCallsigns ) ->
+                        freq_ == freq.freq
 
-                    Nothing ->
+                    _ ->
                         False
           in
           CallsignsPopup.view
             { isOpened = isOpen
-            , onClose = SetFreqToShowAllCallsignsPopup Nothing
-            , onOpen = SetFreqToShowAllCallsignsPopup (Just freq.freq)
+            , onClose = RowShowAllPopupChanged Nothing
+            , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllCallsigns )
             , callsigns = callsigns
             , callsignsInfo = model.callsignsInfo
             , masterUnits = model.masterUnits
@@ -263,64 +266,12 @@ renderFreqTr shared model user rowIndex freq =
                         div [ id ("map-container-" ++ freq.freq) ]
                             []
 
-                    ( Just LocationText, False ) ->
-                        p [ class "flex gap-[4px] flex-wrap" ]
-                            (if List.isEmpty freq.locations then
-                                [ span [] [ text "Текстова локація" ] ]
-
-                             else
-                                (List.map (\location -> span [ class "cursor-pointer underline ", onClick <| SwitchFromTextToMap freq.freq ] [ text location ]) freq.locations
-                                    |> List.take 3
-                                )
-                                    ++ (if List.length freq.locations > 3 then
-                                            let
-                                                body =
-                                                    span
-                                                        [ style "font-size" "12px"
-                                                        , style "font-weight" "300"
-                                                        , style "cursor" "pointer"
-                                                        , style "display" "block"
-                                                        , style "padding-right" "6px"
-                                                        , style "text-decoration" "underline"
-                                                        ]
-                                                        [ text ("Показати всі " ++ (freq.locations |> List.length |> String.fromInt)) ]
-
-                                                popupBody =
-                                                    div [ class "d-flex flex-column", style "gap" "20px" ]
-                                                        (List.map (\location -> span [] [ text location ]) freq.locations)
-
-                                                isOpen =
-                                                    case model.showAllLocationsForFreq of
-                                                        Just showAllLocationsForFreq ->
-                                                            showAllLocationsForFreq == freq.freq
-
-                                                        Nothing ->
-                                                            False
-                                            in
-                                            [ Le.Block.Popup.new
-                                                { body = body
-                                                , popupBody = popupBody
-                                                , isOpen = isOpen
-                                                , onClose = SetFreqToShowAllLocationsPopup Nothing
-                                                , onOpen = SetFreqToShowAllLocationsPopup (Just freq.freq)
-                                                , disabled = False
-                                                }
-                                                |> Le.Block.Popup.withFakeAnchor
-                                                |> Le.Block.Popup.withCloseButton
-                                                |> Le.Block.Popup.view
-                                            ]
-
-                                        else
-                                            [ text "" ]
-                                       )
-                            )
-
                     ( Just NoCoords, _ ) ->
                         p []
                             [ text "Немає координат" ]
 
-                    ( Nothing, _ ) ->
-                        p [ class "flex gap-[4px] flex-wrap" ]
+                    _ ->
+                        p [ class "flex gap-[4px] flex-col" ]
                             (if List.isEmpty freq.locations then
                                 [ span [] [ text "Текстова локація" ] ]
 
@@ -346,19 +297,19 @@ renderFreqTr shared model user rowIndex freq =
                                                         (List.map (\location -> span [] [ text location ]) freq.locations)
 
                                                 isOpen =
-                                                    case model.showAllLocationsForFreq of
-                                                        Just showAllLocationsForFreq ->
-                                                            showAllLocationsForFreq == freq.freq
+                                                    case model.rowShowAllPopupStatus of
+                                                        Just ( freq_, ShowAllLocations ) ->
+                                                            freq_ == freq.freq
 
-                                                        Nothing ->
+                                                        _ ->
                                                             False
                                             in
                                             [ Le.Block.Popup.new
                                                 { body = body
                                                 , popupBody = popupBody
                                                 , isOpen = isOpen
-                                                , onClose = SetFreqToShowAllLocationsPopup Nothing
-                                                , onOpen = SetFreqToShowAllLocationsPopup (Just freq.freq)
+                                                , onClose = RowShowAllPopupChanged Nothing
+                                                , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllLocations )
                                                 , disabled = False
                                                 }
                                                 |> Le.Block.Popup.withFakeAnchor
@@ -375,10 +326,53 @@ renderFreqTr shared model user rowIndex freq =
         , td [] <|
             viewFreqBlock shared.user model freq
         , td []
-            [ div []
+            [ div [ class "flex flex-col gap-[4px]" ]
                 (case alternativeUnits of
                     Just units ->
-                        List.map (\u -> p [ class "mb-0" ] [ text u.unit ]) units
+                        (List.map (\u -> span [] [ text u.unit ]) units
+                            |> List.take 3
+                        )
+                            ++ (if List.length units > 3 then
+                                    let
+                                        body =
+                                            span
+                                                [ style "font-size" "12px"
+                                                , style "font-weight" "300"
+                                                , style "cursor" "pointer"
+                                                , style "display" "block"
+                                                , style "padding-right" "6px"
+                                                , style "text-decoration" "underline"
+                                                ]
+                                                [ text ("Показати всі " ++ (units |> List.length |> String.fromInt)) ]
+
+                                        popupBody =
+                                            div [ class "d-flex flex-column", style "gap" "20px" ]
+                                                (List.map (\unit -> span [] [ text unit.unit ]) units)
+
+                                        isOpen =
+                                            case model.rowShowAllPopupStatus of
+                                                Just ( freq_, ShowAllAltUnits ) ->
+                                                    freq_ == freq.freq
+
+                                                _ ->
+                                                    False
+                                    in
+                                    [ Le.Block.Popup.new
+                                        { body = body
+                                        , popupBody = popupBody
+                                        , isOpen = isOpen
+                                        , onClose = RowShowAllPopupChanged Nothing
+                                        , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllAltUnits )
+                                        , disabled = False
+                                        }
+                                        |> Le.Block.Popup.withFakeAnchor
+                                        |> Le.Block.Popup.withCloseButton
+                                        |> Le.Block.Popup.view
+                                    ]
+
+                                else
+                                    [ text "" ]
+                               )
 
                     Nothing ->
                         [ text "" ]
@@ -469,7 +463,12 @@ viewFreqBlock mUser model freq =
                     \networkId ->
                         case Dict.get networkId model.networks of
                             Just network ->
-                                NetworksUtils.renderNetwork network model.masterUnits
+                                a
+                                    [ class "cursor-pointer"
+                                    , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                                    , target "_blank"
+                                    ]
+                                    [ NetworksUtils.renderNetwork network model.masterUnits ]
 
                             _ ->
                                 text "Невідома мережа"

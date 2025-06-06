@@ -21,16 +21,16 @@ import Le.Waterfall.Messages as Messages
 import Le.Waterfall.Utils as Utils
 import Maybe.Extra as MaybeX exposing (isJust)
 import Page exposing (Page)
+import Random
 import Route exposing (Route)
 import Route.Path
 import Set exposing (Set)
 import Shared
 import Task
 import Time
+import Uuid.Barebones
 import View exposing (View)
 import Views
-import Random
-import Uuid.Barebones
 
 
 type alias Model =
@@ -106,7 +106,6 @@ init route _ =
 
         pushUrlCmd =
             getPushUrlCmd model
-
     in
     ( model
     , E.batch (pushUrlCmd :: cmds)
@@ -117,7 +116,7 @@ type Msg
     = ToastMsg Le.Block.Toast.Msg
     | WaterfallMsg String Le.Waterfall.Msg
     | ResizeHappened
-    | GenerateNewWaterfallId 
+    | GenerateNewWaterfallId
     | AddWaterfall String
     | CollapseNavToggle
     | GotDatasourceList (Result ApiError (List ( Int, Datasource )))
@@ -138,7 +137,6 @@ type alias RecalcDuplicatesAcc =
     { duplicates : Set Int
     , seenMsgs : Dict String Int
     }
-
 
 
 recalcDuplicates : Model -> Set Int
@@ -270,25 +268,30 @@ update shared user msg model =
                         |> E.batch
             in
             ( model, cmd )
-        GenerateNewWaterfallId -> 
-            (model, E.sendCmd <|  Random.generate AddWaterfall Uuid.Barebones.uuidStringGenerator)
+
+        GenerateNewWaterfallId ->
+            ( model, E.sendCmd <| Random.generate AddWaterfall Uuid.Barebones.uuidStringGenerator )
 
         AddWaterfall generatedId ->
             let
-                wfId = "wf-" ++ String.slice 0 5 generatedId
-                isIdDuplicated = List.any (\ (id, _) -> id == wfId) model.waterfalls
+                wfId =
+                    "wf-" ++ String.slice 0 5 generatedId
+
+                isIdDuplicated =
+                    List.any (\( id, _ ) -> id == wfId) model.waterfalls
 
                 ( wfModel, wfCmd ) =
                     Le.Waterfall.init wfId Nothing
             in
-            if isIdDuplicated then 
-                (model, E.none)
-            else 
-            ( { model
-            | waterfalls = model.waterfalls ++ [ (wfId, wfModel ) ]
-              }
-            , E.map (WaterfallMsg wfId) wfCmd
-            )
+            if isIdDuplicated then
+                ( model, E.none )
+
+            else
+                ( { model
+                    | waterfalls = model.waterfalls ++ [ ( wfId, wfModel ) ]
+                  }
+                , E.map (WaterfallMsg wfId) wfCmd
+                )
 
         GotDatasourceList (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -383,11 +386,11 @@ getPushUrlCmd model =
 -- Browser.Navigation.pushUrl model.key url
 
 
-newTabBlock:  Html Msg
+newTabBlock : Html Msg
 newTabBlock =
     span
         [ style "font-size" "1.4rem"
-        , class ("m-2  cursor-pointer" )
+        , class "m-2  cursor-pointer"
         , onClick GenerateNewWaterfallId
         , title "нова колонка"
         ]
@@ -442,8 +445,19 @@ body isDarkMode shared user model =
                 ]
            )
         ++ [ Views.noHeaderAndContentNoContainer ToastMsg model.toasts <|
-                div [ class "bg-background flex" ] <|
-                    [ div [ class ("grid-container grow-1 " ++ if List.length model.waterfalls <= 2 then "justify-items-center" else "")  ] <|
+                div [ class "bg-background flex rer-duty" ] <|
+                    [ div
+                        [ class
+                            ("grid-container grow-1 "
+                                ++ (if List.length model.waterfalls <= 2 then
+                                        "justify-items-center"
+
+                                    else
+                                        ""
+                                   )
+                            )
+                        ]
+                      <|
                         List.map
                             (\( id_, wf ) ->
                                 Html.map (WaterfallMsg id_)
@@ -453,16 +467,15 @@ body isDarkMode shared user model =
                                         , datasources = model.datasources
                                         , serverInfo = shared.serverInfo
                                         , user = user
-                                        , waterfallsAmount = List.length( model.waterfalls )
+                                        , waterfallsAmount = List.length model.waterfalls
                                         }
                                         wf
                                     )
                             )
                             model.waterfalls
-                    , div [class "shrink"] 
-                             [ newTabBlock  ] 
+                    , div [ class "shrink" ]
+                        [ newTabBlock ]
                     ]
-                
            ]
 
 

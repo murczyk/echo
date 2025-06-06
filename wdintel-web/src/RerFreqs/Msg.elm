@@ -18,7 +18,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Le.Utils exposing (..)
 import Page exposing (Page)
-import RerFreqs.Model exposing (FilterState)
+import RerFreqs.Model exposing (FilterState, ShowAllPopupFor)
 import Route exposing (Route)
 import Select
 import Time exposing (Posix)
@@ -61,8 +61,7 @@ type Msg
     | AltUnitsByFreqReturnedByApi (Result ApiError Api.ListAltUnitsByFreqsRsp)
     | SortByMessageNumber
     | FreqsLoadMore
-    | SetFreqToShowAllCallsignsPopup (Maybe String)
-    | SetFreqToShowAllLocationsPopup (Maybe String)
+    | RowShowAllPopupChanged (Maybe ( String, ShowAllPopupFor ))
     | SelCallsignMsg (Select.Msg String)
     | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
     | ReportEtalonkaDownload Bool

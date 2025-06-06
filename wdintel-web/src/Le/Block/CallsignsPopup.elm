@@ -114,47 +114,48 @@ view viewParams pageSpecific =
                 |> List.partition hasUnits
     in
     td []
-        [ viewCallsignsRow sortedCallsigns
-        , if List.length viewParams.callsigns > 3 then
-            let
-                body =
-                    span
-                        [ style "font-size" "12px"
-                        , style "font-weight" "300"
-                        , style "cursor" "pointer"
-                        , style "display" "block"
-                        , style "padding-right" "6px"
-                        , style "text-decoration" "underline"
-                        ]
-                        [ text ("Показати всі " ++ (viewParams.callsigns |> List.length |> String.fromInt)) ]
+        [ div []
+            [ viewCallsignsRow sortedCallsigns
+            , if List.length viewParams.callsigns > 3 then
+                let
+                    body =
+                        span
+                            [ style "font-size" "12px"
+                            , style "font-weight" "300"
+                            , style "cursor" "pointer"
+                            , style "display" "block"
+                            , style "padding-right" "6px"
+                            , style "text-decoration" "underline"
+                            ]
+                            [ text ("Показати всі " ++ (viewParams.callsigns |> List.length |> String.fromInt)) ]
 
-                popupBody =
-                    div [ class "d-flex flex-column", style "gap" "20px" ]
-                        [ viewCallsignsGroup callsignsWithUnits, viewCallsignsGroup callsignsWithoutUnits ]
-            in
-            Le.Block.Popup.new
-                { body = body
-                , popupBody = popupBody
-                , isOpen = viewParams.isOpened
-                , onOpen = viewParams.onOpen
-                , onClose = viewParams.onClose
-                , disabled = False
-                }
-                |> Le.Block.Popup.withFakeAnchor
-                |> Le.Block.Popup.withCloseButton
-                |> Le.Block.Popup.view
+                    popupBody =
+                        div [ class "d-flex flex-column", style "gap" "20px" ]
+                            [ viewCallsignsGroup callsignsWithUnits, viewCallsignsGroup callsignsWithoutUnits ]
+                in
+                Le.Block.Popup.new
+                    { body = body
+                    , popupBody = popupBody
+                    , isOpen = viewParams.isOpened
+                    , onOpen = viewParams.onOpen
+                    , onClose = viewParams.onClose
+                    , disabled = False
+                    }
+                    |> Le.Block.Popup.withFakeAnchor
+                    |> Le.Block.Popup.withCloseButton
+                    |> Le.Block.Popup.view
 
-          else
-            text ""
+              else
+                text ""
+            ]
         ]
 
 
 viewCallsignsRow callsignsList =
-    div []
+    div [ class "flex flex-col gap-[4px]" ]
         (callsignsList
             |> List.take 3
             |> List.map (\callsignWithPrio -> Le.Block.Callsign.view (callsignWithPrio |> Tuple.second) (callsignWithPrio |> Tuple.first))
-            |> List.intersperse (text ", ")
         )
 
 

@@ -1,27 +1,33 @@
-module Le.Block.Tooltip exposing (view, new, withIconName, withTextNoWrap)
+module Le.Block.Tooltip exposing (new, view, withIconName, withTextNoWrap)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
 
-type Config = Config {tooltipText: String, iconName: String, wrapTooltipText: Bool}
 
-new: String -> Config 
-new  tooltipText = 
-    Config {tooltipText = tooltipText, iconName = "bi-info-circle",  wrapTooltipText = True}
+type Config
+    = Config { tooltipText : String, iconName : String, wrapTooltipText : Bool }
 
-withTextNoWrap: Config -> Config 
-withTextNoWrap (Config config) = 
-    Config {config | wrapTooltipText = False}
 
-withIconName: String -> Config -> Config
-withIconName iconName (Config config) = 
-    Config {config | iconName = iconName}
+new : String -> Config
+new tooltipText =
+    Config { tooltipText = tooltipText, iconName = "bi-info-circle", wrapTooltipText = True }
 
-view : Html msg ->Config ->  Html msg
-view body (Config config ) =
-    span [class "relative"]
+
+withTextNoWrap : Config -> Config
+withTextNoWrap (Config config) =
+    Config { config | wrapTooltipText = False }
+
+
+withIconName : String -> Config -> Config
+withIconName iconName (Config config) =
+    Config { config | iconName = iconName }
+
+
+view : Html msg -> Config -> Html msg
+view body (Config config) =
+    span [ class "relative" ]
         [ span
-            [ classList[("whitespace-nowrap", not config.wrapTooltipText )] ]
+            [ classList [ ( "whitespace-nowrap", not config.wrapTooltipText ) ] ]
             [ text config.tooltipText ]
         , node
             "sl-tooltip"
