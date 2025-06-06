@@ -7,7 +7,45 @@ type Data = { [key: string]: { [key: string]: number } }
 
 type TransformedData = { date: string; group: string; count: number, groupName?: string }[]
 
-const BARS_COLORSCHEME = ["#FFD454", "#FF9A3B", "#49A4FF", "#87D6F6", "#F087E9", "#AF54FF", "#FF5E63", "#E90008", "#82CE4B", "#499810"]
+const BARS_COLORSCHEME = ["#FFD454", "#FF9A3B", "#49A4FF", "#87D6F6", "#F087E9", "#AF54FF", "#FF5E63", "#E90008", "#82CE4B", "#499810",
+	"#FFC107", // Amber (new)
+	"#FF5722", // Deep Orange (new)
+	"#2196F3", // Blue (new)
+	"#673AB7", // Deep Purple (new)
+	"#4CAF50", // Green (new)
+	"#FF9800", // Orange (new)
+	"#3F51B5", // Indigo (new)
+	"#009688", // Teal (new)
+	"#795548", // Brown (new)
+	"#607D8B", // Blue Grey (new)
+]
+const COLOR_MAPPING_KEY = 'colorMapping';
+
+function recycleColors(usedGroups: string[], colorMapping: { [key: string]: string }) {
+	const unusedItems = Object.keys(colorMapping).filter(item => !usedGroups.includes(item));
+	unusedItems.forEach(item => {
+		delete colorMapping[item];
+	});
+}
+
+function getColorForItem(group: string, colorMapping: { [key: string]: string }) {
+	// Check if the item already has a color assigned
+	if (!colorMapping[group]) {
+		// If not, assign a color from the palette
+		const availableColors = BARS_COLORSCHEME.filter(color => !Object.values(colorMapping).includes(color));
+		if (availableColors.length === 0) {
+			// If no colors are available, recycle colors from unused items
+			//recycleColors(currentItems);
+			colorMapping[group] = '#000';
+		} else if (!colorMapping[group]) {
+			const colorIndex = Object.keys(colorMapping).length % BARS_COLORSCHEME.length;
+			colorMapping[group] = BARS_COLORSCHEME[colorIndex];
+		}
+
+		localStorage.setItem(COLOR_MAPPING_KEY, JSON.stringify(colorMapping));
+	}
+	return colorMapping[group];
+}
 
 @customElement("bar-chart")
 class BarChart extends LitElement {
@@ -19,8 +57,6 @@ class BarChart extends LitElement {
 
 	chartWidth = 0;
 	chartHeight = 0;
-
-	colorMap = {}
 
 	margins = {
 		right: 10,
@@ -90,7 +126,9 @@ class BarChart extends LitElement {
 			}
 		})
 
-
+		const colorMapping = localStorage.getItem(COLOR_MAPPING_KEY)
+		const colorMappingParsed = colorMapping ? JSON.parse(colorMapping) : {}
+		recycleColors(transformedData.map(x => x.group), colorMappingParsed)
 		return transformedData;
 	}
 
@@ -118,12 +156,15 @@ class BarChart extends LitElement {
 			.domain(data.map(d => d.date)).rangeRound([this.margins.left, this.chartWidth - this.margins.right]).padding(0.1);
 		const yScale = d3.scaleLinear().domain([0, d3.max(stack, d => d3.max(d, d => d[1])) || 0]).rangeRound([this.chartHeight - this.margins.bottom, this.margins.top]);
 
+		const colorMapping = localStorage.getItem(COLOR_MAPPING_KEY)
+		const colorMappingParsed = colorMapping ? JSON.parse(colorMapping) : {}
+
 		const groups = svg
 			.selectAll(".data-group")
 			.data(stack)
 			.join("g")
 			.attr("class", "data-group")
-			.attr("fill", d => this.getColorForGroup(d.key))
+			.attr("fill", d => getColorForItem(d.key, colorMappingParsed))
 
 		groups.selectAll("rect")
 			.data(D => D.map(d => {
@@ -158,18 +199,6 @@ class BarChart extends LitElement {
 
 		this.yAxisGroup.attr("transform", `translate(${this.margins.left}, 0)`).call(d3.axisLeft(yScale).ticks(4).tickFormat(d3.format("d")));
 
-	}
-
-	getColorForGroup(group: string) {
-		if (!this.colorMap[group]) {
-			const availableColors = BARS_COLORSCHEME.filter(color => !Object.values(this.colorMap).includes(color));
-			if (availableColors.length > 0) {
-				this.colorMap[group] = availableColors[0]
-			} else {
-				this.colorMap[group] = "#000000";
-			}
-		}
-		return this.colorMap[group];
 	}
 
 }
