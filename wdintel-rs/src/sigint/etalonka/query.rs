@@ -57,6 +57,7 @@ pub enum NetworkMessages {
     Freq,
     CreatedAt,
     ModulationName,
+    NetworkFreqId,
 }
 
 #[derive(Iden)]
@@ -69,10 +70,12 @@ pub enum SigintNetworkUnit {
 #[derive(Iden)]
 pub enum SigintNetworkFreq {
     Table,
+    Id,
     NetworkId,
     Freq,
-    Deleted,
     CreatedAt,
+    ActiveFrom,
+    ActiveTo,
     ModulationId,
 }
 
@@ -372,6 +375,7 @@ pub async fn load_freqs(
         filter.network_id
     );
 
+    let mut inactive_freqs = Vec::new();
     // Get active frequencies
     let mut network_active_freqs =
         query_active_freqs(db, groups, filter).await.context(h!())?;
@@ -384,22 +388,41 @@ pub async fn load_freqs(
                 .map(|f| f.freq.clone())
                 .collect();
 
-            let inactive_freqs =
+            inactive_freqs =
                 query_inactive_freqs(db, network_id, &active_freqs_short)
                     .await
                     .context(h!())?;
-            network_active_freqs.extend(inactive_freqs);
+            network_active_freqs.extend(inactive_freqs.clone());
         }
     }
 
-    Ok(network_active_freqs)
+    let mut network_freqs = network_active_freqs.clone();
+    network_freqs.extend(inactive_freqs);
+
+    let mut result = vec![];
+
+    for nf in network_active_freqs.into_iter() {
+        result.push(NetworkFreqsRes {
+            network_freq_id: nf.network_freq_id,
+            freq: nf.freq,
+            modulation: nf.modulation,
+            message_count: nf.message_count,
+            callsigns: nf.callsigns,
+            last_datetime: nf.last_datetime,
+            created_at: nf.created_at,
+            is_active: nf.is_active,
+            active_from: nf.active_from,
+            active_to: nf.active_to,
+        });
+    }
+    Ok(result)
 }
 
 async fn query_active_freqs(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
-) -> Result<Vec<NetworkFreqsRes>, AppError> {
+) -> Result<Vec<NetworkFreqsQueryRes>, AppError> {
     let mut q: SelectStatement = Query::select();
     q.expr_as(
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)),
@@ -420,6 +443,10 @@ async fn query_active_freqs(
     .expr_as(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::CreatedAt)),
         Alias::new("created_at"),
+    )
+    .expr_as(
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
+        Alias::new("network_freq_id"),
     )
     .expr_as(
         Expr::col((Modulation::Table, Modulation::Name)),
@@ -458,8 +485,8 @@ async fn query_active_freqs(
         Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
     )
     .and_where(
-        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
-            .eq(false),
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo))
+            .is_null(),
     )
     .and_where(
         Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
@@ -517,6 +544,7 @@ async fn query_active_freqs(
         .to_owned();
 
     let main_query = SelectStatement::new()
+        .expr_as(Expr::cust("network_freq_id"), Alias::new("network_freq_id"))
         .expr_as(Expr::cust("freq"), Alias::new("freq"))
         .expr_as(Expr::cust("created_at"), Alias::new("created_at"))
         .expr_as(Expr::cust("modulation_name"), Alias::new("modulation_name"))
@@ -524,6 +552,11 @@ async fn query_active_freqs(
         .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
         .expr_as(Expr::cust("jsonb_agg(callsigns)"), Alias::new("callsigns"))
         .from(Alias::new("network_messages"))
+        .add_group_by([Expr::col((
+            NetworkMessages::Table,
+            NetworkMessages::NetworkFreqId,
+        ))
+        .into()])
         .add_group_by([Expr::col((
             NetworkMessages::Table,
             NetworkMessages::Freq,
@@ -552,7 +585,7 @@ async fn query_active_freqs(
     //     combined_query.to_string(PostgresQueryBuilder)
     // );
 
-    let network_active_freqs: Result<Vec<NetworkFreqsRes>, AppError> = db
+    let network_active_freqs: Result<Vec<NetworkFreqsQueryRes>, AppError> = db
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query.to_string(PostgresQueryBuilder),
@@ -560,15 +593,25 @@ async fn query_active_freqs(
         .await
         .context(h!())?
         .iter()
-        .map(|row| -> Result<NetworkFreqsRes, AppError> {
+        .map(|row| -> Result<NetworkFreqsQueryRes, AppError> {
             let row_callsigns = row.try_get("", "callsigns").context(h!())?;
             let row_callsigns =
                 serde_json::from_value::<Vec<Vec<String>>>(row_callsigns)
                     .context(h!())?;
             let created_at: NaiveDateTime =
                 row.try_get("", "created_at").context(h!())?;
+            let active_from: NaiveDateTime =
+                row.try_get("", "active_from").context(h!())?;
+            let active_to: Option<NaiveDateTime> =
+                row.try_get("", "active_to").context(h!())?;
 
-            Ok(NetworkFreqsRes {
+            let active_to = active_to.map(|dt| dt.and_utc().timestamp_millis());
+            let active_from = active_from.and_utc().timestamp_millis();
+
+            Ok(NetworkFreqsQueryRes {
+                network_freq_id: row
+                    .try_get("", "network_freq_id")
+                    .unwrap_or_default(),
                 freq: row.try_get("", "freq").unwrap_or_default(),
                 modulation: row.try_get("", "modulation_name").ok(),
                 message_count: row.try_get("", "message_count").unwrap_or(0),
@@ -580,6 +623,8 @@ async fn query_active_freqs(
                     .ok(),
                 created_at: created_at.and_utc().timestamp_millis(),
                 is_active: true,
+                active_from,
+                active_to,
             })
         })
         .collect();
@@ -591,9 +636,12 @@ async fn query_inactive_freqs(
     db: &DatabaseConnection,
     network_id: i64,
     active_freqs_short: &Vec<String>,
-) -> Result<Vec<NetworkFreqsRes>, AppError> {
+) -> Result<Vec<NetworkFreqsQueryRes>, AppError> {
     #[derive(Debug, FromQueryResult)]
     pub struct Res {
+        pub active_from: NaiveDateTime,
+        pub active_to: Option<NaiveDateTime>,
+        pub network_freq_id: i64,
         pub freq: String,
         pub created_at: NaiveDateTime,
         pub modulation_name: Option<String>,
@@ -611,9 +659,11 @@ async fn query_inactive_freqs(
             sigint_network_freq::Relation::Modulation.def(),
         )
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Id.eq(network_id))
         .select_only()
+        .column(sigint_network::Column::ActiveFrom)
+        .column(sigint_network::Column::ActiveTo)
+        .column_as(sigint_network_freq::Column::Id, "network_freq_id")
         .column_as(sigint_network_freq::Column::Freq, "freq")
         .column_as(sigint_network_freq::Column::CreatedAt, "created_at")
         .column_as(modulation::Column::Name, "modulation_name");
@@ -638,16 +688,30 @@ async fn query_inactive_freqs(
         .await
         .context(h!())?;
 
-    let network_inactive_freqs: Vec<NetworkFreqsRes> = inactive_freqs
+    let network_inactive_freqs: Vec<NetworkFreqsQueryRes> = inactive_freqs
         .into_iter()
-        .map(|inactive_freq| NetworkFreqsRes {
-            freq: inactive_freq.freq,
-            modulation: inactive_freq.modulation_name,
-            message_count: 0,
-            callsigns: None,
-            last_datetime: None,
-            created_at: inactive_freq.created_at.and_utc().timestamp_millis(),
-            is_active: false,
+        .map(|inactive_freq| {
+            let active_to = inactive_freq
+                .active_to
+                .map(|dt| dt.and_utc().timestamp_millis());
+            let active_from =
+                inactive_freq.active_from.and_utc().timestamp_millis();
+
+            NetworkFreqsQueryRes {
+                network_freq_id: inactive_freq.network_freq_id,
+                freq: inactive_freq.freq,
+                modulation: inactive_freq.modulation_name,
+                message_count: 0,
+                callsigns: None,
+                last_datetime: None,
+                created_at: inactive_freq
+                    .created_at
+                    .and_utc()
+                    .timestamp_millis(),
+                is_active: false,
+                active_from,
+                active_to,
+            }
         })
         .collect();
 
@@ -751,42 +815,42 @@ pub async fn load_callsigns(
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
         Alias::new("freq"),
     )
-    .expr_as(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)),
-        Alias::new("datetime"),
-    )
-    .expr_as(
-        Expr::col((SigintUnit::Table, SigintUnit::Id)),
-        Alias::new("unit_id"),
-    )
-    .expr_as(
-        Expr::col((SigintUnit::Table, SigintUnit::Name)),
-        Alias::new("unit_name"),
-    )
-    .expr_as(
-        Expr::col((SigintUnit::Table, SigintUnit::Regiment)),
-        Alias::new("regiment"),
-    )
-    .expr_as(
-        Expr::col((SigintUnit::Table, SigintUnit::Division)),
-        Alias::new("division"),
-    )
-    .expr_as(
-        Expr::col((SigintUnit::Table, SigintUnit::Army)),
-        Alias::new("army"),
-    )
-    .expr_as(
-        Expr::cust("c.callsign"),
-        Alias::new("callsign"),
-    )
-    .expr_as(
-        Expr::cust(r#"CASE
+        .expr_as(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)),
+            Alias::new("datetime"),
+        )
+        .expr_as(
+            Expr::col((SigintUnit::Table, SigintUnit::Id)),
+            Alias::new("unit_id"),
+        )
+        .expr_as(
+            Expr::col((SigintUnit::Table, SigintUnit::Name)),
+            Alias::new("unit_name"),
+        )
+        .expr_as(
+            Expr::col((SigintUnit::Table, SigintUnit::Regiment)),
+            Alias::new("regiment"),
+        )
+        .expr_as(
+            Expr::col((SigintUnit::Table, SigintUnit::Division)),
+            Alias::new("division"),
+        )
+        .expr_as(
+            Expr::col((SigintUnit::Table, SigintUnit::Army)),
+            Alias::new("army"),
+        )
+        .expr_as(
+            Expr::cust("c.callsign"),
+            Alias::new("callsign"),
+        )
+        .expr_as(
+            Expr::cust(r#"CASE
                 WHEN ("sigint_network"."name" IS NOT NULL) AND ("sigint_network"."name" <> '')
                 THEN CONCAT('р/м ', "sigint_network"."name")
                 ELSE NULL
             END"#.to_string()),
-        Alias::new("network_name"),
-    );
+            Alias::new("network_name"),
+        );
     base_subquery_callsigns
         .from(SignalMessage::Table)
         .join(
@@ -837,10 +901,6 @@ pub async fn load_callsigns(
         )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
-        )
-        .and_where(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
-                .eq(false),
         )
         .and_where(
             Expr::col((SigintUnit::Table, SigintUnit::Deleted)).eq(false),
@@ -1740,7 +1800,7 @@ pub async fn load_networks(
             .column(signal_message::Column::Id)
             .filter(signal_message::Column::Deleted.eq(false))
             .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .filter(sigint_network_freq::Column::ActiveTo.is_null())
             .filter(
                 sigint_network_freq::Column::NetworkId
                     .into_simple_expr()
@@ -1822,7 +1882,7 @@ pub async fn get_network_active_freqs(
         .column(sigint_network_freq::Column::Freq)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-        .filter(sigint_network_freq::Column::Deleted.eq(false));
+        .filter(sigint_network_freq::Column::ActiveTo.is_null());
 
     if let Some(network_id) = filter.network_id {
         freqs =

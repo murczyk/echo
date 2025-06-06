@@ -107,6 +107,10 @@ pub async fn rer_analysis_download_geojson(
         };
 
         let mut comments = vec![];
+
+        let filter_active_ts =
+            crate::sigint::freq::util::filter_by_active_ts(dt_since, dt_till);
+
         if let Some(freq) = sigint_network::Entity::find()
             .join(
                 JoinType::InnerJoin,
@@ -114,7 +118,7 @@ pub async fn rer_analysis_download_geojson(
             )
             .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
             .filter(sigint_network::Column::Deleted.eq(false))
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .filter(filter_active_ts)
             .one(&env.dbx)
             .await?
         {
