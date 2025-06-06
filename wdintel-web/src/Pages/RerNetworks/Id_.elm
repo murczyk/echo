@@ -1460,8 +1460,8 @@ contentBlock shared network model =
                                         , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
                                         , td [] [ text <| x.sourceName ]
                                         , td []
-                                            [ Toggle.new { onToggle = CallsignReportingStatusToggledByUser, label = "спочатку нові" }
-                                                |> Toggle.view x.
+                                            [--Toggle.new { onToggle = CallsignReportingStatusToggledByUser, label = "спочатку нові" }
+                                             -- |> Toggle.view x.
                                             ]
                                         ]
                                         :: List.map
