@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Components.Button as Button
+import Components.Toggle as Toggle
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -63,7 +64,7 @@ type Mode updateReq
 
 type alias Model =
     { network : RemoteData ApiError B.Network
-    , callsigns : RemoteData ApiError (List B.CallsignRes)
+    , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
     , mapPoints : RemoteData ApiError (List B.NetworkPoint)
     , groupsActivity : RemoteData ApiError GroupsByDate
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
@@ -172,6 +173,7 @@ type Msg
     | DescriptionEditedByUser Int String
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
+    | CallsignReportingStatusToggledByUser Int
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -699,6 +701,8 @@ update shared msg model =
 
         FreqUpdatedByApi (Ok network) ->
             ( { model | network = Success network, freqsEditingState = Readonly }, E.none )
+        CallsignReportingStatusToggledByUser callsignId ->
+            ( model, E.none )
 
 
 
@@ -1455,6 +1459,10 @@ contentBlock shared network model =
                                         , td [] [ text x.comment ]
                                         , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
                                         , td [] [ text <| x.sourceName ]
+                                        , td []
+                                            [ Toggle.new { onToggle = CallsignReportingStatusToggledByUser, label = "спочатку нові" }
+                                                |> Toggle.view x.
+                                            ]
                                         ]
                                         :: List.map
                                             (\knownCallsign ->
@@ -1508,6 +1516,7 @@ contentBlock shared network model =
                                 , th [ class "w-[19%]" ] [ text "Коментар" ]
                                 , th [ class "w-[10%]" ] [ text "Дата прив'язки" ]
                                 , th [ class "w-[8%]" ] [ text "Джерело" ]
+                                , th [ class "w-[8%]" ] [ text "Звітний" ]
                                 ]
                             ]
                         , tbody []
@@ -1521,7 +1530,7 @@ contentBlock shared network model =
                             [ tr []
                                 [ td [ colspan 8 ]
                                     [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                                    , div [ class "flex flex-wrap gap-[4px]" ] (List.map (\c -> span [] [ text <| String.toUpper c.callsign ]) callsignsUnknown)
+                                    , div [ class "flex flex-wrap gap-[4px] text-[13px]" ] (List.map (\c -> span [] [ text <| String.toUpper c.callsign ]) callsignsUnknown)
                                     ]
                                 ]
                             ]

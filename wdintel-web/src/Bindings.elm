@@ -4456,14 +4456,14 @@ singleNetworkCallsignsReqEncoder struct =
 
 
 type alias SingleNetworkCallsignsListRsp =
-    { callsigns : List CallsignRes
+    { callsigns : List NetworkCallsignRes
     }
 
 
 singleNetworkCallsignsListRspEncoder : SingleNetworkCallsignsListRsp -> Json.Encode.Value
 singleNetworkCallsignsListRspEncoder struct =
     Json.Encode.object
-        [ ( "callsigns", Json.Encode.list callsignResEncoder struct.callsigns )
+        [ ( "callsigns", Json.Encode.list networkCallsignResEncoder struct.callsigns )
         ]
 
 
@@ -4478,6 +4478,32 @@ updateNetworkPostsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
+        ]
+
+
+type alias NetworkCallsignRes =
+    { callsign : String
+    , knownCallsigns : Maybe (List KnownCallsignShortRes)
+    , messageCount : Int
+    , lastDatetime : Maybe Int
+    , freqs : Maybe (List String)
+    , networkNames : Maybe (List String)
+    , isOld : Bool
+    , isReported : Bool
+    }
+
+
+networkCallsignResEncoder : NetworkCallsignRes -> Json.Encode.Value
+networkCallsignResEncoder struct =
+    Json.Encode.object
+        [ ( "callsign", Json.Encode.string struct.callsign )
+        , ( "known_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list knownCallsignShortResEncoder)) struct.knownCallsigns )
+        , ( "message_count", Json.Encode.int struct.messageCount )
+        , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
+        , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
+        , ( "network_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.networkNames )
+        , ( "is_old", Json.Encode.bool struct.isOld )
+        , ( "is_reported", Json.Encode.bool struct.isReported )
         ]
 
 
@@ -7332,7 +7358,7 @@ singleNetworkCallsignsReqDecoder =
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp
 singleNetworkCallsignsListRspDecoder =
     Json.Decode.succeed SingleNetworkCallsignsListRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list callsignResDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list networkCallsignResDecoder)))
 
 
 updateNetworkPostsReqDecoder : Json.Decode.Decoder UpdateNetworkPostsReq
@@ -7372,6 +7398,19 @@ addNetworkFreqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable addNetworkFrequencyDescriptionDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
+
+
+networkCallsignResDecoder : Json.Decode.Decoder NetworkCallsignRes
+networkCallsignResDecoder =
+    Json.Decode.succeed NetworkCallsignRes
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsigns" (Json.Decode.nullable (Json.Decode.list knownCallsignShortResDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_old" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
 
 
 postDecoder : Json.Decode.Decoder Post
