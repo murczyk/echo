@@ -1365,12 +1365,25 @@ pub async fn saved_filter_delete(
 
 #[post("/api/rer/analysis/new-callsigns")]
 pub async fn new_callsigns(
-    user: actix_identity::Identity,
+    user: Identity,
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NewCallsignsRes>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let login = user.id()?;
+    let user_id =  &user.id()?;
+    let res = bi_new_callsigns(user_id, &env, &req.into_inner())
+        .await
+        .context(h!())?;
+
+    Ok(Json(res))
+}
+
+pub async fn bi_new_callsigns(
+    user_id: &str,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<NewCallsignsRes, AppError> {
+    crate::users::has_role(&env.dbx, user_id, "Rer").await?;
+
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let include_peleng_locations =
@@ -1394,7 +1407,7 @@ pub async fn new_callsigns(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(signal_message::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::users::get_identity_sigint_groups(&env.dbx, user_id).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1423,7 +1436,7 @@ pub async fn new_callsigns(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id()?,
+        user_id,
         true,
     )?;
     let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
@@ -1456,7 +1469,7 @@ pub async fn new_callsigns(
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(signal_message::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+            crate::users::get_identity_sigint_groups(&env.dbx, user_id).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1485,7 +1498,7 @@ pub async fn new_callsigns(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &user.id()?,
+        user_id,
         true,
     )?;
     let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
@@ -1544,11 +1557,11 @@ pub async fn new_callsigns(
         .cloned()
         .collect::<Vec<_>>();
 
-    Ok(Json(NewCallsignsRes {
+    Ok(NewCallsignsRes {
         not_seen_24h,
         not_seen_7days,
         not_seen_30days,
-    }))
+    })
 }
 
 #[post("/api/rer/message/comments-batch")]
