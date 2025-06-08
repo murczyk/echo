@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::types::{AnalysisStatsReq, InboxMessagesReq};
 use crate::types::*;
 use crate::utils::*;
 use actix_identity::Identity;
@@ -19,6 +20,7 @@ pub async fn report_docx_kind_babak(
     req: &super::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
+    let user_id =  &user.id()?;
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
         return Err("Since date must be specified".into());
     };
@@ -35,6 +37,30 @@ pub async fn report_docx_kind_babak(
     let file = std::fs::File::create(outpath.clone())?;
 
     let units = get_inbox_messages_report_unit(user, env, &req.req).await?;
+
+    let new_callsing_req = AnalysisStatsReq {
+        since_date_inclusive_ms: req.req.since_date_inclusive_ms.unwrap_or(0),
+        till_date_noninclusive_ms: req.req.till_date_inclusive_ms.unwrap_or(0),
+        selected_groups: req.req.selected_groups.clone(),
+        selected_senders: req.req.selected_senders.clone(),
+        selected_freqs: req.req.selected_freqs.clone(),
+        selected_posts: req.req.selected_posts.clone(),
+        selected_callsigns: req.req.selected_callsigns.clone(),
+        selected_units: req.req.selected_units.clone(),
+        selected_locations: req.req.selected_locations.clone(),
+        or_with_extended_form: req.req.or_with_extended_form.clone(),
+        or_bookmarked: req.req.or_bookmarked.clone(),
+        or_important: req.req.or_important.clone(),
+        or_with_coords: req.req.or_with_coords.clone(),
+        search: req.req.search.clone(),
+        selected_tags: req.req.selected_tags.clone(),
+        include_peleng_locations: req.req.include_peleng_locations.clone(),
+        units_exact_match_only: req.req.units_exact_match_only.clone(),
+        filter_tags_option: req.req.filter_tags_option.clone(),
+    };
+    let new_callsigns_res = bi_new_callsigns(user_id, env, &new_callsing_req)
+        .await
+        .context(h!())?;
 
     let units_list = units
         .iter()
@@ -226,6 +252,23 @@ pub async fn report_docx_kind_babak(
                 )))
                 .align(docx_rs::alignment_type::AlignmentType::Left),
         )
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(
+            Paragraph::new()
+                .style(head)
+                .add_run(
+                    Run::new()
+                        .add_text("Позивні, присутні в обраний період, але яких не було 7 днів до цього:"),
+                )
+                .align(docx_rs::alignment_type::AlignmentType::Left),
+        )
+        .add_paragraph(
+            Paragraph::new()
+                .add_run(Run::new().add_text(
+                    new_callsigns_res.not_seen_7days.join(", ")
+                ))
+                .align(docx_rs::alignment_type::AlignmentType::Left),
+        )        
         .add_paragraph(Paragraph::new())
         .add_paragraph(
             Paragraph::new()
@@ -470,7 +513,7 @@ pub struct StatsPerUnitReport {
 pub async fn get_inbox_messages_report_unit(
     user: Identity,
     env: &Env,
-    req: &crate::rer_importer::types::InboxMessagesReq,
+    req: &InboxMessagesReq,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
