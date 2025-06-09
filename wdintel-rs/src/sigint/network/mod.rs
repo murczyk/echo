@@ -2651,6 +2651,13 @@ pub async fn merge_two_networks(
     );
     let new_active_from =
         network_from.active_from.min(network_to.active_from.clone());
+    let new_active_to =
+        match (network_from.active_to.clone(), network_to.active_to.clone()) {
+            (Some(active_to_1), Some(active_to_2)) => {
+                Some(active_to_1.max(active_to_2))
+            }
+            _ => None,
+        };
 
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());
@@ -2659,6 +2666,7 @@ pub async fn merge_two_networks(
     network_to_model.updated_at = Set(Utc::now().naive_utc());
     network_to_model.updated_by = Set(Some(login.clone()));
     network_to_model.active_from = Set(new_active_from);
+    network_to_model.active_to = Set(new_active_to);
     network_to_model.update(txn).await.context(h!())?;
 
     // Mark network_from as deleted, set merget_to field
