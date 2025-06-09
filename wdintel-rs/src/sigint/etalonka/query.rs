@@ -58,6 +58,8 @@ pub enum NetworkMessages {
     CreatedAt,
     ModulationName,
     NetworkFreqId,
+    ActiveFrom,
+    ActiveTo,
 }
 
 #[derive(Iden)]
@@ -445,6 +447,14 @@ async fn query_active_freqs(
         Alias::new("created_at"),
     )
     .expr_as(
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveFrom)),
+        Alias::new("active_from"),
+    )
+    .expr_as(
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
+        Alias::new("active_from"),
+    )
+    .expr_as(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
         Alias::new("network_freq_id"),
     )
@@ -547,6 +557,8 @@ async fn query_active_freqs(
         .expr_as(Expr::cust("network_freq_id"), Alias::new("network_freq_id"))
         .expr_as(Expr::cust("freq"), Alias::new("freq"))
         .expr_as(Expr::cust("created_at"), Alias::new("created_at"))
+        .expr_as(Expr::cust("active_from"), Alias::new("active_from"))
+        .expr_as(Expr::cust("active_to"), Alias::new("active_to"))
         .expr_as(Expr::cust("modulation_name"), Alias::new("modulation_name"))
         .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
         .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
@@ -565,6 +577,16 @@ async fn query_active_freqs(
         .add_group_by([Expr::col((
             NetworkMessages::Table,
             NetworkMessages::CreatedAt,
+        ))
+        .into()])
+        .add_group_by([Expr::col((
+            NetworkMessages::Table,
+            NetworkMessages::ActiveFrom,
+        ))
+        .into()])
+        .add_group_by([Expr::col((
+            NetworkMessages::Table,
+            NetworkMessages::ActiveTo,
         ))
         .into()])
         .add_group_by([Expr::col((
