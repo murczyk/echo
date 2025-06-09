@@ -452,7 +452,7 @@ async fn query_active_freqs(
     )
     .expr_as(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
-        Alias::new("active_from"),
+        Alias::new("active_to"),
     )
     .expr_as(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
