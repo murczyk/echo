@@ -7,17 +7,47 @@ type Data = { [key: string]: { [key: string]: number } }
 
 type TransformedData = { date: string; group: string; count: number, groupName?: string }[]
 
-const BARS_COLORSCHEME = ["#FFD454", "#FF9A3B", "#49A4FF", "#87D6F6", "#F087E9", "#AF54FF", "#FF5E63", "#E90008", "#82CE4B", "#499810",
-	"#FFC107", // Amber (new)
-	"#FF5722", // Deep Orange (new)
-	"#2196F3", // Blue (new)
-	"#673AB7", // Deep Purple (new)
-	"#4CAF50", // Green (new)
-	"#FF9800", // Orange (new)
-	"#3F51B5", // Indigo (new)
-	"#009688", // Teal (new)
-	"#795548", // Brown (new)
-	"#607D8B", // Blue Grey (new)
+const BARS_COLORSCHEME = [
+	"#FF6B6B", // Red
+	"#4ECDC4", // Teal
+	"#45B7D1", // Blue
+	"#96CEB4", // Mint Green
+	"#FFEAA7", // Light Yellow
+	"#DDA0DD", // Plum
+	"#98D8C8", // Seafoam
+	"#F7DC6F", // Golden Yellow
+	"#BB8FCE", // Light Purple
+	"#85C1E9", // Sky Blue
+	"#F8C471", // Orange
+	"#82E0AA", // Light Green
+	"#F1948A", // Salmon
+	"#85D4E3", // Light Blue
+	"#F9E79F", // Pale Yellow
+	"#D7BDE2", // Lavender
+	"#A3E4D7", // Aqua
+	"#FAD7A0", // Peach
+	"#D5A6BD", // Rose
+	"#AED6F1", // Powder Blue
+	"#F5B7B1", // Pink
+	"#A9DFBF", // Pale Green
+	"#F4D03F", // Bright Yellow
+	"#C39BD3", // Medium Purple
+	"#7FB3D3", // Steel Blue
+	"#FADBD8", // Blush
+	"#ABEBC6", // Spring Green
+	"#FCF3CF", // Cream
+	"#E8DAEF", // Thistle
+	"#D6EAF8", // Alice Blue
+	"#FF9F43", // Bright Orange
+	"#6C5CE7", // Purple
+	"#00B894", // Green
+	"#E17055", // Terra Cotta
+	"#0984E3", // Royal Blue
+	"#FD79A8", // Hot Pink
+	"#FDCB6E", // Mustard
+	"#A29BFE", // Periwinkle
+	"#00CEC9", // Turquoise
+	"#E84393"  // Magenta
 ]
 const COLOR_MAPPING_KEY = 'colorMapping';
 

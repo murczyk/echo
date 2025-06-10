@@ -90,13 +90,13 @@ view shared model user =
                     , th
                         [ scope "col"
                         , class ""
-                        , style "width" "12%"
+                        , style "width" "14%"
                         ]
                         [ text "Пеленги" ]
                     , th
                         [ scope "col"
                         , class ""
-                        , style "min-width" "25%"
+                        , style "width" "26%"
                         ]
                         [ text "Привʼязки" ]
                     , th
@@ -108,7 +108,7 @@ view shared model user =
                     , th
                         [ scope "col"
                         , class ""
-                        , style "width" "13%"
+                        , style "width" "15%"
                         ]
                         [ text "Активність р/м" ]
                     , th
@@ -212,17 +212,17 @@ renderFreqTr shared model user rowIndex freq =
     in
     tr []
         [ td []
-            [ div [ class "flex relative", style "gap" "2px", style "align-items" "baseline" ]
-                [ span [] [ text freq.freq ]
-                , div [ class "flex-grow-1" ]
+            [ div [ class "relative" ]
+                [ div [] [ text freq.freq ]
+                , div [ class "" ]
                     [ span
                         [ class "badge badge-sm rounded-pill text-bg-secondary"
                         , style "font-size" "0.6rem"
                         ]
                         [ text <| String.fromInt freq.messageCount
                         ]
+                    , Le.Block.ActionMenu.actionMenu actionMenuBody "bi-three-dots-vertical"
                     ]
-                , Le.Block.ActionMenu.actionMenu actionMenuBody "bi-three-dots-vertical"
                 , Watermark.new user.name
                     |> Watermark.withPositioning ( 30, 10 )
                     |> Watermark.withFontSize "1.5rem"

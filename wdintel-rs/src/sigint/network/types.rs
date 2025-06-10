@@ -383,6 +383,8 @@ pub struct NetworkFreq {
     pub network_id: i64,
     pub freq: String,
     pub deleted: bool,
+    pub active_from: i64,
+    pub active_to: Option<i64>,
     pub created_at: i64,
     pub kind: String,
     pub modulation_id: Option<i32>,
@@ -396,6 +398,8 @@ pub struct AddNetworkFreq {
     pub kind: String,
     pub modulation_id: Option<i32>,
     pub description: Option<AddNetworkFrequencyDescription>,
+    pub active_from: Option<i64>,
+    pub active_to: Option<i64>,
 }
 
 #[derive(
@@ -406,4 +410,6 @@ pub struct UpdateNetworkFreqReq {
     pub freq: String,
     pub kind: String,
     pub modulation_id: Option<i32>,
+    pub active_from: i64,
+    pub active_to: Option<i64>,
 }

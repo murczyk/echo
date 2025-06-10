@@ -11,10 +11,11 @@ pub struct Model {
     pub network_id: i64,
     #[sea_orm(column_type = "Text")]
     pub freq: String,
-    pub deleted: bool,
     pub created_at: DateTime,
     pub kind: SigintNetworkKind,
     pub modulation_id: Option<i32>,
+    pub active_from: DateTime,
+    pub active_to: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

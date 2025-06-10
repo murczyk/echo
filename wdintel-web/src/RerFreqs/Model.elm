@@ -71,6 +71,8 @@ type alias Model =
     , editModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
+    , addExistingActiveFrom : Maybe Int
+    , addExistingActiveTo : Maybe Int
     }
 
 

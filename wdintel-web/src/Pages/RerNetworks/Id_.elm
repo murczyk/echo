@@ -56,9 +56,9 @@ toLayout user model =
 -- INIT
 
 
-type Mode
+type Mode updateReq
     = Readonly
-    | Editing B.UpdateNetworkReq
+    | Editing updateReq
 
 
 type alias Model =
@@ -67,11 +67,12 @@ type alias Model =
     , mapPoints : RemoteData ApiError (List B.NetworkPoint)
     , groupsActivity : RemoteData ApiError GroupsByDate
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
+    , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsOpenedPopupId : Maybe String
     , formErrors : Dict String String
     , toasts : Le.Block.Toast.Model
     , networks : RemoteData ApiError (Dict Int B.Network)
-    , mode : Mode
+    , mode : Mode B.UpdateNetworkReq
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
     , addConfirmationInp : String
@@ -89,6 +90,7 @@ init route shared () =
       , mapPoints = NotAsked
       , groupsActivity = NotAsked
       , freqs = NotAsked
+      , freqsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
       , toasts = Le.Block.Toast.init
       , formErrors = Dict.empty
@@ -147,7 +149,13 @@ type Msg
     | NetworksReturnedByApi (Result ApiError (List B.Network))
     | NetworkEditStartedByUser
     | NetworkEditingSavedByUser
+    | NetworkEditingCanceledByUser
     | NetworkEditingMsg B.UpdateNetworkReq
+    | FreqsEditingMsg B.UpdateNetworkFreqReq
+    | FreqsEditStartedByUser
+    | FreqsEditSavedByUser
+    | FreqsEditCanceledByUser
+    | FreqUpdatedByApi (Result ApiError B.Network)
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
@@ -296,6 +304,7 @@ update shared msg model =
                                 , activeFrom = network.activeFrom
                                 , activeTo = network.activeTo
                                 , descriptions = Nothing --TODO
+                                , restoreNetwork = Nothing
                                 }
                       }
                     , E.none
@@ -311,6 +320,9 @@ update shared msg model =
 
                 Readonly ->
                     ( model, E.none )
+
+        NetworkEditingCanceledByUser ->
+            ( { model | mode = Readonly }, E.none )
 
         NetworkEditingMsg updNetworkReq ->
             ( { model
@@ -575,6 +587,119 @@ update shared msg model =
                     icmd
             )
 
+        FreqsEditStartedByUser ->
+            case model.network of
+                Success network ->
+                    let
+                        editFreqsDict =
+                            List.map
+                                (\f ->
+                                    ( f.freq
+                                    , { networkId = network.id
+                                      , freq = f.freq
+                                      , kind = f.kind
+                                      , modulationId = f.modulationId
+                                      , activeFrom = f.activeFrom
+                                      , activeTo = f.activeTo
+                                      }
+                                    )
+                                )
+                                network.freqs
+                                |> Dict.fromList
+                    in
+                    ( { model
+                        | freqsEditingState =
+                            Editing editFreqsDict
+                      }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqsEditSavedByUser ->
+            let
+                compareTwoFreqs : B.UpdateNetworkFreqReq -> B.NetworkFreq -> Bool
+                compareTwoFreqs f1 f2 =
+                    f1.freq
+                        == f2.freq
+                        && f1.modulationId
+                        == f2.modulationId
+                        && f1.kind
+                        == f2.kind
+                        && f1.networkId
+                        == f2.networkId
+                        && f1.activeFrom
+                        == f2.activeFrom
+                        && f1.activeTo
+                        == f2.activeTo
+
+                ( m1, eff1 ) =
+                    case model.freqsEditingState of
+                        Editing editingDict ->
+                            let
+                                effects =
+                                    Dict.toList editingDict
+                                        |> List.map Tuple.second
+                                        |> List.filterMap
+                                            (\updateFreqReq ->
+                                                case model.network of
+                                                    Success network ->
+                                                        ListX.find (\f -> f.freq == updateFreqReq.freq) network.freqs
+                                                            |> Maybe.andThen
+                                                                (\f1 ->
+                                                                    if compareTwoFreqs updateFreqReq f1 then
+                                                                        Nothing
+
+                                                                    else
+                                                                        Just updateFreqReq
+                                                                )
+
+                                                    _ ->
+                                                        Nothing
+                                            )
+                                        |> List.map (\updateFreqReq -> E.updateNetworkFreq FreqUpdatedByApi updateFreqReq)
+                            in
+                            ( { model
+                                | freqsEditingState =
+                                    if List.length effects > 0 then
+                                        model.freqsEditingState
+
+                                    else
+                                        Readonly
+                              }
+                            , E.batch effects
+                            )
+
+                        Readonly ->
+                            (model, E.none)
+            in
+            ( m1
+            , eff1
+            )
+
+        FreqsEditCanceledByUser ->
+            ( { model | freqsEditingState = Readonly }, E.none )
+
+        FreqsEditingMsg updFreqState ->
+            ( { model
+                | freqsEditingState =
+                    case model.freqsEditingState of
+                        Editing editingFreqsDict ->
+                            Editing (Dict.insert updFreqState.freq updFreqState editingFreqsDict)
+
+                        Readonly ->
+                            Readonly
+              }
+            , E.none
+            )
+
+        FreqUpdatedByApi (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        FreqUpdatedByApi (Ok network) ->
+            ( { model | network = Success network, freqsEditingState = Readonly }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -683,7 +808,10 @@ mainInfoEditBlock updNetworkReq networkFreqs shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 []
             [ text "Згідно форми" ]
-        , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
+        , div [ class "flex gap-[8px]" ]
+            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick NetworkEditingCanceledByUser ] []
+            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
+            ]
         ]
     , div
         [ class "network-list-container" ]
@@ -871,6 +999,171 @@ mainInfoEditBlock updNetworkReq networkFreqs shared model =
     ]
 
 
+freqsTable : B.NetworkFreqsRes -> Model -> Shared.Model -> Html Msg
+freqsTable freq model shared =
+    tr [ class "" ]
+        [ td [] [ text freq.freq ]
+        , td [] [ text <| Maybe.withDefault "" freq.modulation ]
+        , td [] [ text <| String.fromInt freq.messageCount ]
+        , case freq.callsigns of
+            Just callsigns ->
+                let
+                    isOpen =
+                        case model.callsignsOpenedPopupId of
+                            Just openCallsignsPopup ->
+                                openCallsignsPopup == freq.freq
+
+                            Nothing ->
+                                False
+                in
+                CallsignsPopup.view
+                    { isOpened = isOpen
+                    , onClose = CallsignsPopupClosedByUser
+                    , onOpen = CallsignsPopupOpenedByUser freq.freq
+                    , callsigns = callsigns
+                    , callsignsInfo = shared.callsignsInfo
+                    , masterUnits = RD.withDefault Dict.empty shared.masterUnits
+                    }
+                    (FreqsPage
+                        freq.freq
+                        (RD.withDefault Dict.empty model.networks)
+                    )
+
+            _ ->
+                text ""
+        , td []
+            [ case freq.lastDatetime of
+                Just lastDatetime ->
+                    text <|
+                        Le.Time.renderDateF6 shared.timeZone
+                            (Time.millisToPosix lastDatetime)
+
+                Nothing ->
+                    text ""
+            ]
+        , td []
+            [ text <|
+                Le.Time.renderDateF6 shared.timeZone
+                    (Time.millisToPosix freq.createdAt)
+            ]
+        , td []
+            [ text <|
+                Le.Time.renderDateF6 shared.timeZone
+                    (Time.millisToPosix freq.activeFrom)
+            ]
+        , td []
+            [ case freq.activeTo of
+                Just x ->
+                    text <|
+                        Le.Time.renderDateF6 shared.timeZone
+                            (Time.millisToPosix x)
+
+                Nothing ->
+                    text ""
+            ]
+        ]
+
+
+freqsTableEditing : B.UpdateNetworkFreqReq -> B.NetworkFreqsRes -> Model -> Shared.Model -> Html Msg
+freqsTableEditing updateFreqReq freq model shared =
+    tr [ class "" ]
+        [ td [] [ text freq.freq ]
+        , td [] [ text <| Maybe.withDefault "" freq.modulation ]
+        , td [] [ text <| String.fromInt freq.messageCount ]
+        , case freq.callsigns of
+            Just callsigns ->
+                let
+                    isOpen =
+                        case model.callsignsOpenedPopupId of
+                            Just openCallsignsPopup ->
+                                openCallsignsPopup == freq.freq
+
+                            Nothing ->
+                                False
+                in
+                CallsignsPopup.view
+                    { isOpened = isOpen
+                    , onClose = CallsignsPopupClosedByUser
+                    , onOpen = CallsignsPopupOpenedByUser freq.freq
+                    , callsigns = callsigns
+                    , callsignsInfo = shared.callsignsInfo
+                    , masterUnits = RD.withDefault Dict.empty shared.masterUnits
+                    }
+                    (FreqsPage
+                        freq.freq
+                        (RD.withDefault Dict.empty model.networks)
+                    )
+
+            _ ->
+                text ""
+        , td []
+            [ case freq.lastDatetime of
+                Just lastDatetime ->
+                    text <|
+                        Le.Time.renderDateF6 shared.timeZone
+                            (Time.millisToPosix lastDatetime)
+
+                Nothing ->
+                    text ""
+            ]
+        , td []
+            [ text <|
+                Le.Time.renderDateF6 shared.timeZone
+                    (Time.millisToPosix freq.createdAt)
+            ]
+        , td []
+            [ input
+                [ type_ "date"
+                , Time.millisToPosix updateFreqReq.activeFrom
+                    |> Le.Time.renderDateF4 shared.timeZone
+                    |> value
+                , onInput <|
+                    FreqsEditingMsg
+                        << (\v ->
+                                { updateFreqReq
+                                    | activeFrom =
+                                        case Le.Time.parseDateParts v of
+                                            Err _ ->
+                                                updateFreqReq.activeFrom
+
+                                            Ok parts ->
+                                                Time.Extra.partsToPosix shared.timeZone parts
+                                                    |> Time.posixToMillis
+                                }
+                           )
+                , class "form-control"
+                ]
+                []
+            ]
+        , td []
+            [ input
+                [ type_ "date"
+                , Maybe.map Time.millisToPosix updateFreqReq.activeTo
+                    |> Maybe.map (Le.Time.renderDateF4 shared.timeZone)
+                    |> Maybe.withDefault ""
+                    |> value
+                , onInput <|
+                    FreqsEditingMsg
+                        << (\v ->
+                                { updateFreqReq
+                                    | activeTo =
+                                        case Le.Time.parseDateParts v of
+                                            Err _ ->
+                                                updateFreqReq.activeTo
+
+                                            Ok parts ->
+                                                Time.Extra.partsToPosix shared.timeZone parts
+                                                    |> Time.posixToMillis
+                                                    |> Just
+                                }
+                           )
+                , class "form-control"
+                ]
+                []
+            ]
+        ]
+
+
 contentBlock : Shared.Model -> B.Network -> Model -> List (Html Msg)
 contentBlock shared network model =
     [ h2 []
@@ -886,79 +1179,27 @@ contentBlock shared network model =
                     Editing eNetwork ->
                         mainInfoEditBlock eNetwork network.freqs shared model
                 )
-            , div [ class "row-start-2 bg-w dark:bg-[#1C1C21] col-start-1 col-end-9 p-[16px] flex flex-col" ]
-                [ h4 [ class "" ] [ text "Частоти" ]
-                , case model.freqs of
-                    Success freqs ->
-                        div [ class "overflow-y-auto grow-1" ]
-                            [ table [ class "table-fixed w-full" ]
-                                [ thead [ class "text-[13px]/[110%] font-medium" ]
-                                    [ tr [ class "" ]
-                                        [ th [] [ text "Частота" ]
-                                        , th [] [ text "Модуляція" ]
-                                        , th [] [ text "Кількість перехоплень" ]
-                                        , th [] [ text "Позивні" ]
-                                        , th [] [ text "Останній раз в етері" ]
-                                        , th [] [ text "Дата прив'язки" ]
-                                        ]
-                                    ]
-                                , tbody []
-                                    (List.map
-                                        (\freq ->
-                                            tr [ class "" ]
-                                                [ td [] [ text freq.freq ]
-                                                , td [] [ text <| Maybe.withDefault "" freq.modulation ]
-                                                , td [] [ text <| String.fromInt freq.messageCount ]
-                                                , case freq.callsigns of
-                                                    Just callsigns ->
-                                                        let
-                                                            isOpen =
-                                                                case model.callsignsOpenedPopupId of
-                                                                    Just openCallsignsPopup ->
-                                                                        openCallsignsPopup == freq.freq
+            , div [ class "col-start-1 col-end-9 row-start-2 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+                [ h4 [] [ text "Пеленги" ]
+                , let
+                    mapPoints =
+                        case model.mapPoints of
+                            Success points ->
+                                points
 
-                                                                    Nothing ->
-                                                                        False
-                                                        in
-                                                        CallsignsPopup.view
-                                                            { isOpened = isOpen
-                                                            , onClose = CallsignsPopupClosedByUser
-                                                            , onOpen = CallsignsPopupOpenedByUser freq.freq
-                                                            , callsigns = callsigns
-                                                            , callsignsInfo = shared.callsignsInfo
-                                                            , masterUnits = RD.withDefault Dict.empty shared.masterUnits
-                                                            }
-                                                            (FreqsPage
-                                                                freq.freq
-                                                                (RD.withDefault Dict.empty model.networks)
-                                                            )
+                            _ ->
+                                []
+                  in
+                  if List.length mapPoints > 0 then
+                    Html.node "small-map"
+                        [ property "points" (Encode.list B.networkPointEncoder mapPoints)
+                        , class "grow-1"
+                        , property "withExitButton" (Encode.bool False)
+                        ]
+                        []
 
-                                                    _ ->
-                                                        text ""
-                                                , td []
-                                                    [ case freq.lastDatetime of
-                                                        Just lastDatetime ->
-                                                            text <|
-                                                                Le.Time.renderDateF6 shared.timeZone
-                                                                    (Time.millisToPosix lastDatetime)
-
-                                                        Nothing ->
-                                                            text ""
-                                                    ]
-                                                , td []
-                                                    [ text <|
-                                                        Le.Time.renderDateF6 shared.timeZone
-                                                            (Time.millisToPosix freq.createdAt)
-                                                    ]
-                                                ]
-                                        )
-                                        freqs
-                                    )
-                                ]
-                            ]
-
-                    _ ->
-                        Le.Block.Spinner.loadingSpinnerSm
+                  else
+                    div [ class "grow-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
                 ]
             ]
         , let
@@ -1121,7 +1362,59 @@ contentBlock shared network model =
                 ]
             ]
         ]
-    , div [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
+    , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
+        [ div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h4 [ class "" ] [ text "Частоти" ]
+            , case model.freqsEditingState of
+                Readonly ->
+                    i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick FreqsEditStartedByUser ] []
+
+                Editing _ ->
+                    div [ class "flex gap-[8px]" ]
+                        [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick FreqsEditCanceledByUser ] []
+                        , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick FreqsEditSavedByUser ] []
+                        ]
+            ]
+        , case model.freqs of
+            Success freqs ->
+                div [ class "overflow-y-auto grow-1" ]
+                    [ table [ class "table-fixed w-full" ]
+                        [ thead [ class "text-[13px]/[110%] font-medium" ]
+                            [ tr [ class "" ]
+                                [ th [] [ text "Частота" ]
+                                , th [] [ text "Модуляція" ]
+                                , th [] [ text "Кількість перехоплень" ]
+                                , th [] [ text "Позивні" ]
+                                , th [] [ text "Останній раз в етері" ]
+                                , th [] [ text "Дата прив'язки" ]
+                                , th [] [ text "Активна з" ]
+                                , th [] [ text "Активна по" ]
+                                ]
+                            ]
+                        , tbody []
+                            (List.map
+                                (\freq ->
+                                    case model.freqsEditingState of
+                                        Readonly ->
+                                            freqsTable freq model shared
+
+                                        Editing updateFreqsDict ->
+                                            case Dict.get freq.freq updateFreqsDict of
+                                                Just updateFreqReq ->
+                                                    freqsTableEditing updateFreqReq freq model shared
+
+                                                Nothing ->
+                                                    freqsTable freq model shared
+                                )
+                                freqs
+                            )
+                        ]
+                    ]
+
+            _ ->
+                Le.Block.Spinner.loadingSpinnerSm
+        ]
+    , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ h4 [ class "" ] [ text "Позивні" ]
         , case model.callsigns of
             Success callsigns ->
@@ -1239,29 +1532,7 @@ contentBlock shared network model =
                 Le.Block.Spinner.loadingSpinnerSm
         ]
     , section [ class "grid grid-cols-12 gap-[30px] h-[300px] mt-[30px]" ]
-        [ div [ class "col-span-6 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
-            [ h4 [] [ text "Пеленги" ]
-            , let
-                mapPoints =
-                    case model.mapPoints of
-                        Success points ->
-                            points
-
-                        _ ->
-                            []
-              in
-              if List.length mapPoints > 0 then
-                Html.node "small-map"
-                    [ property "points" (Encode.list B.networkPointEncoder mapPoints)
-                    , class "grow-1"
-                    , property "withExitButton" (Encode.bool False)
-                    ]
-                    []
-
-              else
-                div [ class "grow-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
-            ]
-        , div [ class "col-span-4 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+        [ div [ class "col-span-4 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ h4 [] [ text "Активність мережі" ]
             , section [ class "grow-1" ]
                 [ case model.groupsActivity of

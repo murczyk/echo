@@ -1,14 +1,14 @@
 module RerFreqs.Utils exposing (adjacentRangeToLabel, findConnectedNetworks)
 
 import Bindings as B
-import Dict
+import Dict exposing (Dict)
 import Le.Block.Unit as Unit
 
 
+findConnectedNetworks : Maybe Int -> Dict Int B.Network -> Dict Int B.Unit -> List B.Network
 findConnectedNetworks selectedUnit networks masterUnits =
     let
         mSelUnit =
-            --model.networkDialogUnitSelect.selected
             selectedUnit
                 |> Maybe.andThen (\unitId -> Dict.get unitId masterUnits)
 
@@ -22,10 +22,14 @@ findConnectedNetworks selectedUnit networks masterUnits =
 
         sameRegimentUnitIds =
             sameRegimentUnits |> List.map Tuple.first
+
+        _ =
+            Debug.log "a" sameRegimentUnitIds
     in
     Dict.toList networks
         |> List.map Tuple.second
         |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) network.unitIds)
+        |> Debug.log "b"
 
 
 adjacentRangeToLabel value =
