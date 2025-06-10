@@ -142,8 +142,6 @@ pub async fn get_callsigns_with_units_from_inbox(
     env: actix_web::web::Data<Env>,
     req: Json<GetCallsignsWithUnitsFromInboxReq>,
 ) -> Result<Json<GetCallsignsWithUnitsFromInboxRsp>, AppError> {
-    let start_time = std::time::Instant::now();
-
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let login = user.id()?;
 
@@ -257,22 +255,9 @@ pub async fn get_callsigns_with_units_from_inbox(
         callsigns_with_units.push((callsign, units));
     }
 
-    let response = GetCallsignsWithUnitsFromInboxRsp {
+    Ok(Json(GetCallsignsWithUnitsFromInboxRsp {
         callsigns_with_units,
-    };
-
-    let elapsed = start_time.elapsed();
-    if elapsed.as_secs() >= 10 {
-        debug!(
-            "get_callsigns_with_units_from_inbox took {:?} - params: callsigns={:?}, since_date={}, till_date={}",
-            elapsed,
-            req.callsigns,
-            req.since_date_inclusive_ms,
-            req.till_date_inclusive_ms
-        );
-    }
-
-    Ok(Json(response))
+    }))
 }
 
 #[post("/api/sigint/callsign/create")]
