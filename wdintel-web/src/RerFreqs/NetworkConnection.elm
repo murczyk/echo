@@ -545,7 +545,42 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                                 "жоден"
                                                 do2
                                     ]
-                                , div [ class "row-start-2 col-span-12" ]
+                                , div [ class "col-span-4" ] []
+                                , div [ class "col-span-4" ]
+                                    [ span [ class "text-[13px]" ] [ text "Активна з:" ]
+                                    , input
+                                        [ type_ "date"
+                                        , class "form-control"
+                                        , case model.addExistingActiveFrom of
+                                            Just x ->
+                                                Time.millisToPosix x
+                                                    |> Le.Time.renderDateF4 shared.timeZone
+                                                    |> value
+
+                                            Nothing ->
+                                                value ""
+                                        , onInput NetworkAddExistingActiveFromChanged
+                                        ]
+                                        []
+                                    ]
+                                , div [ class "col-span-4" ]
+                                    [ span [ class "text-[13px]" ] [ text "Активна по:" ]
+                                    , input
+                                        [ type_ "date"
+                                        , class "form-control"
+                                        , case model.addExistingActiveTo of
+                                            Just x ->
+                                                Time.millisToPosix x
+                                                    |> Le.Time.renderDateF4 shared.timeZone
+                                                    |> value
+
+                                            Nothing ->
+                                                value ""
+                                        , onInput NetworkAddExistingActiveToChanged
+                                        ]
+                                        []
+                                    ]
+                                , div [ class "row-start-3 col-span-12" ]
                                     [ span [] [ text "Обґрунтування прив'язки" ]
                                     , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
                                         [ textarea

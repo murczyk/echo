@@ -41,6 +41,7 @@ import Set
 import Shared
 import Task
 import Time exposing (Posix)
+import Time.Extra
 import View exposing (View)
 
 
@@ -145,6 +146,8 @@ init _ =
                             )
                 , selected = NetworksUtils.VHF
                 }
+            , addExistingActiveFrom = Nothing
+            , addExistingActiveTo = Nothing
             , editKindSelect =
                 { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
                 , items =
@@ -1423,6 +1426,8 @@ update shared msg model =
                                           , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
                                           , modulationId = model.addModulationSelect.selected
                                           , description = Nothing
+                                          , activeFrom = Nothing
+                                          , activeTo = Nothing
                                           }
                                         ]
                                 , operationPeriod = Nothing
@@ -1481,6 +1486,7 @@ update shared msg model =
                                         , activeTo = network.activeTo
                                         , activeFrom = network.activeFrom
                                         , descriptions = Nothing
+                                        , restoreNetwork = Nothing
                                         }
                                 , editModulationSelect = ems2
                                 , editKindSelect = eks2
@@ -1528,6 +1534,8 @@ update shared msg model =
                             { freq = freq
                             , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
                             , modulationId = model.addExistingModulationSelect.selected
+                            , activeFrom = model.addExistingActiveFrom
+                            , activeTo = model.addExistingActiveTo
                             , description =
                                 case model.addExistingConfirmationInp of
                                     Just inp ->
@@ -1698,6 +1706,8 @@ update shared msg model =
                 , freq = freq
                 , kind = NetworksUtils.networkKindToString model.editKindSelect.selected
                 , modulationId = model.editModulationSelect.selected
+                , activeFrom = 0
+                , activeTo = Nothing
                 }
             )
 
@@ -1718,6 +1728,36 @@ update shared msg model =
 
         UnitsReloadClickedByUser ->
             ( model, loadUnits )
+
+        NetworkAddExistingActiveFromChanged x ->
+            ( { model
+                | addExistingActiveFrom =
+                    case Le.Time.parseDateParts x of
+                        Err _ ->
+                            model.addExistingActiveFrom
+
+                        Ok parts ->
+                            Time.Extra.partsToPosix shared.timeZone parts
+                                |> Time.posixToMillis
+                                |> Just
+              }
+            , E.none
+            )
+
+        NetworkAddExistingActiveToChanged x ->
+            ( { model
+                | addExistingActiveTo =
+                    case Le.Time.parseDateParts x of
+                        Err _ ->
+                            model.addExistingActiveFrom
+
+                        Ok parts ->
+                            Time.Extra.partsToPosix shared.timeZone parts
+                                |> Time.posixToMillis
+                                |> Just
+              }
+            , E.none
+            )
 
 
 prepareReportDownloadCmd : Model -> Bool -> Cmd Msg
@@ -1812,7 +1852,7 @@ view dark shared user model =
     { title = "частоти"
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "d-flex justify-content-start align-items-start page-rer-freqs" ]
+            div [ class "flex justify-start items-start page-rer-freqs" ]
                 [ RerFreqs.UnitsFilterSidebar.view shared model
                 , div
                     [ class "border-start flex-grow-1"

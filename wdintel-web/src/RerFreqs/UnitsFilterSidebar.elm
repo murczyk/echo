@@ -14,8 +14,7 @@ import Shared
 view : Shared.Model -> Model -> Html Msg
 view shared model =
     div
-        [ class "align-self-stretch"
-        , style "width" "220px"
+        [ class "self-stretch"
         , style "min-width" "220px"
         , style "height" "calc(-50px + 100vh)"
         , style "overflow-y" "scroll"
