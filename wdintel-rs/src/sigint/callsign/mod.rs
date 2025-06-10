@@ -10,6 +10,7 @@ use actix_web::web::Json;
 use chrono::Utc;
 use log::*;
 use sea_orm::*;
+use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
 use sea_query::{Expr, SimpleExpr};
@@ -141,6 +142,8 @@ pub async fn get_callsigns_with_units_from_inbox(
     env: actix_web::web::Data<Env>,
     req: Json<GetCallsignsWithUnitsFromInboxReq>,
 ) -> Result<Json<GetCallsignsWithUnitsFromInboxRsp>, AppError> {
+    let start_time = std::time::Instant::now();
+
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let login = user.id()?;
 
@@ -182,57 +185,94 @@ pub async fn get_callsigns_with_units_from_inbox(
 
     #[derive(FromQueryResult, Debug)]
     struct Row {
-        callsigns: serde_json::Value,
-        unit: Option<String>,
+        callsign: String,
+        unit: String,
     }
-    let inbox_items_query = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-        .column_as(sigint_inbox_item::Column::UnitV2, "unit")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .filter(sigint_inbox_item::Column::UnitV2.is_not_null())
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(Expr::cust(format!(
-            "EXISTS (SELECT 1 FROM jsonb_array_elements_text(sigint_inbox_item.callsigns) AS callsign WHERE callsign.value IN ({}))",
-            sanitizied_callsigns
-                .iter()
-                .map(|callsign| { format!("'{}'", callsign) })
-                .collect::<Vec<String>>().join(", ")
-        )));
 
-    let inbox_items: Vec<Row> =
-        inbox_items_query.into_model::<Row>().all(&env.dbx).await?;
+    // Build the IN clause for the query
+    let callsigns_in_clause = sanitizied_callsigns
+        .iter()
+        .map(|callsign| format!("'{}'", callsign))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    // Use DISTINCT ON with LATERAL join to get unique callsign-unit pairs efficiently
+    let sql = format!(
+        r#"
+        SELECT DISTINCT ON (sii.unit_v2, cs.value)
+            cs.value as callsign,
+            sii.unit_v2 as unit
+        FROM signal_message sm
+        INNER JOIN sigint_inbox_item sii ON sm.id = sii.id,
+        LATERAL jsonb_array_elements_text(sii.callsigns) AS cs(value)
+        WHERE sm.group_master_key = ANY($1)
+          AND sm.deleted = false
+          AND sii.checked = true
+          AND sii.unit_v2 IS NOT NULL
+          AND sii.datetime >= $2
+          AND sii.datetime < $3
+          AND sii.callsigns ? ANY($4)
+          AND cs.value IN ({})
+        ORDER BY sii.unit_v2, cs.value
+        "#,
+        callsigns_in_clause
+    );
+
+    let groups =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let callsigns_array: Vec<String> =
+        sanitizied_callsigns.iter().cloned().collect();
+
+    let rows: Vec<Row> =
+        Row::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            &sql,
+            vec![
+                groups.into(),
+                dt_since.into(),
+                dt_till.into(),
+                callsigns_array.into(),
+            ],
+        ))
+        .all(&env.dbx)
+        .await?;
+
+    // Group results by callsign
+    let mut callsign_units_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
+    for row in rows {
+        callsign_units_map
+            .entry(row.callsign)
+            .or_insert_with(Vec::new)
+            .push(row.unit);
+    }
 
     let mut callsigns_with_units = vec![];
-
     for callsign in sanitizied_callsigns {
-        let mut units = vec![];
-
-        for inbox_item in &inbox_items {
-            if let Some(unit) = &inbox_item.unit {
-                if inbox_item.callsigns.to_string().contains(&callsign)
-                    && !units.contains(unit)
-                {
-                    units.push(unit.clone());
-                }
-            }
-        }
-
+        let units = callsign_units_map
+            .get(&callsign)
+            .cloned()
+            .unwrap_or_default();
         callsigns_with_units.push((callsign, units));
     }
 
-    Ok(Json(GetCallsignsWithUnitsFromInboxRsp {
+    let response = GetCallsignsWithUnitsFromInboxRsp {
         callsigns_with_units,
-    }))
+    };
+
+    let elapsed = start_time.elapsed();
+    if elapsed.as_secs() >= 10 {
+        debug!(
+            "get_callsigns_with_units_from_inbox took {:?} - params: callsigns={:?}, since_date={}, till_date={}",
+            elapsed,
+            req.callsigns,
+            req.since_date_inclusive_ms,
+            req.till_date_inclusive_ms
+        );
+    }
+
+    Ok(Json(response))
 }
 
 #[post("/api/sigint/callsign/create")]
