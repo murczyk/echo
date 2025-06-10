@@ -22,14 +22,10 @@ findConnectedNetworks selectedUnit networks masterUnits =
 
         sameRegimentUnitIds =
             sameRegimentUnits |> List.map Tuple.first
-
-        _ =
-            Debug.log "a" sameRegimentUnitIds
     in
     Dict.toList networks
         |> List.map Tuple.second
         |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) network.unitIds)
-        |> Debug.log "b"
 
 
 adjacentRangeToLabel value =
