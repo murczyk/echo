@@ -56,4 +56,6 @@ CREATE TABLE IF NOT EXISTS echo.activity_details (
     user_agent STRING,
     PRIMARY KEY(request_id, event_type)
 ) WITH ('ttl'='1month', 'append_mode'='true');
+
+ALTER TABLE echo.activity_details ADD COLUMN request_hostname STRING;
 ```

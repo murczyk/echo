@@ -22,6 +22,7 @@ pub struct ActivityDetails {
     pub timestamp: i64,
     pub request_method: String,
     pub request_path: String,
+    pub request_hostname: Option<String>,
     pub request_query_params: Option<HashMap<String, String>>,
     pub request_headers: Option<HashMap<String, String>>,
     pub request_body: Option<String>,
@@ -106,6 +107,13 @@ where
         .and_then(|ua| ua.to_str().ok())
         .map(|s| s.to_string());
 
+    // Get hostname from Host header
+    let request_hostname = req
+        .headers()
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
+
     // Extract body for POST requests if it's JSON or form data
     let mut request_body = None;
     if method == "POST" || method == "PUT" || method == "PATCH" {
@@ -131,6 +139,7 @@ where
         timestamp,
         request_method: method.clone(),
         request_path: path.clone(),
+        request_hostname: request_hostname.clone(),
         request_query_params: query_params,
         request_headers: headers.clone(),
         request_body,
@@ -162,6 +171,7 @@ where
                 timestamp: chrono::Utc::now().timestamp(),
                 request_method: method,
                 request_path: path,
+                request_hostname,
                 request_query_params: None,
                 request_headers: None,
                 request_body: None,
@@ -188,6 +198,7 @@ where
                 timestamp: chrono::Utc::now().timestamp(),
                 request_method: method,
                 request_path: path,
+                request_hostname,
                 request_query_params: None,
                 request_headers: None,
                 request_body: None,
@@ -341,7 +352,7 @@ pub async fn activity_details_worker(
         if let Ok(client) = greptimedb.get().await {
             // Build bulk insert SQL
             let mut sql = String::from(
-                "INSERT INTO activity_details (ts, request_id, request_method, request_path, 
+                "INSERT INTO activity_details (ts, request_id, request_method, request_path, request_hostname,
                  request_query_params, request_headers, request_body, request_content_type,
                  response_status, response_time_ms, event_type, client_ip, user_agent)
                  VALUES\n"
@@ -395,11 +406,12 @@ pub async fn activity_details_worker(
                 };
 
                 sql.push_str(&format!(
-                    "    ('{}', '{}', '{}', '{}', '{}', '{}', {}, {}, {}, {}, '{}', {}, {})",
+                    "    ('{}', '{}', '{}', '{}', {}, '{}', '{}', {}, {}, {}, {}, '{}', {}, {})",
                     ts.format("%Y-%m-%d %H:%M:%S"),
                     activity.request_id.replace("'", "''"),
                     activity.request_method.replace("'", "''"),
                     activity.request_path.replace("'", "''"),
+                    escape_string(&activity.request_hostname),
                     query_params_json.replace("'", "''"),
                     headers_json.replace("'", "''"),
                     escape_string(&activity.request_body),
