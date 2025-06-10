@@ -699,7 +699,9 @@ pub async fn fetch_tags(
         tags.push(AnalysisStatsTag { tag_id, count });
     }
 
-    if instant.elapsed().as_secs() > 1 {
+    if instant.elapsed().as_secs() > 4 {
+        debug!("tags op took: {:?}; req: {:?}", instant.elapsed(), req);
+    } else if instant.elapsed().as_secs() > 1 {
         debug!("tags op took: {:?}", instant.elapsed());
     }
 
