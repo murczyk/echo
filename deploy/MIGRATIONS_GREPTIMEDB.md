@@ -36,3 +36,24 @@ CREATE TABLE sink_activity_page_visit_per_host_per_minute (
 	PRIMARY KEY(public_host)
 );
 ```
+
+## 2025-06-10
+
+```sql
+CREATE TABLE IF NOT EXISTS echo.activity_details (
+    ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP() TIME INDEX,
+    request_id STRING,
+    request_method STRING,
+    request_path STRING,
+    request_query_params JSON,
+    request_headers JSON,
+    request_body STRING,
+    request_content_type STRING,
+    response_status INT,
+    response_time_ms BIGINT,
+    event_type STRING,
+    client_ip STRING,
+    user_agent STRING,
+    PRIMARY KEY(request_id, event_type)
+) WITH ('ttl'='1month', 'append_mode'='true');
+```

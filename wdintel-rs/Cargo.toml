@@ -90,6 +90,7 @@ pest_derive = "2.7.14"
 oauth2 = { version = "5.0.0-rc.1", features = ["reqwest-blocking"] }
 ctor = "0.4.1"
 urlencoding = "2.1.3"
+url = "2.5.0"
 syn = "2.0.101"
 deadpool-postgres = { version = "0.14.1", default-features = false, features = [ "rt_tokio_1" ] }
 tokio-postgres = { version = "0.7.13", default-features = false, features = [

@@ -5,10 +5,12 @@ use actix_identity::IdentityMiddleware;
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
+
 use milgeo_rs::MilGeo;
 
 pub mod discord;
 mod healthcheck;
+pub mod middleware;
 pub mod monitoring;
 
 #[actix_web::main]
@@ -44,6 +46,14 @@ pub async fn main_server(
         warn!("Failed to ensure import group exists: {:?}", e);
     };
 
+    let redis = match new_redis(&config).await {
+        Ok(redis) => Some(redis),
+        Err(e) => {
+            error!("failed to establish Redis connection: {:?}", e);
+            None
+        }
+    };
+
     if !ps.no_bgworker {
         if let Some(secret_config) = config.vault_config.clone() {
             tokio::spawn(async move {
@@ -53,6 +63,15 @@ pub async fn main_server(
         tokio::spawn(async move {
             healthcheck::healthcheck_worker(&dbx9, config1).await;
         });
+        // Activity details worker
+        if let Some(redis_conn) = redis.clone() {
+            if let Some(greptimedb) = m_greptimedb.clone() {
+                tokio::spawn(async move {
+                    middleware::activity_details_worker(redis_conn, greptimedb)
+                        .await;
+                });
+            }
+        }
         if !config.disable_cleanup_networks_worker.unwrap_or(false) {
             tokio::spawn(async move {
                 crate::sigint::network::cleanup_networks_worker(&dbx4).await;
@@ -86,14 +105,6 @@ pub async fn main_server(
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });
     }
-
-    let redis = match new_redis(&config).await {
-        Ok(redis) => Some(redis),
-        Err(e) => {
-            error!("failed to establish Redis connection: {:?}", e);
-            None
-        }
-    };
 
     HttpServer::new(move || {
         let b2_creds = aws_sdk_s3::config::Credentials::new(
@@ -149,6 +160,9 @@ pub async fn main_server(
                 CookieSessionStore::default(),
                 Key::from(config.cookie_session_secret.clone().as_bytes()),
             ))
+            .wrap(
+                actix_web::middleware::from_fn(middleware::mk_activity_middleware(redis.clone()))
+            )
             .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
             .service(self::monitoring::server_info)

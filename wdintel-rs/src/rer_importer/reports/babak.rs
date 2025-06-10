@@ -20,7 +20,7 @@ pub async fn report_docx_kind_babak(
     req: &super::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
-    let user_id =  &user.id()?;
+    let user_id = &user.id()?;
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
         return Err("Since date must be specified".into());
     };
@@ -268,7 +268,7 @@ pub async fn report_docx_kind_babak(
                     new_callsigns_res.not_seen_7days.join(", ")
                 ))
                 .align(docx_rs::alignment_type::AlignmentType::Left),
-        )        
+        )
         .add_paragraph(Paragraph::new())
         .add_paragraph(
             Paragraph::new()

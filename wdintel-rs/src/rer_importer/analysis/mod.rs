@@ -1369,7 +1369,7 @@ pub async fn new_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<NewCallsignsRes>, AppError> {
-    let user_id =  &user.id()?;
+    let user_id = &user.id()?;
     let res = bi_new_callsigns(user_id, &env, &req.into_inner())
         .await
         .context(h!())?;
