@@ -1,18 +1,15 @@
+use crate::types::*;
 use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     middleware::Next,
     Error,
 };
-use log::{info, warn};
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, RedisResult};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
-use uuid::Uuid;
 
 /// JSON value stored in Redis representing request, response and timing details
 /// We store both request before and after the response is sent in order to track hanging requests.
@@ -443,7 +440,7 @@ pub async fn activity_details_worker(
                     let _: Result<(), _> = redis.del(key).await;
                 }
 
-                info!("Processed {} activity records", activities.len());
+                trace!("Processed {} activity records", activities.len());
             }
         }
     }
