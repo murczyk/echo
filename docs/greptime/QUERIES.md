@@ -74,34 +74,32 @@ limit
   100;
 ```
 
-## Average and Maximum per specific endpoint
-
-This is for `/api/rer/callsign-info-batch` in last 20 minutes:
+## Average and Maximum per specific endpoint bucketed
 
 ```
 WITH calls AS (
   SELECT
-    date_trunc('minute', ts) AS minute_bucket,
+    date_trunc('hour', ts) AS hour_bucket,
     response_time_ms
   FROM activity_details
   WHERE
-    ts > NOW() - INTERVAL '20 minutes'
+    ts > NOW() - INTERVAL '24 hours'
     AND request_path = '/api/rer/callsign-info-batch'
 )
 , stats AS (
   SELECT
-    minute_bucket,
+    hour_bucket,
     AVG(response_time_ms) OVER w    AS avg_rt,
     MAX(response_time_ms) OVER w    AS max_rt,
-    ROW_NUMBER() OVER (PARTITION BY minute_bucket ORDER BY minute_bucket) AS rn
+    ROW_NUMBER() OVER (PARTITION BY hour_bucket ORDER BY hour_bucket) AS rn
   FROM calls
-  WINDOW w AS (PARTITION BY minute_bucket)
+  WINDOW w AS (PARTITION BY hour_bucket)
 )
 SELECT
-  minute_bucket,
+  hour_bucket,
   avg_rt,
   max_rt
 FROM stats
 WHERE rn = 1
-ORDER BY minute_bucket;
+ORDER BY hour_bucket;
 ```
