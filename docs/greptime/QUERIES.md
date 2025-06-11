@@ -52,3 +52,56 @@ FROM logs
   ALIGN '1m' TO '2025-04-01T00:00:00' BY (host) 
   ORDER BY "logs"."greptime_timestamp" ASC;
 ```
+
+## Slow endpoints
+
+```
+select
+  request_hostname,
+  date_format (ts::TIMESTAMP, '%Y-%m-%d %H:%M:%S.%3f') as datetime,
+  response_time_ms,
+  request_path, 
+  request_body
+from
+  activity_details
+where
+  ts > NOW() - INTERVAL '4 hours'
+  and request_method = 'POST'
+  and response_time_ms > 2000
+order by
+  ts
+limit
+  100;
+```
+
+## Average and Maximum per specific endpoint
+
+This is for `/api/rer/callsign-info-batch` in last 20 minutes:
+
+```
+WITH calls AS (
+  SELECT
+    date_trunc('minute', ts) AS minute_bucket,
+    response_time_ms
+  FROM activity_details
+  WHERE
+    ts > NOW() - INTERVAL '20 minutes'
+    AND request_path = '/api/rer/callsign-info-batch'
+)
+, stats AS (
+  SELECT
+    minute_bucket,
+    AVG(response_time_ms) OVER w    AS avg_rt,
+    MAX(response_time_ms) OVER w    AS max_rt,
+    ROW_NUMBER() OVER (PARTITION BY minute_bucket ORDER BY minute_bucket) AS rn
+  FROM calls
+  WINDOW w AS (PARTITION BY minute_bucket)
+)
+SELECT
+  minute_bucket,
+  avg_rt,
+  max_rt
+FROM stats
+WHERE rn = 1
+ORDER BY minute_bucket;
+```
