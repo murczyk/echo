@@ -5,8 +5,6 @@ use crate::types::*;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::{Data, Json};
-use futures::stream;
-use futures_util::StreamExt;
 use sea_orm::*;
 
 #[post("/api/rer/callsign-info")]
@@ -100,28 +98,6 @@ async fn collect_reported_networks_per_callsign(
         reported_networks_per_callsign.insert(sigint_callsign_id, network_ids);
     }
     Ok(reported_networks_per_callsign)
-}
-
-#[post("/api/rer/callsign-info-batch-old")]
-async fn rer_callsign_info_batch_old(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<RerCallsignInfoBatchReq>,
-) -> Result<Json<Vec<CallsignInfoRes>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let dbx = &env.dbx.clone();
-    let res = stream::iter(req.callsigns.clone().into_iter())
-        .then(|callsign| async move {
-            rer_callsign_info_single(dbx, &callsign)
-                .await
-                .map(|res| CallsignInfoRes { callsign, res })
-        })
-        .collect::<Vec<Result<CallsignInfoRes, _>>>()
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(Json(res))
 }
 
 #[post("/api/rer/callsign-info-batch")]
