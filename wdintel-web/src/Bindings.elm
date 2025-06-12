@@ -3465,24 +3465,6 @@ createCallsignsBindReqEncoder struct =
         ]
 
 
-type alias UpdateCallsignReportingReq =
-    { callsign : String
-    , networkId : Int
-    , isReported : Bool
-    , deleted : Bool
-    }
-
-
-updateCallsignReportingReqEncoder : UpdateCallsignReportingReq -> Json.Encode.Value
-updateCallsignReportingReqEncoder struct =
-    Json.Encode.object
-        [ ( "callsign", Json.Encode.string struct.callsign )
-        , ( "network_id", Json.Encode.int struct.networkId )
-        , ( "is_reported", Json.Encode.bool struct.isReported )
-        , ( "deleted", Json.Encode.bool struct.deleted )
-        ]
-
-
 type alias UpdateCallsignReportingBatchReq =
     { networkId : Int
     , items : List CallsignReportingItem
@@ -3528,7 +3510,7 @@ callsignUnitStatRowEncoder struct =
 
 
 type alias UpdateCallsignReportingReq =
-    { callsignId : Int
+    { callsign : String
     , networkId : Int
     , isReported : Bool
     , deleted : Bool
@@ -3538,7 +3520,7 @@ type alias UpdateCallsignReportingReq =
 updateCallsignReportingReqEncoder : UpdateCallsignReportingReq -> Json.Encode.Value
 updateCallsignReportingReqEncoder struct =
     Json.Encode.object
-        [ ( "callsign_id", Json.Encode.int struct.callsignId )
+        [ ( "callsign", Json.Encode.string struct.callsign )
         , ( "network_id", Json.Encode.int struct.networkId )
         , ( "is_reported", Json.Encode.bool struct.isReported )
         , ( "deleted", Json.Encode.bool struct.deleted )
@@ -6871,15 +6853,6 @@ callsignReportingItemDecoder : Json.Decode.Decoder CallsignReportingItem
 callsignReportingItemDecoder =
     Json.Decode.succeed CallsignReportingItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
-
-
-updateCallsignReportingReqDecoder : Json.Decode.Decoder UpdateCallsignReportingReq
-updateCallsignReportingReqDecoder =
-    Json.Decode.succeed UpdateCallsignReportingReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
 

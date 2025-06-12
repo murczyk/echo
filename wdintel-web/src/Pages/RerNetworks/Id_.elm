@@ -4,7 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Components.Button as Button
-import Components.Toggle as Toggle
+import Components.Checkbox as Checkbox
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -81,6 +81,7 @@ type alias Model =
     , groupsActivity : RemoteData ApiError GroupsByDate
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
+    , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
     , formErrors : Dict String String
     , toasts : Le.Block.Toast.Model
@@ -104,6 +105,7 @@ init route shared () =
       , groupsActivity = NotAsked
       , freqs = NotAsked
       , freqsEditingState = Readonly
+      , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
       , toasts = Le.Block.Toast.init
       , formErrors = Dict.empty
@@ -168,6 +170,9 @@ type Msg
     | FreqsEditStartedByUser
     | FreqsEditSavedByUser
     | FreqsEditCanceledByUser
+    | CallsignsEditStartedByUser
+    | CallsignsEditSavedByUser
+    | CallsignsEditCanceledByUser
     | FreqUpdatedByApi (Result ApiError B.Network)
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
@@ -185,7 +190,7 @@ type Msg
     | DescriptionEditedByUser Int String
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
-    | CallsignReportingStatusToggledByUser CallsignResModified
+    | CallsignReportingStatusToggledByUser CallsignResModified Bool
     | CallsignReportingStatusUpdatedByApi (Result ApiError Bool)
 
 
@@ -687,7 +692,7 @@ update shared msg model =
                             )
 
                         Readonly ->
-                            (model, E.none)
+                            ( model, E.none )
             in
             ( m1
             , eff1
@@ -714,26 +719,46 @@ update shared msg model =
 
         FreqUpdatedByApi (Ok network) ->
             ( { model | network = Success network, freqsEditingState = Readonly }, E.none )
-        CallsignReportingStatusToggledByUser callsignId ->
-            ( model, E.none )
-        CallsignReportingStatusToggledByUser callsign ->
-            case Dict.get callsign.callsign shared.callsignsInfo of
-                Just x ->
-                    ( model
-                    , E.updateCallsignReporting CallsignReportingStatusUpdatedByApi
-                        { callsignId = 0
-                        , networkId = 0
-                        , deleted = False
-                        , isReported = False
-                        }
-                    )
-                Nothing ->
-                (model, E.none)
+
+        CallsignReportingStatusToggledByUser callsign isChecked ->
+            ( { model
+                | callsignsEditingState =
+                    case model.callsignsEditingState of
+                        Readonly ->
+                            model.callsignsEditingState
+
+                        Editing editingDict ->
+                            Editing (Dict.insert callsign.callsign isChecked editingDict)
+              }
+            , E.none
+            )
+
         CallsignReportingStatusUpdatedByApi (Err e) ->
             Api.handleHttpError ToastMsg e model
 
         CallsignReportingStatusUpdatedByApi (Ok res) ->
-            (model, E.none)
+            ( { model | callsignsEditingState = Readonly }, E.none )
+
+        CallsignsEditStartedByUser ->
+            ( { model | callsignsEditingState = Editing Dict.empty }, E.none )
+
+        CallsignsEditSavedByUser ->
+            case ( model.network, model.callsignsEditingState ) of
+                ( Success network, Editing editingDict ) ->
+                    ( model
+                    , E.updateCallsignReportingBatch CallsignReportingStatusUpdatedByApi
+                        { networkId = network.id
+                        , items =
+                            Dict.toList editingDict
+                                |> List.map (\( callsign, isReported ) -> { callsign = callsign, isReported = isReported, deleted = False })
+                        }
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        CallsignsEditCanceledByUser ->
+            ( { model | callsignsEditingState = Readonly }, E.none )
 
 
 
@@ -1450,7 +1475,18 @@ contentBlock shared network model =
                 Le.Block.Spinner.loadingSpinnerSm
         ]
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
-        [ h4 [ class "" ] [ text "Позивні" ]
+        [ div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h4 [ class "" ] [ text "Позивні" ]
+            , case model.callsignsEditingState of
+                Readonly ->
+                    i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick CallsignsEditStartedByUser ] []
+
+                Editing _ ->
+                    div [ class "flex gap-[8px]" ]
+                        [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick CallsignsEditCanceledByUser ] []
+                        , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick CallsignsEditSavedByUser ] []
+                        ]
+            ]
         , case model.callsigns of
             Success callsigns ->
                 div [ class "overflow-y-auto  grow-1" ]
@@ -1478,15 +1514,72 @@ contentBlock shared network model =
                                                 Nothing ->
                                                     text ""
                                             ]
+                                        , td [ rowspan rowCount ]
+                                            [ --Toggle.new { onToggle = CallsignReportingStatusToggledByUser callsign, label = "" }
+                                              --|> Toggle.view callsign.isReported
+                                              if callsign.isReported then
+                                                i [ class "bi bi-check" ] []
+
+                                              else
+                                                text ""
+                                            ]
                                         , td [] [ text x.position ]
                                         , td [] [ text x.unitName ]
                                         , td [] [ text x.comment ]
                                         , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
                                         , td [] [ text <| x.sourceName ]
+                                        ]
+                                        :: List.map
+                                            (\knownCallsign ->
+                                                tr []
+                                                    [ td [] [ text knownCallsign.position ]
+                                                    , td [] [ text knownCallsign.unitName ]
+                                                    , td [] [ text knownCallsign.comment ]
+                                                    , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
+                                                    , td [] [ text <| knownCallsign.sourceName ]
+                                                    ]
+                                            )
+                                            xs
+
+                                [] ->
+                                    [ text "" ]
+
+                        renderCallsignEdit :
+                            Dict String Bool
+                            -> CallsignResModified
+                            -> List (Html Msg)
+                        renderCallsignEdit editingDict callsign =
+                            let
+                                rowCount =
+                                    List.length callsign.knownCallsigns
+
+                                isReported =
+                                    Dict.get callsign.callsign editingDict
+                                        |> Maybe.withDefault callsign.isReported
+                            in
+                            case callsign.knownCallsigns of
+                                x :: xs ->
+                                    tr [ class "" ]
+                                        [ td [ rowspan rowCount ] [ text <| String.toUpper callsign.callsign ]
+                                        , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
                                         , td [ rowspan rowCount ]
-                                            [ Toggle.new { onToggle = CallsignReportingStatusToggledByUser callsign, label = "" }
-                                                |> Toggle.view callsign.isReported
+                                            [ case callsign.lastDatetime of
+                                                Just lastDatetime ->
+                                                    text <|
+                                                        Le.Time.renderDateF6 shared.timeZone
+                                                            (Time.millisToPosix lastDatetime)
+
+                                                Nothing ->
+                                                    text ""
                                             ]
+                                        , td [ rowspan rowCount ]
+                                            [ Checkbox.new { isChecked = isReported, onToggle = CallsignReportingStatusToggledByUser callsign } |> Checkbox.view
+                                            ]
+                                        , td [] [ text x.position ]
+                                        , td [] [ text x.unitName ]
+                                        , td [] [ text x.comment ]
+                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
+                                        , td [] [ text <| x.sourceName ]
                                         ]
                                         :: List.map
                                             (\knownCallsign ->
@@ -1536,18 +1629,23 @@ contentBlock shared network model =
                                 [ th [ class "w-[10%]" ] [ text "Позивний" ]
                                 , th [ class "w-[7%]" ] [ text "Кількість перехоплень з позивним" ]
                                 , th [ class "w-[10%]" ] [ text "Останній раз в етері" ]
+                                , th [ class "w-[8%]" ] [ text "Звітний" ]
                                 , th [ class "w-[22%]" ] [ text "Посада" ]
                                 , th [ class "w-[14%]" ] [ text "Підрозділ" ]
                                 , th [ class "w-[19%]" ] [ text "Коментар" ]
                                 , th [ class "w-[10%]" ] [ text "Дата прив'язки" ]
                                 , th [ class "w-[8%]" ] [ text "Джерело" ]
-                                , th [ class "w-[8%]" ] [ text "Звітний" ]
                                 ]
                             ]
                         , tbody []
                             (List.concatMap
                                 (\callsign ->
-                                    renderCallsignMainRow callsign
+                                    case model.callsignsEditingState of
+                                        Readonly ->
+                                            renderCallsignMainRow callsign
+
+                                        Editing editingDict ->
+                                            renderCallsignEdit editingDict callsign
                                 )
                                 callsignsWithUnits2
                             )

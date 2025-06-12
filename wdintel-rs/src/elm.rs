@@ -174,7 +174,6 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::callsign::types::CallsignBind,
             crate::sigint::callsign::types::CallsignBindOneReq,
             crate::sigint::callsign::types::CreateCallsignsBindReq,
-            crate::sigint::callsign::types::UpdateCallsignReportingReq,
             crate::sigint::callsign::types::UpdateCallsignReportingBatchReq,
             crate::sigint::callsign::types::CallsignReportingItem,
             crate::sigint::callsign::types::CallsignUnitStatRow,
