@@ -529,13 +529,13 @@ pub async fn update_callsign_reporting(
     crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
     crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
 
-    let callsign_id = req.callsign_id;
+    let callsign_text = req.callsign.clone();
     let network_id = req.network_id;
 
     let existing_callsign = sigint_network_callsign::Entity::find()
         .filter(sigint_network_callsign::Column::Deleted.eq(false))
         .filter(
-            sigint_network_callsign::Column::SigintCallsignId.eq(callsign_id),
+            sigint_network_callsign::Column::SigintCallsign.eq(&callsign_text),
         )
         .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
         .one(&env.dbx)
@@ -545,7 +545,6 @@ pub async fn update_callsign_reporting(
         Some(c) => {
             let mut model = c.into_active_model();
             model.is_reported = Set(req.is_reported);
-            model.deleted = Set(req.deleted);
             model.is_reported = Set(req.is_reported);
             model.update(&env.dbx).await.context(h!())?;
         }
@@ -553,16 +552,79 @@ pub async fn update_callsign_reporting(
             sigint_network_callsign::ActiveModel {
                 id: NotSet,
                 sigint_network_id: Set(network_id),
-                sigint_callsign_id: Set(callsign_id),
-                deleted: Set(req.deleted),
+                sigint_callsign: Set(callsign_text),
                 is_reported: Set(req.is_reported),
                 created_at: NotSet,
+                deleted: NotSet,
             }
             .insert(&env.dbx)
             .await
             .context(h!())?;
         }
     }
+    Ok(Json(true))
+}
+
+#[post("/api/sigint/callsign-reporting/update-batch")]
+pub async fn update_callsign_reporting_batch(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateCallsignReportingBatchReq>,
+) -> Result<Json<bool>, AppError> {
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
+
+    let network_id = req.network_id;
+
+    // Get all callsign texts to query for
+    let callsign_texts: Vec<String> =
+        req.items.iter().map(|item| item.callsign.clone()).collect();
+
+    // Find existing records for this network and these callsigns
+    let existing_records = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
+        .filter(
+            sigint_network_callsign::Column::SigintCallsign
+                .is_in(callsign_texts.clone()),
+        )
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+
+    // Create a map of callsign -> existing record for quick lookup
+    let mut existing_map: HashMap<String, sigint_network_callsign::Model> =
+        HashMap::new();
+    for record in existing_records {
+        existing_map.insert(record.sigint_callsign.clone(), record);
+    }
+
+    // Process each item in the batch
+    for item in &req.items {
+        match existing_map.get(&item.callsign) {
+            Some(existing_record) => {
+                // Update existing record
+                let mut model = existing_record.clone().into_active_model();
+                model.is_reported = Set(item.is_reported);
+                model.update(&env.dbx).await.context(h!())?;
+            }
+            None => {
+                // Create new record
+                sigint_network_callsign::ActiveModel {
+                    id: NotSet,
+                    sigint_network_id: Set(network_id),
+                    sigint_callsign: Set(item.callsign.clone()),
+                    is_reported: Set(item.is_reported),
+                    created_at: NotSet,
+                    deleted: NotSet,
+                }
+                .insert(&env.dbx)
+                .await
+                .context(h!())?;
+            }
+        }
+    }
+
     Ok(Json(true))
 }
 

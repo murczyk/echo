@@ -96,10 +96,25 @@ pub struct CreateCallsignsBindReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct UpdateCallsignReportingReq {
-    pub callsign_id: i64,
+    pub callsign: String,
     pub network_id: i64,
     pub is_reported: bool,
-    pub deleted: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignReportingItem {
+    pub callsign: String,
+    pub is_reported: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateCallsignReportingBatchReq {
+    pub network_id: i64,
+    pub items: Vec<CallsignReportingItem>,
 }
 
 #[derive(

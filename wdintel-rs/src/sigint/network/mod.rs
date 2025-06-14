@@ -1897,16 +1897,51 @@ pub async fn network_callsigns_list(
     let all_known_callsigns =
         find_all_known_callsigns(&env.dbx).await.context(h!())?;
 
-    let callsigns =
+    let callsigns_raw =
         load_callsigns(&env.dbx, &groups, &filter, &all_known_callsigns, true)
             .await
             .context(h!())?;
 
-    let res = SingleNetworkCallsignsListRsp {
-        callsigns: callsigns,
-    };
+    let callsigns_txt = callsigns_raw
+        .iter()
+        .map(|c| c.callsign.clone())
+        .collect::<Vec<_>>();
 
-    Ok(Json(res))
+    let callsigns_reporting = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network.id))
+        .filter(
+            sigint_network_callsign::Column::SigintCallsign
+                .is_in(callsigns_txt),
+        )
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|x| (x.sigint_callsign, x.is_reported))
+        .collect::<BTreeMap<_, _>>();
+
+    let callsigns = callsigns_raw
+        .into_iter()
+        .map(|callsign| {
+            let is_reported = callsigns_reporting
+                .get(&callsign.callsign)
+                .cloned()
+                .unwrap_or(false);
+            NetworkCallsignRes {
+                is_reported,
+                callsign: callsign.callsign,
+                known_callsigns: callsign.known_callsigns,
+                message_count: callsign.message_count,
+                last_datetime: callsign.last_datetime,
+                freqs: callsign.freqs,
+                network_names: callsign.network_names,
+                is_old: callsign.is_old,
+            }
+        })
+        .collect();
+
+    Ok(Json(SingleNetworkCallsignsListRsp { callsigns }))
 }
 
 #[post("/api/sigint/network-freqs-list")]

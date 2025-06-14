@@ -1489,6 +1489,7 @@ dialog::backdrop {
 		border-style: solid;
 		padding: 8px;
 		border-bottom: 1px solid var(--border-color);
+		overflow: hidden;
 
 	}
 

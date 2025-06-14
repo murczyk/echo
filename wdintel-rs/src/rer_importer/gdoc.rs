@@ -70,10 +70,32 @@ async fn collect_reported_networks_per_callsign(
     callsign_ids: Vec<i64>,
     dbx: &sea_orm::DatabaseConnection,
 ) -> Result<BTreeMap<i64, Vec<i64>>, AppError> {
+    // First, get the callsign texts for the given IDs
+    let callsign_records = crate::entities::sigint_callsign::Entity::find()
+        .filter(
+            crate::entities::sigint_callsign::Column::Id
+                .is_in(callsign_ids.clone()),
+        )
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    let callsign_texts: Vec<String> = callsign_records
+        .iter()
+        .map(|c| c.callsign.clone())
+        .collect();
+
+    // Create a mapping from callsign text to callsign ID
+    let text_to_id: std::collections::HashMap<String, i64> = callsign_records
+        .into_iter()
+        .map(|c| (c.callsign.clone(), c.id))
+        .collect();
+
+    // Find network callsign records that match the callsign texts
     let reported_in = crate::entities::sigint_network_callsign::Entity::find()
         .filter(
-            crate::entities::sigint_network_callsign::Column::SigintCallsignId
-                .is_in(callsign_ids),
+            crate::entities::sigint_network_callsign::Column::SigintCallsign
+                .is_in(callsign_texts),
         )
         .filter(
             crate::entities::sigint_network_callsign::Column::Deleted.eq(false),
@@ -84,18 +106,19 @@ async fn collect_reported_networks_per_callsign(
         )
         .all(dbx)
         .await
-        .context(h!())?
-        .into_iter()
-        .map(|x| (x.sigint_network_id, x.sigint_callsign_id))
-        .collect::<Vec<_>>();
+        .context(h!())?;
+
     let mut reported_networks_per_callsign: BTreeMap<i64, Vec<i64>> =
         BTreeMap::new();
-    for (sigint_network_id, sigint_callsign_id) in reported_in {
-        let mut network_ids = reported_networks_per_callsign
-            .remove(&sigint_callsign_id)
-            .unwrap_or(vec![]);
-        network_ids.push(sigint_network_id);
-        reported_networks_per_callsign.insert(sigint_callsign_id, network_ids);
+
+    for record in reported_in {
+        if let Some(&callsign_id) = text_to_id.get(&record.sigint_callsign) {
+            let mut network_ids = reported_networks_per_callsign
+                .remove(&callsign_id)
+                .unwrap_or(vec![]);
+            network_ids.push(record.sigint_network_id);
+            reported_networks_per_callsign.insert(callsign_id, network_ids);
+        }
     }
     Ok(reported_networks_per_callsign)
 }

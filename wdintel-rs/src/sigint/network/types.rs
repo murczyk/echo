@@ -248,7 +248,22 @@ pub struct SingleNetworkCallsignsReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct SingleNetworkCallsignsListRsp {
-    pub callsigns: Vec<CallsignRes>,
+    pub callsigns: Vec<NetworkCallsignRes>,
+}
+
+#[derive(
+    Debug, Elm, ElmEncode, ElmDecode, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsignRes {
+    pub callsign: String,
+    pub known_callsigns: Option<Vec<KnownCallsignShortRes>>,
+    pub message_count: i64,
+    pub last_datetime: Option<i64>,
+    pub freqs: Option<Vec<String>>,
+    pub network_names: Option<Vec<String>>,
+    pub is_old: bool,
+    /// To put or not to put into a special report. See https://github.com/echoua/echo/issues/894
+    pub is_reported: bool,
 }
 
 #[derive(
@@ -257,6 +272,7 @@ pub struct SingleNetworkCallsignsListRsp {
 pub struct SingleNetworkFreqsReq {
     pub network_id: i64,
 }
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

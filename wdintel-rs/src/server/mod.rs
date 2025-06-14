@@ -297,6 +297,7 @@ pub async fn main_server(
             .service(crate::sigint::callsign::update_callsign_bind)
             .service(crate::sigint::callsign::delete_callsign_bind)
             .service(crate::sigint::callsign::update_callsign_reporting)
+            .service(crate::sigint::callsign::update_callsign_reporting_batch)
             .service(crate::sigint::freq::list_freqs)
             .service(crate::sigint::freq::list_freqs_v2)
             .service(crate::sigint::freq::list_callsigns_by_freqs)

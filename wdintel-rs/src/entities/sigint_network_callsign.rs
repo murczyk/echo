@@ -8,22 +8,15 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub sigint_network_id: i64,
-    pub sigint_callsign_id: i64,
     pub deleted: bool,
     pub is_reported: bool,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Text")]
+    pub sigint_callsign: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::sigint_callsign::Entity",
-        from = "Column::SigintCallsignId",
-        to = "super::sigint_callsign::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    SigintCallsign,
     #[sea_orm(
         belongs_to = "super::sigint_network::Entity",
         from = "Column::SigintNetworkId",
@@ -32,12 +25,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SigintNetwork,
-}
-
-impl Related<super::sigint_callsign::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintCallsign.def()
-    }
 }
 
 impl Related<super::sigint_network::Entity> for Entity {
