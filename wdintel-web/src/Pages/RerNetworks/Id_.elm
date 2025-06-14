@@ -750,7 +750,7 @@ update shared msg model =
                         { networkId = network.id
                         , items =
                             Dict.toList editingDict
-                                |> List.map (\( callsign, isReported ) -> { callsign = callsign, isReported = isReported, deleted = False })
+                                |> List.map (\( callsign, isReported ) -> { callsign = callsign, isReported = isReported })
                         }
                     )
 

@@ -3482,7 +3482,6 @@ updateCallsignReportingBatchReqEncoder struct =
 type alias CallsignReportingItem =
     { callsign : String
     , isReported : Bool
-    , deleted : Bool
     }
 
 
@@ -3491,7 +3490,6 @@ callsignReportingItemEncoder struct =
     Json.Encode.object
         [ ( "callsign", Json.Encode.string struct.callsign )
         , ( "is_reported", Json.Encode.bool struct.isReported )
-        , ( "deleted", Json.Encode.bool struct.deleted )
         ]
 
 
@@ -3513,7 +3511,6 @@ type alias UpdateCallsignReportingReq =
     { callsign : String
     , networkId : Int
     , isReported : Bool
-    , deleted : Bool
     }
 
 
@@ -3523,7 +3520,6 @@ updateCallsignReportingReqEncoder struct =
         [ ( "callsign", Json.Encode.string struct.callsign )
         , ( "network_id", Json.Encode.int struct.networkId )
         , ( "is_reported", Json.Encode.bool struct.isReported )
-        , ( "deleted", Json.Encode.bool struct.deleted )
         ]
 
 
@@ -6839,7 +6835,6 @@ updateCallsignReportingReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
 
 
 updateCallsignReportingBatchReqDecoder : Json.Decode.Decoder UpdateCallsignReportingBatchReq
@@ -6854,7 +6849,6 @@ callsignReportingItemDecoder =
     Json.Decode.succeed CallsignReportingItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
 
 
 etalonkaReqDecoder : Json.Decode.Decoder EtalonkaReq
