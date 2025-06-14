@@ -545,7 +545,6 @@ pub async fn update_callsign_reporting(
         Some(c) => {
             let mut model = c.into_active_model();
             model.is_reported = Set(req.is_reported);
-            model.deleted = Set(req.deleted);
             model.is_reported = Set(req.is_reported);
             model.update(&env.dbx).await.context(h!())?;
         }
@@ -554,9 +553,9 @@ pub async fn update_callsign_reporting(
                 id: NotSet,
                 sigint_network_id: Set(network_id),
                 sigint_callsign: Set(callsign_text),
-                deleted: Set(req.deleted),
                 is_reported: Set(req.is_reported),
                 created_at: NotSet,
+                deleted: NotSet,
             }
             .insert(&env.dbx)
             .await
@@ -607,7 +606,6 @@ pub async fn update_callsign_reporting_batch(
                 // Update existing record
                 let mut model = existing_record.clone().into_active_model();
                 model.is_reported = Set(item.is_reported);
-                model.deleted = Set(item.deleted);
                 model.update(&env.dbx).await.context(h!())?;
             }
             None => {
@@ -616,9 +614,9 @@ pub async fn update_callsign_reporting_batch(
                     id: NotSet,
                     sigint_network_id: Set(network_id),
                     sigint_callsign: Set(item.callsign.clone()),
-                    deleted: Set(item.deleted),
                     is_reported: Set(item.is_reported),
                     created_at: NotSet,
+                    deleted: NotSet,
                 }
                 .insert(&env.dbx)
                 .await

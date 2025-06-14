@@ -99,7 +99,6 @@ pub struct UpdateCallsignReportingReq {
     pub callsign: String,
     pub network_id: i64,
     pub is_reported: bool,
-    pub deleted: bool,
 }
 
 #[derive(
@@ -108,7 +107,6 @@ pub struct UpdateCallsignReportingReq {
 pub struct CallsignReportingItem {
     pub callsign: String,
     pub is_reported: bool,
-    pub deleted: bool,
 }
 
 #[derive(
