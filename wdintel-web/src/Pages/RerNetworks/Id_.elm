@@ -1627,9 +1627,37 @@ contentBlock shared network model =
                         [ thead [ class "text-[13px]/[110%] font-medium sticky bg-w dark:bg-[#1C1C21]", style "inset-block-start" "0" ]
                             [ tr [ class "" ]
                                 [ th [ class "w-[10%]" ] [ text "Позивний" ]
-                                , th [ class "w-[7%]" ] [ text "Кількість перехоплень з позивним" ]
+                                , th [ class "w-[7%]" ]
+                                    [ Html.node
+                                        "sl-tooltip"
+                                        [ attribute "content" "Кількість перехоплень з позивним"
+                                        , attribute "placement" "right"
+                                        , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
+                                        ]
+                                        [ text "К-сть"
+                                        , sup [ class "ml-[2px]" ]
+                                            [ i
+                                                [ class "bi-question-circle" ]
+                                                []
+                                            ]
+                                        ]
+                                    ]
                                 , th [ class "w-[10%]" ] [ text "Останній раз в етері" ]
-                                , th [ class "w-[8%]" ] [ text "Звітний" ]
+                                , th [ class "w-[8%]" ]
+                                    [ Html.node
+                                        "sl-tooltip"
+                                        [ attribute "content" "Якщо опція вибрана - позивний потрапить в звіт \"Згідно форми\""
+                                        , attribute "placement" "right"
+                                        , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
+                                        ]
+                                        [ text "Звітний"
+                                        , sup [ class "ml-[2px]" ]
+                                            [ i
+                                                [ class "bi-question-circle" ]
+                                                []
+                                            ]
+                                        ]
+                                    ]
                                 , th [ class "w-[22%]" ] [ text "Посада" ]
                                 , th [ class "w-[14%]" ] [ text "Підрозділ" ]
                                 , th [ class "w-[19%]" ] [ text "Коментар" ]
