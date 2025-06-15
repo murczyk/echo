@@ -1104,15 +1104,18 @@ contentBlock shared model user =
                     td []
                         [ div [ class "text-sm" ]
                             [ div [ class "flex gap-2" ]
-                                [ Button.new { label = "", onClick = EditCallsign callsign.id }
-                                    |> Button.withIcon [ i [ class "bi bi-pencil-square" ] [] ]
-                                    |> Button.withOutlined True
-                                    |> Button.view
-                                , Button.new { label = "", onClick = DeleteCallsign callsign.id }
-                                    |> Button.withIcon [ i [ class "bi bi-trash" ] [] ]
-                                    |> Button.withOutlined True
-                                    |> Button.withStyleSecondary
-                                    |> Button.view
+                                [ button
+                                    [ title "Редагувати"
+                                    , class "icon-btn icon-btn-primary"
+                                    , onClick (EditCallsign callsign.id)
+                                    ]
+                                    [ i [ class "bi bi-pencil-square" ] [] ]
+                                , button
+                                    [ title "Видалити"
+                                    , class "icon-btn icon-btn-danger"
+                                    , onClick (DeleteCallsign callsign.id)
+                                    ]
+                                    [ i [ class "bi bi-trash" ] [] ]
                                 ]
                             ]
                         ]
@@ -1269,15 +1272,20 @@ contentBlock shared model user =
                     ]
                 , td [ style "font-size" ".8rem" ]
                     [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ Button.new { label = "", onClick = EditCallsignSave callsign.id }
-                            |> Button.withIcon [ i [ class "bi bi-check2" ] [] ]
-                            |> Button.withOutlined True
-                            |> Button.view
-                        , Button.new { label = "", onClick = EditCallsignCancel callsign.id }
-                            |> Button.withIcon [ i [ class "bi bi-x" ] [] ]
-                            |> Button.withOutlined True
-                            |> Button.withStyleSecondary
-                            |> Button.view
+                        [ div [ class "flex gap-2" ]
+                            [ button
+                                [ title "Зберегти"
+                                , class "icon-btn icon-btn-primary"
+                                , onClick (EditCallsignSave callsign.id)
+                                ]
+                                [ i [ class "bi bi-check2" ] [] ]
+                            , button
+                                [ title "Відмінити"
+                                , class "icon-btn icon-btn-danger"
+                                , onClick (EditCallsignCancel callsign.id)
+                                ]
+                                [ i [ class "bi bi-x" ] [] ]
+                            ]
                         ]
                     ]
                 ]
@@ -1357,8 +1365,7 @@ contentBlock shared model user =
                                     |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                         in
                         div
-                            [ class "flex items-center gap-2 min-w-[200px]"
-                            ]
+                            [ class "flex items-center gap-2" ]
                             [ div [ class "flex-grow" ]
                                 [ let
                                     options =
@@ -1376,11 +1383,12 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
-                            , Button.new { label = "", onClick = ReloadUnits }
-                                |> Button.withIcon [ i [ class "bi bi-arrow-clockwise" ] [] ]
-                                |> Button.withOutlined True
-                                |> Button.withDisabled (not hasEditorRole)
-                                |> Button.view
+                            , button
+                                [ title "Оновити список підрозділів"
+                                , class "icon-btn icon-btn-primary"
+                                , onClick ReloadUnits
+                                ]
+                                [ i [ class "bi bi-arrow-clockwise" ] [] ]
                             ]
                     ]
                 , div
