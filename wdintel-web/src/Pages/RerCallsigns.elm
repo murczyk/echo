@@ -982,20 +982,13 @@ contentBlock shared model user =
                             ]
                         , div
                             [ class "modal-footer" ]
-                            [ button
-                                [ class "btn btn-secondary"
-                                , attribute "type" "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , onClick DeleteCallsignCancel
-                                ]
-                                [ text "Відміна" ]
-                            , button
-                                [ class "btn btn-danger"
-                                , type_ "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , onClick <| DeleteCallsignConfirm
-                                ]
-                                [ text "Видалити" ]
+                            [ Button.new { label = "Відміна", onClick = DeleteCallsignCancel }
+                                |> Button.withStyleSecondary
+                                |> Button.withOutlined True
+                                |> Button.view
+                            , Button.new { label = "Видалити", onClick = DeleteCallsignConfirm }
+                                |> Button.withOutlined True
+                                |> Button.view
                             ]
                         ]
                     ]
@@ -1109,22 +1102,17 @@ contentBlock shared model user =
                     ]
                 , if hasEditorRole then
                     td []
-                        [ div [ style "font-size" ".8rem" ]
-                            [ button
-                                [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
-                                , type_ "button"
-                                , onClick <| EditCallsign callsign.id
-                                ]
-                                [ i [ class "bi bi-pencil-square" ] []
-                                ]
-                            , button
-                                [ class "btn btn-outline-danger btn-sm py-0 px-1"
-                                , type_ "button"
-                                , onClick <| DeleteCallsign callsign.id
-                                , attribute "data-bs-toggle" "modal"
-                                , attribute "data-bs-target" "#deleteConfirmationModal"
-                                ]
-                                [ i [ class "bi bi-trash" ] []
+                        [ div [ class "text-sm" ]
+                            [ div [ class "flex gap-2" ]
+                                [ Button.new { label = "", onClick = EditCallsign callsign.id }
+                                    |> Button.withIcon [ i [ class "bi bi-pencil-square" ] [] ]
+                                    |> Button.withOutlined True
+                                    |> Button.view
+                                , Button.new { label = "", onClick = DeleteCallsign callsign.id }
+                                    |> Button.withIcon [ i [ class "bi bi-trash" ] [] ]
+                                    |> Button.withOutlined True
+                                    |> Button.withStyleSecondary
+                                    |> Button.view
                                 ]
                             ]
                         ]
@@ -1281,20 +1269,15 @@ contentBlock shared model user =
                     ]
                 , td [ style "font-size" ".8rem" ]
                     [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ button
-                            [ class "btn btn-sm btn-outline-primary"
-                            , type_ "button"
-                            , onClick <| EditCallsignSave callsign.id
-                            ]
-                            [ i [ class "bi bi-check2" ] []
-                            ]
-                        , button
-                            [ class "btn btn-sm btn-outline-danger ms-2"
-                            , type_ "button"
-                            , onClick <| EditCallsignCancel callsign.id
-                            ]
-                            [ i [ class "bi bi-x" ] []
-                            ]
+                        [ Button.new { label = "", onClick = EditCallsignSave callsign.id }
+                            |> Button.withIcon [ i [ class "bi bi-check2" ] [] ]
+                            |> Button.withOutlined True
+                            |> Button.view
+                        , Button.new { label = "", onClick = EditCallsignCancel callsign.id }
+                            |> Button.withIcon [ i [ class "bi bi-x" ] [] ]
+                            |> Button.withOutlined True
+                            |> Button.withStyleSecondary
+                            |> Button.view
                         ]
                     ]
                 ]
@@ -1311,12 +1294,11 @@ contentBlock shared model user =
         addCallsignPanel : ( Int, AddState ) -> Html Msg
         addCallsignPanel ( pos, addState ) =
             div
-                [ class "flex justify-content items-start"
+                [ class "flex flex-wrap items-start gap-2 p-2"
                 ]
-                [ div [ class "mr-2" ]
+                [ div [ class "flex flex-col" ]
                     [ textarea
-                        [ class "form-control text-uppercase"
-                        , style "min-width" "200px"
+                        [ class "w-[200px] min-w-[200px] uppercase rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                         , rows 1
                         , Attr.disabled (not hasEditorRole)
                         , placeholder "Позивний"
@@ -1327,11 +1309,10 @@ contentBlock shared model user =
                         ]
                         []
                     , div
-                        [ class "form-check form-switch mt-1 ms-2"
-                        , style "font-size" ".8rem"
+                        [ class "mt-1 flex items-center gap-2 text-sm"
                         ]
                         [ input
-                            [ class "form-check-input"
+                            [ class "h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
                             , type_ "checkbox"
                             , attribute "role" "switch"
                             , id "enableAutostream"
@@ -1341,15 +1322,14 @@ contentBlock shared model user =
                             ]
                             []
                         , label
-                            [ class "form-check-label mb-4"
+                            [ class "text-sm text-gray-700"
                             , for "enableAutostream"
                             ]
                             [ text "в дорозвідці" ]
                         ]
                     ]
                 , input
-                    [ class "form-control me-2"
-                    , style "width" "200px"
+                    [ class "w-[200px] min-w-[200px] rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                     , Attr.disabled (not hasEditorRole)
                     , type_ "text"
                     , placeholder "Посада"
@@ -1358,8 +1338,7 @@ contentBlock shared model user =
                     ]
                     []
                 , textarea
-                    [ class "form-control me-2"
-                    , style "flex-grow" "1"
+                    [ class "flex-grow min-w-[200px] rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                     , rows 1
                     , Attr.disabled (not hasEditorRole)
                     , placeholder "Коментар"
@@ -1368,7 +1347,7 @@ contentBlock shared model user =
                     ]
                     []
                 , div
-                    [ class "me-2"
+                    [ class "flex flex-col gap-2"
                     ]
                     [ HtmlX.viewIf (pos == 0) <|
                         let
@@ -1378,11 +1357,9 @@ contentBlock shared model user =
                                     |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                         in
                         div
-                            [ class "d-flex justify-content-between align-items-center"
-                            , style "min-width" "200px"
-                            , style "font-size" ".8rem"
+                            [ class "flex items-center gap-2 min-w-[200px]"
                             ]
-                            [ div [ class "flex-grow-1" ]
+                            [ div [ class "flex-grow" ]
                                 [ let
                                     options =
                                         Le.Block.Select.defaultOptions shared.isDarkMode
@@ -1399,26 +1376,20 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
-                            , button
-                                [ class "btn btn-sm btn-outline-secondary ms-2"
-                                , type_ "button"
-                                , onClick <| ReloadUnits
-                                , Attr.disabled (not hasEditorRole)
-                                ]
-                                [ i [ class "bi bi-arrow-clockwise" ]
-                                    []
-                                ]
+                            , Button.new { label = "", onClick = ReloadUnits }
+                                |> Button.withIcon [ i [ class "bi bi-arrow-clockwise" ] [] ]
+                                |> Button.withOutlined True
+                                |> Button.withDisabled (not hasEditorRole)
+                                |> Button.view
                             ]
                     ]
                 , div
-                    [ class "me-2"
-                    , style "min-width" "160px"
+                    [ class "flex flex-col gap-2 min-w-[160px]"
                     ]
                     [ HtmlX.viewIf (pos == 0) <|
-                        div []
+                        div [ class "flex flex-col gap-2" ]
                             [ select
-                                [ class "form-select"
-                                , style "font-size" ".8rem"
+                                [ class "w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                 , Attr.disabled (not hasEditorRole)
                                 , onInput <| InpSource
                                 ]
@@ -1434,9 +1405,7 @@ contentBlock shared model user =
                                 )
                             , if Maybe.withDefault 0 model.inpSource == 2 then
                                 input
-                                    [ class "form-control"
-                                    , style "margin-top" "8px"
-                                    , style "font-size" ".8rem"
+                                    [ class "w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     , type_ "text"
                                     , placeholder "Частота"
                                     , onInput <| AddStateMsg pos << (\v -> { addState | inpRadioFreq = v })
@@ -1449,28 +1418,19 @@ contentBlock shared model user =
                             ]
                     ]
                 , div
-                    [ class "text-center"
+                    [ class "flex flex-col gap-2"
                     ]
                     [ HtmlX.viewIf (pos == 0) <|
-                        button
-                            [ class "btn btn-primary"
-                            , type_ "button"
-                            , Attr.disabled (not hasEditorRole)
-                            , onClick AddCallsign
-                            ]
-                            [ text "Додати" ]
-                    ]
-                , div
-                    [ class "text-center"
-                    ]
-                    [ HtmlX.viewIf (pos == 0) <|
-                        button
-                            [ class "btn btn-secondary ms-2"
-                            , type_ "button"
-                            , Attr.disabled (not hasEditorRole)
-                            , onClick ClearInputs
-                            ]
-                            [ text "Очистити" ]
+                        (Button.new { label = "Додати", onClick = AddCallsign }
+                            |> Button.withDisabled (not hasEditorRole)
+                            |> Button.view
+                        )
+                    , HtmlX.viewIf (pos == 0) <|
+                        (Button.new { label = "Очистити", onClick = ClearInputs }
+                            |> Button.withStyleSecondary
+                            |> Button.withDisabled (not hasEditorRole)
+                            |> Button.view
+                        )
                     ]
                 ]
 
