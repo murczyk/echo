@@ -83,102 +83,62 @@ navBar user shared activeName =
                     [ menuWithSubs "admin" "адмін" adminSubs ]
     in
     header
-        [ class "navbar navbar-expand-lg navbar-dark bd-navbar"
-        ]
-        [ nav [ class "container-xxl bd-gutter flex-wrap flex-lg-nowrap" ]
-            [ div [ class "d-lg-none" ] []
-            , a
-                [ class "navbar-brand p-0 me-0 me-lg-2"
-                , class "logo-animated d-flex align-items-center justify-content-center"
-                , href "/"
-                , style "position" "relative"
-                ]
-                [ div
-                    [ class "d-flex align-items-center justify-content-center"
-                    , style "width" "34px"
-                    , style "height" "28px"
+        [ class "bg-white border-b border-gray-200 py-2" ]
+        [ nav [ class "container mx-auto px-4" ]
+            [ div [ class "flex items-center justify-between" ]
+                [ a
+                    [ class "flex items-center space-x-2"
+                    , href "/"
                     ]
                     [ div
-                        [ class "main-image"
-                        , style "height" "28px"
-                        , style "width" "28px"
-                        ]
-                        [ img
-                            [ src "/img/SIGINT_190_kraken_transparent.png"
+                        [ class "relative w-8 h-7" ]
+                        [ div
+                            [ class "main-image absolute"
+                            , style "height" "28px"
+                            , style "width" "28px"
+                            ]
+                            [ img
+                                [ src "/img/SIGINT_190_kraken_transparent.png"
+                                , style "width" "28px"
+                                , style "height" "28px"
+                                , alt "SIGINT 190 Kraken"
+                                ]
+                                []
+                            ]
+                        , div
+                            [ class "hover-image absolute"
                             , style "width" "28px"
                             , style "height" "28px"
-                            , alt "SIGINT 190 Kraken"
+                            , style "background-color" "#000"
+                            , style "border-radius" "50%"
                             ]
-                            []
-                        ]
-                    , div
-                        [ class "hover-image"
-                        , style "width" "28px"
-                        , style "height" "28px"
-                        , style "background-color" "#000"
-                        , style "border-radius" "50%"
-                        ]
-                        [ img
-                            [ src "/img/flying_skull_logo_transparent.png"
-                            , style "width" "28px"
-                            , style "z-index" "1"
-                            , alt "Flying Skull"
+                            [ img
+                                [ src "/img/flying_skull_logo_transparent.png"
+                                , style "width" "28px"
+                                , style "z-index" "1"
+                                , alt "Flying Skull"
+                                ]
+                                []
                             ]
-                            []
                         ]
-                    ]
-                , img
-                    [ src "/img/echo-logo-white.svg"
-                    , class "h-[16px]"
-                    ]
-                    []
-                ]
-            , div [ class "d-flex" ]
-                [ button
-                    [ class "navbar-toggler d-flex d-lg-none order-3 p-2"
-                    , type_ "button"
-                    , attribute "data-bs-toggle" "offcanvas"
-                    , attribute "data-bs-target" "#bdNavbar"
-                    , attribute "aria-controls" "bdNavbar"
-                    , attribute "aria-label" "Toggle navigation"
-                    ]
-                    [ i [ class "bi bi-three-dots" ] []
-                    ]
-                ]
-            , div
-                [ id "bdNavbar"
-                , class "offcanvas-lg offcanvas-end flex-grow-1"
-                , attribute "tabindex" "-1"
-                , attribute "aria-labelledby" "bdNavbarOffcanvasLabel"
-                , attribute "data-bs-scroll" "true"
-                ]
-                [ div [ class "offcanvas-header px-4 pb-0" ]
-                    [ h5 [ id "bdNavbarOffcanvasLabel", class "offcanvas-title text-white" ]
-                        [ text "🦆" ]
-                    , button
-                        [ class "btn-close btn-close-white"
-                        , type_ "button"
-                        , attribute "data-bs-dismiss" "offcanvas"
-                        , attribute "aria-label" "close"
-                        , attribute "data-bs-target" "#bdNavbar"
+                    , img
+                        [ src "/img/echo-logo.svg"
+                        , height 16
                         ]
                         []
                     ]
-                , div [ class "offcanvas-body p-4 pt-0 p-lg-0" ]
-                    [ hr [ class "d-lg-none text-white-50" ] []
-                    , ul [ class "navbar-nav flex-row flex-wrap bd-navbar-nav" ] menuItems
-                    ]
+                , ul [ class "flex items-center space-x-6 text-gray-700" ] menuItems
                 ]
             ]
         ]
 
 
 menuItem activeName hrefLink activeNameExp nameText =
-    li [ class "nav-item col-6 col-lg-auto" ]
+    li []
         [ a
-            [ class "nav-link py-2 px-0 px-lg-2"
+            [ class "block py-2 hover:text-blue-600 transition-colors"
             , Route.Path.href hrefLink
-            , classList [ ( "active", activeName == activeNameExp ) ]
+            , classList [ ( "text-blue-600 font-medium", activeName == activeNameExp ) ]
             ]
             [ text nameText ]
         ]
@@ -193,37 +153,35 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class "dropdown-item"
-                            , classList [ ( "active", sub.activeName == activeName ) ]
+                            [ class "block px-4 py-2 hover:bg-gray-50 hover:text-blue-600 transition-colors"
+                            , classList [ ( "text-blue-600 font-medium", sub.activeName == activeName ) ]
                             , Route.Path.href path
                             ]
                             [ text sub.label ]
 
                     External link ->
                         a
-                            [ class "dropdown-item"
-                            , classList [ ( "active", sub.activeName == activeName ) ]
+                            [ class "block px-4 py-2 hover:bg-gray-50 hover:text-blue-600 transition-colors"
+                            , classList [ ( "text-blue-600 font-medium", sub.activeName == activeName ) ]
                             , href link
                             , target "_blank"
                             ]
                             [ text <| sub.label ++ " "
                             , sup []
                                 [ i
-                                    [ class "bi bi-box-arrow-up-right"
+                                    [ class "bi bi-box-arrow-up-right text-gray-400"
                                     ]
                                     []
                                 ]
                             ]
                 ]
     in
-    li [ class "nav-item dropdown col-6 col-lg-auto" ]
+    li [ class "relative group" ]
         [ button
-            [ class "nav-link dropdown-toggle py-2 px-0 px-lg-2"
-            , attribute "data-bs-toggle" "dropdown"
-            , attribute "aria-expanded" "false"
-            , classList [ ( "active", activeName == activeNameExp ) ]
+            [ class "block py-2 hover:text-blue-600 transition-colors"
+            , classList [ ( "text-blue-600 font-medium", activeName == activeNameExp ) ]
             ]
             [ text nameText ]
-        , ul [ class "dropdown-menu" ]
+        , ul [ class "absolute left-0 mt-2 w-48 bg-white rounded shadow-lg border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200" ]
             (List.map dropdownItem subs)
         ]
