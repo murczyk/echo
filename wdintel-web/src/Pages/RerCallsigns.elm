@@ -89,6 +89,8 @@ type alias Model =
     , sortingOrder : SortingOrder
     , showLoadMore : Bool
     , loadingMore : Bool
+    , inpSourceSelState : Select.State
+    , inpSourceSelMenu : List (Select.MenuItem Int)
     }
 
 
@@ -138,6 +140,8 @@ init req _ =
             , sortingOrder = Default
             , showLoadMore = False
             , loadingMore = False
+            , inpSourceSelState = Select.initState (Select.selectIdentifier "inpSourceSelState")
+            , inpSourceSelMenu = []
             }
     in
     ( m2
@@ -188,6 +192,7 @@ type Msg
     | ToggleIsIgnoringDateFilter Bool
     | SortByCallsignName
     | LoadMore
+    | InpSourceSelMsg (Select.Msg Int)
 
 
 type alias AddState =
@@ -528,17 +533,36 @@ update req msg model =
                 mUnit =
                     mUnitId |> andThen (\unitId -> ListX.find (\y -> y.id == unitId) model.units)
 
+                -- Only update filterUnit if there's an actual selection change
+                shouldUpdateFilter = 
+                    case mAction of
+                        Just (Select.Select item) ->
+                            case model.inpUnit of
+                                Just currentId -> 
+                                    item /= currentId
+                                Nothing -> 
+                                    True
+                        _ -> 
+                            False
+
                 m2 =
                     { model
                         | inpUnitSelState = iState
                         , inpUnit = mUnitId
-                        , filterUnit = mUnit |> mmap .name |> def ""
+                        , filterUnit = 
+                            if shouldUpdateFilter then
+                                mUnit |> mmap .name |> def ""
+                            else
+                                model.filterUnit
                     }
             in
             ( m2
             , E.batch
                 [ E.sendCmd <| Cmd.map AddUnitSelMsg iCmd
-                , E.sendCmd <| loadCallsignsCmd m2
+                , if shouldUpdateFilter then
+                    E.sendCmd <| loadCallsignsCmd m2
+                  else
+                    E.none
                 ]
             )
 
@@ -943,6 +967,21 @@ update req msg model =
             , E.sendCmd (loadMoreCallsignsCmd model)
             )
 
+        InpSourceSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.inpSourceSelState
+
+                updatedSourceId =
+                    Le.Block.Select.singleUpd mAction model.inpSource
+            in
+            ( { model
+                | inpSourceSelState = imodel2
+                , inpSource = updatedSourceId
+              }
+            , E.sendCmd <| Cmd.map InpSourceSelMsg icmd
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1277,53 +1316,57 @@ contentBlock shared model user =
         addCallsignPanel : ( Int, AddState ) -> Html Msg
         addCallsignPanel ( pos, addState ) =
             div
-                [ class "flex flex-wrap items-start gap-2 p-2"
+                [ class "grid grid-cols-12 gap-2 p-2"
                 ]
-                [ div [ class "flex flex-col" ]
+                [ div [ class "col-span-2" ]
+                    [ div [ class "flex flex-col" ]
+                        [ input
+                            [ class "form-input uppercase w-full"
+                            , rows 1
+                            , Attr.disabled (not hasEditorRole)
+                            , placeholder "Позивний"
+                            , onInput <|
+                                AddStateMsg pos
+                                    << (\v -> { addState | inpCallsign = v })
+                            , value addState.inpCallsign
+                            ]
+                            []
+                        , div
+                            [ class "mt-1 flex items-center gap-2 text-sm"
+                            ]
+                            [ Checkbox.new
+                                { isChecked = addState.inpDeveloping
+                                , onToggle = \v -> AddStateMsg pos { addState | inpDeveloping = v }
+                                }
+                                |> Checkbox.withDisabled (not hasEditorRole)
+                                |> Checkbox.withContent [ text "в дорозвідці" ]
+                                |> Checkbox.view
+                            ]
+                        ]
+                    ]
+                , div [ class "col-span-2" ]
                     [ input
-                        [ class "form-input uppercase min-w-[200px]"
-                        , rows 1
+                        [ class "form-input w-full"
                         , Attr.disabled (not hasEditorRole)
-                        , placeholder "Позивний"
-                        , onInput <|
-                            AddStateMsg pos
-                                << (\v -> { addState | inpCallsign = v })
-                        , value addState.inpCallsign
+                        , type_ "text"
+                        , placeholder "Посада"
+                        , onInput <| AddStateMsg pos << (\v -> { addState | inpPosition = v })
+                        , value addState.inpPosition
                         ]
                         []
-                    , div
-                        [ class "mt-1 flex items-center gap-2 text-sm"
+                    ]
+                , div [ class "col-span-3" ]
+                    [ textarea
+                        [ class "form-input w-full"
+                        , rows 1
+                        , Attr.disabled (not hasEditorRole)
+                        , placeholder "Коментар"
+                        , onInput <| AddStateMsg pos << (\v -> { addState | inpComment = v })
+                        , value addState.inpComment
                         ]
-                        [ Checkbox.new
-                            { isChecked = addState.inpDeveloping
-                            , onToggle = \v -> AddStateMsg pos { addState | inpDeveloping = v }
-                            }
-                            |> Checkbox.withDisabled (not hasEditorRole)
-                            |> Checkbox.withContent [ text "в дорозвідці" ]
-                            |> Checkbox.view
-                        ]
+                        []
                     ]
-                , input
-                    [ class "form-input min-w-[200px]"
-                    , Attr.disabled (not hasEditorRole)
-                    , type_ "text"
-                    , placeholder "Посада"
-                    , onInput <| AddStateMsg pos << (\v -> { addState | inpPosition = v })
-                    , value addState.inpPosition
-                    ]
-                    []
-                , textarea
-                    [ class "form-input flex-grow min-w-[200px]"
-                    , rows 1
-                    , Attr.disabled (not hasEditorRole)
-                    , placeholder "Коментар"
-                    , onInput <| AddStateMsg pos << (\v -> { addState | inpComment = v })
-                    , value addState.inpComment
-                    ]
-                    []
-                , div
-                    [ class "flex flex-col gap-2"
-                    ]
+                , div [ class "col-span-2" ]
                     [ HtmlX.viewIf (pos == 0) <|
                         let
                             selectItem =
@@ -1358,54 +1401,51 @@ contentBlock shared model user =
                                 [ i [ class "bi bi-arrow-clockwise" ] [] ]
                             ]
                     ]
-                , div
-                    [ class "flex flex-col gap-2 min-w-[160px]"
-                    ]
+                , div [ class "col-span-3" ]
                     [ HtmlX.viewIf (pos == 0) <|
-                        div [ class "flex flex-col gap-2" ]
-                            [ select
-                                [ class "form-input"
-                                , Attr.disabled (not hasEditorRole)
-                                , onInput <| InpSource
+                        div [ class "flex items-center gap-2" ]
+                            [ div [ class "flex-grow" ]
+                                [ let
+                                    selectItem =
+                                        model.inpSource
+                                            |> Maybe.andThen (\sourceId -> ListX.find (\s -> s.id == sourceId) model.sources)
+                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                  in
+                                  Html.map InpSourceSelMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            selectItem
+                                            model.inpSourceSelState
+                                            (model.sources
+                                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                            )
+                                            "жоден"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode
+                                                |> (\opts -> { opts | disabled = not hasEditorRole })
+                                            )
                                 ]
-                                (List.map
-                                    (\source ->
-                                        option
-                                            [ value (String.fromInt source.id)
-                                            , selected (model.inpSource == Just source.id)
-                                            ]
-                                            [ text source.name ]
-                                    )
-                                    model.sources
-                                )
-                            , if Maybe.withDefault 0 model.inpSource == 2 then
-                                input
-                                    [ class "form-input"
-                                    , type_ "text"
-                                    , placeholder "Частота"
-                                    , onInput <| AddStateMsg pos << (\v -> { addState | inpRadioFreq = v })
-                                    , value addState.inpRadioFreq
-                                    ]
-                                    []
-
-                              else
-                                text ""
+                            , div [ class "flex gap-2" ]
+                                [ Button.new { label = "Додати", onClick = AddCallsign }
+                                    |> Button.withDisabled (not hasEditorRole)
+                                    |> Button.view
+                                , Button.new { label = "Очистити", onClick = ClearInputs }
+                                    |> Button.withStyleSecondary
+                                    |> Button.withDisabled (not hasEditorRole)
+                                    |> Button.view
+                                ]
                             ]
-                    ]
-                , div
-                    [ class "flex gap-2"
-                    ]
-                    [ HtmlX.viewIf (pos == 0) <|
-                        (Button.new { label = "Додати", onClick = AddCallsign }
-                            |> Button.withDisabled (not hasEditorRole)
-                            |> Button.view
-                        )
-                    , HtmlX.viewIf (pos == 0) <|
-                        (Button.new { label = "Очистити", onClick = ClearInputs }
-                            |> Button.withStyleSecondary
-                            |> Button.withDisabled (not hasEditorRole)
-                            |> Button.view
-                        )
+                    , if Maybe.withDefault 0 model.inpSource == 2 then
+                        input
+                            [ class "form-input w-full mt-2"
+                            , type_ "text"
+                            , placeholder "Частота"
+                            , onInput <| AddStateMsg pos << (\v -> { addState | inpRadioFreq = v })
+                            , value addState.inpRadioFreq
+                            ]
+                            []
+
+                      else
+                        text ""
                     ]
                 ]
 
