@@ -915,7 +915,10 @@ update req msg model =
         ToggleIsIgnoringDateFilter isChecked ->
             let
                 m2 =
-                    { model | isIgnoringDateFilter = isChecked }
+                    { model 
+                    | isIgnoringDateFilter = isChecked
+                    , loading = True
+                    }
             in
             ( m2, loadCallsigns m2 )
 
@@ -1129,9 +1132,9 @@ contentBlock shared model user =
         renderCallsignTrEdit callsign editState =
             tr []
                 [ td []
-                    [ div [ class "flex flex-col gap-2" ]
+                    [ div [ class "flex flex-col gap-2 w-full" ]
                         [ input
-                            [ class "form-input uppercase min-w-[180px]"
+                            [ class "form-input uppercase w-full"
                             , type_ "text"
                             , placeholder "Позивний"
                             , value editState.inpCallsign
@@ -1152,7 +1155,7 @@ contentBlock shared model user =
                     ]
                 , td []
                     [ input
-                        [ class "form-input min-w-[180px]"
+                        [ class "form-input w-full"
                         , type_ "text"
                         , placeholder "Посада"
                         , value editState.inpPosition
@@ -1162,7 +1165,7 @@ contentBlock shared model user =
                     ]
                 , td []
                     [ textarea
-                        [ class "form-input min-w-[200px]"
+                        [ class "form-input w-full"
                         , rows 1
                         , placeholder "Коментар"
                         , onInput <|
@@ -1173,7 +1176,7 @@ contentBlock shared model user =
                         []
                     ]
                 , td []
-                    [ div [ class "min-w-[180px]" ]
+                    [ div [ class "w-full" ]
                         [ let
                             selectItem : Maybe (Select.MenuItem Int)
                             selectItem =
@@ -1196,9 +1199,9 @@ contentBlock shared model user =
                     ]
                 , renderUnitsFromInboxTd callsign
                 , td []
-                    [ div [ class "flex flex-col gap-2 min-w-[160px]" ]
+                    [ div [ class "flex flex-col gap-2 w-full" ]
                         [ select
-                            [ class "form-input"
+                            [ class "form-input w-full"
                             , onInput <|
                                 EditCallsignMsg callsign.id
                                     << (\v ->
@@ -1222,7 +1225,7 @@ contentBlock shared model user =
                             )
                         , if editState.inpSourceId == 2 then
                             input
-                                [ class "form-input"
+                                [ class "form-input w-full"
                                 , type_ "text"
                                 , placeholder "Частота"
                                 , value editState.inpRadioFreq
@@ -1532,7 +1535,6 @@ contentBlock shared model user =
             div []
                 [ div
                     [ class "border mb-2 p-2"
-                    , style "background-color" "var(--bs-tertiary-bg)"
                     ]
                     (EL.mapPair
                         addCallsignPanel
@@ -1543,33 +1545,34 @@ contentBlock shared model user =
                     ]
                     [ filterPanel
                     ]
-                , table
-                    [ class "table table-bordered table-sm"
-                    , style "font-size" ".85rem"
-                    ]
-                    [ thead []
-                        [ tr []
-                            [ th
-                                [ scope "col"
-                                , class "nowrap"
-                                , style "min-width" "200px"
-                                ]
-                                [ text "Позивний "
-                                , i
-                                    [ class
-                                        (case model.sortingOrder of
-                                            Default ->
-                                                "bi bi-sort-alpha-down"
+                , div [ class "relative" ]
+                    [ table
+                        [ class "table table-bordered table-sm"
+                        , style "font-size" ".85rem"
+                        ]
+                        [ thead []
+                            [ tr []
+                                [ th
+                                    [ scope "col"
+                                    , class "nowrap"
+                                    , style "min-width" "200px"
+                                    ]
+                                    [ text "Позивний "
+                                    , i
+                                        [ class
+                                            (case model.sortingOrder of
+                                                Default ->
+                                                    "bi bi-sort-alpha-down"
 
-                                            AscAlphabetically ->
-                                                "bi bi-sort-alpha-up"
+                                                AscAlphabetically ->
+                                                    "bi bi-sort-alpha-up"
 
-                                            DescAlphabetically ->
-                                                "bi bi-sort-alpha-down"
-                                        )
-                                    , style "cursor" "pointer"
-                                    , style "font-size" "16px"
-                                    , onClick SortByCallsignName
+                                                DescAlphabetically ->
+                                                    "bi bi-sort-alpha-down"
+                                            )
+                                        , style "cursor" "pointer"
+                                        , style "font-size" "16px"
+                                        , onClick SortByCallsignName
                                     ]
                                     []
                                 ]
@@ -1614,24 +1617,38 @@ contentBlock shared model user =
                     , tbody [] <|
                         List.indexedMap renderCallsignTr (model.callsigns |> sortByName model)
                     ]
-                , div [ class "flex justify-center mt-3 mb-3" ] <|
-                    if model.showLoadMore then
-                        [ Button.new { label = "Завантажити ще", onClick = LoadMore }
-                            |> Button.withStyleSecondary
-                            |> Button.withDisabled model.loadingMore
-                            |> Button.withIcon
-                                (if model.loadingMore then
-                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
-
-                                 else
-                                    []
-                                )
-                            |> Button.view
+                , if model.loading then
+                    div 
+                        [ class "absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
+                        , style "backdrop-filter" "blur(1px)"
+                        ] 
+                        [ div [ class "flex flex-col items-center gap-2" ]
+                            [ Le.Block.Spinner.loadingSpinner
+                            , div [ class "text-sm text-gray-600 dark:text-gray-300" ] 
+                                [ text "Завантаження даних..." ]
+                            ]
                         ]
-
-                    else
-                        []
+                  else
+                    text ""
                 ]
+            , div [ class "flex justify-center mt-3 mb-3" ] <|
+                if model.showLoadMore then
+                    [ Button.new { label = "Завантажити ще", onClick = LoadMore }
+                        |> Button.withStyleSecondary
+                        |> Button.withDisabled model.loadingMore
+                        |> Button.withIcon
+                            (if model.loadingMore then
+                                [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                             else
+                                []
+                            )
+                        |> Button.view
+                    ]
+
+                else
+                    []
+            ]
     in
     div []
         [ deleteConfirmationModal
