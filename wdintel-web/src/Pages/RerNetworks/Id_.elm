@@ -13,6 +13,7 @@ import Html.Events exposing (..)
 import Html.Styled as Styled
 import Json.Encode as Encode
 import Layouts
+import Le.Auth
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.Select
 import Le.Block.Spinner
@@ -40,7 +41,7 @@ page user shared route =
         { init = init route shared
         , update = update shared
         , subscriptions = subscriptions
-        , view = view shared
+        , view = view user shared
         }
         |> Page.withLayout (toLayout user)
 
@@ -774,12 +775,15 @@ subscriptions model =
 -- VIEW
 
 
-mainInfoBlock : B.Network -> Shared.Model -> Model -> List (Html Msg)
-mainInfoBlock network shared model =
+mainInfoBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
+mainInfoBlock user network shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 []
             [ text "Згідно форми" ]
-        , i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
+        , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+            i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
+          else
+            text ""
         ]
     , div
         [ class "network-list-container" ]
@@ -814,7 +818,7 @@ mainInfoBlock network shared model =
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Характер роботи:" ]
             , span [] [ text <| Maybe.withDefault "" network.operationType ]
             ]
-        , div [ class "border-y-1 border-border py-[8px] flex" ]
+        , div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
             , span [] [ text <| Maybe.withDefault "" network.operationPeriod ]
             ]
@@ -1224,8 +1228,8 @@ freqsTableEditing updateFreqReq freq model shared =
         ]
 
 
-contentBlock : Shared.Model -> B.Network -> Model -> List (Html Msg)
-contentBlock shared network model =
+contentBlock : Auth.User -> Shared.Model -> B.Network -> Model -> List (Html Msg)
+contentBlock user shared network model =
     [ h2 []
         [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
         ]
@@ -1234,10 +1238,16 @@ contentBlock shared network model =
             [ div [ class "col-span-8 bg-w dark:bg-[#1C1C21] p-[16px]" ]
                 (case model.mode of
                     Readonly ->
-                        mainInfoBlock network shared model
+                        if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                            mainInfoBlock user network shared model
+                        else
+                            mainInfoBlock user network shared model
 
                     Editing eNetwork ->
-                        mainInfoEditBlock eNetwork network.freqs shared model
+                        if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                            mainInfoEditBlock eNetwork network.freqs shared model
+                        else
+                            mainInfoBlock user network shared model
                 )
             , div [ class "col-start-1 col-end-9 row-start-2 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
                 [ h4 [] [ text "Пеленги" ]
@@ -1268,7 +1278,7 @@ contentBlock shared network model =
           in
           div [ class "col-span-5 bg-w dark:bg-[#1C1C21] p-[16px]" ]
             [ div [ class "mb-[16px]" ]
-                [ h5 [ class "" ] [ text "Обґрунтування прив’язки" ]
+                [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
                 , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
                     [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
                     , div [ class "flex justify-between w-full" ]
@@ -1425,15 +1435,18 @@ contentBlock shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Частоти" ]
-            , case model.freqsEditingState of
-                Readonly ->
-                    i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick FreqsEditStartedByUser ] []
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                case model.freqsEditingState of
+                    Readonly ->
+                        i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick FreqsEditStartedByUser ] []
 
-                Editing _ ->
-                    div [ class "flex gap-[8px]" ]
-                        [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick FreqsEditCanceledByUser ] []
-                        , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick FreqsEditSavedByUser ] []
-                        ]
+                    Editing _ ->
+                        div [ class "flex gap-[8px]" ]
+                            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick FreqsEditCanceledByUser ] []
+                            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick FreqsEditSavedByUser ] []
+                            ]
+              else
+                text ""
             ]
         , case model.freqs of
             Success freqs ->
@@ -1477,15 +1490,18 @@ contentBlock shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні" ]
-            , case model.callsignsEditingState of
-                Readonly ->
-                    i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick CallsignsEditStartedByUser ] []
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "CallsignsEditor" user then
+                case model.callsignsEditingState of
+                    Readonly ->
+                        i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick CallsignsEditStartedByUser ] []
 
-                Editing _ ->
-                    div [ class "flex gap-[8px]" ]
-                        [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick CallsignsEditCanceledByUser ] []
-                        , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick CallsignsEditSavedByUser ] []
-                        ]
+                    Editing _ ->
+                        div [ class "flex gap-[8px]" ]
+                            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick CallsignsEditCanceledByUser ] []
+                            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick CallsignsEditSavedByUser ] []
+                            ]
+              else
+                text ""
             ]
         , case model.callsigns of
             Success callsigns ->
@@ -1743,8 +1759,8 @@ contentBlock shared network model =
     ]
 
 
-view : Shared.Model -> Model -> View Msg
-view shared model =
+view : Auth.User -> Shared.Model -> Model -> View Msg
+view user shared model =
     { title = "Мережа"
     , body =
         [ div []
@@ -1753,7 +1769,7 @@ view shared model =
                     [ div [ class "w-[75vw] mx-auto py-[16px]" ]
                         (case model.network of
                             Success network ->
-                                contentBlock shared network model
+                                contentBlock user shared network model
 
                             _ ->
                                 [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
