@@ -1562,3 +1562,48 @@ dialog::backdrop {
 .textarea__field:focus {
 	border-color: var(--ochre-normal);
 }
+
+.form-input {
+	@apply rounded border px-3 py-2 text-sm transition-colors;
+	border-color: var(--color-border);
+	background-color: transparent;
+	color: var(--color-text);
+}
+
+.form-input:focus {
+	@apply outline-none;
+	border-color: var(--color-border-selected);
+}
+
+.form-input:disabled {
+	@apply cursor-not-allowed opacity-50;
+	background-color: var(--color-background);
+}
+
+.form-input::placeholder {
+	color: var(--color-text);
+	opacity: 0.5;
+}
+
+/* Dark mode adjustments */
+html[data-bs-theme="dark"] .form-input {
+	background-color: transparent;
+	border-color: var(--color-border);
+}
+
+html[data-bs-theme="dark"] .form-input:disabled {
+	background-color: var(--color-background);
+}
+
+/* Icon Button Styles */
+.icon-btn {
+	@apply outline-0 border border-border rounded-sm bg-transparent text-[16px] transition-colors duration-350 py-[1px] px-[6px];
+}
+
+.icon-btn-primary {
+	@apply text-action hover:bg-action hover:text-bw;
+}
+
+.icon-btn-danger {
+	@apply text-[#b94d4d] dark:text-[#f98282] hover:bg-[#b94d4d] hover:text-bw dark:hover:text-[#df7474];
+}
