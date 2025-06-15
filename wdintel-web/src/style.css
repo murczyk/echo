@@ -1564,7 +1564,7 @@ dialog::backdrop {
 }
 
 .form-input {
-	@apply w-full rounded border px-3 py-2 text-sm transition-colors;
+	@apply rounded border px-3 py-2 text-sm transition-colors;
 	border-color: var(--border-color);
 	background-color: var(--column-color);
 	color: var(--text-color);

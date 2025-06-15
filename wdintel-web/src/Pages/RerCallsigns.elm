@@ -1128,12 +1128,9 @@ contentBlock shared model user =
         renderCallsignTrEdit callsign editState =
             tr []
                 [ td []
-                    [ div
-                        []
+                    [ div [ class "flex flex-col gap-2" ]
                         [ input
-                            [ class "form-control text-uppercase"
-                            , style "width" "200px"
-                            , style "font-size" ".8rem"
+                            [ class "form-input uppercase min-w-[180px]"
                             , type_ "text"
                             , placeholder "Позивний"
                             , value editState.inpCallsign
@@ -1142,12 +1139,9 @@ contentBlock shared model user =
                                     << (\v -> { editState | inpCallsign = v })
                             ]
                             []
-                        , div
-                            [ class "form-check form-switch mt-1 ms-2"
-                            ]
+                        , div [ class "flex items-center gap-2 mt-1" ]
                             [ input
-                                [ class "form-check-input"
-                                , style "font-size" ".8rem"
+                                [ class "h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 , type_ "checkbox"
                                 , attribute "role" "switch"
                                 , id "enableAutostream"
@@ -1161,7 +1155,7 @@ contentBlock shared model user =
                                 ]
                                 []
                             , label
-                                [ class "form-check-label mb-4"
+                                [ class "text-sm text-gray-700 dark:text-gray-300"
                                 , for "enableAutostream"
                                 ]
                                 [ text "в дорозвідці" ]
@@ -1170,9 +1164,7 @@ contentBlock shared model user =
                     ]
                 , td []
                     [ input
-                        [ class "form-control"
-                        , style "width" "200px"
-                        , style "font-size" ".8rem"
+                        [ class "form-input min-w-[180px]"
                         , type_ "text"
                         , placeholder "Посада"
                         , value editState.inpPosition
@@ -1182,10 +1174,8 @@ contentBlock shared model user =
                     ]
                 , td []
                     [ textarea
-                        [ class "form-control"
-                        , style "min-width" "200px"
-                        , style "font-size" ".8rem"
-                        , rows 3
+                        [ class "form-input min-w-[200px]"
+                        , rows 1
                         , placeholder "Коментар"
                         , onInput <|
                             EditCallsignMsg callsign.id
@@ -1195,7 +1185,7 @@ contentBlock shared model user =
                         []
                     ]
                 , td []
-                    [ div [ style "font-size" ".8rem" ]
+                    [ div [ class "min-w-[180px]" ]
                         [ let
                             selectItem : Maybe (Select.MenuItem Int)
                             selectItem =
@@ -1218,10 +1208,9 @@ contentBlock shared model user =
                     ]
                 , renderUnitsFromInboxTd callsign
                 , td []
-                    [ div [ style "font-size" ".8rem" ]
+                    [ div [ class "flex flex-col gap-2 min-w-[160px]" ]
                         [ select
-                            [ class "form-select"
-                            , style "font-size" ".8rem"
+                            [ class "form-input"
                             , onInput <|
                                 EditCallsignMsg callsign.id
                                     << (\v ->
@@ -1245,10 +1234,7 @@ contentBlock shared model user =
                             )
                         , if editState.inpSourceId == 2 then
                             input
-                                [ class "form-control"
-                                , style "width" "200px"
-                                , style "margin-top" "8px"
-                                , style "font-size" ".8rem"
+                                [ class "form-input"
                                 , type_ "text"
                                 , placeholder "Частота"
                                 , value editState.inpRadioFreq
@@ -1270,22 +1256,20 @@ contentBlock shared model user =
                                 Le.Time.renderDateF6 zone
                                     (Time.millisToPosix callsign.createdAt)
                     ]
-                , td [ style "font-size" ".8rem" ]
-                    [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ div [ class "flex gap-2" ]
-                            [ button
-                                [ title "Зберегти"
-                                , class "icon-btn icon-btn-primary"
-                                , onClick (EditCallsignSave callsign.id)
-                                ]
-                                [ i [ class "bi bi-check2" ] [] ]
-                            , button
-                                [ title "Відмінити"
-                                , class "icon-btn icon-btn-danger"
-                                , onClick (EditCallsignCancel callsign.id)
-                                ]
-                                [ i [ class "bi bi-x" ] [] ]
+                , td []
+                    [ div [ class "flex gap-2" ]
+                        [ button
+                            [ title "Зберегти"
+                            , class "icon-btn icon-btn-primary"
+                            , onClick (EditCallsignSave callsign.id)
                             ]
+                            [ i [ class "bi bi-check2" ] [] ]
+                        , button
+                            [ title "Відмінити"
+                            , class "icon-btn icon-btn-danger"
+                            , onClick (EditCallsignCancel callsign.id)
+                            ]
+                            [ i [ class "bi bi-x" ] [] ]
                         ]
                     ]
                 ]
@@ -1443,130 +1427,112 @@ contentBlock shared model user =
                 ]
 
         filterPanel =
-            div [ class "d-flex justify-content-between align-items-center" ]
-                [ div [ class "me-2" ]
+            div [ class "flex justify-between items-center gap-2 p-2" ]
+                [ div [ class "flex items-center gap-2" ]
                     [ if not model.loading then
                         i [ class "bi bi-filter" ] []
 
                       else
                         Le.Block.Spinner.loadingSpinner2Sm
                     ]
-                , div [ class "d-flex flex-column flex-grow-1", style "gap" "8px" ]
-                    [ div
-                        [ class "d-flex justify-content-start align-items-center"
-                        , style "width" "200px"
-                        , style "margin-left" "8px"
+                , div [ class "flex flex-wrap gap-2 flex-grow" ]
+                    [ input
+                        [ class "form-input uppercase min-w-[180px]"
+                        , type_ "text"
+                        , placeholder "Позивний"
+                        , value model.filterCallsign
+                        , onInput FilterCallsignMsg
                         ]
-                        [ input
-                            [ class "form-control me-2 text-uppercase"
-                            , style "min-width" "200px"
-                            , type_ "text"
-                            , placeholder "Позивний"
-                            , value model.filterCallsign
-                            , onInput FilterCallsignMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-control me-2"
-                            , style "width" "200px"
-                            , type_ "text"
-                            , placeholder "Посада"
-                            , value model.filterPosition
-                            , onInput FilterPositionMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-control me-2"
-                            , style "width" "200px"
-                            , type_ "text"
-                            , placeholder "Коментар"
-                            , value model.filterComment
-                            , onInput FilterCommentMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-control me-2"
-                            , style "width" "200px"
-                            , type_ "text"
-                            , placeholder "Підрозділ"
-                            , value model.filterUnit
-                            , onInput FilterUnitMsg
-                            ]
-                            []
+                        []
+                    , input
+                        [ class "form-input min-w-[180px]"
+                        , type_ "text"
+                        , placeholder "Посада"
+                        , value model.filterPosition
+                        , onInput FilterPositionMsg
                         ]
-                    , div
-                        [ class "d-inline-block ms-2"
+                        []
+                    , input
+                        [ class "form-input min-w-[180px]"
+                        , type_ "text"
+                        , placeholder "Коментар"
+                        , value model.filterComment
+                        , onInput FilterCommentMsg
                         ]
-                        [ div [ class "d-flex justify-content-start align-items-center", style "gap" "4px" ] <|
-                            [ div []
-                                [ div
-                                    [ class "btn-group"
-                                    , attribute "role" "group"
-                                    , attribute "aria-label" "Basic radio toggle button group"
-                                    ]
-                                    [ input
-                                        [ type_ "radio"
-                                        , class "btn-check"
-                                        , id "btnradio1"
-                                        , autocomplete False
-                                        , checked model.isIgnoringDateFilter
-                                        , onClick <| ToggleIsIgnoringDateFilter True
-                                        ]
-                                        []
-                                    , label
-                                        [ class "btn btn-outline-secondary", for "btnradio1" ]
-                                        [ text "Весь час" ]
-                                    , input
-                                        [ type_ "radio"
-                                        , class "btn-check"
-                                        , id "btnradio2"
-                                        , autocomplete False
-                                        , checked (not model.isIgnoringDateFilter)
-                                        , onClick <| ToggleIsIgnoringDateFilter False
-                                        ]
-                                        []
-                                    , label
-                                        [ class "btn btn-outline-secondary", for "btnradio2" ]
-                                        [ text "Період" ]
-                                    ]
+                        []
+                    , input
+                        [ class "form-input min-w-[180px]"
+                        , type_ "text"
+                        , placeholder "Підрозділ"
+                        , value model.filterUnit
+                        , onInput FilterUnitMsg
+                        ]
+                        []
+                    ]
+                , div [ class "flex items-center gap-2" ]
+                    [ div [ class "flex items-center gap-2" ]
+                        [ div [ class "flex items-center gap-1" ]
+                            [ input
+                                [ type_ "radio"
+                                , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                , id "btnradio1"
+                                , autocomplete False
+                                , checked model.isIgnoringDateFilter
+                                , onClick <| ToggleIsIgnoringDateFilter True
                                 ]
-                            , div
-                                [ style "font-size" "1rem"
-                                , style "margin-right" "4px"
-                                , style "margin-left" "12px"
+                                []
+                            , label
+                                [ class "text-sm text-gray-700 dark:text-gray-300"
+                                , for "btnradio1"
                                 ]
-                                [ text "з" ]
+                                [ text "Весь час" ]
                             ]
-                                ++ (Le.Block.DateTime.new
-                                        { model =
-                                            if not model.isIgnoringDateFilter then
-                                                model.from
+                        , div [ class "flex items-center gap-1" ]
+                            [ input
+                                [ type_ "radio"
+                                , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                , id "btnradio2"
+                                , autocomplete False
+                                , checked (not model.isIgnoringDateFilter)
+                                , onClick <| ToggleIsIgnoringDateFilter False
+                                ]
+                                []
+                            , label
+                                [ class "text-sm text-gray-700 dark:text-gray-300"
+                                , for "btnradio2"
+                                ]
+                                [ text "Період" ]
+                            ]
+                        ]
+                    , div [ class "flex items-center gap-2" ]
+                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
+                        , div [] (
+                            Le.Block.DateTime.new
+                                { model =
+                                    if not model.isIgnoringDateFilter then
+                                        model.from
 
-                                            else
-                                                Le.Block.DateTime.init ()
-                                        , toMsg = DateTimeFromMsg
-                                        }
-                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                        |> Le.Block.DateTime.view
-                                   )
-                                ++ [ div
-                                        [ style "font-size" "1rem"
-                                        , style "margin-right" "4px"
-                                        ]
-                                        [ text "по" ]
-                                   ]
-                                ++ (Le.Block.DateTime.new
-                                        { model =
-                                            if not model.isIgnoringDateFilter then
-                                                model.to
+                                    else
+                                        Le.Block.DateTime.init ()
+                                , toMsg = DateTimeFromMsg
+                                }
+                                |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                |> Le.Block.DateTime.view
+                          )
+                        , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
+                        , div [] (
+                            Le.Block.DateTime.new
+                                { model =
+                                    if not model.isIgnoringDateFilter then
+                                        model.to
 
-                                            else
-                                                Le.Block.DateTime.init ()
-                                        , toMsg = DateTimeToMsg
-                                        }
-                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                        |> Le.Block.DateTime.view
-                                   )
+                                    else
+                                        Le.Block.DateTime.init ()
+                                , toMsg = DateTimeToMsg
+                                }
+                                |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                |> Le.Block.DateTime.view
+                          )
                         ]
                     ]
                 ]
