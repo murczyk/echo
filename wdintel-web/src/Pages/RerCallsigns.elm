@@ -1297,8 +1297,8 @@ contentBlock shared model user =
                 [ class "flex flex-wrap items-start gap-2 p-2"
                 ]
                 [ div [ class "flex flex-col" ]
-                    [ textarea
-                        [ class "w-[200px] min-w-[200px] uppercase rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    [ input
+                        [ class "form-input uppercase min-w-[200px]"
                         , rows 1
                         , Attr.disabled (not hasEditorRole)
                         , placeholder "Позивний"
@@ -1329,7 +1329,7 @@ contentBlock shared model user =
                         ]
                     ]
                 , input
-                    [ class "w-[200px] min-w-[200px] rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    [ class "form-input min-w-[200px]"
                     , Attr.disabled (not hasEditorRole)
                     , type_ "text"
                     , placeholder "Посада"
@@ -1338,7 +1338,7 @@ contentBlock shared model user =
                     ]
                     []
                 , textarea
-                    [ class "flex-grow min-w-[200px] rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    [ class "form-input flex-grow min-w-[200px]"
                     , rows 1
                     , Attr.disabled (not hasEditorRole)
                     , placeholder "Коментар"
@@ -1389,7 +1389,7 @@ contentBlock shared model user =
                     [ HtmlX.viewIf (pos == 0) <|
                         div [ class "flex flex-col gap-2" ]
                             [ select
-                                [ class "w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                [ class "form-input"
                                 , Attr.disabled (not hasEditorRole)
                                 , onInput <| InpSource
                                 ]
@@ -1405,7 +1405,7 @@ contentBlock shared model user =
                                 )
                             , if Maybe.withDefault 0 model.inpSource == 2 then
                                 input
-                                    [ class "w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    [ class "form-input"
                                     , type_ "text"
                                     , placeholder "Частота"
                                     , onInput <| AddStateMsg pos << (\v -> { addState | inpRadioFreq = v })
