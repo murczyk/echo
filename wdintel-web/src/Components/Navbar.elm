@@ -136,9 +136,9 @@ navBar user shared activeName =
 menuItem activeName hrefLink activeNameExp nameText =
     li []
         [ a
-            [ class "block py-2 hover:text-blue-600 transition-colors"
+            [ class "block py-2 hover:text-[var(--color-action)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
             , Route.Path.href hrefLink
-            , classList [ ( "text-blue-600 font-medium", activeName == activeNameExp ) ]
+            , classList [ ( "text-[var(--color-action)] font-medium", activeName == activeNameExp ) ]
             ]
             [ text nameText ]
         ]
@@ -153,35 +153,46 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class "block px-4 py-2 hover:bg-gray-50 hover:text-blue-600 transition-colors"
-                            , classList [ ( "text-blue-600 font-medium", sub.activeName == activeName ) ]
+                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-action)] rounded transition-all duration-200"
+                            , classList [ ( "text-[var(--color-action)] font-medium", sub.activeName == activeName ) ]
                             , Route.Path.href path
                             ]
-                            [ text sub.label ]
+                            [ span [] [ text sub.label ]
+                            , if sub.activeName == activeName then
+                                i [ class "bi bi-check text-[var(--color-action)] ml-2" ] []
+                              else
+                                text ""
+                            ]
 
                     External link ->
                         a
-                            [ class "block px-4 py-2 hover:bg-gray-50 hover:text-blue-600 transition-colors"
-                            , classList [ ( "text-blue-600 font-medium", sub.activeName == activeName ) ]
+                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-action)] rounded transition-all duration-200"
+                            , classList [ ( "text-[var(--color-action)] font-medium", sub.activeName == activeName ) ]
                             , href link
                             , target "_blank"
                             ]
-                            [ text <| sub.label ++ " "
-                            , sup []
-                                [ i
-                                    [ class "bi bi-box-arrow-up-right text-gray-400"
-                                    ]
-                                    []
-                                ]
+                            [ span [] [ text sub.label ]
+                            , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-action)]" ] []
                             ]
                 ]
     in
     li [ class "relative group" ]
-        [ button
-            [ class "block py-2 hover:text-blue-600 transition-colors"
-            , classList [ ( "text-blue-600 font-medium", activeName == activeNameExp ) ]
+        [ a
+            [ class "inline-flex items-center py-2 px-2 cursor-pointer hover:text-[var(--color-action)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
+            , classList [ ( "text-[var(--color-action)] font-medium", activeName == activeNameExp ) ]
+            , href "#"
             ]
-            [ text nameText ]
-        , ul [ class "absolute left-0 mt-2 w-48 bg-white rounded shadow-lg border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200" ]
-            (List.map dropdownItem subs)
+            [ span [] [ text nameText ]
+            , i 
+                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180" ] 
+                []
+            ]
+        , div [ class "absolute left-0 pt-2 z-50" ]
+            [ ul 
+                [ class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200"
+                ] 
+                (List.map dropdownItem subs)
+            ]
         ]
+
+
