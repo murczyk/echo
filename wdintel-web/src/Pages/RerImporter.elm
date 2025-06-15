@@ -500,13 +500,13 @@ update user shared msg model =
                         | inboxSubmitInProgress = True
                         , inboxCursor = mOldestId
                       }
-                    , E.sendCmd <|
-                        Cmd.batch
-                            [ Api.rer_importer_inbox_submit (InboxSubmitDone oldestId)
-                                { messages = model.messages }
-                            , Api.rer_importer_inbox_update_cursor CursorUpdateDone
+                    , E.batch
+                        [ Api.rer_importer_inbox_submit (InboxSubmitDone oldestId)
+                            { messages = model.messages }
+                        , E.sendCmd <|
+                            Api.rer_importer_inbox_update_cursor CursorUpdateDone
                                 { cursor = oldestId }
-                            ]
+                        ]
                     )
 
         InboxSubmitDone _ (Err e) ->

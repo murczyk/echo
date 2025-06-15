@@ -13,6 +13,7 @@ import Le.Types exposing (ApiError, ModelWithErrorFields)
 import Le.Utils exposing (..)
 import Temp exposing (jsonPair, leExpectJson, resolve)
 import Url.Builder
+import Le.Api.RetryableHttp as RetryableHttp
 
 
 handleHttpError :
@@ -294,12 +295,14 @@ inbox_messages_digest token toMsg req =
 rer_importer_inbox_submit :
     (Result ApiError () -> msg)
     -> InboxSubmitReq
-    -> Cmd msg
+    -> Effect msg
 rer_importer_inbox_submit toMsg req =
-    Http.post
+    RetryableHttp.retryablePost
+        RetryableHttp.defaultRetryConfig
+        toMsg
         { url = "/api/rer-importer/inbox/submit"
         , body = Http.jsonBody (inboxSubmitReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
+        , decoder = Decode.succeed ()
         }
 
 
