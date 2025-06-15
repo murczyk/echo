@@ -3,6 +3,7 @@ module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, pag
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -85,6 +86,8 @@ type alias Model =
     , now : Maybe Time.Posix
     , isIgnoringDateFilter : Bool
     , sortingOrder : SortingOrder
+    , showLoadMore : Bool
+    , loadingMore : Bool
     }
 
 
@@ -132,6 +135,8 @@ init req _ =
             , now = Nothing
             , isIgnoringDateFilter = False
             , sortingOrder = Default
+            , showLoadMore = False
+            , loadingMore = False
             }
     in
     ( m2
@@ -181,6 +186,7 @@ type Msg
     | InitGotTime Time.Zone Time.Posix
     | ToggleIsIgnoringDateFilter Bool
     | SortByCallsignName
+    | LoadMore
 
 
 type alias AddState =
@@ -250,8 +256,38 @@ loadCallsignsCmd model =
 
             else
                 Maybe.map Time.posixToMillis model.to.datePosix
-        , limit = Nothing
+        , limit = Just 100
         }
+
+
+loadMoreCallsignsCmd : Model -> Cmd Msg
+loadMoreCallsignsCmd model =
+    case List.reverse model.callsigns |> List.head of
+        Nothing ->
+            Cmd.none
+
+        Just lastCallsign ->
+            Api.sigint_list_callsigns GotCallsigns
+                { afterId = Just lastCallsign.id
+                , beforeId = Nothing
+                , filterCallsign = Just model.filterCallsign
+                , filterPosition = Just model.filterPosition
+                , filterComment = Just model.filterComment
+                , filterUnit = Just model.filterUnit
+                , sinceDateInclusiveMs =
+                    if model.isIgnoringDateFilter then
+                        Nothing
+
+                    else
+                        Maybe.map Time.posixToMillis model.from.datePosix
+                , tillDateInclusiveMs =
+                    if model.isIgnoringDateFilter then
+                        Nothing
+
+                    else
+                        Maybe.map Time.posixToMillis model.to.datePosix
+                , limit = Just 100
+                }
 
 
 callsignsInpoxItemsPeriodLimit : Int
@@ -413,15 +449,22 @@ update req msg model =
                     )
 
         GotCallsigns (Err err) ->
-            Api.handleHttpError ToastMsg err { model | loading = False }
+            Api.handleHttpError ToastMsg err { model | loading = False, loadingMore = False }
 
         GotCallsigns (Ok rsp) ->
             let
                 m2 =
                     { model
-                        | callsigns = rsp.callsigns
+                        | callsigns =
+                            if model.loadingMore then
+                                model.callsigns ++ rsp.callsigns
+
+                            else
+                                rsp.callsigns
                         , callsignsWithUnitsFromInbox = Loading
                         , loading = False
+                        , loadingMore = False
+                        , showLoadMore = rsp.showLoadMore
                     }
             in
             ( m2, loadCallsignsWithUnitsFromInbox m2 )
@@ -889,6 +932,11 @@ update req msg model =
                             AscAlphabetically
               }
             , E.none
+            )
+
+        LoadMore ->
+            ( { model | loadingMore = True }
+            , E.sendCmd (loadMoreCallsignsCmd model)
             )
 
 
@@ -1652,6 +1700,23 @@ contentBlock shared model user =
                     , tbody [] <|
                         List.indexedMap renderCallsignTr (model.callsigns |> sortByName model)
                     ]
+                , div [ class "flex justify-center mt-3 mb-3" ] <|
+                    if model.showLoadMore then
+                        [ Button.new { label = "Завантажити ще", onClick = LoadMore }
+                            |> Button.withStyleSecondary
+                            |> Button.withDisabled model.loadingMore
+                            |> Button.withIcon
+                                (if model.loadingMore then
+                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                                 else
+                                    []
+                                )
+                            |> Button.view
+                        ]
+
+                    else
+                        []
                 ]
     in
     div []
