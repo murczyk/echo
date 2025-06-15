@@ -396,9 +396,8 @@ update vps msg model =
                             E.none
 
                         Just v ->
-                            E.sendCmd <|
-                                Api.rer_importer_inbox_submit (InboxSubmitDone model.id)
-                                    { messages = [ v ] }
+                            Api.rer_importer_inbox_submit (InboxSubmitDone model.id)
+                                { messages = [ v ] }
             in
             ( model
             , cmds
