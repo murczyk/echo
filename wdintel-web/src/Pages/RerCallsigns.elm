@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Components.Button as Button
+import Components.Checkbox as Checkbox
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -1140,25 +1141,12 @@ contentBlock shared model user =
                             ]
                             []
                         , div [ class "flex items-center gap-2 mt-1" ]
-                            [ input
-                                [ class "h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                , type_ "checkbox"
-                                , attribute "role" "switch"
-                                , id "enableAutostream"
-                                , checked editState.inpDeveloping
-                                , onClick <|
-                                    EditCallsignMsg callsign.id
-                                        { editState
-                                            | inpDeveloping =
-                                                not editState.inpDeveloping
-                                        }
-                                ]
-                                []
-                            , label
-                                [ class "text-sm text-gray-700 dark:text-gray-300"
-                                , for "enableAutostream"
-                                ]
-                                [ text "в дорозвідці" ]
+                            [ Checkbox.new
+                                { isChecked = editState.inpDeveloping
+                                , onToggle = \v -> EditCallsignMsg callsign.id { editState | inpDeveloping = v }
+                                }
+                                |> Checkbox.withContent [ text "в дорозвідці" ]
+                                |> Checkbox.view
                             ]
                         ]
                     ]
@@ -1303,21 +1291,13 @@ contentBlock shared model user =
                     , div
                         [ class "mt-1 flex items-center gap-2 text-sm"
                         ]
-                        [ input
-                            [ class "h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
-                            , type_ "checkbox"
-                            , attribute "role" "switch"
-                            , id "enableAutostream"
-                            , checked addState.inpDeveloping
-                            , onClick <|
-                                AddStateMsg pos { addState | inpDeveloping = not addState.inpDeveloping }
-                            ]
-                            []
-                        , label
-                            [ class "text-sm text-gray-700"
-                            , for "enableAutostream"
-                            ]
-                            [ text "в дорозвідці" ]
+                        [ Checkbox.new
+                            { isChecked = addState.inpDeveloping
+                            , onToggle = \v -> AddStateMsg pos { addState | inpDeveloping = v }
+                            }
+                            |> Checkbox.withDisabled (not hasEditorRole)
+                            |> Checkbox.withContent [ text "в дорозвідці" ]
+                            |> Checkbox.view
                         ]
                     ]
                 , input
@@ -1410,7 +1390,7 @@ contentBlock shared model user =
                             ]
                     ]
                 , div
-                    [ class "flex flex-col gap-2"
+                    [ class "flex gap-2"
                     ]
                     [ HtmlX.viewIf (pos == 0) <|
                         (Button.new { label = "Додати", onClick = AddCallsign }
@@ -1427,49 +1407,49 @@ contentBlock shared model user =
                 ]
 
         filterPanel =
-            div [ class "flex justify-between items-center gap-2 p-2" ]
+            div [ class "flex flex-col gap-3 p-2" ]
                 [ div [ class "flex items-center gap-2" ]
                     [ if not model.loading then
                         i [ class "bi bi-filter" ] []
 
                       else
                         Le.Block.Spinner.loadingSpinner2Sm
+                    , div [ class "flex flex-wrap gap-2 flex-grow" ]
+                        [ input
+                            [ class "form-input uppercase min-w-[180px]"
+                            , type_ "text"
+                            , placeholder "Позивний"
+                            , value model.filterCallsign
+                            , onInput FilterCallsignMsg
+                            ]
+                            []
+                        , input
+                            [ class "form-input min-w-[180px]"
+                            , type_ "text"
+                            , placeholder "Посада"
+                            , value model.filterPosition
+                            , onInput FilterPositionMsg
+                            ]
+                            []
+                        , input
+                            [ class "form-input min-w-[180px]"
+                            , type_ "text"
+                            , placeholder "Коментар"
+                            , value model.filterComment
+                            , onInput FilterCommentMsg
+                            ]
+                            []
+                        , input
+                            [ class "form-input min-w-[180px]"
+                            , type_ "text"
+                            , placeholder "Підрозділ"
+                            , value model.filterUnit
+                            , onInput FilterUnitMsg
+                            ]
+                            []
+                        ]
                     ]
-                , div [ class "flex flex-wrap gap-2 flex-grow" ]
-                    [ input
-                        [ class "form-input uppercase min-w-[180px]"
-                        , type_ "text"
-                        , placeholder "Позивний"
-                        , value model.filterCallsign
-                        , onInput FilterCallsignMsg
-                        ]
-                        []
-                    , input
-                        [ class "form-input min-w-[180px]"
-                        , type_ "text"
-                        , placeholder "Посада"
-                        , value model.filterPosition
-                        , onInput FilterPositionMsg
-                        ]
-                        []
-                    , input
-                        [ class "form-input min-w-[180px]"
-                        , type_ "text"
-                        , placeholder "Коментар"
-                        , value model.filterComment
-                        , onInput FilterCommentMsg
-                        ]
-                        []
-                    , input
-                        [ class "form-input min-w-[180px]"
-                        , type_ "text"
-                        , placeholder "Підрозділ"
-                        , value model.filterUnit
-                        , onInput FilterUnitMsg
-                        ]
-                        []
-                    ]
-                , div [ class "flex items-center gap-2" ]
+                , div [ class "flex items-center gap-4" ]
                     [ div [ class "flex items-center gap-2" ]
                         [ div [ class "flex items-center gap-1" ]
                             [ input
@@ -1506,7 +1486,7 @@ contentBlock shared model user =
                         ]
                     , div [ class "flex items-center gap-2" ]
                         [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
-                        , div [] (
+                        , div [ class "inline-flex" ] (
                             Le.Block.DateTime.new
                                 { model =
                                     if not model.isIgnoringDateFilter then
@@ -1520,7 +1500,7 @@ contentBlock shared model user =
                                 |> Le.Block.DateTime.view
                           )
                         , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
-                        , div [] (
+                        , div [ class "inline-flex" ] (
                             Le.Block.DateTime.new
                                 { model =
                                     if not model.isIgnoringDateFilter then
