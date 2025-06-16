@@ -156,7 +156,7 @@ view toMsg model inner =
         count =
             EL.length model.toasts
     in
-    div []
+    div [ class "h-full" ]
         [ div [ class "toasts" ]
             [ div [ class "toasts__wrap" ]
                 (EL.toList (EL.map (viewToast toMsg count) toasts2))

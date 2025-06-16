@@ -2,16 +2,17 @@ module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
 import Auth
 import Components.Navbar exposing (navBar)
-import Components.ThemeSwitcher exposing (colorThemeSwitcher)
 import Effect as E exposing (Effect)
 import Html exposing (..)
+import Html.Attributes exposing (class, classList)
+import Html.Events exposing (onClick)
 import Layout exposing (Layout)
+import Le.Types exposing (ApiError)
+import Process
 import Route exposing (Route)
 import Shared
-import View exposing (View)
 import Task
-import Process 
-import Le.Types exposing (ApiError)
+import View exposing (View)
 
 
 type alias Props =
@@ -35,17 +36,23 @@ layout props shared route =
 
 
 type alias Model =
-    {}
+    { isNavbarVisible : Bool
+    }
 
 
 init : () -> ( Model, Effect Msg )
 init _ =
-    ( {}
+    ( { isNavbarVisible = True
+      }
     , E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
     )
 
-keepAliveInterval: number
-keepAliveInterval = 30000 
+
+keepAliveInterval : number
+keepAliveInterval =
+    30000
+
+
 
 -- UPDATE
 
@@ -54,10 +61,11 @@ type Msg
     = ToggleDarkTheme
     | Slept
     | KeepAliveDone (Result ApiError ())
+    | ToggleNavbarVisibility
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
-update route  msg model =
+update route msg model =
     case msg of
         ToggleDarkTheme ->
             ( model
@@ -67,14 +75,19 @@ update route  msg model =
         Slept ->
             ( model
             , E.batch
-                [ E.keepAlive KeepAliveDone {pageId =  Just (String.dropLeft 1 route.url.path)}
+                [ E.keepAlive KeepAliveDone { pageId = Just (String.dropLeft 1 route.url.path) }
                 , E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
                 ]
             )
+
         KeepAliveDone (Err e) ->
-            (model, E.none)
+            ( model, E.none )
+
         KeepAliveDone (Ok _) ->
-            (model, E.none)
+            ( model, E.none )
+
+        ToggleNavbarVisibility ->
+            ( { model | isNavbarVisible = not model.isNavbarVisible }, E.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -90,11 +103,49 @@ view : Auth.User -> String -> Shared.Model -> { toContentMsg : Msg -> contentMsg
 view user activeName shared { toContentMsg, model, content } =
     { title = content.title
     , body =
-        [ div []
-            [ colorThemeSwitcher ToggleDarkTheme shared.isDarkMode
-            , navBar user shared activeName
+        [ div [ classList [ ( "h-[50px]", model.isNavbarVisible ) ] ]
+            [ div
+                [ class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
+                , class
+                    (if model.isNavbarVisible then
+                        "translate-y-0"
+
+                     else
+                        "-translate-y-full"
+                    )
+                ]
+                [ navBar user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility } ]
+            , if not model.isNavbarVisible then
+                div
+                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
+                    [ div
+                        [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
+                        , onClick ToggleNavbarVisibility
+                        ]
+                        [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
+                    ]
+
+              else
+                div
+                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-0 pointer-events-none" ]
+                    [ div
+                        [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
+                        , onClick ToggleNavbarVisibility
+                        ]
+                        [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
+                    ]
             ]
             |> Html.map toContentMsg
-        , div [] content.body
+        , div
+            [ class "transition-all duration-300 ease-in-out min-h-screen"
+            , class
+                (if model.isNavbarVisible then
+                    "pt-[0px]"
+
+                 else
+                    "pt-0"
+                )
+            ]
+            content.body
         ]
     }

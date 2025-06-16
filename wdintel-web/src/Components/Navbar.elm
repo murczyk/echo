@@ -1,9 +1,11 @@
 module Components.Navbar exposing (navBar)
 
 import Auth
+import Components.ThemeSwitcher exposing (colorThemeSwitcher)
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
 import Le.Auth exposing (hasRole, serverModeIs)
 import Le.Utils exposing (..)
 import Route
@@ -23,8 +25,14 @@ type alias Menu =
     }
 
 
-navBar : Auth.User -> Shared.Model -> String -> Html msg
-navBar user shared activeName =
+type alias Props msg =
+    { onToggleTheme : msg
+    , onNavbarVisibilityChange : msg
+    }
+
+
+navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
+navBar user shared activeName props =
     let
         menu =
             menuItem activeName
@@ -83,7 +91,7 @@ navBar user shared activeName =
                     [ menuWithSubs "admin" "адмін" adminSubs ]
     in
     header
-        [ class "bg-white border-b border-gray-200 py-2" ]
+        [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
         [ nav [ class "container mx-auto px-4" ]
             [ div [ class "flex items-center justify-between" ]
                 [ a
@@ -101,7 +109,6 @@ navBar user shared activeName =
                                 [ src "/img/SIGINT_190_kraken_transparent.png"
                                 , style "width" "28px"
                                 , style "height" "28px"
-                                , alt "SIGINT 190 Kraken"
                                 ]
                                 []
                             ]
@@ -124,10 +131,22 @@ navBar user shared activeName =
                     , img
                         [ src "/img/echo-logo.svg"
                         , height 16
+                        , class "dark:invert dark:brightness-0 dark:contrast-200"
                         ]
                         []
                     ]
-                , ul [ class "flex items-center space-x-6 text-gray-700" ] menuItems
+                , div [ class "flex items-center space-x-6" ]
+                    [ ul [ class "flex items-center space-x-6" ] menuItems
+                    ]
+                , div [ class "flex gap-1 items-center" ]
+                    [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
+                    , div
+                        [ class "pointer"
+                        , onClick props.onNavbarVisibilityChange
+                        ]
+                        [ i [ class "bi bi-arrows-fullscreen" ] []
+                        ]
+                    ]
                 ]
             ]
         ]
@@ -136,9 +155,9 @@ navBar user shared activeName =
 menuItem activeName hrefLink activeNameExp nameText =
     li []
         [ a
-            [ class "block py-2 hover:text-[var(--color-action)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
+            [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
             , Route.Path.href hrefLink
-            , classList [ ( "text-[var(--color-action)] font-medium", activeName == activeNameExp ) ]
+            , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
             ]
             [ text nameText ]
         ]
@@ -153,46 +172,45 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-action)] rounded transition-all duration-200"
-                            , classList [ ( "text-[var(--color-action)] font-medium", sub.activeName == activeName ) ]
+                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"
+                            , classList [ ( "text-[var(--color-text)] font-medium", sub.activeName == activeName ) ]
                             , Route.Path.href path
                             ]
                             [ span [] [ text sub.label ]
                             , if sub.activeName == activeName then
-                                i [ class "bi bi-check text-[var(--color-action)] ml-2" ] []
+                                i [ class "bi bi-check text-[var(--color-text)] ml-2" ] []
+
                               else
                                 text ""
                             ]
 
                     External link ->
                         a
-                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-action)] rounded transition-all duration-200"
-                            , classList [ ( "text-[var(--color-action)] font-medium", sub.activeName == activeName ) ]
+                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"
+                            , classList [ ( "text-[var(--color-text)] font-medium", sub.activeName == activeName ) ]
                             , href link
                             , target "_blank"
                             ]
                             [ span [] [ text sub.label ]
-                            , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-action)]" ] []
+                            , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
                             ]
                 ]
     in
     li [ class "relative group" ]
         [ a
-            [ class "inline-flex items-center py-2 px-2 cursor-pointer hover:text-[var(--color-action)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
-            , classList [ ( "text-[var(--color-action)] font-medium", activeName == activeNameExp ) ]
+            [ class "inline-flex items-center py-2 px-2 cursor-pointer hover:text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
+            , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
             , href "#"
             ]
             [ span [] [ text nameText ]
-            , i 
-                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180" ] 
+            , i
+                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180" ]
                 []
             ]
-        , div [ class "absolute left-0 pt-2 z-50" ]
-            [ ul 
+        , div [ class "absolute left-0 pt-2 z-500" ]
+            [ ul
                 [ class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200"
-                ] 
+                ]
                 (List.map dropdownItem subs)
             ]
         ]
-
-
