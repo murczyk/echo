@@ -9,8 +9,8 @@ pub struct Model {
     pub id: i64,
     pub sigint_zone_id: i64,
     pub datasource_id: i64,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub group_master_keys: Option<Json>,
+    #[sea_orm(column_type = "Text")]
+    pub group_master_key: String,
     pub created_at: DateTime,
 }
 
@@ -32,6 +32,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintZone,
+    #[sea_orm(
+        belongs_to = "super::signal_group::Entity",
+        from = "Column::GroupMasterKey",
+        to = "super::signal_group::Column::MasterKey",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SignalGroup,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -43,6 +51,12 @@ impl Related<super::datasource::Entity> for Entity {
 impl Related<super::sigint_zone::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintZone.def()
+    }
+}
+
+impl Related<super::signal_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalGroup.def()
     }
 }
 

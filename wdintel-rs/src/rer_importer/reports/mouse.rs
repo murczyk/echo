@@ -165,6 +165,10 @@ pub async fn report_docx_kind_mouse(
             });
     }
 
+    let groups = crate::users::get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+
     let importants = sigint_important::Entity::find()
         .filter(sigint_important::Column::UserId.eq(&login))
         .join(
@@ -180,6 +184,7 @@ pub async fn report_docx_kind_mouse(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
+        .filter(signal_message::Column::GroupMasterKey.is_in(&groups))
         .all(&env.dbx)
         .await?;
     let important_ids: BTreeSet<i64> = importants
@@ -202,6 +207,7 @@ pub async fn report_docx_kind_mouse(
         )
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::GroupMasterKey.is_in(&groups))
         .all(&env.dbx)
         .await?;
     let bookmark_ids: BTreeSet<i64> = bookmarks

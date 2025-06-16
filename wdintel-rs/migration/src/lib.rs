@@ -82,6 +82,7 @@ mod m20250417_082042_network_kind_uhf_rename_part3;
 mod m20250417_150320_fix_merge_login_migration;
 mod m20250418_095050_add_active_from_to_for_network;
 mod m20250418_103016_add_logging_for_networks;
+mod m20250421_130108_add_secret_chats;
 mod m20250424_191053_add_modulation_to_network;
 mod m20250430_090456_add_sigint_post;
 mod m20250502_124932_network_description;
@@ -203,6 +204,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250611_045218_idx_sigint_callsign_callsign_deleted::Migration),
             Box::new(m20250617_111140_update_login_table::Migration),
             Box::new(m20250702_115302_add_noautologout_role::Migration),
+            Box::new(m20250421_130108_add_secret_chats::Migration),
         ]
     }
 }

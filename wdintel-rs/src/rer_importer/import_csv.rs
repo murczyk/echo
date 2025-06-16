@@ -642,9 +642,7 @@ pub async fn ensure_import_group_exists(
             sigint_zone_datasource::ActiveModel {
                 sigint_zone_id: Set(1),
                 datasource_id: Set(datasource_id),
-                group_master_keys: Set(Some(JsonValue::Array(vec![
-                    JsonValue::String(master_key.clone()),
-                ]))),
+                group_master_key: Set(master_key),
                 ..Default::default()
             }
             .insert(dbx)

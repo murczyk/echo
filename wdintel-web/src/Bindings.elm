@@ -2916,6 +2916,22 @@ sigintZoneEncoder struct =
         ]
 
 
+type alias ZoneDatasourceGroup =
+    { groupMasterKey : String
+    , isGroupSecret : Bool
+    , allowedUsers : List ( Int, String )
+    }
+
+
+zoneDatasourceGroupEncoder : ZoneDatasourceGroup -> Json.Encode.Value
+zoneDatasourceGroupEncoder struct =
+    Json.Encode.object
+        [ ( "group_master_key", Json.Encode.string struct.groupMasterKey )
+        , ( "is_group_secret", Json.Encode.bool struct.isGroupSecret )
+        , ( "allowed_users", Json.Encode.list (\( a, b ) -> Json.Encode.list identity [ Json.Encode.int a, Json.Encode.string b ]) struct.allowedUsers )
+        ]
+
+
 type alias ZoneDatasourceGroupsReq =
     { zoneId : Int
     , datasourceId : Int
@@ -2930,19 +2946,51 @@ zoneDatasourceGroupsReqEncoder struct =
         ]
 
 
-type alias ZoneDatasourceGroupsSaveReq =
-    { zoneId : Int
-    , datasourceId : Int
-    , groups : List String
+type alias ZoneDatasourceGroupListRsp =
+    { zoneDatasourceGroups : List ZoneDatasourceGroup
     }
 
 
-zoneDatasourceGroupsSaveReqEncoder : ZoneDatasourceGroupsSaveReq -> Json.Encode.Value
-zoneDatasourceGroupsSaveReqEncoder struct =
+zoneDatasourceGroupListRspEncoder : ZoneDatasourceGroupListRsp -> Json.Encode.Value
+zoneDatasourceGroupListRspEncoder struct =
+    Json.Encode.object
+        [ ( "zone_datasource_groups", Json.Encode.list zoneDatasourceGroupEncoder struct.zoneDatasourceGroups )
+        ]
+
+
+type alias ZoneDatasourceGroupAddReq =
+    { zoneId : Int
+    , datasourceId : Int
+    , isSecret : Bool
+    , masterKey : String
+    , userLogins : List String
+    }
+
+
+zoneDatasourceGroupAddReqEncoder : ZoneDatasourceGroupAddReq -> Json.Encode.Value
+zoneDatasourceGroupAddReqEncoder struct =
     Json.Encode.object
         [ ( "zone_id", Json.Encode.int struct.zoneId )
         , ( "datasource_id", Json.Encode.int struct.datasourceId )
-        , ( "groups", Json.Encode.list Json.Encode.string struct.groups )
+        , ( "is_secret", Json.Encode.bool struct.isSecret )
+        , ( "master_key", Json.Encode.string struct.masterKey )
+        , ( "user_logins", Json.Encode.list Json.Encode.string struct.userLogins )
+        ]
+
+
+type alias ZoneDatasourceGroupUpdateReq =
+    { id : Int
+    , isSecret : Bool
+    , userLogins : List String
+    }
+
+
+zoneDatasourceGroupUpdateReqEncoder : ZoneDatasourceGroupUpdateReq -> Json.Encode.Value
+zoneDatasourceGroupUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "is_secret", Json.Encode.bool struct.isSecret )
+        , ( "user_logins", Json.Encode.list Json.Encode.string struct.userLogins )
         ]
 
 
@@ -6553,6 +6601,14 @@ sigintZoneDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
+zoneDatasourceGroupDecoder : Json.Decode.Decoder ZoneDatasourceGroup
+zoneDatasourceGroupDecoder =
+    Json.Decode.succeed ZoneDatasourceGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 Json.Decode.int) (Json.Decode.index 1 Json.Decode.string)))))
+
+
 zoneDatasourceGroupsReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsReq
 zoneDatasourceGroupsReqDecoder =
     Json.Decode.succeed ZoneDatasourceGroupsReq
@@ -6560,12 +6616,28 @@ zoneDatasourceGroupsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" Json.Decode.int))
 
 
-zoneDatasourceGroupsSaveReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsSaveReq
-zoneDatasourceGroupsSaveReqDecoder =
-    Json.Decode.succeed ZoneDatasourceGroupsSaveReq
+zoneDatasourceGroupListRspDecoder : Json.Decode.Decoder ZoneDatasourceGroupListRsp
+zoneDatasourceGroupListRspDecoder =
+    Json.Decode.succeed ZoneDatasourceGroupListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_datasource_groups" (Json.Decode.list zoneDatasourceGroupDecoder)))
+
+
+zoneDatasourceGroupAddReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupAddReq
+zoneDatasourceGroupAddReqDecoder =
+    Json.Decode.succeed ZoneDatasourceGroupAddReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list Json.Decode.string)))
+
+
+zoneDatasourceGroupUpdateReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupUpdateReq
+zoneDatasourceGroupUpdateReqDecoder =
+    Json.Decode.succeed ZoneDatasourceGroupUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list Json.Decode.string)))
 
 
 tagDecoder : Json.Decode.Decoder Tag

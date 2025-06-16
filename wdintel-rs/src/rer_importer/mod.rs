@@ -123,6 +123,13 @@ async fn list_messages(
 ) -> Result<Json<Vec<MessageRsp>>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
 
+    let groups = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await?;
+
     Ok(Json(
         SignalMessage::find()
             .columns([
@@ -143,23 +150,6 @@ async fn list_messages(
                 "coordinates",
             )
             .to_owned()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::Datasource.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                datasource::Relation::SigintZoneDatasource.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                sigint_zone_datasource::Relation::SigintZone.def(),
-            )
-            .join(JoinType::InnerJoin, sigint_zone::Relation::Login.def())
             .join_rev(
                 JoinType::LeftJoin,
                 signal_group::Entity::belongs_to(signal_message::Entity)
@@ -167,7 +157,11 @@ async fn list_messages(
                     .to(signal_message::Column::GroupMasterKey)
                     .into(),
             )
-            .filter(login::Column::Login.eq(user.id()?))
+            .join(
+                JoinType::InnerJoin,
+                signal_group::Relation::SigintZoneDatasource.def(),
+            )
+            .filter(signal_message::Column::GroupMasterKey.is_in(groups))
             .filter(sigint_inbox_item::Column::Lat.is_not_null())
             .filter(sigint_inbox_item::Column::Lng.is_not_null())
             .filter(sigint_inbox_item::Column::Lat.ne(0.0))
@@ -188,13 +182,6 @@ async fn list_messages(
                         .lte::<chrono::NaiveDateTime>(to),
                 )
             })
-            .filter(Expr::cust(format!(
-                "{}.{} ? {}.{}",
-                sigint_zone_datasource::Entity.table_name().to_string(),
-                sigint_zone_datasource::Column::GroupMasterKeys.to_string(),
-                signal_message::Entity.table_name().to_string(),
-                signal_message::Column::GroupMasterKey.to_string(),
-            )))
             .into_model::<MessageRsp>()
             .all(&env.dbx)
             .await?,

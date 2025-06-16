@@ -24,6 +24,7 @@ pub mod rer_gdoc_callsign;
 pub mod restream;
 pub mod restream_setup;
 pub mod sea_orm_active_enums;
+pub mod secret_group_user;
 pub mod settlement;
 pub mod sigint_bookmark;
 pub mod sigint_callsign;
