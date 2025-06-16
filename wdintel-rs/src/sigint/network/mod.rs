@@ -1907,19 +1907,13 @@ pub async fn network_callsigns_list(
         .map(|c| c.callsign.clone())
         .collect::<Vec<_>>();
 
-    let callsigns_reporting = sigint_network_callsign::Entity::find()
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network.id))
-        .filter(
-            sigint_network_callsign::Column::SigintCallsign
-                .is_in(callsigns_txt),
-        )
-        .all(&env.dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|x| (x.sigint_callsign, x.is_reported))
-        .collect::<BTreeMap<_, _>>();
+    let callsigns_reporting = get_network_callsings_reporting(
+        &env.dbx,
+        network.id.clone(),
+        callsigns_txt,
+    )
+    .await
+    .context(h!())?;
 
     let callsigns = callsigns_raw
         .into_iter()
