@@ -22,6 +22,18 @@ pub enum ChangelogActionEnum {
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
+    enum_name = "deactivation_reason_enum"
+)]
+pub enum DeactivationReasonEnum {
+    #[sea_orm(string_value = "admin")]
+    Admin,
+    #[sea_orm(string_value = "inactive")]
+    Inactive,
+}
+#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
     enum_name = "network_description_type"
 )]
 pub enum NetworkDescriptionType {

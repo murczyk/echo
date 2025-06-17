@@ -96,6 +96,7 @@ mod m20250604_053059_add_sigint_network_activity_history;
 mod m20250612_065458_sigint_network_callsign_id_to_text;
 mod m20250611_044845_idx_sigint_network_callsign_callsign_id;
 mod m20250611_045218_idx_sigint_callsign_callsign_deleted;
+mod m20250617_111140_update_login_table;
 
 pub struct Migrator;
 
@@ -199,6 +200,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250612_065458_sigint_network_callsign_id_to_text::Migration),
             Box::new(m20250611_044845_idx_sigint_network_callsign_callsign_id::Migration),
             Box::new(m20250611_045218_idx_sigint_callsign_callsign_deleted::Migration),
+            Box::new(m20250617_111140_update_login_table::Migration),
         ]
     }
 }
