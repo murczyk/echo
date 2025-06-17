@@ -849,6 +849,19 @@ pub async fn report_networks(
             .await
             .context(h!())?;
 
+            let callsigns_txt = callsigns
+                .iter()
+                .map(|c| c.callsign.clone())
+                .collect::<Vec<_>>();
+
+            let callsigns_reporting = get_network_callsings_reporting(
+                &env.dbx,
+                network.id.clone(),
+                callsigns_txt,
+            )
+            .await
+            .context(h!())?;
+
             let correspondents_number = if callsigns.is_empty() {
                 String::new()
             } else {
@@ -903,6 +916,10 @@ pub async fn report_networks(
                         .known_callsigns
                         .as_ref()
                         .map_or(false, |v| !v.is_empty())
+                        && callsigns_reporting
+                            .get(&callsign.callsign)
+                            .cloned()
+                            .unwrap_or(false)
                 }) {
                     doc = doc
                         .add_table(
@@ -971,6 +988,10 @@ pub async fn report_networks(
                                         .iter()
                                         .filter(|callsign| {
                                             callsign.known_callsigns.is_some()
+                                                && callsigns_reporting
+                                                    .get(&callsign.callsign)
+                                                    .cloned()
+                                                    .unwrap_or(false)
                                         })
                                         .map(|callsign| {
                                             TableRow::new(vec![

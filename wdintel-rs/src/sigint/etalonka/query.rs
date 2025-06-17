@@ -1786,7 +1786,7 @@ pub async fn load_networks(
             Expr::cust(r#"(select string_agg(snf.freq, ', ')
                             from sigint_network_freq snf
                             where snf.network_id = "sigint_network"."id"
-                            and snf.deleted = false)"#.to_string()),
+                            and snf.active_to is null)"#.to_string()),
             "freqs",
         )
         .column(sigint_network::Column::OperationMode)
@@ -1935,6 +1935,31 @@ pub async fn get_network_active_freqs(
     let freqs = freqs.into_tuple::<String>().all(db).await.context(h!())?;
 
     Ok(freqs)
+}
+
+pub async fn get_network_callsings_reporting(
+    db: &DatabaseConnection,
+    network_id: i64,
+    callsigns_txt: Vec<String>,
+) -> Result<BTreeMap<String, bool>, AppError> {
+    let callsigns_reporting = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_callsign::Column::SigintNetworkId
+                .eq(network_id),
+        )
+        .filter(
+            sigint_network_callsign::Column::SigintCallsign
+                .is_in(callsigns_txt),
+        )
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|x| (x.sigint_callsign, x.is_reported))
+        .collect::<BTreeMap<_, _>>();
+
+    Ok(callsigns_reporting)
 }
 
 fn get_unix_timestamp_ms() -> i64 {
