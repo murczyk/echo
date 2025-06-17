@@ -26,6 +26,7 @@ pub async fn main_server(
     let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
     let dbx4 = dbx.clone();
     let dbx6 = dbx.clone();
+    let dbx7 = dbx.clone();
     let dbx8 = dbx.clone();
     let dbx9 = dbx.clone();
     let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
@@ -83,6 +84,11 @@ pub async fn main_server(
                     .await;
             });
         }
+        if !config.disable_inactive_users_worker.unwrap_or(false) {
+            tokio::spawn(async move {
+                crate::users::inactive_users_worker(&dbx7).await;
+            });
+        }        
         if !config.disable_unit_location_v2_worker.unwrap_or(false) {
             tokio::spawn(async move {
                 crate::location::worker::process_location_v2_coords_worker(

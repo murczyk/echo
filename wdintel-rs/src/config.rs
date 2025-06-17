@@ -48,6 +48,8 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
     "22b171e7-1c8a-469c-af68-79d7a06b99f4";
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
+pub const INACTIVE_USERS_DEACTIVATE_DURATION: u64 = 3600;
+pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 7;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -94,6 +96,7 @@ pub struct Config {
     pub greptime_dbname: Option<String>,
     pub feature_tmp_in_memory: Option<bool>,
     pub is_slave: Option<bool>,
+    pub disable_inactive_users_worker: Option<bool>,
 }
 
 impl Config {
