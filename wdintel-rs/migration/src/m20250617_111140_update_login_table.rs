@@ -12,6 +12,9 @@ impl MigrationTrait for Migration {
             CREATE TYPE deactivation_reason_enum as ENUM ('admin', 'inactive');
             ALTER TABLE login ADD COLUMN last_active_at TIMESTAMP WITHOUT TIME ZONE;
             ALTER TABLE login ADD COLUMN deactivation_reason deactivation_reason_enum;
+
+            UPDATE login SET last_active_at = NOW()
+                WHERE last_active_at IS NULL;
 ",
         )
         .await?;
