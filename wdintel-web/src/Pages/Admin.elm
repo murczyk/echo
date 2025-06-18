@@ -408,46 +408,50 @@ zoneCard2 isDark model user (zoneId, zone) =
                                 [ div [ class "card-header" ]
                                     [ text <| ds.displayName ++ " (" ++ ds.kind ++ ")" ]
                                 , div [ class "card-body p-2" ]
-                                    [ table [ class "table table-sm align-middle mb-0" ]
-                                        ([ thead []
-                                            [ tr []
-                                                [ th [] [ text "Група" ]
-                                                , th [] [ text "Прихований" ]
-                                                , th [] [ text "Дозволені користувачі" ]
-                                                , th [] []
-                                                ]
-                                            ]
-                                         ] ++
-                                         [ tbody []
-                                            (List.map (\group ->
-                                                let
-                                                    groupName =
-                                                        Dict.get group.groupMasterKey model.groupInfos
-                                                            |> Maybe.map .name
-                                                            |> def group.groupMasterKey
-                                                in
-                                                tr []
-                                                    [ td [] [ text groupName ]
-                                                    , td []
-                                                        [ input [ type_ "checkbox"
-                                                                , checked group.isGroupSecret
-                                                                --, onCheck (ToggleSecret zoneId sourceId group)
-                                                                , disabled True -- TODO: wire up
-                                                                ] []
+                                    (List.map (\group ->
+                                        let
+                                            groupName =
+                                                Dict.get group.groupMasterKey model.groupInfos
+                                                    |> Maybe.map .name
+                                                    |> def group.groupMasterKey
+                                            -- Column widths: name 25%, users 50%, toggle 25%
+                                            colName = [ style "width" "25%", class "d-flex align-items-center" ]
+                                            colUsers = [ style "width" "50%", class "d-flex flex-column justify-content-center" ]
+                                            colToggle = [ style "width" "25%", class "d-flex align-items-center justify-content-end" ]
+                                        in
+                                        if group.isGroupSecret then
+                                            div [ class "d-flex border rounded mb-2 p-2", style "align-items" "center" ]
+                                                [ div colName
+                                                    [ span [ class "fw-bold me-2" ] [ text groupName ]
+                                                    , span [ class "ms-1 text-muted" ] [ text "🔒" ]
+                                                    ]
+                                                , div colUsers
+                                                    [ div [ class "mb-1 d-flex align-items-center" ]
+                                                        [ span [ class "me-2" ] [ text "видима для:" ]
+                                                        , button [ class "btn btn-link p-0 m-0 align-baseline", title "Редагувати" ] [ text "✏️" ]
                                                         ]
-                                                    , td []
-                                                        [ text (String.join ", " group.allowedUsers)
-                                                          -- TODO: replace with user selector
-                                                        ]
-                                                    , td []
-                                                        [ button [ class "btn btn-sm btn-outline-primary", disabled True ] [ text "Зберегти" ]
-                                                          -- TODO: wire up save
+                                                    , div [] [ text (String.join ", " group.allowedUsers) ]
+                                                    ]
+                                                , div colToggle
+                                                    [ label [ class "form-check form-switch mb-0" ]
+                                                        [ input [ type_ "checkbox", checked True, class "form-check-input", disabled True ] []
+                                                        , span [ class "ms-2" ] [ text "Прихована" ]
                                                         ]
                                                     ]
-                                            ) groups)
-                                         ]
-                                        )
-                                    ]
+                                                ]
+                                        else
+                                            div [ class "d-flex border rounded mb-2 p-2", style "align-items" "center" ]
+                                                [ div colName
+                                                    [ span [ class "fw-bold me-2" ] [ text groupName ] ]
+                                                , div colUsers []
+                                                , div colToggle
+                                                    [ label [ class "form-check form-switch mb-0" ]
+                                                        [ input [ type_ "checkbox", checked False, class "form-check-input", disabled True ] []
+                                                        , span [ class "ms-2" ] [ text "Прихована" ]
+                                                        ]
+                                                    ]
+                                                ]
+                                    ) groups)
                                 ]
                             ]
                     )
