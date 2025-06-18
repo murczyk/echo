@@ -912,14 +912,20 @@ pub async fn report_networks(
             if !callsigns.is_empty() {
                 // Add known callsigns in table
                 if callsigns.iter().any(|callsign| {
-                    callsign
+                    let has_known = callsign
                         .known_callsigns
                         .as_ref()
-                        .map_or(false, |v| !v.is_empty())
-                        && callsigns_reporting
-                            .get(&callsign.callsign)
-                            .cloned()
-                            .unwrap_or(false)
+                        .map_or(false, |v| !v.is_empty());
+
+                    if req.networks_only {
+                        has_known
+                            && callsigns_reporting
+                                .get(&callsign.callsign)
+                                .cloned()
+                                .unwrap_or(false)
+                    } else {
+                        has_known
+                    }
                 }) {
                     doc = doc
                         .add_table(
@@ -987,11 +993,19 @@ pub async fn report_networks(
                                     callsigns
                                         .iter()
                                         .filter(|callsign| {
-                                            callsign.known_callsigns.is_some()
-                                                && callsigns_reporting
-                                                    .get(&callsign.callsign)
-                                                    .cloned()
-                                                    .unwrap_or(false)
+                                            if req.networks_only {
+                                                callsign
+                                                    .known_callsigns
+                                                    .is_some()
+                                                    && callsigns_reporting
+                                                        .get(&callsign.callsign)
+                                                        .cloned()
+                                                        .unwrap_or(false)
+                                            } else {
+                                                callsign
+                                                    .known_callsigns
+                                                    .is_some()
+                                            }
                                         })
                                         .map(|callsign| {
                                             TableRow::new(vec![
