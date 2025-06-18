@@ -8,7 +8,7 @@ use std::time::Duration;
 
 pub static SECRET: OnceLock<SecretConfig> = OnceLock::new();
 pub const MAX_SLEEP_SECONDS: u64 = 60;
-const RETRY_TIME: u64 = 10 * 60;
+const RETRY_TIME: u64 = 10 * 30;
 
 #[derive(Serialize, Deserialize)]
 struct LoginReq {
