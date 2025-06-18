@@ -2917,18 +2917,20 @@ sigintZoneEncoder struct =
 
 
 type alias ZoneDatasourceGroup =
-    { groupMasterKey : String
+    { sigintZoneDatasourceId : Int
+    , groupMasterKey : String
     , isGroupSecret : Bool
-    , allowedUsers : List ( Int, String )
+    , allowedUsers : List String
     }
 
 
 zoneDatasourceGroupEncoder : ZoneDatasourceGroup -> Json.Encode.Value
 zoneDatasourceGroupEncoder struct =
     Json.Encode.object
-        [ ( "group_master_key", Json.Encode.string struct.groupMasterKey )
+        [ ( "sigint_zone_datasource_id", Json.Encode.int struct.sigintZoneDatasourceId )
+        , ( "group_master_key", Json.Encode.string struct.groupMasterKey )
         , ( "is_group_secret", Json.Encode.bool struct.isGroupSecret )
-        , ( "allowed_users", Json.Encode.list (\( a, b ) -> Json.Encode.list identity [ Json.Encode.int a, Json.Encode.string b ]) struct.allowedUsers )
+        , ( "allowed_users", Json.Encode.list Json.Encode.string struct.allowedUsers )
         ]
 
 
@@ -6604,9 +6606,10 @@ sigintZoneDecoder =
 zoneDatasourceGroupDecoder : Json.Decode.Decoder ZoneDatasourceGroup
 zoneDatasourceGroupDecoder =
     Json.Decode.succeed ZoneDatasourceGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_datasource_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 Json.Decode.int) (Json.Decode.index 1 Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list Json.Decode.string)))
 
 
 zoneDatasourceGroupsReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsReq

@@ -694,17 +694,28 @@ zones_datasources_groups_list toMsg req =
         }
 
 
+zone_datasource_group_update :
+    (Result ApiError () -> msg)
+    -> ZoneDatasourceGroupUpdateReq
+    -> Cmd msg
+zone_datasource_group_update toMsg req =
+    Http.post
+        { url = "/api/sigint/zones/zone-datasource-group-update"
+        , body = Http.jsonBody (zoneDatasourceGroupUpdateReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
 
---zones_datasources_groups_list_save :
---    (Result ApiError () -> msg)
---    -> ZoneDatasourceGroupsSaveReq
---    -> Cmd msg
---zones_datasources_groups_list_save toMsg req =
---    Http.post
---        { url = "/api/sigint/zones/zone-datasource-groups-save"
---        , body = Http.jsonBody (zoneDatasourceGroupsSaveReqEncoder req)
---        , expect = leExpectJson toMsg (Decode.succeed ())
---        }
+
+zone_datasource_group_add :
+    (Result ApiError () -> msg)
+    -> ZoneDatasourceGroupAddReq
+    -> Cmd msg
+zone_datasource_group_add toMsg req =
+    Http.post
+        { url = "/api/sigint/zones/zone-datasource-group-add"
+        , body = Http.jsonBody (zoneDatasourceGroupAddReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
 
 
 inbox_message_tags_add :

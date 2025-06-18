@@ -3,7 +3,6 @@ module Pages.Admin exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Components.Tabs as Tabs
 import Components.Watermark as Watermark
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -311,29 +310,6 @@ update msg model =
             , E.sendCmd signalGroupEff
             )
 
-        -- SelectGroupsMsg zoneId sourceId imsg ->
-        --     case Dict.get ( zoneId, sourceId ) model.zoneSourceGroupsState of
-        --         Nothing ->
-        --             ( model, E.none )
-        --         Just state ->
-        --             let
-        --                 ( mAction, imodel2, icmd ) =
-        --                     Select.update imsg state
-        --                 m2 =
-        --                     { model
-        --                         | zoneSourceGroupsState =
-        --                             Dict.insert ( zoneId, sourceId )
-        --                                 imodel2
-        --                                 model.zoneSourceGroupsState
-        --                         , zoneSourceGroups =
-        --                             Dict.update ( zoneId, sourceId )
-        --                                 (def [] >> Le.Block.Select.multiUpdS mAction >> Just)
-        --                                 model.zoneSourceGroups
-        --                     }
-        --             in
-        --             ( m2
-        --             , E.sendCmd <| Cmd.map (SelectGroupsMsg zoneId sourceId) icmd
-        --             )
         GotGroupInfos (Err e) ->
             Api.handleHttpError ToastMsg e model
 
@@ -415,179 +391,72 @@ subscriptions model =
     Sub.none
 
 
-
---zoneCard : Bool -> Model -> B.User -> ( Int, B.SigintZone ) -> Html Msg
---zoneCard isDark model user ( zoneId, zone ) =
---    let
---        groupSelectBlock sourceId =
---            case Dict.get ( zoneId, sourceId ) model.zoneSourceGroupsState of
---                Nothing ->
---                    []
---
---                Just state ->
---                    let
---                        items =
---                            Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
---                                |> def []
---                                |> List.map
---                                    (\groupKey ->
---                                        Select.basicMenuItem
---                                            { item = groupKey
---                                            , label =
---                                                Dict.get groupKey model.groupInfos
---                                                    |> Maybe.map .name
---                                                    |> def groupKey
---                                            }
---                                    )
---
---                        menu =
---                            Dict.get ( zoneId, sourceId ) model.zoneSourceGroupsMenu |> def []
---                    in
---                    [ Html.map (SelectGroupsMsg zoneId sourceId)
---                        (Styled.toUnstyled <|
---                            Le.Block.Select.renderSelect
---                                items
---                                state
---                                menu
---                                "жодна"
---                                (Le.Block.Select.defaultOptions isDark)
---                        )
---                    ]
---
---        renderSourceConfig sourceId =
---            case findK sourceId model.datasources of
---                Nothing ->
---                    []
---
---                Just source ->
---                    if source.kind == "signal" || source.kind == "whatsapp" then
---                        [ div [ class "d-flex justify-content-center align-items-center" ]
---                            [ div
---                                [ class "me-2 text-end"
---                                , style "width" "260px"
---                                ]
---                                [ span [ class "badge bg-secondary" ]
---                                    [ text <| source.displayName ]
---                                ]
---                            , div
---                                [ style "width" "600px"
---                                , style "font-size" ".8rem"
---                                ]
---                                (groupSelectBlock sourceId)
---                            ]
---                        ]
---
---                    else if source.kind == "api" then
---                        let
---                            groupKeys =
---                                Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
---                                    |> def []
---                        in
---                        [ div [ class "d-flex justify-content-center align-items-center" ]
---                            [ div
---                                [ class "me-2 text-end"
---                                , style "width" "260px"
---                                ]
---                                [ span [ class "badge bg-secondary" ]
---                                    [ text <| source.displayName ]
---                                ]
---                            , div
---                                [ style "width" "600px"
---                                ]
---                                (List.map
---                                    (\gk ->
---                                        span [ class "badge bg-secondary me-2" ]
---                                            [ text <| Le.RerMessage.groupName gk model.groupInfos
---                                            ]
---                                    )
---                                    groupKeys
---                                )
---                            ]
---                        ]
---
---                    else
---                        []
---    in
---    case Dict.get zoneId model.zoneSourcesState of
---        Nothing ->
---            div [] []
---
---        Just state ->
---            let
---                items =
---                    Dict.get zoneId model.zoneSources
---                        |> def []
---                        |> List.map
---                            (\sourceId ->
---                                Select.basicMenuItem
---                                    { item = sourceId
---                                    , label =
---                                        findK sourceId model.datasources
---                                            |> mmap .displayName
---                                            |> def (String.fromInt sourceId)
---                                    }
---                            )
---
---                menu =
---                    Dict.get zoneId model.zoneSourcesMenu |> def []
---            in
---            div [ class "card mb-4" ]
---                [ div [ class "card-header" ]
---                    [ text <| "Напрямок: " ++ zone.name ]
---                , div [ class "card-body relative" ] <|
---                    div [ class "flex justify-center items-center mb-2" ]
---                        [ div
---                            [ class "me-2 text-end"
---                            , style "width" "260px"
---                            ]
---                            [ text "Джерела: " ]
---                        , div
---                            [ style "width" "600px"
---                            , style "font-size" ".8rem"
---                            ]
---                            [ Html.map (SelectDatasourceMsg zoneId)
---                                (Styled.toUnstyled <|
---                                    Le.Block.Select.renderSelect
---                                        items
---                                        state
---                                        menu
---                                        "жодне"
---                                        (Le.Block.Select.defaultOptions isDark)
---                                )
---                            ]
---                        ]
---                        :: List.concatMap renderSourceConfig
---                            (Dict.get zoneId model.zoneSources |> def [])
---                        ++ [ div [ class "d-flex justify-content-center align-items-center mt-4" ]
---                                [ button
---                                    [ class "btn btn-primary btn-sm"
---                                    , onClick (Save zoneId)
---                                    ]
---                                  <|
---                                    (if
---                                        Set.isEmpty
---                                            (Dict.get zoneId model.saveInProgress
---                                                |> def Set.empty
---                                            )
---                                     then
---                                        [ i [ class "bi bi-save fade-in" ] [] ]
---
---                                     else
---                                        [ Le.Block.Spinner.loadingSpinner2Sm ]
---                                    )
---                                        ++ [ text " зберегти"
---                                           ]
---                                ]
---                           ]
---                        ++ [ Watermark.new user.name |> Watermark.withPositioning ( 5, 50 ) |> Watermark.view
---                           ]
---                ]
---
-
-
 zoneCard2 : Bool -> Model -> B.User -> ( Int, B.SigintZone ) -> Html Msg
-zoneCard2 isDark model user zone =
-    section [] []
+zoneCard2 isDark model user (zoneId, zone) =
+    let
+        sourceRows =
+            Dict.get zoneId model.zoneSources |> def []
+                |> List.concatMap (\sourceId ->
+                    let
+                        source = findK sourceId model.datasources
+                        groups = Dict.get (zoneId, sourceId) model.zoneSourceGroups |> def []
+                    in
+                    case source of
+                        Nothing -> []
+                        Just ds ->
+                            [ div [ class "card mb-3" ]
+                                [ div [ class "card-header" ]
+                                    [ text <| ds.displayName ++ " (" ++ ds.kind ++ ")" ]
+                                , div [ class "card-body p-2" ]
+                                    [ table [ class "table table-sm align-middle mb-0" ]
+                                        ([ thead []
+                                            [ tr []
+                                                [ th [] [ text "Група" ]
+                                                , th [] [ text "Прихований" ]
+                                                , th [] [ text "Дозволені користувачі" ]
+                                                , th [] []
+                                                ]
+                                            ]
+                                         ] ++
+                                         [ tbody []
+                                            (List.map (\group ->
+                                                let
+                                                    groupName =
+                                                        Dict.get group.groupMasterKey model.groupInfos
+                                                            |> Maybe.map .name
+                                                            |> def group.groupMasterKey
+                                                in
+                                                tr []
+                                                    [ td [] [ text groupName ]
+                                                    , td []
+                                                        [ input [ type_ "checkbox"
+                                                                , checked group.isGroupSecret
+                                                                --, onCheck (ToggleSecret zoneId sourceId group)
+                                                                , disabled True -- TODO: wire up
+                                                                ] []
+                                                        ]
+                                                    , td []
+                                                        [ text (String.join ", " group.allowedUsers)
+                                                          -- TODO: replace with user selector
+                                                        ]
+                                                    , td []
+                                                        [ button [ class "btn btn-sm btn-outline-primary", disabled True ] [ text "Зберегти" ]
+                                                          -- TODO: wire up save
+                                                        ]
+                                                    ]
+                                            ) groups)
+                                         ]
+                                        )
+                                    ]
+                                ]
+                            ]
+                    )
+    in
+    div [ class "card mb-4" ]
+        [ div [ class "card-header" ]
+            [ text <| "Напрямок: " ++ zone.name ]
+        , div [ class "card-body" ] sourceRows
+        ]
 
 
 mainBlock : Bool -> Model -> B.User -> List (Html Msg)
@@ -597,8 +466,7 @@ mainBlock isDark model user =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ -- , Views.navBarAdmin dark "zones"
-      Views.noHeaderAndContent ToastMsg model.toasts <|
+    [ Views.noHeaderAndContent ToastMsg model.toasts <|
         div [ class "mt-2" ] (mainBlock dark model user)
     ]
 
