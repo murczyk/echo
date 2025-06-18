@@ -133,7 +133,7 @@ pub async fn zones_datasources_group_update(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupUpdateReq>,
-) -> Result<Json<()>, AppError> {
+) -> Result<Json<ZoneDatasourceGroup>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
     let txn = env.dbx.begin().await?;
@@ -147,14 +147,38 @@ pub async fn zones_datasources_group_update(
     zones_datasources_group_update_bl(
         req.user_logins,
         req.is_secret,
-        szd,
+        szd.clone(),
         &txn,
     )
     .await
     .context(h!())?;
+    // Fetch updated allowed users
+    let allowed_users = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq(&szd.group_master_key))
+        .all(&txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|u| u.login)
+        .collect::<Vec<_>>();
+
+    // Fetch updated is_secret
+    let is_secret = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .map(|g| g.is_secret)
+        .unwrap_or(false);
 
     txn.commit().await?;
-    Ok(Json(()))
+
+    Ok(Json(ZoneDatasourceGroup {
+        sigint_zone_datasource_id: szd.id,
+        group_master_key: szd.group_master_key,
+        is_group_secret: is_secret,
+        allowed_users,
+    }))
 }
 
 #[post("/api/sigint/zones/zone-datasource-group-add")]

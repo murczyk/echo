@@ -98,9 +98,9 @@ type Msg
     | UserSelectorSelMsg (Select.Msg String)
     | UserSelectorSave
     | UserSelectorLoginsLoaded (Result ApiError B.ListLoginsRsp)
-    | UserSelectorSaveDone (Result ApiError ())
+    | UserSelectorSaveDone (Result ApiError B.ZoneDatasourceGroup)
     | ToggleGroupSecret Int Int String Bool (List String)
-    | ToggleGroupSecretDone (Result ApiError ()) Int Int String
+    | ToggleGroupSecretDone (Result ApiError B.ZoneDatasourceGroup) Int Int String
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -458,14 +458,34 @@ update msg model =
                         Nothing -> ( model, E.none )
                 Nothing -> ( model, E.none )
 
-        UserSelectorSaveDone (Ok ()) ->
-            -- reload groups for the relevant zone/source
-            case model.userSelectorDialog of
-                Just { zoneId, sourceId, groupKey, selected } ->
-                    ( { model | userSelectorDialog = Nothing, userSelectorError = Nothing }
-                    , E.sendCmd <| Api.zones_datasources_groups_list (GotZoneDatasourceGroups zoneId sourceId) { zoneId = zoneId, datasourceId = sourceId }
-                    )
-                Nothing -> ( model, E.none )
+        UserSelectorSaveDone (Ok updatedGroup) ->
+            let
+                { sigintZoneDatasourceId, groupMasterKey } = updatedGroup
+                -- find zoneId/sourceId by searching all zoneSourceGroups
+                findZoneSource =
+                    Dict.toList model.zoneSourceGroups
+                        |> List.filterMap (\((zid, sid), groups) ->
+                            if List.any (\g -> g.sigintZoneDatasourceId == sigintZoneDatasourceId) groups then
+                                Just (zid, sid)
+                            else
+                                Nothing)
+                        |> List.head
+                (zoneId, sourceId) =
+                    case findZoneSource of
+                        Just v -> v
+                        Nothing -> (0, 0)
+                oldGroups = Dict.get (zoneId, sourceId) model.zoneSourceGroups |> def []
+                newGroups = List.map (\g -> if g.groupMasterKey == groupMasterKey then updatedGroup else g) oldGroups
+                m2 = { model | userSelectorDialog = Nothing, userSelectorError = Nothing, zoneSourceGroups = Dict.insert (zoneId, sourceId) newGroups model.zoneSourceGroups }
+                needInfo =
+                    not (Dict.member updatedGroup.groupMasterKey model.groupInfos)
+                eff =
+                    if needInfo then
+                        Api.rer_importer_signal_group_info_batch GotGroupInfos { groups = [ { masterKey = updatedGroup.groupMasterKey } ] }
+                    else
+                        Cmd.none
+            in
+            ( m2, E.sendCmd eff )
         UserSelectorSaveDone (Err e) ->
             ( { model | userSelectorError = Just "Не вдалося зберегти" }, E.none )
 
@@ -481,10 +501,20 @@ update msg model =
                     ( { model | groupUpdateInProgress = Just (zoneId, sourceId, groupKey), groupUpdateError = Nothing }
                     , E.sendCmd <| Api.zone_datasource_group_update (\res -> ToggleGroupSecretDone res zoneId sourceId groupKey) req )
                 Nothing -> ( model, E.none )
-        ToggleGroupSecretDone (Ok ()) zoneId sourceId groupKey ->
-            ( { model | groupUpdateInProgress = Nothing, groupUpdateError = Nothing }
-            , E.sendCmd <| Api.zones_datasources_groups_list (GotZoneDatasourceGroups zoneId sourceId) { zoneId = zoneId, datasourceId = sourceId }
-            )
+        ToggleGroupSecretDone (Ok updatedGroup) zoneId sourceId groupKey ->
+            let
+                oldGroups = Dict.get (zoneId, sourceId) model.zoneSourceGroups |> def []
+                newGroups = List.map (\g -> if g.groupMasterKey == groupKey then updatedGroup else g) oldGroups
+                m2 = { model | groupUpdateInProgress = Nothing, groupUpdateError = Nothing, zoneSourceGroups = Dict.insert (zoneId, sourceId) newGroups model.zoneSourceGroups }
+                needInfo =
+                    not (Dict.member updatedGroup.groupMasterKey model.groupInfos)
+                eff =
+                    if needInfo then
+                        Api.rer_importer_signal_group_info_batch GotGroupInfos { groups = [ { masterKey = updatedGroup.groupMasterKey } ] }
+                    else
+                        Cmd.none
+            in
+            ( m2, E.sendCmd eff )
         ToggleGroupSecretDone (Err e) zoneId sourceId groupKey ->
             ( { model | groupUpdateInProgress = Nothing, groupUpdateError = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, error = "Не вдалося зберегти" } }, E.none )
 

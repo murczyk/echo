@@ -695,26 +695,26 @@ zones_datasources_groups_list toMsg req =
 
 
 zone_datasource_group_update :
-    (Result ApiError () -> msg)
+    (Result ApiError ZoneDatasourceGroup -> msg)
     -> ZoneDatasourceGroupUpdateReq
     -> Cmd msg
 zone_datasource_group_update toMsg req =
     Http.post
         { url = "/api/sigint/zones/zone-datasource-group-update"
         , body = Http.jsonBody (zoneDatasourceGroupUpdateReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
+        , expect = leExpectJson toMsg zoneDatasourceGroupDecoder
         }
 
 
 zone_datasource_group_add :
-    (Result ApiError () -> msg)
+    (Result ApiError ZoneDatasourceGroup -> msg)
     -> ZoneDatasourceGroupAddReq
     -> Cmd msg
 zone_datasource_group_add toMsg req =
     Http.post
         { url = "/api/sigint/zones/zone-datasource-group-add"
         , body = Http.jsonBody (zoneDatasourceGroupAddReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
+        , expect = leExpectJson toMsg zoneDatasourceGroupDecoder
         }
 
 
