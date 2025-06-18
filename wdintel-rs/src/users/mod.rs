@@ -2,6 +2,7 @@
 use self::types::*;
 use crate::config::*;
 use crate::entities::login::Model;
+use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
 // use crate::utils::*;
@@ -186,8 +187,13 @@ pub async fn update_login(
 
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.delta_login_id = Set(delta_id);
-    if req.deleted.is_some() {
-        login_obj.deleted = Set(req.deleted.context(h!())?);
+    if let Some(deleted) = req.deleted {
+        login_obj.deleted = Set(deleted);
+        if !deleted {
+        // If user is being re-activated, clear deactivation_reason and update last_active_at
+        login_obj.deactivation_reason = Set(None);
+        login_obj.last_active_at = Set(Some(Utc::now().naive_utc()));
+        }
     }
     if req.password.is_some() {
         let salt_s =
@@ -210,6 +216,13 @@ pub async fn update_login(
     }
     if req.organism_id.is_some() {
         login_obj.organism_id = Set(req.organism_id.clone());
+    }
+    if req.deactivation_reason.is_some() {
+        login_obj.deactivation_reason = Set(
+            req.deactivation_reason
+                .clone()
+                .map(DeactivationReasonEnum::from),
+        );
     }
     let res = login_obj.update(&env.dbx).await.context(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
@@ -237,6 +250,12 @@ pub async fn update_login(
             .context(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
+        last_active_at: res
+            .last_active_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        deactivation_reason: res
+            .deactivation_reason
+            .map(DeactivationReasonType::from),
     }))
 }
 
@@ -323,6 +342,12 @@ pub async fn create_login(
             .context(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
+        last_active_at: res
+            .last_active_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        deactivation_reason: res
+            .deactivation_reason
+            .map(DeactivationReasonType::from),
     }))
 }
 
@@ -364,6 +389,8 @@ pub async fn list_logins(
         organism_id: Option<i64>,
         created_at: sea_orm::prelude::DateTime,
         deleted: bool,
+        last_active_at: Option<sea_orm::prelude::DateTime>,
+        deactivation_reason: Option<DeactivationReasonEnum>,
         sigint_zone_name: Option<String>,
         organism_name: Option<String>,
         organism_enabled: Option<bool>,
@@ -382,6 +409,8 @@ pub async fn list_logins(
             login::Column::OrganismId,
             login::Column::CreatedAt,
             login::Column::Deleted,
+            login::Column::LastActiveAt,
+            login::Column::DeactivationReason,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
         .column_as(organism::Column::Name, "organism_name")
@@ -417,6 +446,12 @@ pub async fn list_logins(
             organism_name: login.organism_name,
             organism_enabled: login.organism_enabled,
             delta_login: login.delta_login,
+            last_active_at: login
+                .last_active_at
+                .map(|dt| dt.and_utc().timestamp_millis()),
+            deactivation_reason: login
+                .deactivation_reason
+                .map(DeactivationReasonType::from),
         };
         users.push(user);
     }
@@ -556,7 +591,7 @@ pub async fn user_login(
 
     Identity::login(&http_req.extensions(), user_id.clone().into())
         .context(h!())?;
-    
+
     update_last_active_at(&env.dbx, &user_id)
         .await
         .context(h!())?;
@@ -1003,6 +1038,12 @@ async fn register_delta_user(
             .context(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
+        last_active_at: res
+            .last_active_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        deactivation_reason: res
+            .deactivation_reason
+            .map(DeactivationReasonType::from),
     };
     Ok(result)
 }
