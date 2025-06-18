@@ -25,6 +25,7 @@ import Set exposing (Set)
 import Shared
 import View exposing (View)
 import Views
+import Components.ModalDialog as ModalDialog
 
 
 type alias Model =
@@ -41,6 +42,14 @@ type alias Model =
     , zoneSourceGroups : Dict ( Int, Int ) (List B.ZoneDatasourceGroup)
     , groupInfos : Dict String B.SignalGroupEntry
     , saveInProgress : Dict Int (Set Int)
+    , userSelectorDialog : Maybe { zoneId : Int, sourceId : Int, groupKey : String, selected : List String }
+    , allLogins : List String
+    , userSelectorState : Select.State
+    , userSelectorMenu : List (Select.MenuItem String)
+    , userSelectorLoading : Bool
+    , userSelectorError : Maybe String
+    , groupUpdateInProgress : Maybe (Int, Int, String) -- (zoneId, sourceId, groupKey)
+    , groupUpdateError : Maybe { zoneId : Int, sourceId : Int, groupKey : String, error : String }
     }
 
 
@@ -59,6 +68,14 @@ init _ =
       , zoneSourceGroups = Dict.empty
       , groupInfos = Dict.empty
       , saveInProgress = Dict.empty
+      , userSelectorDialog = Nothing
+      , allLogins = []
+      , userSelectorState = Select.initState (Select.selectIdentifier "user-selector")
+      , userSelectorMenu = []
+      , userSelectorLoading = False
+      , userSelectorError = Nothing
+      , groupUpdateInProgress = Nothing
+      , groupUpdateError = Nothing
       }
     , E.sendCmd <|
         Api.datasource_list GotDatasourceList
@@ -76,6 +93,14 @@ type Msg
     | GotGroupInfos (Result ApiError B.SignalGroupsRsp)
     | Save Int
     | SaveDone Int Int (Result ApiError ())
+    | OpenUserSelector Int Int String (List String)
+    | CloseUserSelector
+    | UserSelectorSelMsg (Select.Msg String)
+    | UserSelectorSave
+    | UserSelectorLoginsLoaded (Result ApiError B.ListLoginsRsp)
+    | UserSelectorSaveDone (Result ApiError ())
+    | ToggleGroupSecret Int Int String Bool (List String)
+    | ToggleGroupSecretDone (Result ApiError ()) Int Int String
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -385,6 +410,84 @@ update msg model =
             in
             ( m2, E.none )
 
+        OpenUserSelector zoneId sourceId groupKey selected ->
+            if List.isEmpty model.allLogins then
+                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, selected = selected }, userSelectorLoading = True, userSelectorError = Nothing }
+                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                )
+            else
+                let
+                    menu = List.map (\login -> Select.basicMenuItem { item = login, label = login }) model.allLogins
+                in
+                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, selected = selected }, userSelectorMenu = menu, userSelectorState = Select.initState (Select.selectIdentifier "user-selector") }
+                , E.none )
+
+        UserSelectorLoginsLoaded (Ok rsp) ->
+            let
+                logins = List.map .login rsp.users
+                menu = List.map (\login -> Select.basicMenuItem { item = login, label = login }) logins
+            in
+            ( { model | allLogins = logins, userSelectorMenu = menu, userSelectorLoading = False, userSelectorError = Nothing }
+            , E.none )
+        UserSelectorLoginsLoaded (Err e) ->
+            ( { model | userSelectorLoading = False, userSelectorError = Just "Не вдалося завантажити користувачів" }, E.none )
+
+        UserSelectorSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) = Select.update imsg model.userSelectorState
+                selected = Le.Block.Select.multiUpdS mAction (model.userSelectorDialog |> Maybe.map .selected |> Maybe.withDefault [])
+            in
+            ( { model | userSelectorState = imodel2, userSelectorDialog = model.userSelectorDialog |> Maybe.map (\d -> { d | selected = selected }) }
+            , E.sendCmd <| Cmd.map UserSelectorSelMsg icmd )
+
+        CloseUserSelector ->
+            ( { model | userSelectorDialog = Nothing, userSelectorError = Nothing }, E.none )
+
+        UserSelectorSave ->
+            case model.userSelectorDialog of
+                Just { zoneId, sourceId, groupKey, selected } ->
+                    let
+                        group = Dict.get (zoneId, sourceId) model.zoneSourceGroups |> def [] |> List.filter (\g -> g.groupMasterKey == groupKey) |> List.head
+                    in
+                    case group of
+                        Just g ->
+                            let
+                                req = { id = g.sigintZoneDatasourceId, isSecret = g.isGroupSecret, userLogins = selected }
+                            in
+                            ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
+                        Nothing -> ( model, E.none )
+                Nothing -> ( model, E.none )
+
+        UserSelectorSaveDone (Ok ()) ->
+            -- reload groups for the relevant zone/source
+            case model.userSelectorDialog of
+                Just { zoneId, sourceId, groupKey, selected } ->
+                    ( { model | userSelectorDialog = Nothing, userSelectorError = Nothing }
+                    , E.sendCmd <| Api.zones_datasources_groups_list (GotZoneDatasourceGroups zoneId sourceId) { zoneId = zoneId, datasourceId = sourceId }
+                    )
+                Nothing -> ( model, E.none )
+        UserSelectorSaveDone (Err e) ->
+            ( { model | userSelectorError = Just "Не вдалося зберегти" }, E.none )
+
+        ToggleGroupSecret zoneId sourceId groupKey newSecret allowedUsers ->
+            let
+                group = Dict.get (zoneId, sourceId) model.zoneSourceGroups |> def [] |> List.filter (\g -> g.groupMasterKey == groupKey) |> List.head
+            in
+            case group of
+                Just g ->
+                    let
+                        req = { id = g.sigintZoneDatasourceId, isSecret = newSecret, userLogins = allowedUsers }
+                    in
+                    ( { model | groupUpdateInProgress = Just (zoneId, sourceId, groupKey), groupUpdateError = Nothing }
+                    , E.sendCmd <| Api.zone_datasource_group_update (\res -> ToggleGroupSecretDone res zoneId sourceId groupKey) req )
+                Nothing -> ( model, E.none )
+        ToggleGroupSecretDone (Ok ()) zoneId sourceId groupKey ->
+            ( { model | groupUpdateInProgress = Nothing, groupUpdateError = Nothing }
+            , E.sendCmd <| Api.zones_datasources_groups_list (GotZoneDatasourceGroups zoneId sourceId) { zoneId = zoneId, datasourceId = sourceId }
+            )
+        ToggleGroupSecretDone (Err e) zoneId sourceId groupKey ->
+            ( { model | groupUpdateInProgress = Nothing, groupUpdateError = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, error = "Не вдалося зберегти" } }, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -418,39 +521,45 @@ zoneCard2 isDark model user (zoneId, zone) =
                                             colName = [ style "width" "25%", class "d-flex align-items-center" ]
                                             colUsers = [ style "width" "50%", class "d-flex flex-column justify-content-center" ]
                                             colToggle = [ style "width" "25%", class "d-flex align-items-center justify-content-end" ]
+                                            isLoading =
+                                                case model.groupUpdateInProgress of
+                                                    Just (z, s, k) -> z == zoneId && s == sourceId && k == group.groupMasterKey
+                                                    Nothing -> False
+                                            errorMsg =
+                                                case model.groupUpdateError of
+                                                    Just err -> if err.zoneId == zoneId && err.sourceId == sourceId && err.groupKey == group.groupMasterKey then Just err.error else Nothing
+                                                    Nothing -> Nothing
                                         in
-                                        if group.isGroupSecret then
-                                            div [ class "d-flex border rounded mb-2 p-2", style "align-items" "center" ]
-                                                [ div colName
-                                                    [ span [ class "fw-bold me-2" ] [ text groupName ]
-                                                    , span [ class "ms-1 text-muted" ] [ text "🔒" ]
-                                                    ]
-                                                , div colUsers
-                                                    [ div [ class "mb-1 d-flex align-items-center" ]
+                                        div [ class "d-flex border rounded mb-2 p-2", style "align-items" "center" ]
+                                            [ div colName
+                                                [ span [ class "fw-bold me-2" ] [ text groupName ]
+                                                , (if group.isGroupSecret then span [ class "ms-1 text-muted" ] [ text "🔒" ] else text "")
+                                                ]
+                                            , div colUsers
+                                                [ if group.isGroupSecret then
+                                                    div [ class "mb-1 d-flex align-items-center" ]
                                                         [ span [ class "me-2" ] [ text "видима для:" ]
-                                                        , button [ class "btn btn-link p-0 m-0 align-baseline", title "Редагувати" ] [ text "✏️" ]
+                                                        , button [ class "btn btn-link p-0 m-0 align-baseline", title "Редагувати", onClick (OpenUserSelector zoneId sourceId group.groupMasterKey group.allowedUsers) ] [ text "✏️" ]
                                                         ]
-                                                    , div [] [ text (String.join ", " group.allowedUsers) ]
-                                                    ]
-                                                , div colToggle
-                                                    [ label [ class "form-check form-switch mb-0" ]
-                                                        [ input [ type_ "checkbox", checked True, class "form-check-input", disabled True ] []
-                                                        , span [ class "ms-2" ] [ text "Прихована" ]
-                                                        ]
-                                                    ]
+                                                  else text ""
+                                                , if group.isGroupSecret then div [] [ text (String.join ", " group.allowedUsers) ] else text ""
                                                 ]
-                                        else
-                                            div [ class "d-flex border rounded mb-2 p-2", style "align-items" "center" ]
-                                                [ div colName
-                                                    [ span [ class "fw-bold me-2" ] [ text groupName ] ]
-                                                , div colUsers []
-                                                , div colToggle
-                                                    [ label [ class "form-check form-switch mb-0" ]
-                                                        [ input [ type_ "checkbox", checked False, class "form-check-input", disabled True ] []
-                                                        , span [ class "ms-2" ] [ text "Прихована" ]
-                                                        ]
+                                            , div colToggle
+                                                [ label [ class "form-check form-switch mb-0" ]
+                                                    [ input [ type_ "checkbox"
+                                                            , checked group.isGroupSecret
+                                                            , class "form-check-input"
+                                                            , disabled isLoading
+                                                            , onClick (ToggleGroupSecret zoneId sourceId group.groupMasterKey (not group.isGroupSecret) group.allowedUsers)
+                                                            ] []
+                                                    , span [ class "ms-2" ] [ text "Прихована" ]
                                                     ]
+                                                , if isLoading then span [ class "ms-2" ] [ Le.Block.Spinner.loadingSpinner2Sm ] else text ""
+                                                , case errorMsg of
+                                                    Just msg -> div [ class "text-danger mt-1" ] [ text msg ]
+                                                    Nothing -> text ""
                                                 ]
+                                            ]
                                     ) groups)
                                 ]
                             ]
@@ -473,6 +582,32 @@ body dark shared user model =
     [ Views.noHeaderAndContent ToastMsg model.toasts <|
         div [ class "mt-2" ] (mainBlock dark model user)
     ]
+        ++ (case model.userSelectorDialog of
+            Just dialog ->
+                [ ModalDialog.modalDialog True CloseUserSelector []
+                    [ div [ class "mb-2 fw-bold" ] [ text "Виберіть користувачів, яким видима група" ]
+                    , if model.userSelectorLoading then
+                        div [] [ text "Завантаження..." ]
+                      else
+                        Html.map UserSelectorSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectVirtual
+                                    (List.map (\login -> Select.basicMenuItem { item = login, label = login }) dialog.selected)
+                                    model.userSelectorState
+                                    model.userSelectorMenu
+                                    "користувачі"
+                                    { loading = False, disabled = False, isDark = dark }
+                    , case model.userSelectorError of
+                        Just err -> div [ class "text-danger mt-2" ] [ text err ]
+                        Nothing -> text ""
+                    , div [ class "mt-3 d-flex justify-content-end gap-2" ]
+                        [ button [ class "btn btn-secondary", onClick CloseUserSelector ] [ text "Скасувати" ]
+                        , button [ class "btn btn-primary", onClick UserSelectorSave ] [ text "Зберегти" ]
+                        ]
+                    ]
+                ]
+            Nothing -> []
+        )
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
