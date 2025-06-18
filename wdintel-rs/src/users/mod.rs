@@ -302,7 +302,7 @@ pub async fn create_login(
         sigint_zone_id: Set(req.sigint_zone_id.clone()),
         organism_id: Set(req.organism_id.clone()),
         deleted: Set(false),
-        last_active_at: NotSet,
+        last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
     }
     .insert(&env.dbx)
@@ -989,7 +989,7 @@ async fn register_delta_user(
         organism_id: Set(organism_id),
         deleted: Set(false),
         delta_login_id: Set(Some(delta_login.id)),
-        last_active_at: NotSet,
+        last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
     }
     .insert(dbx)
