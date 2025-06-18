@@ -738,7 +738,27 @@ update shared msg model =
             Api.handleHttpError ToastMsg e model
 
         CallsignReportingStatusUpdatedByApi (Ok res) ->
-            ( { model | callsignsEditingState = Readonly }, E.none )
+            case (model.network, model.callsigns, model.callsignsEditingState) of
+                (Success network, Success callsigns, Editing editingDict) ->
+                    let
+                        updatedCallsigns =
+                            List.map
+                                (\c ->
+                                    case Dict.get c.callsign editingDict of
+                                        Just newIsReported ->
+                                            { c | isReported = newIsReported }
+                                        Nothing ->
+                                            c
+                                )
+                                callsigns
+                    in
+                    ( { model | callsignsEditingState = Readonly, callsigns = Success updatedCallsigns }, E.none )
+
+                (Success network, Success callsigns, _) ->
+                    ( { model | callsignsEditingState = Readonly }, E.none )
+
+                _ ->
+                    ( model, E.none )
 
         CallsignsEditStartedByUser ->
             ( { model | callsignsEditingState = Editing Dict.empty }, E.none )
@@ -782,6 +802,7 @@ mainInfoBlock user network shared model =
             [ text "Згідно форми" ]
         , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
             i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick NetworkEditStartedByUser ] []
+
           else
             text ""
         ]
@@ -1240,12 +1261,14 @@ contentBlock user shared network model =
                     Readonly ->
                         if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                             mainInfoBlock user network shared model
+
                         else
                             mainInfoBlock user network shared model
 
                     Editing eNetwork ->
                         if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                             mainInfoEditBlock eNetwork network.freqs shared model
+
                         else
                             mainInfoBlock user network shared model
                 )
@@ -1445,6 +1468,7 @@ contentBlock user shared network model =
                             [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick FreqsEditCanceledByUser ] []
                             , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick FreqsEditSavedByUser ] []
                             ]
+
               else
                 text ""
             ]
@@ -1500,6 +1524,7 @@ contentBlock user shared network model =
                             [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick CallsignsEditCanceledByUser ] []
                             , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick CallsignsEditSavedByUser ] []
                             ]
+
               else
                 text ""
             ]
