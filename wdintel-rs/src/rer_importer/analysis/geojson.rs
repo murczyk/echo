@@ -21,13 +21,11 @@ pub async fn rer_analysis_download_geojson(
 
     #[derive(FromQueryResult)]
     struct Res {
-        // id: i64,
+        id: i64,
         freq: Option<String>,
         lat: Option<f64>,
         lng: Option<f64>,
-        // body: Option<String>,
         datetime: NaiveDateTime,
-        // group_master_key: String,
         group_name: String,
     }
     let items = signal_message::Entity::find()
@@ -46,8 +44,6 @@ pub async fn rer_analysis_download_geojson(
         .select_only()
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .column_as(Expr::col(signal_message::Column::Body), "body")
-        .column_as(signal_message::Column::GroupMasterKey, "group_master_key")
         .column_as(signal_group::Column::Name, "group_name")
         .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
@@ -87,7 +83,6 @@ pub async fn rer_analysis_download_geojson(
         &req.selected_locations,
         include_peleng_locations,
     )?;    
-    let items = items.group_by(Expr::cust("1, 2, 3, 4, 5"));
     // println!(
     //     "> download kmz items query: {}",
     //     items.build(DbBackend::Postgres).to_string()
