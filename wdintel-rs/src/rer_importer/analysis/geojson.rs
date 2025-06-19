@@ -16,6 +16,8 @@ pub async fn rer_analysis_download_geojson(
     let dt_since_minus_24h =
         dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let include_peleng_locations =
+        req.include_peleng_locations.clone().unwrap_or(false);   
 
     #[derive(FromQueryResult)]
     struct Res {
@@ -80,6 +82,11 @@ pub async fn rer_analysis_download_geojson(
         false,
     )?;
     let items = filter_search(items, &req.search)?;
+    let items = filter_selected_locations(
+        items,
+        &req.selected_locations,
+        include_peleng_locations,
+    )?;    
     let items = items.group_by(Expr::cust("1, 2, 3, 4, 5"));
     // println!(
     //     "> download kmz items query: {}",
