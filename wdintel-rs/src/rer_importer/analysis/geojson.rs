@@ -17,11 +17,11 @@ pub async fn rer_analysis_download_geojson(
         dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);   
+        req.include_peleng_locations.clone().unwrap_or(false);
 
     #[derive(FromQueryResult)]
     struct Res {
-        id: i64,
+        // id: i64,
         freq: Option<String>,
         lat: Option<f64>,
         lng: Option<f64>,
@@ -82,18 +82,78 @@ pub async fn rer_analysis_download_geojson(
         items,
         &req.selected_locations,
         include_peleng_locations,
-    )?;    
+    )?;
     // println!(
     //     "> download kmz items query: {}",
     //     items.build(DbBackend::Postgres).to_string()
     // );
     let items = items.into_model::<Res>().all(&env.dbx).await?;
+    // Collect unique freqs from main query results
+    let unique_freqs: HashSet<String> =
+        items.iter().filter_map(|item| item.freq.clone()).collect();
 
     let tmp_dir = TempDir::new("wdintel-rer-analytics-geojson")?;
     let now = Utc::now();
     let outpath = tmp_dir
         .path()
         .join(format!("report-{}.geojson", now.format("%m%d-%H%M")));
+
+    let filter_active_ts =
+        crate::sigint::freq::util::filter_by_active_ts(dt_since, dt_till);
+
+    // Pre-load networks
+    let networks: HashMap<String, String> = sigint_network::Entity::find()
+        .find_also_related(sigint_network_freq::Entity)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(filter_active_ts)
+        .filter(sigint_network_freq::Column::Freq.is_in(unique_freqs.clone()))
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .filter_map(|(network, maybe_freq)| {
+            maybe_freq.map(|freq_model| {
+                (freq_model.freq.clone(), network.name.clone())
+            })
+        })
+        .collect();
+
+    // Pre-load callsigns
+    #[derive(FromQueryResult)]
+    struct CallsignRes {
+        freq: String,
+        callsign: String,
+    }
+
+    let callsigns: HashMap<String, Vec<String>> =
+        signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .select_only()
+            .column_as(sigint_inbox_item::Column::Freq, "freq")
+            .column_as(
+                Expr::cust("jsonb_array_elements_text(callsigns)"),
+                "callsign",
+            )
+            .filter(sigint_inbox_item::Column::Freq.is_in(unique_freqs.clone()))
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+            .filter(signal_message::Column::Deleted.eq(false))
+            .group_by(Expr::cust("1, 2"))
+            .into_model::<CallsignRes>()
+            .all(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .fold(HashMap::new(), |mut acc, row| {
+                let entry = acc.entry(row.freq).or_insert_with(Vec::new);
+                if entry.len() < 10 {
+                    entry.push(row.callsign);
+                }
+                acc
+            });
 
     let mut features = HashMap::new();
 
@@ -110,56 +170,14 @@ pub async fn rer_analysis_download_geojson(
 
         let mut comments = vec![];
 
-        let filter_active_ts =
-            crate::sigint::freq::util::filter_by_active_ts(dt_since, dt_till);
-
-        if let Some(freq) = sigint_network::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_network::Relation::SigintNetworkFreq.def(),
-            )
-            .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
-            .filter(sigint_network::Column::Deleted.eq(false))
-            .filter(filter_active_ts)
-            .one(&env.dbx)
-            .await?
-        {
-            comments.push(format!("Мережа: {}\n\n", freq.name));
+        if let Some(network_name) = networks.get(&freq) {
+            comments.push(format!("Мережа: {}", network_name));
         }
 
-        #[derive(FromQueryResult)]
-        struct CallsignRes {
-            callsign: String,
-        }
-
-        let callsigns = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .select_only()
-            .column_as(
-                Expr::cust("jsonb_array_elements_text(callsigns)"),
-                "callsign",
-            )
-            .filter(sigint_inbox_item::Column::Freq.eq(freq.clone()))
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            .filter(signal_message::Column::Deleted.eq(false))
-            .group_by(Expr::cust("1"))
-            .limit(10);
-        // println!(
-        //     "> callsigns sql: {}",
-        //     callsigns.build(DbBackend::Postgres).to_string()
-        // );
-        let callsigns: Vec<CallsignRes> =
-            callsigns.into_model::<CallsignRes>().all(&env.dbx).await?;
-        // comma-separated callsigns
-        let callsigns_s: String = callsigns
-            .iter()
-            .map(|x| x.callsign.clone())
-            .collect::<Vec<String>>()
-            .join(", ");
+        let callsigns_s = callsigns
+            .get(&freq)
+            .map(|v| v.join(", "))
+            .unwrap_or_default();
         comments.push(format!("Позивні: {}", callsigns_s));
 
         let mut comments_one: String = comments.join("\n");
