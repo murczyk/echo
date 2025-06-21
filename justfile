@@ -213,7 +213,7 @@ _copy-db:
     set +x
     echo "Run: sudo -u postgres dropdb --force wd"
     echo "Run: sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
-    echo "Run: pg_restore -U wd -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
+    echo "Run: sudo -u postgres pg_restore -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
     set -x
 
 copy-db-echo-tgt-art:
