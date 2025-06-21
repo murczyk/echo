@@ -1944,10 +1944,7 @@ pub async fn get_network_callsings_reporting(
 ) -> Result<BTreeMap<String, bool>, AppError> {
     let callsigns_reporting = sigint_network_callsign::Entity::find()
         .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(
-            sigint_network_callsign::Column::SigintNetworkId
-                .eq(network_id),
-        )
+        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
         .filter(
             sigint_network_callsign::Column::SigintCallsign
                 .is_in(callsigns_txt),
