@@ -88,7 +88,7 @@ pub async fn main_server(
             tokio::spawn(async move {
                 crate::users::inactive_users_worker(&dbx7).await;
             });
-        }        
+        }
         if !config.disable_unit_location_v2_worker.unwrap_or(false) {
             tokio::spawn(async move {
                 crate::location::worker::process_location_v2_coords_worker(

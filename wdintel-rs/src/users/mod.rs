@@ -13,7 +13,6 @@ use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
 use sea_orm::*;
-use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel};
 use std::collections::BTreeMap;
 
 pub mod types;
@@ -190,9 +189,9 @@ pub async fn update_login(
     if let Some(deleted) = req.deleted {
         login_obj.deleted = Set(deleted);
         if !deleted {
-        // If user is being re-activated, clear deactivation_reason and update last_active_at
-        login_obj.deactivation_reason = Set(None);
-        login_obj.last_active_at = Set(Some(Utc::now().naive_utc()));
+            // If user is being re-activated, clear deactivation_reason and update last_active_at
+            login_obj.deactivation_reason = Set(None);
+            login_obj.last_active_at = Set(Some(Utc::now().naive_utc()));
         }
     }
     if req.password.is_some() {
@@ -218,11 +217,10 @@ pub async fn update_login(
         login_obj.organism_id = Set(req.organism_id.clone());
     }
     if req.deactivation_reason.is_some() {
-        login_obj.deactivation_reason = Set(
-            req.deactivation_reason
-                .clone()
-                .map(DeactivationReasonEnum::from),
-        );
+        login_obj.deactivation_reason = Set(req
+            .deactivation_reason
+            .clone()
+            .map(DeactivationReasonEnum::from));
     }
     let res = login_obj.update(&env.dbx).await.context(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
@@ -934,7 +932,7 @@ pub async fn validate_login(
             }
             _ => format!("Користувача було видалено: {}", login),
         };
-        println!("{}", msg);
+        warn!("{}", msg);
         return Err(AppError::Form(BTreeMap::from_iter([(
             "login".to_string(),
             format!("{}", msg),
@@ -1056,7 +1054,7 @@ pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
             error!("error in inactive_users_worker_1: {e:?}");
         }
         tokio::time::sleep(std::time::Duration::from_secs(
-            INACTIVE_USERS_DEACTIVATE_DURATION,
+            INACTIVE_USERS_DEACTIVATE_DURATION_SEC,
         ))
         .await;
     }
