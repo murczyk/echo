@@ -63,6 +63,61 @@
 			"response": []
 		},
 		{
+			"name": "login/update",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"login\": \"Vitamin\",\n    \"roles\":[\"Rer\"],\n    \"sigint_zone_id\":1,\n    \"organism_id\":3,\n    \"deleted\":true,\n    \"password\": \"Vitamin\",\n    \"delta_login\":\"Vitamin\",\n    \"deactivation_reason\":\"Inactive\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/login/update",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"login",
+						"update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "logins",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"sort_by\": \"LoginCreatedAtDesc\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/logins",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"logins"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "user",
 			"request": {
 				"auth": {

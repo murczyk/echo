@@ -1,3 +1,4 @@
+use crate::entities::sea_orm_active_enums::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +49,8 @@ pub struct Login {
     pub organism_name: Option<String>,
     pub organism_enabled: Option<bool>,
     pub delta_login: Option<String>,
+    pub last_active_at: Option<i64>,
+    pub deactivation_reason: Option<DeactivationReasonType>,
 }
 
 #[derive(
@@ -104,6 +107,7 @@ pub struct UpdateLoginReq {
     pub deleted: Option<bool>,
     pub password: Option<String>,
     pub delta_login: Option<String>,
+    pub deactivation_reason: Option<DeactivationReasonType>,
 }
 
 #[derive(
@@ -118,4 +122,34 @@ pub struct KeepAliveReq {
 )]
 pub struct SigintGroupsReq {
     pub since_date_inclusive_ms: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum DeactivationReasonType {
+    Admin,
+    Inactive,
+}
+
+impl From<DeactivationReasonType> for DeactivationReasonEnum {
+    fn from(rust_enum: DeactivationReasonType) -> Self {
+        match rust_enum {
+            DeactivationReasonType::Admin => DeactivationReasonEnum::Admin,
+            DeactivationReasonType::Inactive => {
+                DeactivationReasonEnum::Inactive
+            }
+        }
+    }
+}
+
+impl From<DeactivationReasonEnum> for DeactivationReasonType {
+    fn from(db_enum: DeactivationReasonEnum) -> Self {
+        match db_enum {
+            DeactivationReasonEnum::Admin => DeactivationReasonType::Admin,
+            DeactivationReasonEnum::Inactive => {
+                DeactivationReasonType::Inactive
+            }
+        }
+    }
 }

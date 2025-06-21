@@ -1,6 +1,8 @@
 // use sea_orm::{prelude::Expr, *};
 use self::types::*;
+use crate::config::*;
 use crate::entities::login::Model;
+use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
 // use crate::utils::*;
@@ -9,6 +11,7 @@ use crate::types::*;
 use actix_identity::Identity;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
+use chrono::{Duration, Utc};
 use sea_orm::*;
 use std::collections::BTreeMap;
 
@@ -96,6 +99,9 @@ async fn keep_alive(
 ) -> Result<Json<()>, AppError> {
     let req = req.into_inner();
     let user_id = user.id()?;
+    update_last_active_at(&env.dbx, &user_id)
+        .await
+        .context(h!())?;
     record_page_visit(&user_id, &req.page_id, &env, None)
         .await
         .context(h!())?;
@@ -180,8 +186,13 @@ pub async fn update_login(
 
     let mut login_obj: login::ActiveModel = login_obj.into();
     login_obj.delta_login_id = Set(delta_id);
-    if req.deleted.is_some() {
-        login_obj.deleted = Set(req.deleted.context(h!())?);
+    if let Some(deleted) = req.deleted {
+        login_obj.deleted = Set(deleted);
+        if !deleted {
+            // If user is being re-activated, clear deactivation_reason and update last_active_at
+            login_obj.deactivation_reason = Set(None);
+            login_obj.last_active_at = Set(Some(Utc::now().naive_utc()));
+        }
     }
     if req.password.is_some() {
         let salt_s =
@@ -204,6 +215,12 @@ pub async fn update_login(
     }
     if req.organism_id.is_some() {
         login_obj.organism_id = Set(req.organism_id.clone());
+    }
+    if req.deactivation_reason.is_some() {
+        login_obj.deactivation_reason = Set(req
+            .deactivation_reason
+            .clone()
+            .map(DeactivationReasonEnum::from));
     }
     let res = login_obj.update(&env.dbx).await.context(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
@@ -231,6 +248,12 @@ pub async fn update_login(
             .context(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
+        last_active_at: res
+            .last_active_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        deactivation_reason: res
+            .deactivation_reason
+            .map(DeactivationReasonType::from),
     }))
 }
 
@@ -277,6 +300,8 @@ pub async fn create_login(
         sigint_zone_id: Set(req.sigint_zone_id.clone()),
         organism_id: Set(req.organism_id.clone()),
         deleted: Set(false),
+        last_active_at: Set(Some(Utc::now().naive_utc())),
+        deactivation_reason: NotSet,
     }
     .insert(&env.dbx)
     .await
@@ -315,6 +340,12 @@ pub async fn create_login(
             .context(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
+        last_active_at: res
+            .last_active_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        deactivation_reason: res
+            .deactivation_reason
+            .map(DeactivationReasonType::from),
     }))
 }
 
@@ -356,6 +387,8 @@ pub async fn list_logins(
         organism_id: Option<i64>,
         created_at: sea_orm::prelude::DateTime,
         deleted: bool,
+        last_active_at: Option<sea_orm::prelude::DateTime>,
+        deactivation_reason: Option<DeactivationReasonEnum>,
         sigint_zone_name: Option<String>,
         organism_name: Option<String>,
         organism_enabled: Option<bool>,
@@ -374,6 +407,8 @@ pub async fn list_logins(
             login::Column::OrganismId,
             login::Column::CreatedAt,
             login::Column::Deleted,
+            login::Column::LastActiveAt,
+            login::Column::DeactivationReason,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
         .column_as(organism::Column::Name, "organism_name")
@@ -409,6 +444,12 @@ pub async fn list_logins(
             organism_name: login.organism_name,
             organism_enabled: login.organism_enabled,
             delta_login: login.delta_login,
+            last_active_at: login
+                .last_active_at
+                .map(|dt| dt.and_utc().timestamp_millis()),
+            deactivation_reason: login
+                .deactivation_reason
+                .map(DeactivationReasonType::from),
         };
         users.push(user);
     }
@@ -506,11 +547,26 @@ pub async fn user_login(
     let user_id = req.user.clone();
     let login_obj = match validate_login(&env.dbx, &user_id).await {
         Ok(obj) => obj,
-        Err(_) => {
-            return Err(AppError::Form(BTreeMap::from_iter([(
-                "login".to_string(),
-                format!("Невірний логін \"{}\"", req.user),
-            )])));
+        Err(e) => {
+            match e {
+                AppError::Form(form_errors) => {
+                    return Err(AppError::Form(BTreeMap::from_iter([(
+                        "login".to_string(),
+                        format!(
+                            "Невірний логін \"{}\". {}",
+                            req.user,
+                            form_errors.get("login").unwrap_or(&"".to_string())
+                        ),
+                    )])));
+                }
+                _ => {
+                    return Err(e);
+                }
+            }
+            // return Err(AppError::Form(BTreeMap::from_iter([(
+            //     "login".to_string(),
+            //     format!("Невірний логін \"{}\"", req.user),
+            // )])));
         }
     };
     let password = login_obj.password.clone().ok_or(AppError::Form(
@@ -532,6 +588,10 @@ pub async fn user_login(
     };
 
     Identity::login(&http_req.extensions(), user_id.clone().into())
+        .context(h!())?;
+
+    update_last_active_at(&env.dbx, &user_id)
+        .await
         .context(h!())?;
 
     record_new_session(&user_id, &env).await.context(h!())?;
@@ -579,6 +639,8 @@ pub async fn register_user(
         organism_id: Set(organism_id),
         deleted: Set(false),
         delta_login_id: NotSet,
+        last_active_at: NotSet,
+        deactivation_reason: NotSet,
     }
     .insert(&txn)
     .await
@@ -859,10 +921,24 @@ pub async fn validate_login(
             return Err(AppError::Unauthenticated);
         }
     }
+
     if login_obj.deleted {
-        println!("login deleted: {}", login);
-        return Err(AppError::Unauthenticated);
+        let msg = match login_obj.deactivation_reason {
+            Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive) => {
+                format!("Користувача \"{}\" було заблоковано як не автивного більше {} днів. Зверніться до адміністратора", login, INACTIVE_USERS_DEACTIVATE_AFTER_DAYS)
+            }
+            Some(sea_orm_active_enums::DeactivationReasonEnum::Admin) => {
+                format!("Користувач \"{}\" заблокований адміністратором", login)
+            }
+            _ => format!("Користувача було видалено: {}", login),
+        };
+        warn!("{}", msg);
+        return Err(AppError::Form(BTreeMap::from_iter([(
+            "login".to_string(),
+            format!("{}", msg),
+        )])));
     }
+
     Ok(login_obj)
 }
 
@@ -911,6 +987,8 @@ async fn register_delta_user(
         organism_id: Set(organism_id),
         deleted: Set(false),
         delta_login_id: Set(Some(delta_login.id)),
+        last_active_at: Set(Some(Utc::now().naive_utc())),
+        deactivation_reason: NotSet,
     }
     .insert(dbx)
     .await
@@ -958,6 +1036,75 @@ async fn register_delta_user(
             .context(h!())?
             .map(|sz| sz.name),
         organism_id: res.organism_id,
+        last_active_at: res
+            .last_active_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
+        deactivation_reason: res
+            .deactivation_reason
+            .map(DeactivationReasonType::from),
     };
     Ok(result)
+}
+
+pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
+    debug!("Starting inactive_users_worker");
+
+    loop {
+        if let Err(e) = inactive_users_worker_1(dbx).await {
+            error!("error in inactive_users_worker_1: {e:?}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(
+            INACTIVE_USERS_DEACTIVATE_DURATION_SEC,
+        ))
+        .await;
+    }
+}
+
+async fn inactive_users_worker_1(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let threshold = Utc::now().naive_utc()
+        - Duration::days(INACTIVE_USERS_DEACTIVATE_AFTER_DAYS);
+
+    // Find all active users whose last_active_at is older than threshold
+    let inactive_users = login::Entity::find()
+        .filter(login::Column::Deleted.eq(false))
+        .filter(
+            login::Column::LastActiveAt
+                .lte(threshold)
+                .or(login::Column::LastActiveAt.is_null()),
+        )
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    for user in inactive_users {
+        let login_name = user.login.clone();
+        let mut model = user.into_active_model();
+        model.deleted = Set(true);
+        model.deactivation_reason =
+            Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
+        model.update(dbx).await.context(h!())?;
+
+        info!("> Deactivating user {} due to inactivity", login_name);
+    }
+    debug!("inactive_users_worker completed");
+    Ok(())
+}
+
+pub async fn update_last_active_at(
+    dbx: &DatabaseConnection,
+    user_id: &str,
+) -> anyhow::Result<()> {
+    let mut user: login::ActiveModel = login::Entity::find_by_id(user_id)
+        .one(dbx)
+        .await?
+        .ok_or(AppError::NotFound)
+        .context(h!())?
+        .into_active_model();
+
+    user.last_active_at = Set(Some(Utc::now().naive_utc()));
+    user.update(dbx).await.context(h!())?;
+
+    Ok(())
 }
