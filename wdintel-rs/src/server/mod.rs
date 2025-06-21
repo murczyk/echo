@@ -2,7 +2,7 @@ use crate::config::*;
 use crate::types::*;
 use crate::{mk_conn_string, new_redis};
 use actix_identity::IdentityMiddleware;
-use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
@@ -111,6 +111,10 @@ pub async fn main_server(
             echo_install_utils::tmpdir::cleanup_tmp_worker_nofail().await;
         });
     }
+
+    let bind_ip = "0.0.0.0";
+    let bind_port = 8081;
+    info!("Starting server on {}:{}", bind_ip, bind_port);
 
     HttpServer::new(move || {
         let b2_creds = aws_sdk_s3::config::Credentials::new(
@@ -360,7 +364,7 @@ pub async fn main_server(
             .service(crate::log_api::log_error)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
-    .bind(("0.0.0.0", 8081))?
+    .bind((bind_ip, bind_port))?
     .run()
     .await
 }
