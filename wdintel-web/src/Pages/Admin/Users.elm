@@ -12,8 +12,7 @@ import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Keyed
-import Html.Styled as Styled
-import Html.Styled exposing (fromUnstyled)
+import Html.Styled as Styled exposing (fromUnstyled)
 import Layouts
 import Le.Block.Select
 import Le.Block.Toast
@@ -60,15 +59,29 @@ type Status
     | DeletedByAdmin
     | DeletedByInactivity
     | DeletedByOrganism
+    | Unknown
+
 
 statusToLabel : Status -> String
 statusToLabel status =
     case status of
-        Active -> "Активні"
-        Deleted -> "Видалені"
-        DeletedByAdmin -> "Видалені адміном"
-        DeletedByInactivity -> "Видалені за неактивністю"
-        DeletedByOrganism -> "Видалені через організм"
+        Active ->
+            "Активні"
+
+        Deleted ->
+            "Видалені"
+
+        DeletedByAdmin ->
+            "Видалені адміном"
+
+        DeletedByInactivity ->
+            "Видалені за неактивністю"
+
+        DeletedByOrganism ->
+            "Видалені через організм"
+
+        Unknown ->
+            "Невідомо"
 
 
 type alias Model =
@@ -97,7 +110,6 @@ type alias Model =
         }
     , fieldsErrors : List FieldError
     , editLogin : Maybe ( String, LoginEdit )
-    , showActiveOnly : Bool
     , addDeltaLogin : Bool
     , filterOrganismSelect :
         { selectState : Select.State
@@ -174,7 +186,6 @@ init =
             }
       , fieldsErrors = []
       , editLogin = Nothing
-      , showActiveOnly = False
       , addDeltaLogin = False
       , filterOrganismSelect =
             { selectState = Select.initState (Select.selectIdentifier "filter-organism")
@@ -227,7 +238,6 @@ type Msg
     | EditLoginSave
     | EditDeletedMsg
     | ToggleEditPassword
-    | ToggleActiveOnlyFilter
     | ToggleAddDeltaLogin
     | FilterOrganismSelMsg (Select.Msg Int)
     | FilterStatusSelMsg (Select.Msg Status)
@@ -268,8 +278,11 @@ update msg model =
                                 Dict.update role
                                     (\maybeCount ->
                                         case maybeCount of
-                                            Just count -> Just (count + 1)
-                                            Nothing -> Just 1
+                                            Just count ->
+                                                Just (count + 1)
+
+                                            Nothing ->
+                                                Just 1
                                     )
                                     acc
                             )
@@ -285,8 +298,11 @@ update msg model =
                             Select.customMenuItem
                                 { item = role
                                 , label = role
-                                , view = Html.Styled.fromUnstyled (Html.div []
-                                    [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ])
+                                , view =
+                                    fromUnstyled
+                                        (Html.div []
+                                            [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ]
+                                        )
                                 }
                         )
                         roles
@@ -717,9 +733,6 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
-        ToggleActiveOnlyFilter ->
-            ( { model | showActiveOnly = not model.showActiveOnly }, E.none )
-
         ToggleAddDeltaLogin ->
             ( { model | addDeltaLogin = not model.addDeltaLogin }, E.none )
 
@@ -869,13 +882,135 @@ subscriptions model =
     Sub.none
 
 
+
+-- Dynamic filter helper functions
+
+
+getFilteredDataForOrganismFilter : Model -> List B.Login
+getFilteredDataForOrganismFilter model =
+    model.logins
+        |> List.filter
+            (\login ->
+                let
+                    matchesStatus =
+                        case model.filterStatusSelect.selectedItem of
+                            Nothing ->
+                                True
+
+                            Just Active ->
+                                not login.deleted
+
+                            Just Deleted ->
+                                login.deleted
+
+                            Just DeletedByAdmin ->
+                                login.deleted && login.deactivationReason == Just B.Admin
+
+                            Just DeletedByInactivity ->
+                                login.deleted && login.deactivationReason == Just B.Inactive
+
+                            Just DeletedByOrganism ->
+                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
+
+                            Just Unknown ->
+                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
+
+                    matchesRole =
+                        case model.filterRoleSelect.selectedItems of
+                            [] ->
+                                True
+
+                            selectedRoles ->
+                                List.any (\role -> List.member role selectedRoles) login.roles
+                in
+                matchesStatus && matchesRole
+            )
+
+
+getFilteredDataForStatusFilter : Model -> List B.Login
+getFilteredDataForStatusFilter model =
+    model.logins
+        |> List.filter
+            (\login ->
+                let
+                    matchesOrganism =
+                        case model.filterOrganismSelect.selectedItems of
+                            [] ->
+                                True
+
+                            organismIds ->
+                                case login.organismId of
+                                    Just orgId ->
+                                        List.member orgId organismIds
+
+                                    Nothing ->
+                                        False
+
+                    matchesRole =
+                        case model.filterRoleSelect.selectedItems of
+                            [] ->
+                                True
+
+                            selectedRoles ->
+                                List.any (\role -> List.member role selectedRoles) login.roles
+                in
+                matchesOrganism && matchesRole
+            )
+
+
+getFilteredDataForRoleFilter : Model -> List B.Login
+getFilteredDataForRoleFilter model =
+    model.logins
+        |> List.filter
+            (\login ->
+                let
+                    matchesOrganism =
+                        case model.filterOrganismSelect.selectedItems of
+                            [] ->
+                                True
+
+                            organismIds ->
+                                case login.organismId of
+                                    Just orgId ->
+                                        List.member orgId organismIds
+
+                                    Nothing ->
+                                        False
+
+                    matchesStatus =
+                        case model.filterStatusSelect.selectedItem of
+                            Nothing ->
+                                True
+
+                            Just Active ->
+                                not login.deleted
+
+                            Just Deleted ->
+                                login.deleted
+
+                            Just DeletedByAdmin ->
+                                login.deleted && login.deactivationReason == Just B.Admin
+
+                            Just DeletedByInactivity ->
+                                login.deleted && login.deactivationReason == Just B.Inactive
+
+                            Just DeletedByOrganism ->
+                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
+
+                            Just Unknown ->
+                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
+                in
+                matchesOrganism && matchesStatus
+            )
+
+
 view : Auth.User -> Shared.Model -> Model -> View Msg
 view user shared model =
-    { title = "Users"
+    { title = "Користувачі"
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "container mx-auto px-4 py-8 rer-networks" ]
-                [ h1 [ class "text-2xl font-bold mb-6" ] [ text "Управління користувачами" ]
+                [ h1 [ class "text-2xl font-bold mb-6" ] [ text "Користувачі" ]
                 , let
                     featureDelta =
                         case shared.serverInfo of
@@ -992,17 +1127,20 @@ view user shared model =
                                 ]
                             ]
 
-                    -- Calculate role counts
+                    -- Calculate role counts using filtered data
                     roleCounts =
-                        model.logins
+                        getFilteredDataForRoleFilter model
                             |> List.concatMap .roles
                             |> List.foldl
                                 (\role acc ->
                                     Dict.update role
                                         (\maybeCount ->
                                             case maybeCount of
-                                                Just count -> Just (count + 1)
-                                                Nothing -> Just 1
+                                                Just count ->
+                                                    Just (count + 1)
+
+                                                Nothing ->
+                                                    Just 1
                                         )
                                         acc
                                 )
@@ -1018,89 +1156,186 @@ view user shared model =
                                 Select.customMenuItem
                                     { item = role
                                     , label = role
-                                    , view = Html.Styled.fromUnstyled (Html.div []
-                                        [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ])
+                                    , view =
+                                        fromUnstyled
+                                            (Html.div []
+                                                [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ]
+                                            )
                                     }
                             )
                             roles
 
+                    -- Calculate status counts using filtered data
+                    filteredDataForStatus =
+                        getFilteredDataForStatusFilter model
+
                     activeCount =
-                        List.length <| List.filter (\login -> not login.deleted) model.logins
+                        List.length <| List.filter (\login -> not login.deleted) filteredDataForStatus
+
                     deletedCount =
-                        List.length <| List.filter (\login -> login.deleted) model.logins
+                        List.length <| List.filter (\login -> login.deleted) filteredDataForStatus
+
                     deletedByAdminCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) model.logins
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) filteredDataForStatus
+
                     deletedByInactivityCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) model.logins
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) filteredDataForStatus
+
                     deletedByOrganismCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing) model.logins
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False) filteredDataForStatus
+
+                    unknownCount =
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False) filteredDataForStatus
+
+                    -- Calculate organism counts using filtered data
+                    filteredDataForOrganism =
+                        getFilteredDataForOrganismFilter model
+
+                    organismCounts =
+                        filteredDataForOrganism
+                            |> List.filterMap .organismId
+                            |> List.foldl
+                                (\orgId acc ->
+                                    Dict.update orgId
+                                        (\maybeCount ->
+                                            case maybeCount of
+                                                Just count ->
+                                                    Just (count + 1)
+
+                                                Nothing ->
+                                                    Just 1
+                                        )
+                                        acc
+                                )
+                                Dict.empty
+
+                    organismMenuItems =
+                        List.map
+                            (\org ->
+                                let
+                                    count =
+                                        Dict.get org.id organismCounts |> Maybe.withDefault 0
+                                in
+                                Select.customMenuItem
+                                    { item = org.id
+                                    , label = org.name
+                                    , view =
+                                        fromUnstyled
+                                            (Html.div []
+                                                [ Html.text (org.name ++ " (" ++ String.fromInt count ++ ")") ]
+                                            )
+                                    }
+                            )
+                            model.organisms
+
                     statusMenuItems =
                         [ Select.customMenuItem
                             { item = Active
                             , label = statusToLabel Active
-                            , view = Html.Styled.fromUnstyled (Html.div []
-                                [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ])
+                            , view =
+                                fromUnstyled
+                                    (Html.div []
+                                        [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ]
+                                    )
                             }
                         , Select.customMenuItem
                             { item = Deleted
                             , label = statusToLabel Deleted
-                            , view = Html.Styled.fromUnstyled (Html.div []
-                                [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ])
+                            , view =
+                                fromUnstyled
+                                    (Html.div []
+                                        [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ]
+                                    )
                             }
                         , Select.customMenuItem
                             { item = DeletedByAdmin
                             , label = statusToLabel DeletedByAdmin
-                            , view = Html.Styled.fromUnstyled (Html.div []
-                                [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ])
+                            , view =
+                                fromUnstyled
+                                    (Html.div []
+                                        [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ]
+                                    )
                             }
                         , Select.customMenuItem
                             { item = DeletedByInactivity
                             , label = statusToLabel DeletedByInactivity
-                            , view = Html.Styled.fromUnstyled (Html.div []
-                                [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ])
+                            , view =
+                                fromUnstyled
+                                    (Html.div []
+                                        [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ]
+                                    )
                             }
                         , Select.customMenuItem
                             { item = DeletedByOrganism
                             , label = statusToLabel DeletedByOrganism
-                            , view = Html.Styled.fromUnstyled (Html.div []
-                                [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ])
+                            , view =
+                                fromUnstyled
+                                    (Html.div []
+                                        [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ]
+                                    )
+                            }
+                        , Select.customMenuItem
+                            { item = Unknown
+                            , label = statusToLabel Unknown
+                            , view =
+                                fromUnstyled
+                                    (Html.div []
+                                        [ Html.text (statusToLabel Unknown ++ " (" ++ String.fromInt unknownCount ++ ")") ]
+                                    )
                             }
                         ]
 
                     rows =
                         model.logins
-                            |> List.filter (\login ->
-                                let
-                                    matchesActiveOnly =
-                                        if model.showActiveOnly then
-                                            Maybe.withDefault False login.organismEnabled && not login.deleted
-                                        else
-                                            True
+                            |> List.filter
+                                (\login ->
+                                    let
+                                        matchesStatus =
+                                            case model.filterStatusSelect.selectedItem of
+                                                Nothing ->
+                                                    True
 
-                                    matchesOrganism =
-                                        case model.filterOrganismSelect.selectedItems of
-                                            [] -> True
-                                            organismIds -> 
-                                                case login.organismId of
-                                                    Just orgId -> List.member orgId organismIds
-                                                    Nothing -> False
+                                                Just Active ->
+                                                    not login.deleted
 
-                                    matchesStatus =
-                                        case model.filterStatusSelect.selectedItem of
-                                            Nothing -> True
-                                            Just Active -> not login.deleted
-                                            Just Deleted -> login.deleted
-                                            Just DeletedByAdmin -> login.deleted && login.deactivationReason == Just B.Admin
-                                            Just DeletedByInactivity -> login.deleted && login.deactivationReason == Just B.Inactive
-                                            Just DeletedByOrganism -> login.deleted && login.deactivationReason == Nothing
+                                                Just Deleted ->
+                                                    login.deleted
 
-                                    matchesRole =
-                                        case model.filterRoleSelect.selectedItems of
-                                            [] -> True
-                                            selectedRoles -> List.any (\role -> List.member role selectedRoles) login.roles
-                                in
-                                matchesActiveOnly && matchesOrganism && matchesStatus && matchesRole
-                            )
+                                                Just DeletedByAdmin ->
+                                                    login.deleted && login.deactivationReason == Just B.Admin
+
+                                                Just DeletedByInactivity ->
+                                                    login.deleted && login.deactivationReason == Just B.Inactive
+
+                                                Just DeletedByOrganism ->
+                                                    login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
+
+                                                Just Unknown ->
+                                                    login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
+
+                                        matchesOrganism =
+                                            case model.filterOrganismSelect.selectedItems of
+                                                [] ->
+                                                    True
+
+                                                organismIds ->
+                                                    case login.organismId of
+                                                        Just orgId ->
+                                                            List.member orgId organismIds
+
+                                                        Nothing ->
+                                                            False
+
+                                        matchesRole =
+                                            case model.filterRoleSelect.selectedItems of
+                                                [] ->
+                                                    True
+
+                                                selectedRoles ->
+                                                    List.any (\role -> List.member role selectedRoles) login.roles
+                                    in
+                                    matchesStatus && matchesOrganism && matchesRole
+                                )
 
                     viewFilterBlock : Html Msg
                     viewFilterBlock =
@@ -1112,13 +1347,31 @@ view user shared model =
                                     , Html.map FilterOrganismSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelect
-                                                (model.filterOrganismSelect.selectedItems |> List.map (\orgId -> 
-                                                    case ListX.find (\org -> org.id == orgId) model.organisms of
-                                                        Just org -> Select.basicMenuItem { item = org.id, label = org.name }
-                                                        Nothing -> Select.basicMenuItem { item = orgId, label = String.fromInt orgId }
-                                                ))
+                                                (model.filterOrganismSelect.selectedItems
+                                                    |> List.map
+                                                        (\orgId ->
+                                                            case ListX.find (\org -> org.id == orgId) model.organisms of
+                                                                Just org ->
+                                                                    let
+                                                                        count =
+                                                                            Dict.get org.id organismCounts |> Maybe.withDefault 0
+                                                                    in
+                                                                    Select.customMenuItem
+                                                                        { item = org.id
+                                                                        , label = org.name
+                                                                        , view =
+                                                                            fromUnstyled
+                                                                                (Html.div []
+                                                                                    [ Html.text (org.name ++ " (" ++ String.fromInt count ++ ")") ]
+                                                                                )
+                                                                        }
+
+                                                                Nothing ->
+                                                                    Select.basicMenuItem { item = orgId, label = String.fromInt orgId }
+                                                        )
+                                                )
                                                 model.filterOrganismSelect.selectState
-                                                model.filterOrganismSelect.items
+                                                organismMenuItems
                                                 "Всі организми"
                                                 (Le.Block.Select.defaultOptions shared.isDarkMode)
                                     ]
@@ -1132,17 +1385,35 @@ view user shared model =
                                                         Select.customMenuItem
                                                             { item = status
                                                             , label = statusToLabel status
-                                                            , view = Html.Styled.fromUnstyled (Html.div []
-                                                                [ Html.text (statusToLabel status ++ " ("
-                                                                    ++ (case status of
-                                                                            Active -> String.fromInt activeCount
-                                                                            Deleted -> String.fromInt deletedCount
-                                                                            DeletedByAdmin -> String.fromInt deletedByAdminCount
-                                                                            DeletedByInactivity -> String.fromInt deletedByInactivityCount
-                                                                            DeletedByOrganism -> String.fromInt deletedByOrganismCount
-                                                                       )
-                                                                    ++ ")")
-                                                                ])
+                                                            , view =
+                                                                fromUnstyled
+                                                                    (Html.div []
+                                                                        [ Html.text
+                                                                            (statusToLabel status
+                                                                                ++ " ("
+                                                                                ++ (case status of
+                                                                                        Active ->
+                                                                                            String.fromInt activeCount
+
+                                                                                        Deleted ->
+                                                                                            String.fromInt deletedCount
+
+                                                                                        DeletedByAdmin ->
+                                                                                            String.fromInt deletedByAdminCount
+
+                                                                                        DeletedByInactivity ->
+                                                                                            String.fromInt deletedByInactivityCount
+
+                                                                                        DeletedByOrganism ->
+                                                                                            String.fromInt deletedByOrganismCount
+
+                                                                                        Unknown ->
+                                                                                            String.fromInt unknownCount
+                                                                                   )
+                                                                                ++ ")"
+                                                                            )
+                                                                        ]
+                                                                    )
                                                             }
                                                     )
                                                     model.filterStatusSelect.selectedItem
@@ -1157,17 +1428,26 @@ view user shared model =
                                     , Html.map FilterRoleSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelect
-                                                (model.filterRoleSelect.selectedItems |> List.map (\role -> 
-                                                    Select.customMenuItem
-                                                        { item = role
-                                                        , label = role
-                                                        , view = Html.Styled.fromUnstyled (Html.div []
-                                                            [ Html.text (role ++ " ("
-                                                                ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
-                                                                ++ ")")
-                                                            ])
-                                                        }
-                                                ))
+                                                (model.filterRoleSelect.selectedItems
+                                                    |> List.map
+                                                        (\role ->
+                                                            Select.customMenuItem
+                                                                { item = role
+                                                                , label = role
+                                                                , view =
+                                                                    fromUnstyled
+                                                                        (Html.div []
+                                                                            [ Html.text
+                                                                                (role
+                                                                                    ++ " ("
+                                                                                    ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
+                                                                                    ++ ")"
+                                                                                )
+                                                                            ]
+                                                                        )
+                                                                }
+                                                        )
+                                                )
                                                 model.filterRoleSelect.selectState
                                                 roleMenuItems
                                                 "Всі ролі"
@@ -1175,15 +1455,10 @@ view user shared model =
                                     ]
                                 ]
                             ]
-                in
-                div []
+                  in
+                  div []
                     [ addLoginPanel model
                     , viewFilterBlock
-                    , div [ class "mb-1 float-right" ]
-                        [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = \_ -> ToggleActiveOnlyFilter }
-                            |> Checkbox.withContent [ span [] [ text "лише активні" ] ]
-                            |> Checkbox.view
-                        ]
                     , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
                         [ thead [ class "" ]
                             [ tr [ class "" ]
@@ -1379,6 +1654,6 @@ viewLoginReadonly shared model login =
         , td [ class "text-center align-middle" ]
             [ viewDeletedStatus model.timeZone login ]
         , td []
-            [ i [ class "bi bi-pencil-square text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick <| EditLogin login.login ] []
+            [ i [ class "bi bi-pencil-square text-action hover:text-blue-600 cursor-pointer text-lg", onClick <| EditLogin login.login ] []
             ]
         ]
