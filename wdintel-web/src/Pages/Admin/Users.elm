@@ -1339,11 +1339,11 @@ view user shared model =
 
                     viewFilterBlock : Html Msg
                     viewFilterBlock =
-                        div [ class "mb-4 p-4 bg-gray-50 rounded-lg border" ]
-                            [ div [ class "text-sm font-medium text-gray-700 mb-2" ] [ text "Фільтри" ]
+                        div [ class "mb-4 p-4 style bg-[var(--bs-tertiary-bg)] rounded-lg border" ]
+                            [ h5 [ class "mb-2" ] [ text "Фільтри" ]
                             , div [ class "flex gap-4" ]
                                 [ div [ class "flex-1" ]
-                                    [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Організм" ]
+                                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Організм" ]
                                     , Html.map FilterOrganismSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelect
@@ -1376,7 +1376,7 @@ view user shared model =
                                                 (Le.Block.Select.defaultOptions shared.isDarkMode)
                                     ]
                                 , div [ class "flex-1" ]
-                                    [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Статус" ]
+                                    [ label [ class "block text-sm font-medium  mb-1" ] [ text "Статус" ]
                                     , Html.map FilterStatusSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelectSingle
@@ -1424,7 +1424,7 @@ view user shared model =
                                                 (Le.Block.Select.defaultOptions shared.isDarkMode)
                                     ]
                                 , div [ class "flex-1" ]
-                                    [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Роль" ]
+                                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Роль" ]
                                     , Html.map FilterRoleSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelect
