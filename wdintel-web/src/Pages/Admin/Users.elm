@@ -81,6 +81,11 @@ type alias Model =
     , editLogin : Maybe ( String, LoginEdit )
     , showActiveOnly : Bool
     , addDeltaLogin : Bool
+    , filterOrganismSelect :
+        { selectState : Select.State
+        , items : List (Select.MenuItem Int)
+        , selectedItem : Maybe Int
+        }
     }
 
 
@@ -143,6 +148,11 @@ init =
       , editLogin = Nothing
       , showActiveOnly = False
       , addDeltaLogin = False
+      , filterOrganismSelect =
+            { selectState = Select.initState (Select.selectIdentifier "filter-organism")
+            , items = []
+            , selectedItem = Nothing
+            }
       }
     , E.sendCmd <|
         Cmd.batch
@@ -181,6 +191,7 @@ type Msg
     | ToggleEditPassword
     | ToggleActiveOnlyFilter
     | ToggleAddDeltaLogin
+    | FilterOrganismSelMsg (Select.Msg Int)
 
 
 type FormField
@@ -245,8 +256,14 @@ update msg model =
 
                 inpOrganism2 =
                     { inpOrganism | items = organismMenuItems }
+
+                filterOrganismSelect =
+                    model.filterOrganismSelect
+
+                filterOrganismSelect2 =
+                    { filterOrganismSelect | items = organismMenuItems }
             in
-            ( { model | organisms = res, inpOrganism = inpOrganism2 }, E.none )
+            ( { model | organisms = res, inpOrganism = inpOrganism2, filterOrganismSelect = filterOrganismSelect2 }, E.none )
 
         GotTimeZone (Err e) ->
             ( model
@@ -627,6 +644,26 @@ update msg model =
         ToggleAddDeltaLogin ->
             ( { model | addDeltaLogin = not model.addDeltaLogin }, E.none )
 
+        FilterOrganismSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.filterOrganismSelect.selectState
+
+                newFilterOrganism =
+                    Le.Block.Select.singleUpd mAction model.filterOrganismSelect.selectedItem
+
+                filterOrganismSelect =
+                    model.filterOrganismSelect
+
+                filterOrganismSelect2 =
+                    { filterOrganismSelect | selectedItem = newFilterOrganism, selectState = iState }
+            in
+            ( { model | filterOrganismSelect = filterOrganismSelect2 }
+            , E.batch
+                [ E.sendCmd <| Cmd.map FilterOrganismSelMsg iCmd
+                ]
+            )
+
 
 validatorAdd : Validate.Validator ( FormField, String ) Model
 validatorAdd =
@@ -998,14 +1035,49 @@ mainBlock shared model =
                 ]
 
         rows =
-            if model.showActiveOnly then
-                model.logins |> List.filter (\login -> Maybe.withDefault False login.organismEnabled && not login.deleted)
+            model.logins
+                |> List.filter (\login ->
+                    let
+                        matchesActiveOnly =
+                            if model.showActiveOnly then
+                                Maybe.withDefault False login.organismEnabled && not login.deleted
+                            else
+                                True
 
-            else
-                model.logins
+                        matchesOrganism =
+                            case model.filterOrganismSelect.selectedItem of
+                                Nothing -> True
+                                Just organismId -> login.organismId == Just organismId
+                    in
+                    matchesActiveOnly && matchesOrganism
+                )
+
+        viewFilterBlock : Html Msg
+        viewFilterBlock =
+            div [ class "mb-4 p-4 bg-gray-50 rounded-lg border" ]
+                [ div [ class "text-sm font-medium text-gray-700 mb-2" ] [ text "Фільтри" ]
+                , div [ class "flex gap-4" ]
+                    [ div [ class "flex-1" ]
+                        [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Організм" ]
+                        , Html.map FilterOrganismSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    (model.organisms
+                                        |> List.filter (\org -> model.filterOrganismSelect.selectedItem == Just org.id)
+                                        |> List.head
+                                        |> Maybe.map (\org -> Select.basicMenuItem { item = org.id, label = org.name })
+                                    )
+                                    model.filterOrganismSelect.selectState
+                                    model.filterOrganismSelect.items
+                                    "Всі организми"
+                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                        ]
+                    ]
+                ]
     in
     div []
         [ addLoginPanel model
+        , viewFilterBlock
         , div [ class "mb-1 float-right" ]
             [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = \_ -> ToggleActiveOnlyFilter }
                 |> Checkbox.withContent [ span [] [ text "лише активні" ] ]
