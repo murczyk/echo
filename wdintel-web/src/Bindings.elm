@@ -2598,6 +2598,8 @@ type alias Login =
     , organismName : Maybe String
     , organismEnabled : Maybe Bool
     , deltaLogin : Maybe String
+    , lastActiveAt : Maybe Int
+    , deactivationReason : Maybe DeactivationReasonType
     }
 
 
@@ -2614,6 +2616,8 @@ loginEncoder struct =
         , ( "organism_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.organismName )
         , ( "organism_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.organismEnabled )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.deltaLogin )
+        , ( "last_active_at", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastActiveAt )
+        , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map deactivationReasonTypeEncoder) struct.deactivationReason )
         ]
 
 
@@ -2684,6 +2688,7 @@ type alias UpdateLoginReq =
     , deleted : Maybe Bool
     , password : Maybe String
     , deltaLogin : Maybe String
+    , deactivationReason : Maybe DeactivationReasonType
     }
 
 
@@ -2697,6 +2702,7 @@ updateLoginReqEncoder struct =
         , ( "deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.deleted )
         , ( "password", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.password )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.deltaLogin )
+        , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map deactivationReasonTypeEncoder) struct.deactivationReason )
         ]
 
 
@@ -2722,6 +2728,21 @@ keepAliveReqEncoder struct =
     Json.Encode.object
         [ ( "page_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.pageId )
         ]
+
+
+type DeactivationReasonType
+    = Admin
+    | Inactive
+
+
+deactivationReasonTypeEncoder : DeactivationReasonType -> Json.Encode.Value
+deactivationReasonTypeEncoder enum =
+    case enum of
+        Admin ->
+            Json.Encode.string "Admin"
+
+        Inactive ->
+            Json.Encode.string "Inactive"
 
 
 type alias Organism =
@@ -6305,6 +6326,8 @@ loginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_enabled" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_active_at" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable deactivationReasonTypeDecoder)))
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
@@ -6365,6 +6388,7 @@ updateLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable deactivationReasonTypeDecoder)))
 
 
 sigintGroupsReqDecoder : Json.Decode.Decoder SigintGroupsReq
@@ -6377,6 +6401,32 @@ keepAliveReqDecoder : Json.Decode.Decoder KeepAliveReq
 keepAliveReqDecoder =
     Json.Decode.succeed KeepAliveReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable Json.Decode.string)))
+
+
+deactivationReasonTypeDecoder : Json.Decode.Decoder DeactivationReasonType
+deactivationReasonTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Admin" ->
+                            Json.Decode.succeed Admin
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Inactive" ->
+                            Json.Decode.succeed Inactive
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 
 organismDecoder : Json.Decode.Decoder Organism

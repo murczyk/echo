@@ -545,6 +545,11 @@ update msg model =
                                     , roles = Le.Utils.emptyToNothing editLogin.inpRole.selectedItems
                                     , deleted = Just editLogin.inpDeleted
                                     , deltaLogin = emptyStringToNothing editLogin.deltaLogin
+                                    , deactivationReason = 
+                                        if editLogin.inpDeleted then
+                                            Just B.Admin
+                                        else
+                                            Nothing
                                     }
                             )
 
@@ -651,6 +656,50 @@ viewFormErrors field errors =
         |> List.filter (\( fieldError, _ ) -> fieldError == field)
         |> List.map (\( _, error ) -> p [] [ text error ])
         |> div [ style "color" "red", style "font-size" "14px" ]
+
+
+viewDeletedStatus : Maybe Time.Zone -> B.Login -> Html msg
+viewDeletedStatus timeZone login =
+    if login.deleted then
+        case login.deactivationReason of
+            Just B.Admin ->
+                div [ class "d-flex flex-column align-items-center" ]
+                    [ i [ class "bi bi-person-x-fill text-danger", style "font-size" "1.2rem" ] []
+                    , span [ class "text-danger", style "font-size" "0.7rem" ] [ text "Адмін" ]
+                    ]
+            
+            Just B.Inactive ->
+                div [ class "d-flex flex-column align-items-center" ]
+                    [ i [ class "bi bi-clock-history text-warning", style "font-size" "1.2rem" ] []
+                    , span [ class "text-warning", style "font-size" "0.7rem" ] [ text "Неактивний" ]
+                    , case login.lastActiveAt of
+                        Just lastActive ->
+                            span [ class "text-muted", style "font-size" "0.6rem" ] 
+                                [ text <| "Останній: " ++ Le.Time.renderDateF5FromMillis lastActive timeZone ]
+                        
+                        Nothing ->
+                            text ""
+                    ]
+            
+            Nothing ->
+                case login.organismEnabled of
+                    Just False ->
+                        div [ class "d-flex flex-column align-items-center" ]
+                            [ i [ class "bi bi-building-x text-danger", style "font-size" "1.2rem" ] []
+                            , span [ class "text-danger", style "font-size" "0.7rem" ] [ text "Організм" ]
+                            , span [ class "text-muted", style "font-size" "0.6rem" ] [ text "деактивовано" ]
+                            ]
+                    
+                    _ ->
+                        div [ class "d-flex flex-column align-items-center" ]
+                            [ i [ class "bi bi-question-circle text-secondary", style "font-size" "1.2rem" ] []
+                            , span [ class "text-secondary", style "font-size" "0.7rem" ] [ text "Невідомо" ]
+                            ]
+    else
+        div [ class "d-flex flex-column align-items-center" ]
+            [ i [ class "bi bi-check-circle-fill text-success", style "font-size" "1.2rem" ] []
+            , span [ class "text-success", style "font-size" "0.7rem" ] [ text "Активний" ]
+            ]
 
 
 subscriptions : Model -> Sub Msg
@@ -940,7 +989,15 @@ mainBlock shared model =
                     , viewFormErrors Zone editState.fieldsErrors
                     ]
                 , td [] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ] [ input [ class "form-check-input", type_ "checkbox", checked editState.inpDeleted, onClick EditDeletedMsg ] [] ]
+                , td [ style "text-align" "center", style "vertical-align" "middle" ] 
+                    [ div [ class "d-flex flex-column align-items-center" ]
+                        [ viewDeletedStatus model.timeZone login
+                        , div [ class "mt-1" ]
+                            [ input [ class "form-check-input", type_ "checkbox", checked editState.inpDeleted, onClick EditDeletedMsg ] []
+                            , span [ class "ms-1", style "font-size" "0.7rem" ] [ text "Видалити" ]
+                            ]
+                        ]
+                    ]
                 , td []
                     [ div [ class "d-flex justify-content-start align-items-center" ]
                         [ button
@@ -963,16 +1020,7 @@ mainBlock shared model =
 
         viewLoginReadonly : Maybe Time.Zone -> B.Login -> Html Msg
         viewLoginReadonly timeZone login =
-            let
-                isOrganismDisabled =
-                    case login.organismEnabled of
-                        Just False ->
-                            True
-
-                        _ ->
-                            False
-            in
-            tr [ classList [ ( "table-secondary", isOrganismDisabled ) ] ]
+            tr []
                 [ td [] [ span [] [ text login.login ] ]
                 , if featureDelta then
                     td [] [ span [] [ text <| Maybe.withDefault "" login.deltaLogin ] ]
@@ -983,18 +1031,11 @@ mainBlock shared model =
                 , td [] (List.map (\role -> span [] [ text <| role ++ "  " ]) login.roles)
                 , td []
                     [ span [] [ text <| Maybe.withDefault "-" login.organismName ]
-                    , if isOrganismDisabled then
-                        Html.node "sl-tooltip"
-                            [ Attr.attribute "content" "Користувач не має доступу до системи, бо його організм деактивовано" ]
-                            [ i [ class "bi bi-info-circle text-primary", style "margin-left" "2px" ] [] ]
-
-                      else
-                        text ""
                     ]
                 , td [] [ text <| Maybe.withDefault "-" login.sigintZoneName ]
                 , td [] [ text <| Le.Time.renderDateF5FromMillis login.createdAt timeZone ]
                 , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ i [ class "bi", classList [ ( "bi-check-lg", login.deleted ), ( "bi-x-lg", not login.deleted ) ] ] [] ]
+                    [ viewDeletedStatus timeZone login ]
                 , td []
                     [ button
                         [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
@@ -1089,7 +1130,7 @@ mainBlock shared model =
                         [ scope "col"
                         , class "nowrap"
                         ]
-                        [ text "Видалений" ]
+                        [ text "Статус" ]
                     , th
                         [ scope "col"
                         , class "nowrap"
