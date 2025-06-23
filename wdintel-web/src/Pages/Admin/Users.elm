@@ -109,6 +109,11 @@ type alias Model =
         , items : List (Select.MenuItem Status)
         , selectedItem : Maybe Status
         }
+    , filterRoleSelect :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItem : Maybe String
+        }
     }
 
 
@@ -181,6 +186,11 @@ init =
             , items = []
             , selectedItem = Nothing
             }
+      , filterRoleSelect =
+            { selectState = Select.initState (Select.selectIdentifier "filter-role")
+            , items = []
+            , selectedItem = Nothing
+            }
       }
     , E.sendCmd <|
         Cmd.batch
@@ -221,6 +231,7 @@ type Msg
     | ToggleAddDeltaLogin
     | FilterOrganismSelMsg (Select.Msg Int)
     | FilterStatusSelMsg (Select.Msg Status)
+    | FilterRoleSelMsg (Select.Msg String)
 
 
 type FormField
@@ -247,7 +258,46 @@ update msg model =
             )
 
         GotLogins (Ok res) ->
-            ( { model | logins = res.users }, E.none )
+            let
+                -- Calculate role counts for the new logins
+                roleCounts =
+                    res.users
+                        |> List.concatMap .roles
+                        |> List.foldl
+                            (\role acc ->
+                                Dict.update role
+                                    (\maybeCount ->
+                                        case maybeCount of
+                                            Just count -> Just (count + 1)
+                                            Nothing -> Just 1
+                                    )
+                                    acc
+                            )
+                            Dict.empty
+
+                roleMenuItems =
+                    List.map
+                        (\role ->
+                            let
+                                count =
+                                    Dict.get role roleCounts |> Maybe.withDefault 0
+                            in
+                            Select.customMenuItem
+                                { item = role
+                                , label = role
+                                , view = Html.Styled.fromUnstyled (Html.div []
+                                    [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ])
+                                }
+                        )
+                        roles
+
+                filterRoleSelect =
+                    model.filterRoleSelect
+
+                filterRoleSelect2 =
+                    { filterRoleSelect | items = roleMenuItems }
+            in
+            ( { model | logins = res.users, filterRoleSelect = filterRoleSelect2 }, E.none )
 
         GotLogins (Err err) ->
             Api.handleHttpError ToastMsg err model
@@ -713,6 +763,26 @@ update msg model =
                 ]
             )
 
+        FilterRoleSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.filterRoleSelect.selectState
+
+                newFilterRole =
+                    Le.Block.Select.singleUpd mAction model.filterRoleSelect.selectedItem
+
+                filterRoleSelect =
+                    model.filterRoleSelect
+
+                filterRoleSelect2 =
+                    { filterRoleSelect | selectedItem = newFilterRole, selectState = iState }
+            in
+            ( { model | filterRoleSelect = filterRoleSelect2 }
+            , E.batch
+                [ E.sendCmd <| Cmd.map FilterRoleSelMsg iCmd
+                ]
+            )
+
 
 validatorAdd : Validate.Validator ( FormField, String ) Model
 validatorAdd =
@@ -1083,6 +1153,38 @@ mainBlock shared model =
                     ]
                 ]
 
+        -- Calculate role counts
+        roleCounts =
+            model.logins
+                |> List.concatMap .roles
+                |> List.foldl
+                    (\role acc ->
+                        Dict.update role
+                            (\maybeCount ->
+                                case maybeCount of
+                                    Just count -> Just (count + 1)
+                                    Nothing -> Just 1
+                            )
+                            acc
+                    )
+                    Dict.empty
+
+        roleMenuItems =
+            List.map
+                (\role ->
+                    let
+                        count =
+                            Dict.get role roleCounts |> Maybe.withDefault 0
+                    in
+                    Select.customMenuItem
+                        { item = role
+                        , label = role
+                        , view = Html.Styled.fromUnstyled (Html.div []
+                            [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ])
+                        }
+                )
+                roles
+
         rows =
             model.logins
                 |> List.filter (\login ->
@@ -1106,8 +1208,13 @@ mainBlock shared model =
                                 Just DeletedByAdmin -> login.deleted && login.deactivationReason == Just B.Admin
                                 Just DeletedByInactivity -> login.deleted && login.deactivationReason == Just B.Inactive
                                 Just DeletedByOrganism -> login.deleted && login.deactivationReason == Nothing
+
+                        matchesRole =
+                            case model.filterRoleSelect.selectedItem of
+                                Nothing -> True
+                                Just selectedRole -> List.member selectedRole login.roles
                     in
-                    matchesActiveOnly && matchesOrganism && matchesStatus
+                    matchesActiveOnly && matchesOrganism && matchesStatus && matchesRole
                 )
 
         activeCount =
@@ -1201,6 +1308,30 @@ mainBlock shared model =
                                     model.filterStatusSelect.selectState
                                     statusMenuItems
                                     "Всі статуси"
+                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                        ]
+                    , div [ class "flex-1" ]
+                        [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Роль" ]
+                        , Html.map FilterRoleSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    (Maybe.map
+                                        (\role ->
+                                            Select.customMenuItem
+                                                { item = role
+                                                , label = role
+                                                , view = Html.Styled.fromUnstyled (Html.div []
+                                                    [ Html.text (role ++ " ("
+                                                        ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
+                                                        ++ ")")
+                                                    ])
+                                                }
+                                        )
+                                        model.filterRoleSelect.selectedItem
+                                    )
+                                    model.filterRoleSelect.selectState
+                                    roleMenuItems
+                                    "Всі ролі"
                                     (Le.Block.Select.defaultOptions shared.isDarkMode)
                         ]
                     ]
