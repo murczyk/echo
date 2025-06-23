@@ -14,7 +14,7 @@
 }
 
 @theme inline {
-	--color-*: initial;
+	/* --color-*: initial; */
 	--color-background: var(--background-color);
 	--color-column: var(--column-color);
 	--color-card: var(--card-color);

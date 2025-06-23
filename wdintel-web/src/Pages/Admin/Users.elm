@@ -3,11 +3,15 @@ module Pages.Admin.Users exposing (FieldError, FormField, LoginEdit, Model, Msg,
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
+import Components.Checkbox as Checkbox
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
+import Html.Extra as HtmlX
+import Html.Keyed
 import Html.Styled as Styled
 import Layouts
 import Le.Block.Select
@@ -655,7 +659,7 @@ viewFormErrors field errors =
     errors
         |> List.filter (\( fieldError, _ ) -> fieldError == field)
         |> List.map (\( _, error ) -> p [] [ text error ])
-        |> div [ style "color" "red", style "font-size" "14px" ]
+        |> div [ class "text-red-500 text-sm" ]
 
 
 viewDeletedStatus : Maybe Time.Zone -> B.Login -> Html msg
@@ -663,18 +667,18 @@ viewDeletedStatus timeZone login =
     if login.deleted then
         case login.deactivationReason of
             Just B.Admin ->
-                div [ class "d-flex flex-column align-items-center" ]
-                    [ i [ class "bi bi-person-x-fill text-danger", style "font-size" "1.2rem" ] []
-                    , span [ class "text-danger", style "font-size" "0.7rem" ] [ text "Адмін" ]
+                div [ class "flex flex-col items-center" ]
+                    [ i [ class "bi bi-person-x-fill text-red-500 text-xl" ] []
+                    , span [ class "text-red-500 text-xs" ] [ text "Адмін" ]
                     ]
             
             Just B.Inactive ->
-                div [ class "d-flex flex-column align-items-center" ]
-                    [ i [ class "bi bi-clock-history text-warning", style "font-size" "1.2rem" ] []
-                    , span [ class "text-warning", style "font-size" "0.7rem" ] [ text "Неактивний" ]
+                div [ class "flex flex-col items-center" ]
+                    [ i [ class "bi bi-clock-history text-yellow-500 text-xl" ] []
+                    , span [ class "text-yellow-500 text-xs" ] [ text "Неактивний" ]
                     , case login.lastActiveAt of
                         Just lastActive ->
-                            span [ class "text-muted", style "font-size" "0.6rem" ] 
+                            span [ class "text-gray-500 text-xs" ] 
                                 [ text <| "Останній: " ++ Le.Time.renderDateF5FromMillis lastActive timeZone ]
                         
                         Nothing ->
@@ -684,21 +688,21 @@ viewDeletedStatus timeZone login =
             Nothing ->
                 case login.organismEnabled of
                     Just False ->
-                        div [ class "d-flex flex-column align-items-center" ]
-                            [ i [ class "bi bi-building-x text-danger", style "font-size" "1.2rem" ] []
-                            , span [ class "text-danger", style "font-size" "0.7rem" ] [ text "Організм" ]
-                            , span [ class "text-muted", style "font-size" "0.6rem" ] [ text "деактивовано" ]
+                        div [ class "flex flex-col items-center" ]
+                            [ i [ class "bi bi-building-x text-red-500 text-xl" ] []
+                            , span [ class "text-red-500 text-xs" ] [ text "Організм" ]
+                            , span [ class "text-gray-500 text-xs" ] [ text "деактивовано" ]
                             ]
                     
                     _ ->
-                        div [ class "d-flex flex-column align-items-center" ]
-                            [ i [ class "bi bi-question-circle text-secondary", style "font-size" "1.2rem" ] []
-                            , span [ class "text-secondary", style "font-size" "0.7rem" ] [ text "Невідомо" ]
+                        div [ class "flex flex-col items-center" ]
+                            [ i [ class "bi bi-question-circle text-gray-500 text-xl" ] []
+                            , span [ class "text-gray-500 text-xs" ] [ text "Невідомо" ]
                             ]
     else
-        div [ class "d-flex flex-column align-items-center" ]
-            [ i [ class "bi bi-check-circle-fill text-success", style "font-size" "1.2rem" ] []
-            , span [ class "text-success", style "font-size" "0.7rem" ] [ text "Активний" ]
+        div [ class "flex flex-col items-center" ]
+            [ i [ class "bi bi-check-circle-fill text-green-500 text-xl" ] []
+            , span [ class "text-green-500 text-xs" ] [ text "Активний" ]
             ]
 
 
@@ -716,13 +720,23 @@ view user shared model =
 
 body : Auth.User -> Shared.Model -> Model -> List (Html Msg)
 body user shared model =
-    [ -- , Views.navBarAdmin dark "logins"
-      Views.noHeaderAndContent ToastMsg model.toasts <|
-        div [ class "mt-2" ] (mainBlock shared model)
+    [ Views.noHeaderAndContent ToastMsg model.toasts <|
+        div [ class "flex rer-networks" ]
+            [ div [ class "grow px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
+                [ h1 [ class "mb-[16px]!" ]
+                    [ div [ class "flex justify-between items-center" ]
+                        [ div [ class "flex items-center mr-auto" ]
+                            [ span [ class "mr-2" ] [ text "Користувачі" ]
+                            ]
+                        ]
+                    ]
+                , mainBlock shared model
+                ]
+            ]
     ]
 
 
-mainBlock : Shared.Model -> Model -> List (Html Msg)
+mainBlock : Shared.Model -> Model -> Html Msg
 mainBlock shared model =
     let
         featureDelta =
@@ -749,34 +763,20 @@ mainBlock shared model =
                         |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) model.zones)
                         |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
             in
-            div []
+            div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
                 [ if featureDelta then
-                    div
-                        [ class "form-check me-2" ]
-                        [ input
-                            [ class "form-check-input"
-                            , type_ "checkbox"
-                            , onClick <| ToggleAddDeltaLogin
-                            , checked model.addDeltaLogin
-                            , id "delta-login-check"
-                            ]
-                            []
-                        , label
-                            [ class "form-check-label"
-                            , for "delta-login-check"
-                            ]
-                            [ text "Delta логін" ]
+                    div [ class "mr-2" ]
+                        [ Checkbox.new { isChecked = model.addDeltaLogin, onToggle = (\_ -> ToggleAddDeltaLogin) }
+                            |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
+                            |> Checkbox.view
                         ]
 
                   else
                     text ""
-                , div
-                    [ class "d-flex justify-content-start align-items-start"
-                    , style "gap" "1%"
-                    ]
-                    [ div [ style "flex" "1" ]
+                , div [ class "flex justify-start items-start gap-[1%]" ]
+                    [ div [ class "flex-1" ]
                         [ input
-                            [ class "form-control"
+                            [ class "border border-gray-300 rounded px-3 py-2 w-full"
                             , type_ "text"
                             , placeholder "Логін"
                             , onInput <| SetLogin
@@ -785,9 +785,9 @@ mainBlock shared model =
                             []
                         , viewFormErrors Login model.fieldsErrors
                         ]
-                    , div [ style "flex" "1" ]
+                    , div [ class "flex-1" ]
                         [ input
-                            [ class "form-control"
+                            [ class "border border-gray-300 rounded px-3 py-2 w-full"
                             , type_ "text"
                             , placeholder "Пароль"
                             , onInput <| SetPassword
@@ -797,11 +797,8 @@ mainBlock shared model =
                             []
                         , viewFormErrors Password model.fieldsErrors
                         ]
-                    , div [ style "flex" "1" ]
-                        [ div
-                            [ class "d-flex justify-content-between align-items-center"
-                            , style "font-size" ".8rem"
-                            ]
+                    , div [ class "flex-1" ]
+                        [ div [ class "flex justify-between items-center text-[0.8rem]" ]
                             [ div [ class "flex-grow-1" ]
                                 [ Html.map AddRoleSelMsg <|
                                     Styled.toUnstyled <|
@@ -815,11 +812,8 @@ mainBlock shared model =
                             ]
                         , viewFormErrors Roles model.fieldsErrors
                         ]
-                    , div [ style "flex" "1" ]
-                        [ div
-                            [ class "d-flex justify-content-between align-items-center"
-                            , style "font-size" ".8rem"
-                            ]
+                    , div [ class "flex-1" ]
+                        [ div [ class "flex justify-between items-center text-[0.8rem]" ]
                             [ div [ class "flex-grow-1" ]
                                 [ Html.map AddZoneSelMsg <|
                                     Styled.toUnstyled <|
@@ -833,11 +827,7 @@ mainBlock shared model =
                             ]
                         , viewFormErrors Zone model.fieldsErrors
                         ]
-                    , div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
-                        , style "flex" "1"
-                        ]
+                    , div [ class "flex justify-between items-center text-[0.8rem] flex-1" ]
                         [ div [ class "flex-grow-1" ]
                             [ Html.map AddOrganismSelMsg <|
                                 Styled.toUnstyled <|
@@ -849,22 +839,8 @@ mainBlock shared model =
                                         (Le.Block.Select.defaultOptions shared.isDarkMode)
                             ]
                         ]
-                    , div
-                        [ class "text-center"
-                        ]
-                        [ button
-                            [ class "btn btn-primary"
-                            , type_ "button"
-                            , onClick
-                                (if model.addDeltaLogin then
-                                    AddLoginDelta
-
-                                 else
-                                    AddLogin
-                                )
-                            ]
-                            [ text "Додати" ]
-                        ]
+                    , div [ class "text-center" ]
+                        [ Button.new { label = "Додати", onClick = (if model.addDeltaLogin then AddLoginDelta else AddLogin) } |> Button.view ]
                     ]
                 ]
 
@@ -889,50 +865,40 @@ mainBlock shared model =
                 , if featureDelta then
                     td []
                         [ input
-                            [ class "form-control"
+                            [ class "border border-gray-300 rounded px-3 py-2 w-full"
                             , type_ "text"
                             , placeholder "Дельта Логін"
                             , onInput <| SetEditDeltaLogin
                             , value <| Maybe.withDefault "" editState.deltaLogin
                             ]
                             []
-
-                        --, viewFormErrors Login model.fieldsErrors
                         ]
 
                   else
                     text ""
-                , td [ style "vertical-align" "middle" ]
+                , td [ class "align-middle" ]
                     [ if editState.doChangePassword then
                         div []
-                            [ div [ class "d-flex align-items-center" ]
+                            [ div [ class "flex items-center" ]
                                 [ input
-                                    [ class "form-control"
+                                    [ class "border border-gray-300 rounded px-3 py-2 w-full"
                                     , type_ "text"
                                     , placeholder "Пароль"
                                     , onInput <| SetEditPassword
                                     , value <| Maybe.withDefault "" editState.inpPassword
                                     ]
                                     []
-                                , button
-                                    [ class "btn btn-sm btn-outline-danger ms-2"
-                                    , type_ "button"
-                                    , onClick <| ToggleEditPassword
-                                    ]
-                                    [ i [ class "bi bi-x" ] []
-                                    ]
+                                , Button.new { label = "", onClick = ToggleEditPassword }
+                                    |> Button.withIcon [ i [ class "bi bi-x" ] [] ]
+                                    |> Button.withStyleSecondary
+                                    |> Button.view
                                 ]
                             ]
-
                       else
-                        i [ class "bi bi-pen", style "cursor" "pointer", onClick ToggleEditPassword ] []
+                        i [ class "bi bi-pen cursor-pointer", onClick ToggleEditPassword ] []
                     ]
                 , td []
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "min-width" "200px"
-                        , style "font-size" ".8rem"
-                        ]
+                    [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
                         [ div [ class "flex-grow-1" ]
                             [ Html.map EditRoleSelMsg <|
                                 Styled.toUnstyled <|
@@ -953,11 +919,7 @@ mainBlock shared model =
                         ]
                     , viewFormErrors Roles editState.fieldsErrors
                     ]
-                , td
-                    [ class "d-flex justify-content-between align-items-center"
-                    , style "min-width" "200px"
-                    , style "font-size" ".8rem"
-                    ]
+                , td [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
                     [ div [ class "flex-grow-1" ]
                         [ Html.map EditOrganismSelMsg <|
                             Styled.toUnstyled <|
@@ -970,11 +932,7 @@ mainBlock shared model =
                         ]
                     ]
                 , td []
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "min-width" "200px"
-                        , style "font-size" ".8rem"
-                        ]
+                    [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
                         [ div [ class "flex-grow-1" ]
                             [ Html.map EditZoneSelMsg <|
                                 Styled.toUnstyled <|
@@ -989,31 +947,25 @@ mainBlock shared model =
                     , viewFormErrors Zone editState.fieldsErrors
                     ]
                 , td [] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ] 
-                    [ div [ class "d-flex flex-column align-items-center" ]
+                , td [ class "text-center align-middle" ] 
+                    [ div [ class "flex flex-col items-center" ]
                         [ viewDeletedStatus model.timeZone login
                         , div [ class "mt-1" ]
-                            [ input [ class "form-check-input", type_ "checkbox", checked editState.inpDeleted, onClick EditDeletedMsg ] []
-                            , span [ class "ms-1", style "font-size" "0.7rem" ] [ text "Видалити" ]
+                            [ Checkbox.new { isChecked = editState.inpDeleted, onToggle = (\_ -> EditDeletedMsg) }
+                                |> Checkbox.withContent [ span [ class "ml-1 text-xs" ] [ text "Видалити" ] ]
+                                |> Checkbox.view
                             ]
                         ]
                     ]
                 , td []
-                    [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ button
-                            [ class "btn btn-sm btn-outline-primary"
-                            , type_ "button"
-                            , onClick <| EditLoginSave
-                            ]
-                            [ i [ class "bi bi-check2" ] []
-                            ]
-                        , button
-                            [ class "btn btn-sm btn-outline-danger ms-2"
-                            , type_ "button"
-                            , onClick <| EditLoginCancel
-                            ]
-                            [ i [ class "bi bi-x" ] []
-                            ]
+                    [ div [ class "flex justify-start items-center" ]
+                        [ Button.new { label = "", onClick = EditLoginSave }
+                            |> Button.withIcon [ i [ class "bi bi-check2" ] [] ]
+                            |> Button.view
+                        , Button.new { label = "", onClick = EditLoginCancel }
+                            |> Button.withIcon [ i [ class "bi bi-x" ] [] ]
+                            |> Button.withStyleSecondary
+                            |> Button.view
                         ]
                     ]
                 ]
@@ -1034,16 +986,13 @@ mainBlock shared model =
                     ]
                 , td [] [ text <| Maybe.withDefault "-" login.sigintZoneName ]
                 , td [] [ text <| Le.Time.renderDateF5FromMillis login.createdAt timeZone ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
+                , td [ class "text-center align-middle" ]
                     [ viewDeletedStatus timeZone login ]
                 , td []
-                    [ button
-                        [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
-                        , type_ "button"
-                        , onClick <| EditLogin login.login
-                        ]
-                        [ i [ class "bi bi-pencil-square" ] []
-                        ]
+                    [ Button.new { label = "", onClick = EditLogin login.login }
+                        |> Button.withIcon [ i [ class "bi bi-pencil-square" ] [] ]
+                        |> Button.withOutlined True
+                        |> Button.view
                     ]
                 ]
 
@@ -1054,88 +1003,28 @@ mainBlock shared model =
             else
                 model.logins
     in
-    [ div []
-        [ h1 [ class "py-4" ] [ text "Користувачі" ]
-        , div
-            [ class "border mb-4 p-2"
-            , style "background-color" "var(--bs-tertiary-bg)"
+    div []
+        [ addLoginPanel model
+        , div [ class "mb-1 float-right" ]
+            [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = (\_ -> ToggleActiveOnlyFilter) }
+                |> Checkbox.withContent [ span [] [ text "лише активні" ] ]
+                |> Checkbox.view
             ]
-            [ addLoginPanel
-                model
-            ]
-        , div [ class "form-check form-switch mb-1", style "float" "right" ]
-            [ input
-                [ class "form-check-input"
-                , type_ "checkbox"
-                , attribute "role" "switch"
-                , id "show-only-active"
-                , checked model.showActiveOnly
-                , onClick ToggleActiveOnlyFilter
-                ]
-                []
-            , label
-                [ class "form-check-label"
-                , for "show-only-active"
-                ]
-                [ text "лише активні" ]
-            ]
-        , table
-            [ class "table table-bordered table-sm"
-            , style "font-size" ".85rem"
-            , style "text-align" "center"
-            ]
-            [ thead [ style "position" "sticky", style "top" "0" ]
-                [ tr []
-                    [ th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Логін" ]
+        , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
+            [ thead [ class "" ]
+                [ tr [ class "" ]
+                    [ th [ scope "col", class "w-[15%]" ] [ text "Логін" ]
                     , if featureDelta then
-                        th
-                            [ scope "col"
-                            , class "nowrap"
-                            ]
-                            [ text "Дельта логін" ]
-
+                        th [ scope "col", class "w-[12%]" ] [ text "Дельта логін" ]
                       else
                         text ""
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        , style "min-width" "150px"
-                        ]
-                        [ text "Пароль" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Ролі" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Організм" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Зонa" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Створено" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Статус" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "" ]
+                    , th [ scope "col", class "w-[10%]" ] [ text "Пароль" ]
+                    , th [ scope "col", class "w-[15%]" ] [ text "Ролі" ]
+                    , th [ scope "col", class "w-[12%]" ] [ text "Організм" ]
+                    , th [ scope "col", class "w-[12%]" ] [ text "Зона" ]
+                    , th [ scope "col", class "w-[12%]" ] [ text "Створено" ]
+                    , th [ scope "col", class "w-[12%]" ] [ text "Статус" ]
+                    , th [ scope "col", class "w-[12%]" ] [ text "" ]
                     ]
                 ]
             , tbody [] <|
@@ -1155,4 +1044,3 @@ mainBlock shared model =
                     rows
             ]
         ]
-    ]
