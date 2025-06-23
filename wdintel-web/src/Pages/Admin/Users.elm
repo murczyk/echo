@@ -102,7 +102,7 @@ type alias Model =
     , filterOrganismSelect :
         { selectState : Select.State
         , items : List (Select.MenuItem Int)
-        , selectedItem : Maybe Int
+        , selectedItems : List Int
         }
     , filterStatusSelect :
         { selectState : Select.State
@@ -112,7 +112,7 @@ type alias Model =
     , filterRoleSelect :
         { selectState : Select.State
         , items : List (Select.MenuItem String)
-        , selectedItem : Maybe String
+        , selectedItems : List String
         }
     }
 
@@ -179,7 +179,7 @@ init =
       , filterOrganismSelect =
             { selectState = Select.initState (Select.selectIdentifier "filter-organism")
             , items = []
-            , selectedItem = Nothing
+            , selectedItems = []
             }
       , filterStatusSelect =
             { selectState = Select.initState (Select.selectIdentifier "filter-status")
@@ -189,7 +189,7 @@ init =
       , filterRoleSelect =
             { selectState = Select.initState (Select.selectIdentifier "filter-role")
             , items = []
-            , selectedItem = Nothing
+            , selectedItems = []
             }
       }
     , E.sendCmd <|
@@ -729,13 +729,13 @@ update msg model =
                     Select.update selMsg model.filterOrganismSelect.selectState
 
                 newFilterOrganism =
-                    Le.Block.Select.singleUpd mAction model.filterOrganismSelect.selectedItem
+                    Le.Block.Select.multiUpdI mAction model.filterOrganismSelect.selectedItems
 
                 filterOrganismSelect =
                     model.filterOrganismSelect
 
                 filterOrganismSelect2 =
-                    { filterOrganismSelect | selectedItem = newFilterOrganism, selectState = iState }
+                    { filterOrganismSelect | selectedItems = newFilterOrganism, selectState = iState }
             in
             ( { model | filterOrganismSelect = filterOrganismSelect2 }
             , E.batch
@@ -769,13 +769,13 @@ update msg model =
                     Select.update selMsg model.filterRoleSelect.selectState
 
                 newFilterRole =
-                    Le.Block.Select.singleUpd mAction model.filterRoleSelect.selectedItem
+                    Le.Block.Select.multiUpdS mAction model.filterRoleSelect.selectedItems
 
                 filterRoleSelect =
                     model.filterRoleSelect
 
                 filterRoleSelect2 =
-                    { filterRoleSelect | selectedItem = newFilterRole, selectState = iState }
+                    { filterRoleSelect | selectedItems = newFilterRole, selectState = iState }
             in
             ( { model | filterRoleSelect = filterRoleSelect2 }
             , E.batch
@@ -871,31 +871,361 @@ subscriptions model =
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
 view user shared model =
-    { title = "Адмін: користувачі"
-    , body = body user shared model
+    { title = "Users"
+    , body =
+        [ Le.Block.Toast.view ToastMsg model.toasts <|
+            div [ class "container mx-auto px-4 py-8 rer-networks" ]
+                [ h1 [ class "text-2xl font-bold mb-6" ] [ text "Управління користувачами" ]
+                , let
+                    featureDelta =
+                        case shared.serverInfo of
+                            Just info ->
+                                info.featureDelta
+
+                            Nothing ->
+                                False
+
+                    addLoginPanel : Model -> Html Msg
+                    addLoginPanel addState =
+                        let
+                            organismSelectedItem =
+                                addState.inpOrganism.selectedItem
+                                    |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) addState.organisms)
+                                    |> Maybe.map
+                                        (\item ->
+                                            Select.basicMenuItem { item = item.id, label = item.name }
+                                        )
+
+                            zoneSelectedItem =
+                                addState.inpZone.selectedItem
+                                    |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) addState.zones)
+                                    |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
+                        in
+                        div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
+                            [ if featureDelta then
+                                div [ class "mr-2" ]
+                                    [ Checkbox.new { isChecked = addState.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
+                                        |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
+                                        |> Checkbox.view
+                                    ]
+
+                              else
+                                text ""
+                            , div [ class "flex justify-start items-start gap-[1%]" ]
+                                [ div [ class "flex-1" ]
+                                    [ input
+                                        [ class "border border-gray-300 rounded px-3 py-2 w-full"
+                                        , type_ "text"
+                                        , placeholder "Логін"
+                                        , onInput <| SetLogin
+                                        , value addState.inpLogin
+                                        ]
+                                        []
+                                    , viewFormErrors Login addState.fieldsErrors
+                                    ]
+                                , div [ class "flex-1" ]
+                                    [ input
+                                        [ class "border border-gray-300 rounded px-3 py-2 w-full"
+                                        , type_ "text"
+                                        , placeholder "Пароль"
+                                        , onInput <| SetPassword
+                                        , value addState.inpPassword
+                                        , disabled addState.addDeltaLogin
+                                        ]
+                                        []
+                                    , viewFormErrors Password addState.fieldsErrors
+                                    ]
+                                , div [ class "flex-1" ]
+                                    [ div [ class "flex justify-between items-center text-[0.8rem]" ]
+                                        [ div [ class "flex-grow-1" ]
+                                            [ Html.map AddRoleSelMsg <|
+                                                Styled.toUnstyled <|
+                                                    Le.Block.Select.renderSelect
+                                                        (addState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                                        addState.inpRole.selectState
+                                                        addState.inpRole.items
+                                                        "роль"
+                                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                            ]
+                                        ]
+                                    , viewFormErrors Roles addState.fieldsErrors
+                                    ]
+                                , div [ class "flex-1" ]
+                                    [ div [ class "flex justify-between items-center text-[0.8rem]" ]
+                                        [ div [ class "flex-grow-1" ]
+                                            [ Html.map AddZoneSelMsg <|
+                                                Styled.toUnstyled <|
+                                                    Le.Block.Select.renderSelectSingle
+                                                        zoneSelectedItem
+                                                        addState.inpZone.selectState
+                                                        addState.inpZone.items
+                                                        "зона"
+                                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                            ]
+                                        ]
+                                    , viewFormErrors Zone addState.fieldsErrors
+                                    ]
+                                , div [ class "flex justify-between items-center text-[0.8rem] flex-1" ]
+                                    [ div [ class "flex-grow-1" ]
+                                        [ Html.map AddOrganismSelMsg <|
+                                            Styled.toUnstyled <|
+                                                Le.Block.Select.renderSelectSingle
+                                                    organismSelectedItem
+                                                    addState.inpOrganism.selectState
+                                                    addState.inpOrganism.items
+                                                    "організм"
+                                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                        ]
+                                    ]
+                                , div [ class "text-center" ]
+                                    [ Button.new
+                                        { label = "Додати"
+                                        , onClick =
+                                            if addState.addDeltaLogin then
+                                                AddLoginDelta
+
+                                            else
+                                                AddLogin
+                                        }
+                                        |> Button.view
+                                    ]
+                                ]
+                            ]
+
+                    -- Calculate role counts
+                    roleCounts =
+                        model.logins
+                            |> List.concatMap .roles
+                            |> List.foldl
+                                (\role acc ->
+                                    Dict.update role
+                                        (\maybeCount ->
+                                            case maybeCount of
+                                                Just count -> Just (count + 1)
+                                                Nothing -> Just 1
+                                        )
+                                        acc
+                                )
+                                Dict.empty
+
+                    roleMenuItems =
+                        List.map
+                            (\role ->
+                                let
+                                    count =
+                                        Dict.get role roleCounts |> Maybe.withDefault 0
+                                in
+                                Select.customMenuItem
+                                    { item = role
+                                    , label = role
+                                    , view = Html.Styled.fromUnstyled (Html.div []
+                                        [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ])
+                                    }
+                            )
+                            roles
+
+                    activeCount =
+                        List.length <| List.filter (\login -> not login.deleted) model.logins
+                    deletedCount =
+                        List.length <| List.filter (\login -> login.deleted) model.logins
+                    deletedByAdminCount =
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) model.logins
+                    deletedByInactivityCount =
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) model.logins
+                    deletedByOrganismCount =
+                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing) model.logins
+                    statusMenuItems =
+                        [ Select.customMenuItem
+                            { item = Active
+                            , label = statusToLabel Active
+                            , view = Html.Styled.fromUnstyled (Html.div []
+                                [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ])
+                            }
+                        , Select.customMenuItem
+                            { item = Deleted
+                            , label = statusToLabel Deleted
+                            , view = Html.Styled.fromUnstyled (Html.div []
+                                [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ])
+                            }
+                        , Select.customMenuItem
+                            { item = DeletedByAdmin
+                            , label = statusToLabel DeletedByAdmin
+                            , view = Html.Styled.fromUnstyled (Html.div []
+                                [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ])
+                            }
+                        , Select.customMenuItem
+                            { item = DeletedByInactivity
+                            , label = statusToLabel DeletedByInactivity
+                            , view = Html.Styled.fromUnstyled (Html.div []
+                                [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ])
+                            }
+                        , Select.customMenuItem
+                            { item = DeletedByOrganism
+                            , label = statusToLabel DeletedByOrganism
+                            , view = Html.Styled.fromUnstyled (Html.div []
+                                [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ])
+                            }
+                        ]
+
+                    rows =
+                        model.logins
+                            |> List.filter (\login ->
+                                let
+                                    matchesActiveOnly =
+                                        if model.showActiveOnly then
+                                            Maybe.withDefault False login.organismEnabled && not login.deleted
+                                        else
+                                            True
+
+                                    matchesOrganism =
+                                        case model.filterOrganismSelect.selectedItems of
+                                            [] -> True
+                                            organismIds -> 
+                                                case login.organismId of
+                                                    Just orgId -> List.member orgId organismIds
+                                                    Nothing -> False
+
+                                    matchesStatus =
+                                        case model.filterStatusSelect.selectedItem of
+                                            Nothing -> True
+                                            Just Active -> not login.deleted
+                                            Just Deleted -> login.deleted
+                                            Just DeletedByAdmin -> login.deleted && login.deactivationReason == Just B.Admin
+                                            Just DeletedByInactivity -> login.deleted && login.deactivationReason == Just B.Inactive
+                                            Just DeletedByOrganism -> login.deleted && login.deactivationReason == Nothing
+
+                                    matchesRole =
+                                        case model.filterRoleSelect.selectedItems of
+                                            [] -> True
+                                            selectedRoles -> List.any (\role -> List.member role selectedRoles) login.roles
+                                in
+                                matchesActiveOnly && matchesOrganism && matchesStatus && matchesRole
+                            )
+
+                    viewFilterBlock : Html Msg
+                    viewFilterBlock =
+                        div [ class "mb-4 p-4 bg-gray-50 rounded-lg border" ]
+                            [ div [ class "text-sm font-medium text-gray-700 mb-2" ] [ text "Фільтри" ]
+                            , div [ class "flex gap-4" ]
+                                [ div [ class "flex-1" ]
+                                    [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Організм" ]
+                                    , Html.map FilterOrganismSelMsg <|
+                                        Styled.toUnstyled <|
+                                            Le.Block.Select.renderSelect
+                                                (model.filterOrganismSelect.selectedItems |> List.map (\orgId -> 
+                                                    case ListX.find (\org -> org.id == orgId) model.organisms of
+                                                        Just org -> Select.basicMenuItem { item = org.id, label = org.name }
+                                                        Nothing -> Select.basicMenuItem { item = orgId, label = String.fromInt orgId }
+                                                ))
+                                                model.filterOrganismSelect.selectState
+                                                model.filterOrganismSelect.items
+                                                "Всі организми"
+                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    ]
+                                , div [ class "flex-1" ]
+                                    [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Статус" ]
+                                    , Html.map FilterStatusSelMsg <|
+                                        Styled.toUnstyled <|
+                                            Le.Block.Select.renderSelectSingle
+                                                (Maybe.map
+                                                    (\status ->
+                                                        Select.customMenuItem
+                                                            { item = status
+                                                            , label = statusToLabel status
+                                                            , view = Html.Styled.fromUnstyled (Html.div []
+                                                                [ Html.text (statusToLabel status ++ " ("
+                                                                    ++ (case status of
+                                                                            Active -> String.fromInt activeCount
+                                                                            Deleted -> String.fromInt deletedCount
+                                                                            DeletedByAdmin -> String.fromInt deletedByAdminCount
+                                                                            DeletedByInactivity -> String.fromInt deletedByInactivityCount
+                                                                            DeletedByOrganism -> String.fromInt deletedByOrganismCount
+                                                                       )
+                                                                    ++ ")")
+                                                                ])
+                                                            }
+                                                    )
+                                                    model.filterStatusSelect.selectedItem
+                                                )
+                                                model.filterStatusSelect.selectState
+                                                statusMenuItems
+                                                "Всі статуси"
+                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    ]
+                                , div [ class "flex-1" ]
+                                    [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Роль" ]
+                                    , Html.map FilterRoleSelMsg <|
+                                        Styled.toUnstyled <|
+                                            Le.Block.Select.renderSelect
+                                                (model.filterRoleSelect.selectedItems |> List.map (\role -> 
+                                                    Select.customMenuItem
+                                                        { item = role
+                                                        , label = role
+                                                        , view = Html.Styled.fromUnstyled (Html.div []
+                                                            [ Html.text (role ++ " ("
+                                                                ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
+                                                                ++ ")")
+                                                            ])
+                                                        }
+                                                ))
+                                                model.filterRoleSelect.selectState
+                                                roleMenuItems
+                                                "Всі ролі"
+                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    ]
+                                ]
+                            ]
+                in
+                div []
+                    [ addLoginPanel model
+                    , viewFilterBlock
+                    , div [ class "mb-1 float-right" ]
+                        [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = \_ -> ToggleActiveOnlyFilter }
+                            |> Checkbox.withContent [ span [] [ text "лише активні" ] ]
+                            |> Checkbox.view
+                        ]
+                    , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
+                        [ thead [ class "" ]
+                            [ tr [ class "" ]
+                                [ th [ scope "col", class "w-[12%]" ] [ text "Логін" ]
+                                , if featureDelta then
+                                    th [ scope "col", class "w-[10%]" ] [ text "Дельта логін" ]
+
+                                  else
+                                    text ""
+                                , th [ scope "col", class "w-[10%]" ] [ text "Пароль" ]
+                                , th [ scope "col", class "w-[19%]" ] [ text "Ролі" ]
+                                , th [ scope "col", class "w-[15%]" ] [ text "Організм" ]
+                                , th [ scope "col", class "w-[15%]" ] [ text "Зона" ]
+                                , th [ scope "col", class "w-[12%]" ] [ text "Створено" ]
+                                , th [ scope "col", class "w-[10%]" ] [ text "Статус" ]
+                                , th [ scope "col", class "w-[5%]" ] [ text "" ]
+                                ]
+                            ]
+                        , tbody [] <|
+                            List.map
+                                (\l ->
+                                    case model.editLogin of
+                                        Just ( login_, editState ) ->
+                                            if login_ == l.login then
+                                                viewLoginEditable shared model editState l
+
+                                            else
+                                                viewLoginReadonly shared model l
+
+                                        Nothing ->
+                                            viewLoginReadonly shared model l
+                                )
+                                rows
+                        ]
+                    ]
+                ]
+        ]
     }
 
 
-body : Auth.User -> Shared.Model -> Model -> List (Html Msg)
-body user shared model =
-    [ Views.noHeaderAndContent ToastMsg model.toasts <|
-        div [ class "flex rer-networks" ]
-            [ div [ class "grow px-[16px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
-                [ h1 [ class "mb-[16px]!" ]
-                    [ div [ class "flex justify-between items-center" ]
-                        [ div [ class "flex items-center mr-auto" ]
-                            [ span [ class "mr-2" ] [ text "Користувачі" ]
-                            ]
-                        ]
-                    ]
-                , mainBlock shared model
-                ]
-            ]
-    ]
-
-
-mainBlock : Shared.Model -> Model -> Html Msg
-mainBlock shared model =
+viewLoginEditable : Shared.Model -> Model -> LoginEdit -> B.Login -> Html Msg
+viewLoginEditable shared model editState login =
     let
         featureDelta =
             case shared.serverInfo of
@@ -905,478 +1235,150 @@ mainBlock shared model =
                 Nothing ->
                     False
 
-        addLoginPanel : Model -> Html Msg
-        addLoginPanel addState =
-            let
-                organismSelectedItem =
-                    model.inpOrganism.selectedItem
-                        |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) model.organisms)
-                        |> Maybe.map
-                            (\item ->
-                                Select.basicMenuItem { item = item.id, label = item.name }
-                            )
+        organismSelectedItem =
+            editState.inpOrganism.selectedItem
+                |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) model.organisms)
+                |> Maybe.map
+                    (\item ->
+                        Select.basicMenuItem { item = item.id, label = item.name }
+                    )
 
-                zoneSelectedItem =
-                    model.inpZone.selectedItem
-                        |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) model.zones)
-                        |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
-            in
-            div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
-                [ if featureDelta then
-                    div [ class "mr-2" ]
-                        [ Checkbox.new { isChecked = model.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
-                            |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
-                            |> Checkbox.view
-                        ]
-
-                  else
-                    text ""
-                , div [ class "flex justify-start items-start gap-[1%]" ]
-                    [ div [ class "flex-1" ]
-                        [ input
-                            [ class "border border-gray-300 rounded px-3 py-2 w-full"
-                            , type_ "text"
-                            , placeholder "Логін"
-                            , onInput <| SetLogin
-                            , value addState.inpLogin
-                            ]
-                            []
-                        , viewFormErrors Login model.fieldsErrors
-                        ]
-                    , div [ class "flex-1" ]
-                        [ input
-                            [ class "border border-gray-300 rounded px-3 py-2 w-full"
-                            , type_ "text"
-                            , placeholder "Пароль"
-                            , onInput <| SetPassword
-                            , value addState.inpPassword
-                            , disabled model.addDeltaLogin
-                            ]
-                            []
-                        , viewFormErrors Password model.fieldsErrors
-                        ]
-                    , div [ class "flex-1" ]
-                        [ div [ class "flex justify-between items-center text-[0.8rem]" ]
-                            [ div [ class "flex-grow-1" ]
-                                [ Html.map AddRoleSelMsg <|
-                                    Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelect
-                                            (model.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                            model.inpRole.selectState
-                                            model.inpRole.items
-                                            "роль"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
-                                ]
-                            ]
-                        , viewFormErrors Roles model.fieldsErrors
-                        ]
-                    , div [ class "flex-1" ]
-                        [ div [ class "flex justify-between items-center text-[0.8rem]" ]
-                            [ div [ class "flex-grow-1" ]
-                                [ Html.map AddZoneSelMsg <|
-                                    Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
-                                            zoneSelectedItem
-                                            model.inpZone.selectState
-                                            model.inpZone.items
-                                            "зона"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
-                                ]
-                            ]
-                        , viewFormErrors Zone model.fieldsErrors
-                        ]
-                    , div [ class "flex justify-between items-center text-[0.8rem] flex-1" ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map AddOrganismSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        organismSelectedItem
-                                        model.inpOrganism.selectState
-                                        model.inpOrganism.items
-                                        "організм"
-                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
-                            ]
-                        ]
-                    , div [ class "text-center" ]
-                        [ Button.new
-                            { label = "Додати"
-                            , onClick =
-                                if model.addDeltaLogin then
-                                    AddLoginDelta
-
-                                else
-                                    AddLogin
-                            }
-                            |> Button.view
-                        ]
+        zoneSelectedItem =
+            editState.inpZone.selectedItem
+                |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) model.zones)
+                |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
+    in
+    tr []
+        [ td [ class "break-words" ] [ text login.login ]
+        , if featureDelta then
+            td [ class "break-words" ]
+                [ input
+                    [ class "border border-gray-300 rounded px-2 py-1 w-full text-xs"
+                    , type_ "text"
+                    , placeholder "Дельта Логін"
+                    , onInput <| SetEditDeltaLogin
+                    , value <| Maybe.withDefault "" editState.deltaLogin
                     ]
+                    []
                 ]
 
-        viewLoginEditable : LoginEdit -> B.Login -> Html Msg
-        viewLoginEditable editState login =
-            let
-                organismSelectedItem =
-                    editState.inpOrganism.selectedItem
-                        |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) model.organisms)
-                        |> Maybe.map
-                            (\item ->
-                                Select.basicMenuItem { item = item.id, label = item.name }
-                            )
-
-                zoneSelectedItem =
-                    editState.inpZone.selectedItem
-                        |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) model.zones)
-                        |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
-            in
-            tr []
-                [ td [ class "break-words" ] [ text login.login ]
-                , if featureDelta then
-                    td [ class "break-words" ]
+          else
+            text ""
+        , td [ class "align-middle break-words" ]
+            [ if editState.doChangePassword then
+                div []
+                    [ div [ class "flex items-center" ]
                         [ input
                             [ class "border border-gray-300 rounded px-2 py-1 w-full text-xs"
                             , type_ "text"
-                            , placeholder "Дельта Логін"
-                            , onInput <| SetEditDeltaLogin
-                            , value <| Maybe.withDefault "" editState.deltaLogin
+                            , placeholder "Пароль"
+                            , onInput <| SetEditPassword
+                            , value <| Maybe.withDefault "" editState.inpPassword
                             ]
                             []
-                        ]
-
-                  else
-                    text ""
-                , td [ class "align-middle break-words" ]
-                    [ if editState.doChangePassword then
-                        div []
-                            [ div [ class "flex items-center" ]
-                                [ input
-                                    [ class "border border-gray-300 rounded px-2 py-1 w-full text-xs"
-                                    , type_ "text"
-                                    , placeholder "Пароль"
-                                    , onInput <| SetEditPassword
-                                    , value <| Maybe.withDefault "" editState.inpPassword
-                                    ]
-                                    []
-                                , i [ class "bi bi-x text-red-500 hover:text-red-600 cursor-pointer text-lg", onClick ToggleEditPassword ] []
-                                ]
-                            ]
-
-                      else
-                        i [ class "bi bi-pen text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick ToggleEditPassword ] []
-                    ]
-                , td [ class "break-words" ]
-                    [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditRoleSelMsg <|
-                                Styled.toUnstyled <|
-                                    let
-                                        options =
-                                            Le.Block.Select.defaultOptions shared.isDarkMode
-
-                                        options2 =
-                                            { options | clearable = False }
-                                    in
-                                    Le.Block.Select.renderSelect
-                                        (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                        editState.inpRole.selectState
-                                        editState.inpRole.items
-                                        "роль"
-                                        options2
-                            ]
-                        ]
-                    , viewFormErrors Roles editState.fieldsErrors
-                    ]
-                , td [ class "break-words" ]
-                    [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditOrganismSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        organismSelectedItem
-                                        editState.inpOrganism.selectState
-                                        editState.inpOrganism.items
-                                        "організм"
-                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
-                            ]
+                        , i [ class "bi bi-x text-red-500 hover:text-red-600 cursor-pointer text-lg", onClick ToggleEditPassword ] []
                         ]
                     ]
-                , td [ class "break-words" ]
-                    [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditZoneSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        zoneSelectedItem
-                                        editState.inpZone.selectState
-                                        editState.inpZone.items
-                                        "зона"
-                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
-                            ]
-                        ]
-                    , viewFormErrors Zone editState.fieldsErrors
-                    ]
-                , td [ class "break-words" ] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
-                , td [ class "text-center align-middle" ]
-                    [ div [ class "mt-1 flex justify-center" ]
-                        [ Checkbox.new { isChecked = editState.inpDeleted, onToggle = \_ -> EditDeletedMsg }
-                            |> Checkbox.withContent [ span [ class "ml-1 text-xs" ] [ text "Видалити" ] ]
-                            |> Checkbox.view
-                        ]
-                    ]
-                , td []
-                    [ div [ class "flex justify-center items-center gap-2" ]
-                        [ i [ class "bi bi-check2 text-green-500 hover:text-green-600 cursor-pointer text-lg", onClick EditLoginSave ] []
-                        , i [ class "bi bi-x text-red-500 hover:text-red-600 cursor-pointer text-lg", onClick EditLoginCancel ] []
-                        ]
-                    ]
-                ]
 
-        viewLoginReadonly : Maybe Time.Zone -> B.Login -> Html Msg
-        viewLoginReadonly timeZone login =
-            tr []
-                [ td [ class "break-words" ] [ text login.login ]
-                , if featureDelta then
-                    td [ class "break-words" ] [ span [] [ text <| Maybe.withDefault "" login.deltaLogin ] ]
-
-                  else
-                    text ""
-                , td [ class "align-middle break-words" ] [ text "********" ]
-                , td [ class "break-words" ] (List.map (\role -> span [] [ text <| role ++ "  " ]) login.roles)
-                , td [ class "break-words" ]
-                    [ span [] [ text <| Maybe.withDefault "-" login.organismName ]
-                    ]
-                , td [ class "break-words" ] [ text <| Maybe.withDefault "-" login.sigintZoneName ]
-                , td [ class "break-words" ] [ text <| Le.Time.renderDateF5FromMillis login.createdAt timeZone ]
-                , td [ class "text-center align-middle" ]
-                    [ viewDeletedStatus timeZone login ]
-                , td []
-                    [ i [ class "bi bi-pencil-square text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick <| EditLogin login.login ] []
-                    ]
-                ]
-
-        -- Calculate role counts
-        roleCounts =
-            model.logins
-                |> List.concatMap .roles
-                |> List.foldl
-                    (\role acc ->
-                        Dict.update role
-                            (\maybeCount ->
-                                case maybeCount of
-                                    Just count -> Just (count + 1)
-                                    Nothing -> Just 1
-                            )
-                            acc
-                    )
-                    Dict.empty
-
-        roleMenuItems =
-            List.map
-                (\role ->
-                    let
-                        count =
-                            Dict.get role roleCounts |> Maybe.withDefault 0
-                    in
-                    Select.customMenuItem
-                        { item = role
-                        , label = role
-                        , view = Html.Styled.fromUnstyled (Html.div []
-                            [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ])
-                        }
-                )
-                roles
-
-        rows =
-            model.logins
-                |> List.filter (\login ->
-                    let
-                        matchesActiveOnly =
-                            if model.showActiveOnly then
-                                Maybe.withDefault False login.organismEnabled && not login.deleted
-                            else
-                                True
-
-                        matchesOrganism =
-                            case model.filterOrganismSelect.selectedItem of
-                                Nothing -> True
-                                Just organismId -> login.organismId == Just organismId
-
-                        matchesStatus =
-                            case model.filterStatusSelect.selectedItem of
-                                Nothing -> True
-                                Just Active -> not login.deleted
-                                Just Deleted -> login.deleted
-                                Just DeletedByAdmin -> login.deleted && login.deactivationReason == Just B.Admin
-                                Just DeletedByInactivity -> login.deleted && login.deactivationReason == Just B.Inactive
-                                Just DeletedByOrganism -> login.deleted && login.deactivationReason == Nothing
-
-                        matchesRole =
-                            case model.filterRoleSelect.selectedItem of
-                                Nothing -> True
-                                Just selectedRole -> List.member selectedRole login.roles
-                    in
-                    matchesActiveOnly && matchesOrganism && matchesStatus && matchesRole
-                )
-
-        activeCount =
-            List.length <| List.filter (\login -> not login.deleted) model.logins
-        deletedCount =
-            List.length <| List.filter (\login -> login.deleted) model.logins
-        deletedByAdminCount =
-            List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) model.logins
-        deletedByInactivityCount =
-            List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) model.logins
-        deletedByOrganismCount =
-            List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing) model.logins
-        statusMenuItems =
-            [ Select.customMenuItem
-                { item = Active
-                , label = statusToLabel Active
-                , view = Html.Styled.fromUnstyled (Html.div []
-                    [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ])
-                }
-            , Select.customMenuItem
-                { item = Deleted
-                , label = statusToLabel Deleted
-                , view = Html.Styled.fromUnstyled (Html.div []
-                    [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ])
-                }
-            , Select.customMenuItem
-                { item = DeletedByAdmin
-                , label = statusToLabel DeletedByAdmin
-                , view = Html.Styled.fromUnstyled (Html.div []
-                    [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ])
-                }
-            , Select.customMenuItem
-                { item = DeletedByInactivity
-                , label = statusToLabel DeletedByInactivity
-                , view = Html.Styled.fromUnstyled (Html.div []
-                    [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ])
-                }
-            , Select.customMenuItem
-                { item = DeletedByOrganism
-                , label = statusToLabel DeletedByOrganism
-                , view = Html.Styled.fromUnstyled (Html.div []
-                    [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ])
-                }
+              else
+                i [ class "bi bi-pen text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick ToggleEditPassword ] []
             ]
+        , td [ class "break-words" ]
+            [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
+                [ div [ class "flex-grow-1" ]
+                    [ Html.map EditRoleSelMsg <|
+                        Styled.toUnstyled <|
+                            let
+                                options =
+                                    Le.Block.Select.defaultOptions shared.isDarkMode
 
-        viewFilterBlock : Html Msg
-        viewFilterBlock =
-            div [ class "mb-4 p-4 bg-gray-50 rounded-lg border" ]
-                [ div [ class "text-sm font-medium text-gray-700 mb-2" ] [ text "Фільтри" ]
-                , div [ class "flex gap-4" ]
-                    [ div [ class "flex-1" ]
-                        [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Організм" ]
-                        , Html.map FilterOrganismSelMsg <|
-                            Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
-                                    (model.organisms
-                                        |> List.filter (\org -> model.filterOrganismSelect.selectedItem == Just org.id)
-                                        |> List.head
-                                        |> Maybe.map (\org -> Select.basicMenuItem { item = org.id, label = org.name })
-                                    )
-                                    model.filterOrganismSelect.selectState
-                                    model.filterOrganismSelect.items
-                                    "Всі организми"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
-                        ]
-                    , div [ class "flex-1" ]
-                        [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Статус" ]
-                        , Html.map FilterStatusSelMsg <|
-                            Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
-                                    (Maybe.map
-                                        (\status ->
-                                            Select.customMenuItem
-                                                { item = status
-                                                , label = statusToLabel status
-                                                , view = Html.Styled.fromUnstyled (Html.div []
-                                                    [ Html.text (statusToLabel status ++ " ("
-                                                        ++ (case status of
-                                                                Active -> String.fromInt activeCount
-                                                                Deleted -> String.fromInt deletedCount
-                                                                DeletedByAdmin -> String.fromInt deletedByAdminCount
-                                                                DeletedByInactivity -> String.fromInt deletedByInactivityCount
-                                                                DeletedByOrganism -> String.fromInt deletedByOrganismCount
-                                                           )
-                                                        ++ ")")
-                                                    ])
-                                                }
-                                        )
-                                        model.filterStatusSelect.selectedItem
-                                    )
-                                    model.filterStatusSelect.selectState
-                                    statusMenuItems
-                                    "Всі статуси"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
-                        ]
-                    , div [ class "flex-1" ]
-                        [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Роль" ]
-                        , Html.map FilterRoleSelMsg <|
-                            Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
-                                    (Maybe.map
-                                        (\role ->
-                                            Select.customMenuItem
-                                                { item = role
-                                                , label = role
-                                                , view = Html.Styled.fromUnstyled (Html.div []
-                                                    [ Html.text (role ++ " ("
-                                                        ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
-                                                        ++ ")")
-                                                    ])
-                                                }
-                                        )
-                                        model.filterRoleSelect.selectedItem
-                                    )
-                                    model.filterRoleSelect.selectState
-                                    roleMenuItems
-                                    "Всі ролі"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
-                        ]
+                                options2 =
+                                    { options | clearable = False }
+                            in
+                            Le.Block.Select.renderSelect
+                                (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                editState.inpRole.selectState
+                                editState.inpRole.items
+                                "роль"
+                                options2
                     ]
                 ]
+            , viewFormErrors Roles editState.fieldsErrors
+            ]
+        , td [ class "break-words" ]
+            [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
+                [ div [ class "flex-grow-1" ]
+                    [ Html.map EditOrganismSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                organismSelectedItem
+                                editState.inpOrganism.selectState
+                                editState.inpOrganism.items
+                                "організм"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                    ]
+                ]
+            ]
+        , td [ class "break-words" ]
+            [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
+                [ div [ class "flex-grow-1" ]
+                    [ Html.map EditZoneSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                zoneSelectedItem
+                                editState.inpZone.selectState
+                                editState.inpZone.items
+                                "зона"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                    ]
+                ]
+            , viewFormErrors Zone editState.fieldsErrors
+            ]
+        , td [ class "break-words" ] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
+        , td [ class "text-center align-middle" ]
+            [ div [ class "mt-1 flex justify-center" ]
+                [ Checkbox.new { isChecked = editState.inpDeleted, onToggle = \_ -> EditDeletedMsg }
+                    |> Checkbox.withContent [ span [ class "ml-1 text-xs" ] [ text "Видалити" ] ]
+                    |> Checkbox.view
+                ]
+            ]
+        , td []
+            [ div [ class "flex justify-center items-center gap-2" ]
+                [ i [ class "bi bi-check2 text-green-500 hover:text-green-600 cursor-pointer text-lg", onClick EditLoginSave ] []
+                , i [ class "bi bi-x text-red-500 hover:text-red-600 cursor-pointer text-lg", onClick EditLoginCancel ] []
+                ]
+            ]
+        ]
+
+
+viewLoginReadonly : Shared.Model -> Model -> B.Login -> Html Msg
+viewLoginReadonly shared model login =
+    let
+        featureDelta =
+            case shared.serverInfo of
+                Just info ->
+                    info.featureDelta
+
+                Nothing ->
+                    False
     in
-    div []
-        [ addLoginPanel model
-        , viewFilterBlock
-        , div [ class "mb-1 float-right" ]
-            [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = \_ -> ToggleActiveOnlyFilter }
-                |> Checkbox.withContent [ span [] [ text "лише активні" ] ]
-                |> Checkbox.view
+    tr []
+        [ td [ class "break-words" ] [ text login.login ]
+        , if featureDelta then
+            td [ class "break-words" ] [ span [] [ text <| Maybe.withDefault "" login.deltaLogin ] ]
+
+          else
+            text ""
+        , td [ class "align-middle break-words" ] [ text "********" ]
+        , td [ class "break-words" ] (List.map (\role -> span [] [ text <| role ++ "  " ]) login.roles)
+        , td [ class "break-words" ]
+            [ span [] [ text <| Maybe.withDefault "-" login.organismName ]
             ]
-        , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
-            [ thead [ class "" ]
-                [ tr [ class "" ]
-                    [ th [ scope "col", class "w-[12%]" ] [ text "Логін" ]
-                    , if featureDelta then
-                        th [ scope "col", class "w-[10%]" ] [ text "Дельта логін" ]
-
-                      else
-                        text ""
-                    , th [ scope "col", class "w-[10%]" ] [ text "Пароль" ]
-                    , th [ scope "col", class "w-[19%]" ] [ text "Ролі" ]
-                    , th [ scope "col", class "w-[15%]" ] [ text "Організм" ]
-                    , th [ scope "col", class "w-[15%]" ] [ text "Зона" ]
-                    , th [ scope "col", class "w-[12%]" ] [ text "Створено" ]
-                    , th [ scope "col", class "w-[10%]" ] [ text "Статус" ]
-                    , th [ scope "col", class "w-[5%]" ] [ text "" ]
-                    ]
-                ]
-            , tbody [] <|
-                List.map
-                    (\l ->
-                        case model.editLogin of
-                            Just ( login_, editState ) ->
-                                if login_ == l.login then
-                                    viewLoginEditable editState l
-
-                                else
-                                    viewLoginReadonly model.timeZone l
-
-                            Nothing ->
-                                viewLoginReadonly model.timeZone l
-                    )
-                    rows
+        , td [ class "break-words" ] [ text <| Maybe.withDefault "-" login.sigintZoneName ]
+        , td [ class "break-words" ] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
+        , td [ class "text-center align-middle" ]
+            [ viewDeletedStatus model.timeZone login ]
+        , td []
+            [ i [ class "bi bi-pencil-square text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick <| EditLogin login.login ] []
             ]
         ]
