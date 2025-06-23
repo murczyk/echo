@@ -13,6 +13,7 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Keyed
 import Html.Styled as Styled
+import Html.Styled exposing (fromUnstyled)
 import Layouts
 import Le.Block.Select
 import Le.Block.Toast
@@ -53,6 +54,23 @@ toLayout user model =
         }
 
 
+type Status
+    = Active
+    | Deleted
+    | DeletedByAdmin
+    | DeletedByInactivity
+    | DeletedByOrganism
+
+statusToLabel : Status -> String
+statusToLabel status =
+    case status of
+        Active -> "Активні"
+        Deleted -> "Видалені"
+        DeletedByAdmin -> "Видалені адміном"
+        DeletedByInactivity -> "Видалені за неактивністю"
+        DeletedByOrganism -> "Видалені через організм"
+
+
 type alias Model =
     { formErrors : Dict String String
     , toasts : Le.Block.Toast.Model
@@ -85,6 +103,11 @@ type alias Model =
         { selectState : Select.State
         , items : List (Select.MenuItem Int)
         , selectedItem : Maybe Int
+        }
+    , filterStatusSelect :
+        { selectState : Select.State
+        , items : List (Select.MenuItem Status)
+        , selectedItem : Maybe Status
         }
     }
 
@@ -153,6 +176,11 @@ init =
             , items = []
             , selectedItem = Nothing
             }
+      , filterStatusSelect =
+            { selectState = Select.initState (Select.selectIdentifier "filter-status")
+            , items = []
+            , selectedItem = Nothing
+            }
       }
     , E.sendCmd <|
         Cmd.batch
@@ -192,6 +220,7 @@ type Msg
     | ToggleActiveOnlyFilter
     | ToggleAddDeltaLogin
     | FilterOrganismSelMsg (Select.Msg Int)
+    | FilterStatusSelMsg (Select.Msg Status)
 
 
 type FormField
@@ -664,6 +693,26 @@ update msg model =
                 ]
             )
 
+        FilterStatusSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.filterStatusSelect.selectState
+
+                newFilterStatus =
+                    Le.Block.Select.singleUpd mAction model.filterStatusSelect.selectedItem
+
+                filterStatusSelect =
+                    model.filterStatusSelect
+
+                filterStatusSelect2 =
+                    { filterStatusSelect | selectedItem = newFilterStatus, selectState = iState }
+            in
+            ( { model | filterStatusSelect = filterStatusSelect2 }
+            , E.batch
+                [ E.sendCmd <| Cmd.map FilterStatusSelMsg iCmd
+                ]
+            )
+
 
 validatorAdd : Validate.Validator ( FormField, String ) Model
 validatorAdd =
@@ -1048,9 +1097,61 @@ mainBlock shared model =
                             case model.filterOrganismSelect.selectedItem of
                                 Nothing -> True
                                 Just organismId -> login.organismId == Just organismId
+
+                        matchesStatus =
+                            case model.filterStatusSelect.selectedItem of
+                                Nothing -> True
+                                Just Active -> not login.deleted
+                                Just Deleted -> login.deleted
+                                Just DeletedByAdmin -> login.deleted && login.deactivationReason == Just B.Admin
+                                Just DeletedByInactivity -> login.deleted && login.deactivationReason == Just B.Inactive
+                                Just DeletedByOrganism -> login.deleted && login.deactivationReason == Nothing
                     in
-                    matchesActiveOnly && matchesOrganism
+                    matchesActiveOnly && matchesOrganism && matchesStatus
                 )
+
+        activeCount =
+            List.length <| List.filter (\login -> not login.deleted) model.logins
+        deletedCount =
+            List.length <| List.filter (\login -> login.deleted) model.logins
+        deletedByAdminCount =
+            List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) model.logins
+        deletedByInactivityCount =
+            List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) model.logins
+        deletedByOrganismCount =
+            List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing) model.logins
+        statusMenuItems =
+            [ Select.customMenuItem
+                { item = Active
+                , label = statusToLabel Active
+                , view = Html.Styled.fromUnstyled (Html.div []
+                    [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ])
+                }
+            , Select.customMenuItem
+                { item = Deleted
+                , label = statusToLabel Deleted
+                , view = Html.Styled.fromUnstyled (Html.div []
+                    [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ])
+                }
+            , Select.customMenuItem
+                { item = DeletedByAdmin
+                , label = statusToLabel DeletedByAdmin
+                , view = Html.Styled.fromUnstyled (Html.div []
+                    [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ])
+                }
+            , Select.customMenuItem
+                { item = DeletedByInactivity
+                , label = statusToLabel DeletedByInactivity
+                , view = Html.Styled.fromUnstyled (Html.div []
+                    [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ])
+                }
+            , Select.customMenuItem
+                { item = DeletedByOrganism
+                , label = statusToLabel DeletedByOrganism
+                , view = Html.Styled.fromUnstyled (Html.div []
+                    [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ])
+                }
+            ]
 
         viewFilterBlock : Html Msg
         viewFilterBlock =
@@ -1070,6 +1171,36 @@ mainBlock shared model =
                                     model.filterOrganismSelect.selectState
                                     model.filterOrganismSelect.items
                                     "Всі организми"
+                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                        ]
+                    , div [ class "flex-1" ]
+                        [ label [ class "block text-sm font-medium text-gray-700 mb-1" ] [ text "Статус" ]
+                        , Html.map FilterStatusSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    (Maybe.map
+                                        (\status ->
+                                            Select.customMenuItem
+                                                { item = status
+                                                , label = statusToLabel status
+                                                , view = Html.Styled.fromUnstyled (Html.div []
+                                                    [ Html.text (statusToLabel status ++ " ("
+                                                        ++ (case status of
+                                                                Active -> String.fromInt activeCount
+                                                                Deleted -> String.fromInt deletedCount
+                                                                DeletedByAdmin -> String.fromInt deletedByAdminCount
+                                                                DeletedByInactivity -> String.fromInt deletedByInactivityCount
+                                                                DeletedByOrganism -> String.fromInt deletedByOrganismCount
+                                                           )
+                                                        ++ ")")
+                                                    ])
+                                                }
+                                        )
+                                        model.filterStatusSelect.selectedItem
+                                    )
+                                    model.filterStatusSelect.selectState
+                                    statusMenuItems
+                                    "Всі статуси"
                                     (Le.Block.Select.defaultOptions shared.isDarkMode)
                         ]
                     ]
