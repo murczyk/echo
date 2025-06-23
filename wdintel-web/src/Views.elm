@@ -69,12 +69,8 @@ noHeaderAndContent :
     -> Html msg
 noHeaderAndContent toastMsg toasts content =
     Le.Block.Toast.view toastMsg toasts <|
-        div [ class "container-xxl bd-gutter pt-md-1 main-container" ]
-            [ div [ class "row" ]
-                [ div [ class "col-12" ]
-                    [ content
-                    ]
-                ]
+        div [ class "w-4/5 mx-auto pt-4" ]
+            [ content
             ]
 
 

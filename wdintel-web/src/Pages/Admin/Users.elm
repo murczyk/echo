@@ -549,9 +549,10 @@ update msg model =
                                     , roles = Le.Utils.emptyToNothing editLogin.inpRole.selectedItems
                                     , deleted = Just editLogin.inpDeleted
                                     , deltaLogin = emptyStringToNothing editLogin.deltaLogin
-                                    , deactivationReason = 
+                                    , deactivationReason =
                                         if editLogin.inpDeleted then
                                             Just B.Admin
+
                                         else
                                             Nothing
                                     }
@@ -671,20 +672,20 @@ viewDeletedStatus timeZone login =
                     [ i [ class "bi bi-person-x-fill text-red-500 text-xl" ] []
                     , span [ class "text-red-500 text-xs" ] [ text "Адмін" ]
                     ]
-            
+
             Just B.Inactive ->
                 div [ class "flex flex-col items-center" ]
                     [ i [ class "bi bi-clock-history text-yellow-500 text-xl" ] []
                     , span [ class "text-yellow-500 text-xs" ] [ text "Неактивний" ]
                     , case login.lastActiveAt of
                         Just lastActive ->
-                            span [ class "text-gray-500 text-xs" ] 
+                            span [ class "text-gray-500 text-xs" ]
                                 [ text <| "Останній: " ++ Le.Time.renderDateF5FromMillis lastActive timeZone ]
-                        
+
                         Nothing ->
                             text ""
                     ]
-            
+
             Nothing ->
                 case login.organismEnabled of
                     Just False ->
@@ -693,12 +694,13 @@ viewDeletedStatus timeZone login =
                             , span [ class "text-red-500 text-xs" ] [ text "Організм" ]
                             , span [ class "text-gray-500 text-xs" ] [ text "деактивовано" ]
                             ]
-                    
+
                     _ ->
                         div [ class "flex flex-col items-center" ]
                             [ i [ class "bi bi-question-circle text-gray-500 text-xl" ] []
                             , span [ class "text-gray-500 text-xs" ] [ text "Невідомо" ]
                             ]
+
     else
         div [ class "flex flex-col items-center" ]
             [ i [ class "bi bi-check-circle-fill text-green-500 text-xl" ] []
@@ -722,7 +724,7 @@ body : Auth.User -> Shared.Model -> Model -> List (Html Msg)
 body user shared model =
     [ Views.noHeaderAndContent ToastMsg model.toasts <|
         div [ class "flex rer-networks" ]
-            [ div [ class "grow px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
+            [ div [ class "grow px-[16px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
                 [ h1 [ class "mb-[16px]!" ]
                     [ div [ class "flex justify-between items-center" ]
                         [ div [ class "flex items-center mr-auto" ]
@@ -766,7 +768,7 @@ mainBlock shared model =
             div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
                 [ if featureDelta then
                     div [ class "mr-2" ]
-                        [ Checkbox.new { isChecked = model.addDeltaLogin, onToggle = (\_ -> ToggleAddDeltaLogin) }
+                        [ Checkbox.new { isChecked = model.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
                             |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
                             |> Checkbox.view
                         ]
@@ -840,7 +842,17 @@ mainBlock shared model =
                             ]
                         ]
                     , div [ class "text-center" ]
-                        [ Button.new { label = "Додати", onClick = (if model.addDeltaLogin then AddLoginDelta else AddLogin) } |> Button.view ]
+                        [ Button.new
+                            { label = "Додати"
+                            , onClick =
+                                if model.addDeltaLogin then
+                                    AddLoginDelta
+
+                                else
+                                    AddLogin
+                            }
+                            |> Button.view
+                        ]
                     ]
                 ]
 
@@ -861,11 +873,11 @@ mainBlock shared model =
                         |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
             in
             tr []
-                [ td [] [ text login.login ]
+                [ td [ class "break-words" ] [ text login.login ]
                 , if featureDelta then
-                    td []
+                    td [ class "break-words" ]
                         [ input
-                            [ class "border border-gray-300 rounded px-3 py-2 w-full"
+                            [ class "border border-gray-300 rounded px-2 py-1 w-full text-xs"
                             , type_ "text"
                             , placeholder "Дельта Логін"
                             , onInput <| SetEditDeltaLogin
@@ -876,28 +888,26 @@ mainBlock shared model =
 
                   else
                     text ""
-                , td [ class "align-middle" ]
+                , td [ class "align-middle break-words" ]
                     [ if editState.doChangePassword then
                         div []
                             [ div [ class "flex items-center" ]
                                 [ input
-                                    [ class "border border-gray-300 rounded px-3 py-2 w-full"
+                                    [ class "border border-gray-300 rounded px-2 py-1 w-full text-xs"
                                     , type_ "text"
                                     , placeholder "Пароль"
                                     , onInput <| SetEditPassword
                                     , value <| Maybe.withDefault "" editState.inpPassword
                                     ]
                                     []
-                                , Button.new { label = "", onClick = ToggleEditPassword }
-                                    |> Button.withIcon [ i [ class "bi bi-x" ] [] ]
-                                    |> Button.withStyleSecondary
-                                    |> Button.view
+                                , i [ class "bi bi-x text-red-500 hover:text-red-600 cursor-pointer text-lg", onClick ToggleEditPassword ] []
                                 ]
                             ]
+
                       else
-                        i [ class "bi bi-pen cursor-pointer", onClick ToggleEditPassword ] []
+                        i [ class "bi bi-pen text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick ToggleEditPassword ] []
                     ]
-                , td []
+                , td [ class "break-words" ]
                     [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
                         [ div [ class "flex-grow-1" ]
                             [ Html.map EditRoleSelMsg <|
@@ -919,19 +929,21 @@ mainBlock shared model =
                         ]
                     , viewFormErrors Roles editState.fieldsErrors
                     ]
-                , td [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
-                    [ div [ class "flex-grow-1" ]
-                        [ Html.map EditOrganismSelMsg <|
-                            Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
-                                    organismSelectedItem
-                                    editState.inpOrganism.selectState
-                                    editState.inpOrganism.items
-                                    "організм"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                , td [ class "break-words" ]
+                    [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
+                        [ div [ class "flex-grow-1" ]
+                            [ Html.map EditOrganismSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        organismSelectedItem
+                                        editState.inpOrganism.selectState
+                                        editState.inpOrganism.items
+                                        "організм"
+                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
+                            ]
                         ]
                     ]
-                , td []
+                , td [ class "break-words" ]
                     [ div [ class "flex justify-between items-center min-w-[200px] text-[0.8rem]" ]
                         [ div [ class "flex-grow-1" ]
                             [ Html.map EditZoneSelMsg <|
@@ -946,26 +958,18 @@ mainBlock shared model =
                         ]
                     , viewFormErrors Zone editState.fieldsErrors
                     ]
-                , td [] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
-                , td [ class "text-center align-middle" ] 
-                    [ div [ class "flex flex-col items-center" ]
-                        [ viewDeletedStatus model.timeZone login
-                        , div [ class "mt-1" ]
-                            [ Checkbox.new { isChecked = editState.inpDeleted, onToggle = (\_ -> EditDeletedMsg) }
-                                |> Checkbox.withContent [ span [ class "ml-1 text-xs" ] [ text "Видалити" ] ]
-                                |> Checkbox.view
-                            ]
+                , td [ class "break-words" ] [ text <| Le.Time.renderDateF5FromMillis login.createdAt model.timeZone ]
+                , td [ class "text-center align-middle" ]
+                    [ div [ class "mt-1 flex justify-center" ]
+                        [ Checkbox.new { isChecked = editState.inpDeleted, onToggle = \_ -> EditDeletedMsg }
+                            |> Checkbox.withContent [ span [ class "ml-1 text-xs" ] [ text "Видалити" ] ]
+                            |> Checkbox.view
                         ]
                     ]
                 , td []
-                    [ div [ class "flex justify-start items-center" ]
-                        [ Button.new { label = "", onClick = EditLoginSave }
-                            |> Button.withIcon [ i [ class "bi bi-check2" ] [] ]
-                            |> Button.view
-                        , Button.new { label = "", onClick = EditLoginCancel }
-                            |> Button.withIcon [ i [ class "bi bi-x" ] [] ]
-                            |> Button.withStyleSecondary
-                            |> Button.view
+                    [ div [ class "flex justify-center items-center gap-2" ]
+                        [ i [ class "bi bi-check2 text-green-500 hover:text-green-600 cursor-pointer text-lg", onClick EditLoginSave ] []
+                        , i [ class "bi bi-x text-red-500 hover:text-red-600 cursor-pointer text-lg", onClick EditLoginCancel ] []
                         ]
                     ]
                 ]
@@ -973,26 +977,23 @@ mainBlock shared model =
         viewLoginReadonly : Maybe Time.Zone -> B.Login -> Html Msg
         viewLoginReadonly timeZone login =
             tr []
-                [ td [] [ span [] [ text login.login ] ]
+                [ td [ class "break-words" ] [ text login.login ]
                 , if featureDelta then
-                    td [] [ span [] [ text <| Maybe.withDefault "" login.deltaLogin ] ]
+                    td [ class "break-words" ] [ span [] [ text <| Maybe.withDefault "" login.deltaLogin ] ]
 
                   else
                     text ""
-                , td [] [ text "********" ]
-                , td [] (List.map (\role -> span [] [ text <| role ++ "  " ]) login.roles)
-                , td []
+                , td [ class "align-middle break-words" ] [ text "********" ]
+                , td [ class "break-words" ] (List.map (\role -> span [] [ text <| role ++ "  " ]) login.roles)
+                , td [ class "break-words" ]
                     [ span [] [ text <| Maybe.withDefault "-" login.organismName ]
                     ]
-                , td [] [ text <| Maybe.withDefault "-" login.sigintZoneName ]
-                , td [] [ text <| Le.Time.renderDateF5FromMillis login.createdAt timeZone ]
+                , td [ class "break-words" ] [ text <| Maybe.withDefault "-" login.sigintZoneName ]
+                , td [ class "break-words" ] [ text <| Le.Time.renderDateF5FromMillis login.createdAt timeZone ]
                 , td [ class "text-center align-middle" ]
                     [ viewDeletedStatus timeZone login ]
                 , td []
-                    [ Button.new { label = "", onClick = EditLogin login.login }
-                        |> Button.withIcon [ i [ class "bi bi-pencil-square" ] [] ]
-                        |> Button.withOutlined True
-                        |> Button.view
+                    [ i [ class "bi bi-pencil-square text-blue-500 hover:text-blue-600 cursor-pointer text-lg", onClick <| EditLogin login.login ] []
                     ]
                 ]
 
@@ -1006,25 +1007,26 @@ mainBlock shared model =
     div []
         [ addLoginPanel model
         , div [ class "mb-1 float-right" ]
-            [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = (\_ -> ToggleActiveOnlyFilter) }
+            [ Checkbox.new { isChecked = model.showActiveOnly, onToggle = \_ -> ToggleActiveOnlyFilter }
                 |> Checkbox.withContent [ span [] [ text "лише активні" ] ]
                 |> Checkbox.view
             ]
         , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
             [ thead [ class "" ]
                 [ tr [ class "" ]
-                    [ th [ scope "col", class "w-[15%]" ] [ text "Логін" ]
+                    [ th [ scope "col", class "w-[12%]" ] [ text "Логін" ]
                     , if featureDelta then
-                        th [ scope "col", class "w-[12%]" ] [ text "Дельта логін" ]
+                        th [ scope "col", class "w-[10%]" ] [ text "Дельта логін" ]
+
                       else
                         text ""
                     , th [ scope "col", class "w-[10%]" ] [ text "Пароль" ]
-                    , th [ scope "col", class "w-[15%]" ] [ text "Ролі" ]
-                    , th [ scope "col", class "w-[12%]" ] [ text "Організм" ]
-                    , th [ scope "col", class "w-[12%]" ] [ text "Зона" ]
+                    , th [ scope "col", class "w-[19%]" ] [ text "Ролі" ]
+                    , th [ scope "col", class "w-[15%]" ] [ text "Організм" ]
+                    , th [ scope "col", class "w-[15%]" ] [ text "Зона" ]
                     , th [ scope "col", class "w-[12%]" ] [ text "Створено" ]
-                    , th [ scope "col", class "w-[12%]" ] [ text "Статус" ]
-                    , th [ scope "col", class "w-[12%]" ] [ text "" ]
+                    , th [ scope "col", class "w-[10%]" ] [ text "Статус" ]
+                    , th [ scope "col", class "w-[5%]" ] [ text "" ]
                     ]
                 ]
             , tbody [] <|
