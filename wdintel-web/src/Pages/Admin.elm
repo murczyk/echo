@@ -45,10 +45,13 @@ type alias Model =
     , zoneSourceGroups : Dict ( Int, Int ) (List B.ZoneDatasourceGroup)
     , groupInfos : Dict String B.SignalGroupEntry
     , saveInProgress : Dict Int (Set Int)
-    , userSelectorDialog : Maybe { zoneId : Int, sourceId : Int, groupKey : String, selected : List String }
+    , userSelectorDialog : Maybe { zoneId : Int, sourceId : Int, groupKey : String }
     , allLogins : List String
-    , userSelectorState : Select.State
-    , userSelectorMenu : List (Select.MenuItem String)
+    , userSelectorSelect :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItems : List String
+        }
     , userSelectorLoading : Bool
     , userSelectorError : Maybe String
     , groupUpdateInProgress : Maybe ( Int, Int, String )
@@ -86,7 +89,7 @@ renderGroup model zoneId activeSourceId group =
         [ div [ class "w-1/4 flex items-center" ]
             [ span [ class "font-semibold text-gray-900 mr-2" ] [ text groupName ]
             , if group.isGroupSecret then
-                span [ class "ml-1 text-gray-500" ] [ text "🔒" ]
+                span [ class "ml-1 text-gray-500 text-lg" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
               else
                 text ""
@@ -99,7 +102,7 @@ renderGroup model zoneId activeSourceId group =
                         [ class "cursor-pointer text-gray-500 hover:text-gray-700 ml-2"
                         , onClick (OpenUserSelector zoneId activeSourceId group.groupMasterKey group.allowedUsers)
                         ]
-                        [ text "✏️" ]
+                        [ i [ class "bi bi-pencil-square" ] [] ]
                     ]
 
               else
@@ -153,8 +156,7 @@ init _ =
       , saveInProgress = Dict.empty
       , userSelectorDialog = Nothing
       , allLogins = []
-      , userSelectorState = Select.initState (Select.selectIdentifier "user-selector")
-      , userSelectorMenu = []
+      , userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = [], selectedItems = [] }
       , userSelectorLoading = False
       , userSelectorError = Nothing
       , groupUpdateInProgress = Nothing
@@ -513,7 +515,7 @@ update msg model =
 
         OpenUserSelector zoneId sourceId groupKey selected ->
             if List.isEmpty model.allLogins then
-                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, selected = selected }, userSelectorLoading = True, userSelectorError = Nothing }
+                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey }, userSelectorLoading = True, userSelectorError = Nothing }
                 , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
                 )
 
@@ -523,7 +525,7 @@ update msg model =
                     menu =
                         List.map (\login -> Select.basicMenuItem { item = login, label = login }) model.allLogins
                 in
-                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, selected = selected }, userSelectorMenu = menu, userSelectorState = Select.initState (Select.selectIdentifier "user-selector") }
+                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey }, userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = menu, selectedItems = selected }, userSelectorLoading = False, userSelectorError = Nothing }
                 , E.none
                 )
 
@@ -536,8 +538,31 @@ update msg model =
                 menu : List (Select.MenuItem String)
                 menu =
                     List.map (\login -> Select.basicMenuItem { item = login, label = login }) logins
+                
+                -- Get the original selected users from the dialog context
+                originalSelected : List String
+                originalSelected =
+                    case model.userSelectorDialog of
+                        Just _ ->
+                            -- We need to get the original selected users from the group
+                            -- This is a bit tricky since we removed it from dialog state
+                            -- Let's get it from the group data
+                            case model.userSelectorDialog of
+                                Just { zoneId, sourceId, groupKey } ->
+                                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
+                                        |> def []
+                                        |> List.filter (\g -> g.groupMasterKey == groupKey)
+                                        |> List.head
+                                        |> Maybe.map .allowedUsers
+                                        |> Maybe.withDefault []
+                                
+                                Nothing ->
+                                    []
+                        
+                        Nothing ->
+                            []
             in
-            ( { model | allLogins = logins, userSelectorMenu = menu, userSelectorLoading = False, userSelectorError = Nothing }
+            ( { model | allLogins = logins, userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = menu, selectedItems = originalSelected }, userSelectorLoading = False, userSelectorError = Nothing }
             , E.none
             )
 
@@ -549,13 +574,13 @@ update msg model =
         UserSelectorSelMsg imsg ->
             let
                 ( mAction, imodel2, icmd ) =
-                    Select.update imsg model.userSelectorState
+                    Select.update imsg model.userSelectorSelect.selectState
 
                 selected : List String
                 selected =
-                    Le.Block.Select.multiUpdS mAction (model.userSelectorDialog |> Maybe.map .selected |> Maybe.withDefault [])
+                    Le.Block.Select.multiUpdS mAction model.userSelectorSelect.selectedItems
             in
-            ( { model | userSelectorState = imodel2, userSelectorDialog = model.userSelectorDialog |> Maybe.map (\d -> { d | selected = selected }) }
+            ( { model | userSelectorSelect = { selectState = imodel2, items = model.userSelectorSelect.items, selectedItems = selected } }
             , E.sendCmd <| Cmd.map UserSelectorSelMsg icmd
             )
 
@@ -566,7 +591,7 @@ update msg model =
 
         UserSelectorSave ->
             case model.userSelectorDialog of
-                Just { zoneId, sourceId, groupKey, selected } ->
+                Just { zoneId, sourceId, groupKey } ->
                     let
                         group : Maybe B.ZoneDatasourceGroup
                         group =
@@ -580,7 +605,7 @@ update msg model =
                             let
                                 req : B.ZoneDatasourceGroupUpdateReq
                                 req =
-                                    { id = g.sigintZoneDatasourceId, isSecret = g.isGroupSecret, userLogins = selected }
+                                    { id = g.sigintZoneDatasourceId, isSecret = g.isGroupSecret, userLogins = model.userSelectorSelect.selectedItems }
                             in
                             ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
 
@@ -928,7 +953,8 @@ body dark shared user model =
                 Just dialog ->
                     [ ModalDialog.modalDialog True
                         CloseUserSelector
-                        []
+                        [ class "medium-modal overflow-visible"
+                        ]
                         [ div [ class "p-8" ]
                             [ div [ class "mb-2 font-semibold text-gray-900" ] [ text "Виберіть користувачів, яким видима група" ]
                             , if model.userSelectorLoading then
@@ -939,9 +965,9 @@ body dark shared user model =
                                     [ Html.map UserSelectorSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelectVirtual
-                                                (List.map (\login -> Select.basicMenuItem { item = login, label = login }) dialog.selected)
-                                                model.userSelectorState
-                                                model.userSelectorMenu
+                                                (List.map (\login -> Select.basicMenuItem { item = login, label = login }) model.userSelectorSelect.selectedItems)
+                                                model.userSelectorSelect.selectState
+                                                model.userSelectorSelect.items
                                                 "користувачі"
                                                 { loading = False, disabled = False, isDark = dark }
                                     ]
