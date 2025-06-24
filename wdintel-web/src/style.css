@@ -1670,3 +1670,54 @@ html[data-bs-theme="dark"] .radio-input:checked::before {
 	vertical-align: middle;
 	display: inline-block;
 }
+
+/* Custom Tabs Component Styles - Override Bootstrap */
+.tabs-container {
+	border-bottom: 1px solid #e5e7eb !important;
+}
+
+.tabs-nav {
+	display: flex !important;
+	gap: 2rem !important;
+}
+
+.tab-button {
+	position: relative !important;
+	padding: 0.75rem 0.25rem !important;
+	font-size: 0.875rem !important;
+	font-weight: 500 !important;
+	transition: color 0.2s ease-in-out !important;
+	outline: none !important;
+	border: none !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	cursor: pointer !important;
+}
+
+.tab-button:focus {
+	outline: none !important;
+	border: none !important;
+	box-shadow: none !important;
+}
+
+.tab-button.active {
+	color: #2563eb !important;
+}
+
+.tab-button:not(.active) {
+	color: #6b7280 !important;
+}
+
+.tab-button:not(.active):hover {
+	color: #374151 !important;
+}
+
+.tab-indicator {
+	position: absolute !important;
+	bottom: 0 !important;
+	left: 0 !important;
+	right: 0 !important;
+	height: 0.125rem !important;
+	background-color: #2563eb !important;
+	border-radius: 9999px !important;
+}
