@@ -57,6 +57,8 @@ type alias Model =
     , groupUpdateInProgress : Maybe ( Int, Int, String )
     , groupUpdateError : Maybe { zoneId : Int, sourceId : Int, groupKey : String, error : String }
     , zoneActiveTabs : Dict Int Int
+    , showOnlyHidden : Bool
+    , groupNameFilter : String
     }
 
 
@@ -85,11 +87,11 @@ renderGroup model zoneId activeSourceId group =
                 Nothing ->
                     False
     in
-    div [ class "flex items-center border rounded-lg mb-3 p-4 bg-white shadow-sm" ]
+    div [ class "flex items-center border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
         [ div [ class "w-1/4 flex items-center" ]
-            [ span [ class "font-semibold text-gray-900 mr-2" ] [ text groupName ]
+            [ span [ class "font-semibold mr-2" ] [ text groupName ]
             , if group.isGroupSecret then
-                span [ class "ml-1 text-gray-500 text-lg" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
+                span [ class "ml-1 text-lg" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
               else
                 text ""
@@ -97,18 +99,18 @@ renderGroup model zoneId activeSourceId group =
         , div [ class "w-1/2 flex flex-col justify-center" ]
             [ if group.isGroupSecret then
                 div [ class "mb-2 flex items-center" ]
-                    [ span [ class "mr-2 text-sm text-gray-600" ] [ text "видима для:" ]
+                    [ span [ class "mr-2 text-sm" ] [ text "видима для:" ]
                     , span
-                        [ class "cursor-pointer text-gray-500 hover:text-gray-700 ml-2"
+                        [ class "cursor-pointer ml-2"
                         , onClick (OpenUserSelector zoneId activeSourceId group.groupMasterKey group.allowedUsers)
                         ]
-                        [ i [ class "bi bi-pencil-square" ] [] ]
+                        [ i [ class "bi bi-pencil-square text-action" ] [] ]
                     ]
 
               else
                 text ""
             , if group.isGroupSecret then
-                div [ class "text-sm text-gray-700" ] [ text (String.join ", " group.allowedUsers) ]
+                div [ class "text-sm" ] [ text (String.join ", " group.allowedUsers) ]
 
               else
                 text ""
@@ -162,6 +164,8 @@ init _ =
       , groupUpdateInProgress = Nothing
       , groupUpdateError = Nothing
       , zoneActiveTabs = Dict.empty
+      , showOnlyHidden = False
+      , groupNameFilter = ""
       }
     , E.sendCmd <|
         Api.datasource_list GotDatasourceList
@@ -188,6 +192,8 @@ type Msg
     | ToggleGroupSecret Int Int B.ZoneDatasourceGroup
     | ToggleGroupSecretDone (Result ApiError B.ZoneDatasourceGroup) Int Int String
     | ZoneTabChanged Int Int
+    | ToggleShowOnlyHidden
+    | UpdateGroupNameFilter String
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -745,6 +751,16 @@ update msg model =
             , E.none
             )
 
+        ToggleShowOnlyHidden ->
+            ( { model | showOnlyHidden = not model.showOnlyHidden }
+            , E.none
+            )
+
+        UpdateGroupNameFilter newFilter ->
+            ( { model | groupNameFilter = newFilter }
+            , E.none
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -877,6 +893,24 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                 groups =
                     Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
                         |> def []
+                        |> List.filter (\group -> not model.showOnlyHidden || group.isGroupSecret)
+                        |> List.filter (\group -> 
+                            let
+                                groupName : String
+                                groupName =
+                                    Dict.get group.groupMasterKey model.groupInfos
+                                        |> Maybe.map .name
+                                        |> def group.groupMasterKey
+                                        |> (\name ->
+                                                if String.isEmpty name then
+                                                    String.right 5 group.groupMasterKey
+                                                else
+                                                    name
+                                           )
+                            in
+                            String.isEmpty model.groupNameFilter || 
+                            String.contains (String.toLower model.groupNameFilter) (String.toLower groupName)
+                        )
                         |> List.sortBy
                             (\group ->
                                 let
@@ -917,16 +951,16 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                         (List.map renderDatasourceSection dsType.datasources)
 
                 Nothing ->
-                    div [ class "text-center text-gray-500" ]
+                    div [ class "text-center opacity-70" ]
                         [ text "Немає доступних джерел даних" ]
     in
-    div [ class "bg-white rounded-lg shadow-md mb-6 overflow-hidden" ]
-        [ div [ class "bg-gray-50 px-6 py-4 border-b border-gray-200" ]
-            [ h3 [ class "text-lg font-semibold text-gray-900" ]
+    div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-0 mb-6 overflow-hidden" ]
+        [ div [ class "px-6 py-4 border-b" ]
+            [ h3 [ class "text-lg font-semibold mb-0" ]
                 [ text <| "Напрямок: " ++ zone.name ]
             ]
         , if List.isEmpty datasourceTypes then
-            div [ class "p-6 text-center text-gray-500" ]
+            div [ class "p-6 text-center opacity-70" ]
                 [ text "Немає доступних джерел даних" ]
 
           else
@@ -941,7 +975,37 @@ zoneCard2 isDark model user ( zoneId, zone ) =
 
 mainBlock : Bool -> Model -> B.User -> Html Msg
 mainBlock isDark model user =
-    div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
+    div [ class "space-y-6" ] 
+        [ div [ class "bg-[var(--bs-tertiary-bg)] rounded-lg border p-4" ]
+            [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Фільтри" ]
+            , div [ class "flex flex-col space-y-6" ]
+                [ div [ class "flex flex-col" ]
+                    [ label 
+                        [ for "group-name-filter"
+                        , class "mb-1 text-sm font-medium"
+                        ] 
+                        [ text "Назва групи:" ]
+                    , input 
+                        [ type_ "text"
+                        , id "group-name-filter"
+                        , value model.groupNameFilter
+                        , onInput UpdateGroupNameFilter
+                        , placeholder "Введіть назву групи..."
+                        , class "flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-[var(--bs-body-bg)]"
+                        ] []
+                    ]
+                , div [ class "flex items-center pt-2 border-t border-gray-100" ]
+                    [ Toggle.new
+                        { onToggle = ToggleShowOnlyHidden
+                        , label = "Лише приховані"
+                        , id = "show-only-hidden-filter"
+                        }
+                        |> Toggle.view model.showOnlyHidden
+                    ]
+                ]
+            ]
+        , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
+        ]
 
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
