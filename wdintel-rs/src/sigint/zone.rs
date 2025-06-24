@@ -251,37 +251,29 @@ async fn zones_datasources_group_update_bl(
 
     if let Some(group) = m_group {
         let master_key = group.master_key.clone();
-        let current_logins = secret_group_user::Entity::find()
-            .filter(secret_group_user::Column::MasterKey.eq(&master_key))
-            .all(txn)
-            .await
-            .context(h!())?;
-        let new_logins = user_logins
-            .iter()
-            .filter(|l| current_logins.iter().all(|cl| &&cl.login != l));
-
+        
+        // Update the group's secret status
         let mut active_group: signal_group::ActiveModel = group.into();
         active_group.is_secret = Set(is_secret);
         active_group.update(txn).await.context(h!())?;
 
-        for new_login in new_logins {
+        // Delete all current users for this group
+        secret_group_user::Entity::delete_many()
+            .filter(secret_group_user::Column::MasterKey.eq(&master_key))
+            .exec(txn)
+            .await
+            .context(h!())?;
+
+        // Add all new users from the request
+        for login in user_logins {
             secret_group_user::ActiveModel {
                 master_key: Set(master_key.clone()),
-                login: Set(new_login.clone()),
+                login: Set(login),
                 ..Default::default()
             }
             .insert(txn)
             .await
             .context(h!())?;
-        }
-
-        for login_to_delete in current_logins
-            .into_iter()
-            .filter(|m| !user_logins.contains(&m.master_key))
-        {
-            let login_to_delete: secret_group_user::ActiveModel =
-                login_to_delete.into();
-            login_to_delete.delete(txn).await.context(h!())?;
         }
     }
 
