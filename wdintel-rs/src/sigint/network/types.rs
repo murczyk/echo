@@ -17,7 +17,6 @@ pub struct NetworkDetails {
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub unit_name: String,
     pub updated_by: Option<String>,
     pub updated_at: NaiveDateTime,
     pub active_from: NaiveDateTime,
@@ -30,7 +29,7 @@ pub struct NetworkDetails {
 pub struct Network {
     pub id: i64,
     pub freqs: Vec<NetworkFreq>,
-    pub unit_ids: Vec<i64>,
+    pub unit_ids: Option<Vec<i64>>,
     pub name: String,
     pub location: String,
     pub comment: String,
@@ -61,7 +60,7 @@ pub struct UpdateFreqNetworksReq {
 )]
 pub struct CreateNetworkReq {
     pub freqs: Option<Vec<AddNetworkFreq>>,
-    pub unit_ids: Vec<i64>,
+    pub unit_ids: Option<Vec<i64>>,
     pub name: String,
     pub location: String,
     pub comment: String,
@@ -211,6 +210,8 @@ pub struct ListNetworksReq {
     pub till_date_noninclusive_ms: Option<i64>,
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
+    /// filter_further_investigation - to filter networks that does not have any unit assigned to them yet
+    pub filter_further_investigation: Option<bool>,
     pub sort_by: Option<Vec<ListNetworksSortBy>>,
 }
 

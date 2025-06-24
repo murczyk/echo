@@ -581,7 +581,7 @@ pub async fn list_freqs(
     //     freqs_period.clone().count(&env.dbx).await?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
-    trace!("> freqs sql: {}", freqs_period);
+    info!("> freqs sql: {}", freqs_period);
 
     let freqs_period: Vec<(String, i64, Option<String>)> = env
         .dbx

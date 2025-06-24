@@ -48,12 +48,12 @@ pub async fn network_list(
 
     let mut networks = sigint_network::Entity::find()
         .join_as(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
             Alias::new("sigint_network_unit"),
         )
         .join_as(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
@@ -72,7 +72,6 @@ pub async fn network_list(
         .column(sigint_network::Column::UpdatedBy)
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)
-        .column_as(sigint_unit::Column::Name, "unit_name")
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if let Some(filter_unit) = &req.filter_unit {
@@ -81,6 +80,14 @@ pub async fn network_list(
             vec![format!("%{}%", filter_unit.to_lowercase())],
         ))
     };
+
+    if req.filter_further_investigation.unwrap_or(false) {
+        networks = networks.filter(sigint_network_unit::Column::Id.is_null());
+    }
+    else
+    {
+        networks = networks.filter(sigint_network_unit::Column::Id.is_not_null());
+    }
 
     if req.filter_freq.is_some()
         || req.since_date_inclusive_ms.is_some()
@@ -492,22 +499,22 @@ pub async fn create_network(
         }
     }
 
-    let network_units: Vec<sigint_network_unit::ActiveModel> = req
-        .unit_ids
-        .clone()
-        .into_iter()
-        .map(|unit_id| sigint_network_unit::ActiveModel {
-            id: NotSet,
-            network_id: Set(network.id),
-            unit_id: Set(unit_id),
-            created_at: NotSet,
-        })
-        .collect();
-    if !network_units.is_empty() {
-        sigint_network_unit::Entity::insert_many(network_units)
-            .exec(&txn)
-            .await
-            .context(h!())?;
+    if let Some(unit_ids) = req.unit_ids.clone() {
+        let network_units: Vec<sigint_network_unit::ActiveModel> = unit_ids
+            .into_iter()
+            .map(|unit_id| sigint_network_unit::ActiveModel {
+                id: NotSet,
+                network_id: Set(network.id),
+                unit_id: Set(unit_id),
+                created_at: NotSet,
+            })
+            .collect();
+        if !network_units.is_empty() {
+            sigint_network_unit::Entity::insert_many(network_units)
+                .exec(&txn)
+                .await
+                .context(h!())?;
+        }
     }
 
     let network_posts: Vec<sigint_network_post::ActiveModel> = req
@@ -2799,18 +2806,24 @@ where
 async fn get_network_units<'a, 'async_trait, C>(
     txn: &'a C,
     network_id: i64,
-) -> Result<Vec<i64>, AppError>
+) -> Result<Option<Vec<i64>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    Ok(sigint_network_unit::Entity::find()
+    let units = sigint_network_unit::Entity::find()
         .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
         .map(|x| x.unit_id)
-        .collect())
+        .collect::<Vec<_>>();
+
+    if units.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(units))
+    }
 }
 
 async fn get_network_posts<'a, 'async_trait, C>(
