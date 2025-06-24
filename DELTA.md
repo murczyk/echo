@@ -6,55 +6,54 @@
 додався новий IP: 95.217.135.183
 
 ## 1. Redirect URL
-
-https://echo-zp.alpines-banded.ts.net/api/delta-redirect
-https://echo-soledarnist.panther-acoustic.ts.net/api/delta-redirect
-https://echo-dn.llama-decibel.ts.net/api/delta-redirect
-https://echo-sumy2.banjo-hops.ts.net/api/delta-redirect
-https://echo-kharkiv.comet-vernier.ts.net/api/delta-redirect
-https://echo-kherson.alpines-banded.ts.net/api/delta-redirect
-https://echo-lyman.bilby-ruffe.ts.net/api/delta-redirect
-https://echo-volyn.siren-gecko.ts.net/api/delta-redirect
-https://echo-zp2.alpines-banded.ts.net/api/delta-redirect
-https://echo-luhansk.panther-acoustic.ts.net/api/delta-redirect
-https://echo-dn2.llama-decibel.ts.net/api/delta-redirect
-https://echo-siversk.banjo-hops.ts.net/api/delta-redirect
-https://echo-kharkiv2.comet-vernier.ts.net/api/delta-redirect
-https://echo-kherson2.alpines-banded.ts.net/api/delta-redirect
-https://echo-starobilsk.bilby-ruffe.ts.net/api/delta-redirect
-https://echo-volyn2.siren-gecko.ts.net/api/delta-redirect
-https://dn.echoua.info/api/delta-redirect
-https://kharkiv.echoua.info/api/delta-redirect
-https://kherson.echoua.info/api/delta-redirect
-https://zp.echoua.info/api/delta-redirect
-https://luhansk.echoua.info/api/delta-redirect
-https://siversk.echoua.info/api/delta-redirect
-https://starobilsk.echoua.info/api/delta-redirect
-https://volyn.echoua.info/api/delta-redirect
+- https://echo-zp.alpines-banded.ts.net/api/delta-redirect
+- https://echo-soledarnist.panther-acoustic.ts.net/api/delta-redirect
+- https://echo-dn.llama-decibel.ts.net/api/delta-redirect
+- https://echo-sumy2.banjo-hops.ts.net/api/delta-redirect
+- https://echo-kharkiv.comet-vernier.ts.net/api/delta-redirect
+- https://echo-kherson.alpines-banded.ts.net/api/delta-redirect
+- https://echo-lyman.bilby-ruffe.ts.net/api/delta-redirect
+- https://echo-volyn.siren-gecko.ts.net/api/delta-redirect
+- https://echo-zp2.alpines-banded.ts.net/api/delta-redirect
+- https://echo-luhansk.panther-acoustic.ts.net/api/delta-redirect
+- https://echo-dn2.llama-decibel.ts.net/api/delta-redirect
+- https://echo-siversk.banjo-hops.ts.net/api/delta-redirect
+- https://echo-kharkiv2.comet-vernier.ts.net/api/delta-redirect
+- https://echo-kherson2.alpines-banded.ts.net/api/delta-redirect
+- https://echo-starobilsk.bilby-ruffe.ts.net/api/delta-redirect
+- https://echo-volyn2.siren-gecko.ts.net/api/delta-redirect
+- https://dn.echoua.info/api/delta-redirect
+- https://kharkiv.echoua.info/api/delta-redirect
+- https://kherson.echoua.info/api/delta-redirect
+- https://zp.echoua.info/api/delta-redirect
+- https://luhansk.echoua.info/api/delta-redirect
+- https://siversk.echoua.info/api/delta-redirect
+- https://starobilsk.echoua.info/api/delta-redirect
+- https://volyn.echoua.info/api/delta-redirect
 
 
 ## 2. REFERER
-https://echo-zp.alpines-banded.ts.net/login
-https://echo-soledarnist.panther-acoustic.ts.net/login
-https://echo-dn.llama-decibel.ts.net/login
-https://echo-sumy2.banjo-hops.ts.net/login
-https://echo-kharkiv.comet-vernier.ts.net/login
-https://echo-kherson.alpines-banded.ts.net/login
-https://echo-lyman.bilby-ruffe.ts.net/login
-https://echo-volyn.siren-gecko.ts.net/login
-https://echo-zp2.alpines-banded.ts.net/login
-https://echo-luhansk.panther-acoustic.ts.net/login
-https://echo-dn2.llama-decibel.ts.net/login
-https://echo-siversk.banjo-hops.ts.net/login
-https://echo-kharkiv2.comet-vernier.ts.net/login
-https://echo-kherson2.alpines-banded.ts.net/login
-https://echo-starobilsk.bilby-ruffe.ts.net/login
-https://echo-volyn2.siren-gecko.ts.net/login
-https://dn.echoua.info/login
-https://kharkiv.echoua.info/login
-https://kherson.echoua.info/login
-https://zp.echoua.info/login
-https://luhansk.echoua.info/login
-https://siversk.echoua.info/login
-https://starobilsk.echoua.info/login
-https://volyn.echoua.info/login
+- https://echo-zp.alpines-banded.ts.net/login
+- https://echo-soledarnist.panther-acoustic.ts.net/login
+- https://echo-dn.llama-decibel.ts.net/login
+- https://echo-sumy2.banjo-hops.ts.net/login
+- https://echo-kharkiv.comet-vernier.ts.net/login
+- https://echo-kherson.alpines-banded.ts.net/login
+- https://echo-lyman.bilby-ruffe.ts.net/login
+- https://echo-volyn.siren-gecko.ts.net/login
+- https://echo-zp2.alpines-banded.ts.net/login
+- https://echo-luhansk.panther-acoustic.ts.net/login
+- https://echo-dn2.llama-decibel.ts.net/login
+- https://echo-siversk.banjo-hops.ts.net/login
+- https://echo-kharkiv2.comet-vernier.ts.net/login
+- https://echo-kherson2.alpines-banded.ts.net/login
+- https://echo-starobilsk.bilby-ruffe.ts.net/login
+- https://echo-volyn2.siren-gecko.ts.net/login
+- https://dn.echoua.info/login
+- https://kharkiv.echoua.info/login
+- https://kherson.echoua.info/login
+- https://zp.echoua.info/login
+- https://luhansk.echoua.info/login
+- https://siversk.echoua.info/login
+- https://starobilsk.echoua.info/login
+- https://volyn.echoua.info/login
