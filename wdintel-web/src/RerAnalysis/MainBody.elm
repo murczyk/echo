@@ -183,7 +183,7 @@ mainBody user model shared route =
 
               else
                 div [ style "width" "16px", class "me-2" ] []
-            , Toggle.new { onToggle = ToggleNewestFirst, label = "спочатку нові" } |> Toggle.view model.newestFirst
+            , Toggle.new { onToggle = ToggleNewestFirst, label = "спочатку нові", id = "toggle-newest-first" } |> Toggle.view model.newestFirst
             , div
                 [ class "me-4 ml-[8px]"
                 ]
