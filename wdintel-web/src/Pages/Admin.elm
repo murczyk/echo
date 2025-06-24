@@ -20,7 +20,7 @@ import Le.Block.Spinner
 import Le.Block.Toast
 import Le.RerMessage
 import Le.Types exposing (..)
-import Le.Utils exposing (..)
+import Le.Utils as Utils exposing (..)
 import Maybe
 import Page exposing (Page)
 import Route exposing (Route)
@@ -53,6 +53,7 @@ type alias Model =
     , userSelectorError : Maybe String
     , groupUpdateInProgress : Maybe ( Int, Int, String )
     , groupUpdateError : Maybe { zoneId : Int, sourceId : Int, groupKey : String, error : String }
+    , zoneActiveTabs : Dict Int Int
     }
 
 
@@ -125,7 +126,6 @@ renderGroup model zoneId activeSourceId group =
                     , id = "toggle-" ++ String.fromInt zoneId ++ "-" ++ String.fromInt activeSourceId ++ "-" ++ group.groupMasterKey
                     }
                     |> Toggle.view group.isGroupSecret
-
                 ]
             , if isLoading then
                 span [ class "ml-2" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
@@ -159,6 +159,7 @@ init _ =
       , userSelectorError = Nothing
       , groupUpdateInProgress = Nothing
       , groupUpdateError = Nothing
+      , zoneActiveTabs = Dict.empty
       }
     , E.sendCmd <|
         Api.datasource_list GotDatasourceList
@@ -184,6 +185,7 @@ type Msg
     | UserSelectorSaveDone (Result ApiError B.ZoneDatasourceGroup)
     | ToggleGroupSecret Int Int B.ZoneDatasourceGroup
     | ToggleGroupSecretDone (Result ApiError B.ZoneDatasourceGroup) Int Int String
+    | ZoneTabChanged Int Int
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -713,33 +715,135 @@ update msg model =
             , E.none
             )
 
+        ZoneTabChanged zoneId sourceId ->
+            ( { model | zoneActiveTabs = Dict.insert zoneId sourceId model.zoneActiveTabs }
+            , E.none
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.none
 
 
+
+-- Helper functions for datasource grouping and tabs
+
+
+type alias DatasourceType =
+    { id : Int
+    , name : String
+    , datasources : List ( Int, B.Datasource )
+    }
+
+
+groupDatasourcesByType : Int -> Model -> List DatasourceType
+groupDatasourcesByType zoneId model =
+    let
+        zoneSources : List Int
+        zoneSources =
+            Dict.get zoneId model.zoneSources |> Maybe.withDefault []
+
+        -- Get datasources for this zone
+        zoneDatasources : List ( Int, B.Datasource )
+        zoneDatasources =
+            List.filterMap
+                (\sourceId ->
+                    let
+                        source : Maybe B.Datasource
+                        source =
+                            findK sourceId model.datasources
+                    in
+                    case source of
+                        Nothing ->
+                            Nothing
+
+                        Just ds ->
+                            Just ( sourceId, ds )
+                )
+                zoneSources
+
+        -- Group by kind
+        groupedByKind : Dict String (List ( Int, B.Datasource ))
+        groupedByKind =
+            List.foldl
+                (\( sourceId, datasource ) acc ->
+                    Dict.update datasource.kind
+                        (\maybeList ->
+                            case maybeList of
+                                Just list ->
+                                    Just (( sourceId, datasource ) :: list)
+
+                                Nothing ->
+                                    Just [ ( sourceId, datasource ) ]
+                        )
+                        acc
+                )
+                Dict.empty
+                zoneDatasources
+
+        -- Convert to DatasourceType list
+        datasourceTypes : List DatasourceType
+        datasourceTypes =
+            Dict.toList groupedByKind
+                |> List.indexedMap
+                    (\index ( kind, datasources ) ->
+                        let
+                            -- Get signal_phone from the first datasource in the group
+                            -- All datasources in a group should have the same signal_phone
+                            signalPhone : String
+                            signalPhone =
+                                List.head datasources
+                                    |> Maybe.map (\( _, ds ) -> ds.signalPhone)
+                                    |> Maybe.withDefault Nothing
+                                    |> Maybe.withDefault "Unknown"
+
+                            -- Calculate total groups for this datasource type
+                            totalGroups : Int
+                            totalGroups =
+                                List.foldl
+                                    (\( sourceId, _ ) acc ->
+                                        let
+                                            groups : List B.ZoneDatasourceGroup
+                                            groups =
+                                                Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+                                        in
+                                        acc + List.length groups
+                                    )
+                                    0
+                                    datasources
+                        in
+                        { id = index + 1
+                        , name = Utils.capitalize kind ++ " " ++ signalPhone ++ " (" ++ String.fromInt totalGroups ++ " груп)"
+                        , datasources = List.reverse datasources -- Keep original order
+                        }
+                    )
+    in
+    datasourceTypes
+
+
 zoneCard2 : Bool -> Model -> B.User -> ( Int, B.SigintZone ) -> Html Msg
 zoneCard2 isDark model user ( zoneId, zone ) =
     let
-        sources : List ( Int, B.Datasource )
-        sources =
-            Dict.get zoneId model.zoneSources
-                |> def []
-                |> List.filterMap
-                    (\sourceId ->
-                        let
-                            source : Maybe B.Datasource
-                            source =
-                                findK sourceId model.datasources
-                        in
-                        case source of
-                            Nothing ->
-                                Nothing
+        activeTab : Int
+        activeTab =
+            Dict.get zoneId model.zoneActiveTabs |> Maybe.withDefault 1
 
-                            Just ds ->
-                                Just ( sourceId, ds )
-                    )
+        -- Group datasources by type
+        datasourceTypes : List DatasourceType
+        datasourceTypes =
+            groupDatasourcesByType zoneId model
+
+        -- Create tab definitions
+        tabDefinitions : List { id : Int, label : String }
+        tabDefinitions =
+            List.map
+                (\dsType ->
+                    { id = dsType.id
+                    , label = dsType.name
+                    }
+                )
+                datasourceTypes
 
         renderDatasourceSection : ( Int, B.Datasource ) -> Html Msg
         renderDatasourceSection ( sourceId, source ) =
@@ -771,27 +875,42 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                 text ""
 
             else
-                div [ class "mb-6" ]
-                    [ div [ class "mb-3 pb-2 border-b border-gray-200" ]
-                        [ h4 [ class "text-md font-medium text-gray-700" ]
-                            [ text source.displayName ]
-                        ]
-                    , div [ class "space-y-3" ]
-                        (List.map (renderGroup model zoneId sourceId) groups)
-                    ]
+                div [ class "space-y-3" ]
+                    (List.map (renderGroup model zoneId sourceId) groups)
+
+        -- Get active datasource type
+        activeType : Maybe DatasourceType
+        activeType =
+            List.filter (\dsType -> dsType.id == activeTab) datasourceTypes |> List.head
+
+        -- Render tab content
+        tabContent : Html Msg
+        tabContent =
+            case activeType of
+                Just dsType ->
+                    div [ class "space-y-3" ]
+                        (List.map renderDatasourceSection dsType.datasources)
+
+                Nothing ->
+                    div [ class "text-center text-gray-500" ]
+                        [ text "Немає доступних джерел даних" ]
     in
     div [ class "bg-white rounded-lg shadow-md mb-6 overflow-hidden" ]
         [ div [ class "bg-gray-50 px-6 py-4 border-b border-gray-200" ]
             [ h3 [ class "text-lg font-semibold text-gray-900" ]
                 [ text <| "Напрямок: " ++ zone.name ]
             ]
-        , if List.isEmpty sources then
+        , if List.isEmpty datasourceTypes then
             div [ class "p-6 text-center text-gray-500" ]
                 [ text "Немає доступних джерел даних" ]
 
           else
             div [ class "p-6" ]
-                (List.map renderDatasourceSection sources)
+                [ -- Tab navigation
+                  Tabs.view tabDefinitions activeTab (ZoneTabChanged zoneId)
+                , -- Tab content
+                  div [ class "mt-4" ] [ tabContent ]
+                ]
         ]
 
 

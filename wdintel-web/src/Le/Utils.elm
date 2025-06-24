@@ -1,4 +1,4 @@
-module Le.Utils exposing (andThen, decodePair, def, emptySToNothing, emptyToNothing, enumerate, extractMRecordField, findAllAdjacentFreqs, findK, flip, for_, getLabelOrDefault, ifOrEmpty, insertShowMapToQuery, jumpToBottom, mapFst, mapSnd, mmap, msgToHtml, networkKindVHFMapping, onKeyDown, renderZoneError, resToList, textBeforeComma, trueToOne, twoSign, unique, updateV, zeroToNothing)
+module Le.Utils exposing (andThen, capitalize, decodePair, def, emptySToNothing, emptyToNothing, enumerate, extractMRecordField, findAllAdjacentFreqs, findK, flip, for_, getLabelOrDefault, ifOrEmpty, insertShowMapToQuery, jumpToBottom, mapFst, mapSnd, mmap, msgToHtml, networkKindVHFMapping, onKeyDown, renderZoneError, resToList, textBeforeComma, trueToOne, twoSign, unique, updateV, zeroToNothing)
 
 import Browser.Dom
 import Dict
@@ -275,3 +275,13 @@ networkKindVHFMapping kind =
 
         other ->
             other
+
+
+capitalize : String -> String
+capitalize str =
+    case String.uncons str of
+        Nothing ->
+            str
+
+        Just ( firstChar, rest ) ->
+            String.cons (Char.toUpper firstChar) rest
