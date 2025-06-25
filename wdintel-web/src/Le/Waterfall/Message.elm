@@ -735,7 +735,6 @@ rightColumn ( messageId, message ) ps model =
     div
         [ class "mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative"
         , style "z-index" "200"
-        , style "min-width" "0"
         , style "overflow-wrap" "break-word"
         , style "word-break" "break-word"
         , id <| waterfallMessageDivId ps.waterfallId model.id
