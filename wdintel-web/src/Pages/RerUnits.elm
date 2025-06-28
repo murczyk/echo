@@ -12,6 +12,7 @@ import File.Select
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
+import Html.Styled
 import Layouts
 import Le.Auth
 import Le.Block.Popup
@@ -31,6 +32,8 @@ import Time
 import TimeZone
 import View exposing (View)
 import Views
+import Select
+import Le.Block.Select
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -71,6 +74,8 @@ type alias Model =
     , removingDuplicateProcess : RemovingDuplicateProcess
     , removeDuplicateLoading : Bool
     , filterActive : Maybe Bool
+    , filterDivision : Le.Block.Select.SelectType String
+    , filterArmy : Le.Block.Select.SelectType String
     }
 
 
@@ -109,6 +114,8 @@ init _ =
       , removeDuplicateLoading = False
       , removingDuplicateProcess = NotStarted
       , filterActive = Nothing
+      , filterDivision = { state = Select.initState (Select.selectIdentifier "filter-division"), items = [], selected = [] }
+      , filterArmy = { state = Select.initState (Select.selectIdentifier "filter-army"), items = [], selected = [] }
       }
     , E.batch
         [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
@@ -153,6 +160,8 @@ type Msg
     | RemoveDuplicateConfirm
     | RemoveDuplicateDone (Result ApiError B.Unit)
     | FilterActive (Maybe Bool)
+    | FilterDivisionSelMsg (Select.Msg String)
+    | FilterArmySelMsg (Select.Msg String)
 
 
 type alias EditUnitState =
@@ -195,7 +204,34 @@ update msg model =
             Api.handleHttpError ToastMsg err model
 
         GotUnits (Ok rsp) ->
-            ( { model | units = rsp.units }
+            let
+                units = rsp.units
+                uniqueDivisions =
+                    units
+                        |> List.map .division
+                        |> List.filter (\d -> d /= "")
+                        |> List.sort
+                        |> ListX.unique
+                        |> List.map (\d -> Select.basicMenuItem { item = d, label = d })
+                uniqueArmies =
+                    units
+                        |> List.map .army
+                        |> List.filter (\a -> a /= "")
+                        |> List.sort
+                        |> ListX.unique
+                        |> List.map (\a -> Select.basicMenuItem { item = a, label = a })
+                filterDivision2 =
+                    { state = model.filterDivision.state
+                    , items = uniqueDivisions
+                    , selected = model.filterDivision.selected
+                    }
+                filterArmy2 =
+                    { state = model.filterArmy.state
+                    , items = uniqueArmies
+                    , selected = model.filterArmy.selected
+                    }
+            in
+            ( { model | units = units, filterDivision = filterDivision2, filterArmy = filterArmy2 }
             , E.none
             )
 
@@ -460,14 +496,56 @@ update msg model =
         FilterActive v ->
             ( { model | filterActive = v }, E.none )
 
+        FilterDivisionSelMsg imsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update imsg model.filterDivision.state
+                selectedItems =
+                    Le.Block.Select.multiUpdS mAction model.filterDivision.selected
+                filterDivision2 =
+                    { state = iState
+                    , items = model.filterDivision.items
+                    , selected = selectedItems
+                    }
+            in
+            ( { model | filterDivision = filterDivision2 }
+            , E.sendCmd <| Cmd.map FilterDivisionSelMsg iCmd
+            )
+
+        FilterArmySelMsg imsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update imsg model.filterArmy.state
+                selectedItems =
+                    Le.Block.Select.multiUpdS mAction model.filterArmy.selected
+                filterArmy2 =
+                    { state = iState
+                    , items = model.filterArmy.items
+                    , selected = selectedItems
+                    }
+            in
+            ( { model | filterArmy = filterArmy2 }
+            , E.sendCmd <| Cmd.map FilterArmySelMsg iCmd
+            )
+
 
 filteredUnits : Model -> List B.Unit
 filteredUnits model =
     model.units
-        |> List.filter (\unit -> 
+        |> List.filter (\unit ->
             case model.filterActive of
-                Nothing -> True  -- Show all
+                Nothing -> True
                 Just isActive -> unit.active == isActive
+        )
+        |> List.filter (\unit ->
+            case model.filterDivision.selected of
+                [] -> True
+                _ -> List.any (\d -> d == unit.division) model.filterDivision.selected
+        )
+        |> List.filter (\unit ->
+            case model.filterArmy.selected of
+                [] -> True
+                _ -> List.any (\a -> a == unit.army) model.filterArmy.selected
         )
         |> List.filter (\unit -> String.contains model.inpCompany unit.company)
         |> List.filter (\unit -> String.contains model.inpBattalion unit.battalion)
@@ -1044,7 +1122,7 @@ contentBlock shared model =
                     [ class "border mb-4 p-3"
                     , style "background-color" "var(--bs-light)"
                     ]
-                    [ div [ class "d-flex align-items-center" ]
+                    [ div [ class "d-flex align-items-center flex-wrap gap-3" ]
                         [ span [ class "me-3 fw-bold" ] [ text "Фільтри підрозділів:" ]
                         , div [ class "d-flex align-items-center gap-3" ]
                             [ span [ class "me-2" ] [ text "Статус:" ]
@@ -1083,6 +1161,32 @@ contentBlock shared model =
                                     ]
                                     []
                                 , label [ class "form-check-label", for "filterActiveFalse" ] [ text "Неактивні" ]
+                                ]
+                            ]
+                        , div [ class "d-flex align-items-center gap-3" ]
+                            [ span [ class "me-2" ] [ text "Дивізія:" ]
+                            , div [ style "min-width" "320px" ]
+                                [ Html.map FilterDivisionSelMsg <|
+                                    Html.Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelect
+                                            (List.map (\d -> Select.basicMenuItem { item = d, label = d }) model.filterDivision.selected)
+                                            model.filterDivision.state
+                                            model.filterDivision.items
+                                            "Всі дивізії"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                ]
+                            ]
+                        , div [ class "d-flex align-items-center gap-3" ]
+                            [ span [ class "me-2" ] [ text "Корпус/Армія:" ]
+                            , div [ style "min-width" "320px" ]
+                                [ Html.map FilterArmySelMsg <|
+                                    Html.Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelect
+                                            (List.map (\a -> Select.basicMenuItem { item = a, label = a }) model.filterArmy.selected)
+                                            model.filterArmy.state
+                                            model.filterArmy.items
+                                            "Всі корпуси/армії"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
                                 ]
                             ]
                         ]
