@@ -1718,73 +1718,120 @@ unitsBlock shared model =
                 |> Dict.toList
                 |> List.map (\(k, vs) -> (k, vs))
 
-        -- Group units by army, division, battalion
-        grouped : List ( String, List ( String, List ( B.Unit ) ) )
-        grouped =
-            model.units
-                |> List.filter (\u -> u.active)
-                |> groupBy .army
-                |> List.map (\(army, unitsInArmy) ->
-                    ( army
-                    , unitsInArmy
-                        |> groupBy .division
-                        |> List.map (\(division, unitsInDivision) ->
-                            ( division
-                            , unitsInDivision
-                                |> List.sortBy .battalion
-                            )
-                        )
-                    )
-                )
-                |> List.sortBy Tuple.first
-
-        -- Recursive rendering with cumulative indentation
-        renderUnitTree : String -> List ( String, List B.Unit ) -> List (Html Msg)
-        renderUnitTree army divisions =
+        -- Helper to sort known (non-empty) keys first, then empty
+        sortKnownFirst : List ( String, a ) -> List ( String, a )
+        sortKnownFirst xs =
             let
-                armyUnits = divisions |> List.concatMap Tuple.second
-                armyCount = armyUnits |> List.map (.id >> getUnitCount) |> List.sum
+                (known, unknown) = List.partition (\(k,_) -> k /= "") xs
             in
-            [ div [ class "flex items-center justify-between px-4 py-2 bg-muted font-semibold text-base rounded-t border-b border-border" ]
-                [ span [ class "truncate" ] [ text (if army == "" then "Без армії" else army) ]
-                , span [ class "ml-2 text-xs bg-secondary rounded-full px-2 py-0.5 text-muted-foreground font-medium" ] [ text (String.fromInt armyCount) ]
+            List.sortBy Tuple.first known ++ unknown
+
+        echelonIndicator : String -> String -> String -> Html msg
+        echelonIndicator label extraClass tooltip =
+            span
+                [ class ("inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 " ++ extraClass)
+                , Attr.title tooltip
                 ]
-            ]
-            ++ List.concatMap
-                (\(division, units) ->
+                [ text label ]
+
+        armyIndicator : Html msg
+        armyIndicator = echelonIndicator "XXX" "bg-red-100 text-red-800 border border-red-200" "Армія"
+
+        divisionIndicator : Html msg
+        divisionIndicator = echelonIndicator "XX" "bg-red-100 text-red-800 border border-red-200" "Дивізія"
+
+        regimentIndicator : Html msg
+        regimentIndicator = echelonIndicator "X" "bg-red-100 text-red-800 border border-red-200" "Полк"
+
+        battalionIndicator : Html msg
+        battalionIndicator = echelonIndicator "I" "bg-red-100 text-red-800 border border-red-200" "Батальйон"
+
+        companyIndicator : Html msg
+        companyIndicator = echelonIndicator "II" "bg-red-100 text-red-800 border border-red-200" "Рота"
+
+        -- Helper to get the indicator for a given level
+        indicatorForLevel : Int -> Html msg
+        indicatorForLevel level =
+            case level of
+                0 -> armyIndicator
+                1 -> divisionIndicator
+                2 -> regimentIndicator
+                3 -> battalionIndicator
+                4 -> companyIndicator
+                _ -> text ""
+
+        -- Helper to get the field accessor for each level
+        fieldForLevel : Int -> (B.Unit -> String)
+        fieldForLevel level =
+            case level of
+                0 -> .army
+                1 -> .division
+                2 -> .regiment
+                3 -> .battalion
+                4 -> .company
+                _ -> .name
+
+        -- Recursive grouping and rendering for all levels
+        renderUnitGroups : Int -> List B.Unit -> List (Html Msg)
+        renderUnitGroups level units =
+            let
+                nextLevel = level + 1
+                field = fieldForLevel level
+                grouped =
+                    units
+                        |> List.filter (\u -> u.active)
+                        |> groupBy field
+                        |> sortKnownFirst
+            in
+            List.concatMap
+                (\(groupName, groupUnits) ->
                     let
-                        divisionCount = units |> List.map (.id >> getUnitCount) |> List.sum
+                        count = groupUnits |> List.map (.id >> getUnitCount) |> List.sum
+                        indent = String.fromInt (level * 20) ++ "px"
+                        indicator = indicatorForLevel level
+                        isLastLevel = level == 4 || List.all (\u -> fieldForLevel nextLevel u == "") groupUnits
+                        groupClass =
+                            case level of
+                                0 -> "bg-muted text-base rounded-t"
+                                1 -> "bg-card text-sm"
+                                2 -> "bg-gray-50 text-sm"
+                                3 -> "bg-gray-50 text-sm"
+                                4 -> "bg-gray-50 text-sm"
+                                _ -> ""
                     in
-                    [ div [ class "flex items-center justify-between px-4 py-2 bg-card font-semibold text-sm border-b border-border", style "margin-left" "20px" ]
-                        [ span [ class "truncate" ] [ text (if division == "" then "Без дивізії" else division) ]
-                        , span [ class "ml-2 text-xs bg-secondary rounded-full px-2 py-0.5 text-muted-foreground font-medium" ] [ text (String.fromInt divisionCount) ]
-                        ]
+                    [ div [ class ("flex items-center justify-between px-4 py-2 font-semibold border-b border-border " ++ groupClass)
+                          , style "margin-left" indent
+                          ]
+                        [ span [ class "truncate flex items-center gap-2" ] [ indicator, text (if groupName == "" then "Без назви" else groupName) ] ]
                     ]
-                    ++ List.map
-                        (\unit ->
-                            let
-                                battalion = unit.battalion
-                                count = getUnitCount unit.id
-                            in
-                            div
-                                [ class "group flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors cursor-pointer border-b border-border"
-                                , style "margin-left" "40px"
-                                , onClick (FilterUnitMsg unit.name)
-                                ]
-                                [ span [ class "truncate text-sm font-normal" ] [ text (if battalion == "" then unit.name else battalion) ]
-                                , span [ class "ml-2 text-xs bg-secondary rounded-full px-2 py-0.5 text-muted-foreground font-medium" ] [ text (String.fromInt count) ]
-                                ]
-                        )
-                        units
+                    ++ if isLastLevel then
+                        List.map
+                            (\unit ->
+                                let
+                                    unitName = unit.name
+                                    unitCount = getUnitCount unit.id
+                                in
+                                div
+                                    [ class "group flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors cursor-pointer border-b border-border bg-white"
+                                    , style "margin-left" (String.fromInt ((level+1) * 20) ++ "px")
+                                    , onClick (FilterUnitMsg unitName)
+                                    ]
+                                    ([ span [ class "truncate text-sm font-normal flex items-center gap-2" ] [ text unitName ] ]
+                                     ++ (if unitCount > 0 then [ span [ class "ml-2 text-xs bg-gray-100 dark:bg-gray-700 rounded px-2 py-0.5 text-gray-600 dark:text-gray-300 font-medium border border-gray-200 dark:border-gray-600" ] [ text (String.fromInt unitCount) ] ] else [])
+                                    )
+                            )
+                            groupUnits
+                       else
+                        renderUnitGroups nextLevel groupUnits
                 )
-                divisions
+                grouped
 
     in
     if model.loadingUnitStats then
         Le.Block.Spinner.loadingSpinner
     else
         div [ class "w-full max-w-md bg-card border rounded-lg shadow-sm overflow-hidden" ]
-            (List.concatMap (\(army, divisions) -> renderUnitTree army divisions) grouped)
+            (renderUnitGroups 0 model.units)
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
