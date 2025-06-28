@@ -1693,45 +1693,98 @@ contentBlock shared model user =
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock shared model =
     let
-        renderUnitStat : B.CallsignUnitStatRow -> List (Html Msg)
-        renderUnitStat stat =
-            let
-                unitName =
-                    case ListX.find (\u -> u.id == stat.unitId) model.units of
-                        Nothing ->
-                            "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
+        -- Helper to get unit by id
+        getUnitById : Int -> Maybe B.Unit
+        getUnitById unitId =
+            ListX.find (\u -> u.id == unitId) model.units
 
-                        Just unit ->
-                            unit.name
+        -- Helper to get count for a unit
+        getUnitCount : Int -> Int
+        getUnitCount unitId =
+            case ListX.find (\s -> s.unitId == unitId) model.unitStats of
+                Just stat -> stat.count
+                Nothing -> 0
+
+        -- Helper to group a list by a key
+        groupBy : (a -> comparable) -> List a -> List ( comparable, List a )
+        groupBy keyFn items =
+            let
+                add : a -> Dict.Dict comparable (List a) -> Dict.Dict comparable (List a)
+                add item acc =
+                    let k = keyFn item in
+                    Dict.update k (\maybe -> Just (item :: Maybe.withDefault [] maybe)) acc
             in
-            [ div
-                [ class "flex justify-between items-between p-2 pointer max-w-[220px]"
-                , onClick <| FilterUnitMsg unitName
+            List.foldr add Dict.empty items
+                |> Dict.toList
+                |> List.map (\(k, vs) -> (k, vs))
+
+        -- Group units by army, division, battalion
+        grouped : List ( String, List ( String, List ( B.Unit ) ) )
+        grouped =
+            model.units
+                |> List.filter (\u -> u.active)
+                |> groupBy .army
+                |> List.map (\(army, unitsInArmy) ->
+                    ( army
+                    , unitsInArmy
+                        |> groupBy .division
+                        |> List.map (\(division, unitsInDivision) ->
+                            ( division
+                            , unitsInDivision
+                                |> List.sortBy .battalion
+                            )
+                        )
+                    )
+                )
+                |> List.sortBy Tuple.first
+
+        -- Recursive rendering with cumulative indentation
+        renderUnitTree : String -> List ( String, List B.Unit ) -> List (Html Msg)
+        renderUnitTree army divisions =
+            let
+                armyUnits = divisions |> List.concatMap Tuple.second
+                armyCount = armyUnits |> List.map (.id >> getUnitCount) |> List.sum
+            in
+            [ div [ class "flex items-center justify-between px-4 py-2 bg-muted font-semibold text-base rounded-t border-b border-border" ]
+                [ span [ class "truncate" ] [ text (if army == "" then "Без армії" else army) ]
+                , span [ class "ml-2 text-xs bg-secondary rounded-full px-2 py-0.5 text-muted-foreground font-medium" ] [ text (String.fromInt armyCount) ]
                 ]
-                [ div [ class "grow text-end me-2" ] [ text unitName ]
-                , div [ class "me-2" ]
-                    [ div
-                        [ style "min-width" "30px"
-                        , class "text-center"
-                        ]
-                        [ span
-                            [ class "badge badge-sm rounded-pill text-bg-secondary"
-                            , style "font-size" "0.6rem"
-                            ]
-                            [ text <| String.fromInt stat.count
-                            ]
+            ]
+            ++ List.concatMap
+                (\(division, units) ->
+                    let
+                        divisionCount = units |> List.map (.id >> getUnitCount) |> List.sum
+                    in
+                    [ div [ class "flex items-center justify-between px-4 py-2 bg-card font-semibold text-sm border-b border-border", style "margin-left" "20px" ]
+                        [ span [ class "truncate" ] [ text (if division == "" then "Без дивізії" else division) ]
+                        , span [ class "ml-2 text-xs bg-secondary rounded-full px-2 py-0.5 text-muted-foreground font-medium" ] [ text (String.fromInt divisionCount) ]
                         ]
                     ]
-                ]
-            , div [ class "border-bottom" ] []
-            ]
+                    ++ List.map
+                        (\unit ->
+                            let
+                                battalion = unit.battalion
+                                count = getUnitCount unit.id
+                            in
+                            div
+                                [ class "group flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors cursor-pointer border-b border-border"
+                                , style "margin-left" "40px"
+                                , onClick (FilterUnitMsg unit.name)
+                                ]
+                                [ span [ class "truncate text-sm font-normal" ] [ text (if battalion == "" then unit.name else battalion) ]
+                                , span [ class "ml-2 text-xs bg-secondary rounded-full px-2 py-0.5 text-muted-foreground font-medium" ] [ text (String.fromInt count) ]
+                                ]
+                        )
+                        units
+                )
+                divisions
+
     in
     if model.loadingUnitStats then
         Le.Block.Spinner.loadingSpinner
-
     else
-        div [ style "font-size" ".8rem" ] <|
-            List.concatMap renderUnitStat model.unitStats
+        div [ class "w-full max-w-md bg-card border rounded-lg shadow-sm overflow-hidden" ]
+            (List.concatMap (\(army, divisions) -> renderUnitTree army divisions) grouped)
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
