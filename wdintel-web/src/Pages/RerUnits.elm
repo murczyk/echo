@@ -70,6 +70,7 @@ type alias Model =
     , actionsPopupUnitId : Maybe Int
     , removingDuplicateProcess : RemovingDuplicateProcess
     , removeDuplicateLoading : Bool
+    , filterActive : Maybe Bool
     }
 
 
@@ -107,6 +108,7 @@ init _ =
       , actionsPopupUnitId = Nothing
       , removeDuplicateLoading = False
       , removingDuplicateProcess = NotStarted
+      , filterActive = Nothing
       }
     , E.batch
         [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
@@ -150,6 +152,7 @@ type Msg
     | RemoveDuplicateCancel
     | RemoveDuplicateConfirm
     | RemoveDuplicateDone (Result ApiError B.Unit)
+    | FilterActive (Maybe Bool)
 
 
 type alias EditUnitState =
@@ -454,10 +457,18 @@ update msg model =
             , loadUnits
             )
 
+        FilterActive v ->
+            ( { model | filterActive = v }, E.none )
+
 
 filteredUnits : Model -> List B.Unit
 filteredUnits model =
     model.units
+        |> List.filter (\unit -> 
+            case model.filterActive of
+                Nothing -> True  -- Show all
+                Just isActive -> unit.active == isActive
+        )
         |> List.filter (\unit -> String.contains model.inpCompany unit.company)
         |> List.filter (\unit -> String.contains model.inpBattalion unit.battalion)
         |> List.filter (\unit -> String.contains model.inpRegiment unit.regiment)
@@ -1028,6 +1039,53 @@ contentBlock shared model =
                     , style "background-color" "var(--bs-tertiary-bg)"
                     ]
                     [ addUnitPanel
+                    ]
+                , div
+                    [ class "border mb-4 p-3"
+                    , style "background-color" "var(--bs-light)"
+                    ]
+                    [ div [ class "d-flex align-items-center" ]
+                        [ span [ class "me-3 fw-bold" ] [ text "Фільтри підрозділів:" ]
+                        , div [ class "d-flex align-items-center gap-3" ]
+                            [ span [ class "me-2" ] [ text "Статус:" ]
+                            , div [ class "form-check form-check-inline" ]
+                                [ input
+                                    [ class "form-check-input"
+                                    , type_ "radio"
+                                    , name "filterActive"
+                                    , id "filterActiveAll"
+                                    , checked (model.filterActive == Nothing)
+                                    , onClick (FilterActive Nothing)
+                                    ]
+                                    []
+                                , label [ class "form-check-label", for "filterActiveAll" ] [ text "Всі" ]
+                                ]
+                            , div [ class "form-check form-check-inline" ]
+                                [ input
+                                    [ class "form-check-input"
+                                    , type_ "radio"
+                                    , name "filterActive"
+                                    , id "filterActiveTrue"
+                                    , checked (model.filterActive == Just True)
+                                    , onClick (FilterActive (Just True))
+                                    ]
+                                    []
+                                , label [ class "form-check-label", for "filterActiveTrue" ] [ text "Активні" ]
+                                ]
+                            , div [ class "form-check form-check-inline" ]
+                                [ input
+                                    [ class "form-check-input"
+                                    , type_ "radio"
+                                    , name "filterActive"
+                                    , id "filterActiveFalse"
+                                    , checked (model.filterActive == Just False)
+                                    , onClick (FilterActive (Just False))
+                                    ]
+                                    []
+                                , label [ class "form-check-label", for "filterActiveFalse" ] [ text "Неактивні" ]
+                                ]
+                            ]
+                        ]
                     ]
                 , table [ class "table table-bordered table" ]
                     [ thead []
