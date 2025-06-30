@@ -73,9 +73,12 @@ type alias Model =
     , actionsPopupUnitId : Maybe Int
     , removingDuplicateProcess : RemovingDuplicateProcess
     , removeDuplicateLoading : Bool
-    , filterActive : Maybe Bool
-    , filterDivision : Le.Block.Select.SelectType String
-    , filterArmy : Le.Block.Select.SelectType String
+    , filterActive : Bool
+    , filterDivision : String
+    , filterArmy : String
+    , filterRegiment : String
+    , filterBattalion : String
+    , filterCompany : String
     }
 
 
@@ -113,9 +116,12 @@ init _ =
       , actionsPopupUnitId = Nothing
       , removeDuplicateLoading = False
       , removingDuplicateProcess = NotStarted
-      , filterActive = Nothing
-      , filterDivision = { state = Select.initState (Select.selectIdentifier "filter-division"), items = [], selected = [] }
-      , filterArmy = { state = Select.initState (Select.selectIdentifier "filter-army"), items = [], selected = [] }
+      , filterActive = False
+      , filterDivision = ""
+      , filterArmy = ""
+      , filterRegiment = ""
+      , filterBattalion = ""
+      , filterCompany = ""
       }
     , E.batch
         [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
@@ -159,9 +165,12 @@ type Msg
     | RemoveDuplicateCancel
     | RemoveDuplicateConfirm
     | RemoveDuplicateDone (Result ApiError B.Unit)
-    | FilterActive (Maybe Bool)
-    | FilterDivisionSelMsg (Select.Msg String)
-    | FilterArmySelMsg (Select.Msg String)
+    | FilterActive Bool
+    | FilterDivision String
+    | FilterArmy String
+    | FilterRegiment String
+    | FilterBattalion String
+    | FilterCompany String
 
 
 type alias EditUnitState =
@@ -206,32 +215,8 @@ update msg model =
         GotUnits (Ok rsp) ->
             let
                 units = rsp.units
-                uniqueDivisions =
-                    units
-                        |> List.map .division
-                        |> List.filter (\d -> d /= "")
-                        |> List.sort
-                        |> ListX.unique
-                        |> List.map (\d -> Select.basicMenuItem { item = d, label = d })
-                uniqueArmies =
-                    units
-                        |> List.map .army
-                        |> List.filter (\a -> a /= "")
-                        |> List.sort
-                        |> ListX.unique
-                        |> List.map (\a -> Select.basicMenuItem { item = a, label = a })
-                filterDivision2 =
-                    { state = model.filterDivision.state
-                    , items = uniqueDivisions
-                    , selected = model.filterDivision.selected
-                    }
-                filterArmy2 =
-                    { state = model.filterArmy.state
-                    , items = uniqueArmies
-                    , selected = model.filterArmy.selected
-                    }
             in
-            ( { model | units = units, filterDivision = filterDivision2, filterArmy = filterArmy2 }
+            ( { model | units = units }
             , E.none
             )
 
@@ -496,56 +481,60 @@ update msg model =
         FilterActive v ->
             ( { model | filterActive = v }, E.none )
 
-        FilterDivisionSelMsg imsg ->
-            let
-                ( mAction, iState, iCmd ) =
-                    Select.update imsg model.filterDivision.state
-                selectedItems =
-                    Le.Block.Select.multiUpdS mAction model.filterDivision.selected
-                filterDivision2 =
-                    { state = iState
-                    , items = model.filterDivision.items
-                    , selected = selectedItems
-                    }
-            in
-            ( { model | filterDivision = filterDivision2 }
-            , E.sendCmd <| Cmd.map FilterDivisionSelMsg iCmd
-            )
+        FilterDivision v ->
+            ( { model | filterDivision = v }, E.none )
 
-        FilterArmySelMsg imsg ->
-            let
-                ( mAction, iState, iCmd ) =
-                    Select.update imsg model.filterArmy.state
-                selectedItems =
-                    Le.Block.Select.multiUpdS mAction model.filterArmy.selected
-                filterArmy2 =
-                    { state = iState
-                    , items = model.filterArmy.items
-                    , selected = selectedItems
-                    }
-            in
-            ( { model | filterArmy = filterArmy2 }
-            , E.sendCmd <| Cmd.map FilterArmySelMsg iCmd
-            )
+        FilterArmy v ->
+            ( { model | filterArmy = v }, E.none )
+
+        FilterRegiment v ->
+            ( { model | filterRegiment = v }, E.none )
+
+        FilterBattalion v ->
+            ( { model | filterBattalion = v }, E.none )
+
+        FilterCompany v ->
+            ( { model | filterCompany = v }, E.none )
 
 
 filteredUnits : Model -> List B.Unit
 filteredUnits model =
     model.units
         |> List.filter (\unit ->
-            case model.filterActive of
-                Nothing -> True
-                Just isActive -> unit.active == isActive
+            if not model.filterActive then
+                True
+            else
+                unit.active == True
         )
-        |> List.filter (\unit ->
-            case model.filterDivision.selected of
-                [] -> True
-                _ -> List.any (\d -> d == unit.division) model.filterDivision.selected
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterDivision then
+                True
+            else
+                String.contains (String.toLower model.filterDivision) (String.toLower unit.division)
         )
-        |> List.filter (\unit ->
-            case model.filterArmy.selected of
-                [] -> True
-                _ -> List.any (\a -> a == unit.army) model.filterArmy.selected
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterArmy then
+                True
+            else
+                String.contains (String.toLower model.filterArmy) (String.toLower unit.army)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterRegiment then
+                True
+            else
+                String.contains (String.toLower model.filterRegiment) (String.toLower unit.regiment)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterBattalion then
+                True
+            else
+                String.contains (String.toLower model.filterBattalion) (String.toLower unit.battalion)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterCompany then
+                True
+            else
+                String.contains (String.toLower model.filterCompany) (String.toLower unit.company)
         )
         |> List.filter (\unit -> String.contains model.inpCompany unit.company)
         |> List.filter (\unit -> String.contains model.inpBattalion unit.battalion)
@@ -1122,72 +1111,67 @@ contentBlock shared model =
                     [ class "border mb-4 p-3"
                     , style "background-color" "var(--bs-light)"
                     ]
-                    [ div [ class "d-flex align-items-center flex-wrap gap-3" ]
-                        [ span [ class "me-3 fw-bold" ] [ text "Фільтри підрозділів:" ]
-                        , div [ class "d-flex align-items-center gap-3" ]
-                            [ span [ class "me-2" ] [ text "Статус:" ]
-                            , div [ class "form-check form-check-inline" ]
-                                [ input
-                                    [ class "form-check-input"
-                                    , type_ "radio"
-                                    , name "filterActive"
-                                    , id "filterActiveAll"
-                                    , checked (model.filterActive == Nothing)
-                                    , onClick (FilterActive Nothing)
-                                    ]
-                                    []
-                                , label [ class "form-check-label", for "filterActiveAll" ] [ text "Всі" ]
+                    [ h5 [ class "fw-bold mb-3" ] [ text "Фільтри" ]
+                    , div [ class "mb-3 d-flex align-items-center gap-3" ]
+                        [ Checkbox.new { isChecked = model.filterActive, onToggle = FilterActive }
+                            |> Checkbox.withContent [ span [] [ text "Лише активні" ] ]
+                            |> Checkbox.view
+                        ]
+                    , div [ class "row g-3" ]
+                        [ div [ class "col-md-4" ]
+                            [ label [ class "form-label" ] [ text "Дивізія:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву дивізії"
+                                , value model.filterDivision
+                                , onInput FilterDivision
                                 ]
-                            , div [ class "form-check form-check-inline" ]
-                                [ input
-                                    [ class "form-check-input"
-                                    , type_ "radio"
-                                    , name "filterActive"
-                                    , id "filterActiveTrue"
-                                    , checked (model.filterActive == Just True)
-                                    , onClick (FilterActive (Just True))
-                                    ]
-                                    []
-                                , label [ class "form-check-label", for "filterActiveTrue" ] [ text "Активні" ]
-                                ]
-                            , div [ class "form-check form-check-inline" ]
-                                [ input
-                                    [ class "form-check-input"
-                                    , type_ "radio"
-                                    , name "filterActive"
-                                    , id "filterActiveFalse"
-                                    , checked (model.filterActive == Just False)
-                                    , onClick (FilterActive (Just False))
-                                    ]
-                                    []
-                                , label [ class "form-check-label", for "filterActiveFalse" ] [ text "Неактивні" ]
-                                ]
+                                []
                             ]
-                        , div [ class "d-flex align-items-center gap-3" ]
-                            [ span [ class "me-2" ] [ text "Дивізія:" ]
-                            , div [ style "min-width" "320px" ]
-                                [ Html.map FilterDivisionSelMsg <|
-                                    Html.Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelect
-                                            (List.map (\d -> Select.basicMenuItem { item = d, label = d }) model.filterDivision.selected)
-                                            model.filterDivision.state
-                                            model.filterDivision.items
-                                            "Всі дивізії"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                        , div [ class "col-md-4" ]
+                            [ label [ class "form-label" ] [ text "Корпус/Армія:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву корпусу/армії"
+                                , value model.filterArmy
+                                , onInput FilterArmy
                                 ]
+                                []
                             ]
-                        , div [ class "d-flex align-items-center gap-3" ]
-                            [ span [ class "me-2" ] [ text "Корпус/Армія:" ]
-                            , div [ style "min-width" "320px" ]
-                                [ Html.map FilterArmySelMsg <|
-                                    Html.Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelect
-                                            (List.map (\a -> Select.basicMenuItem { item = a, label = a }) model.filterArmy.selected)
-                                            model.filterArmy.state
-                                            model.filterArmy.items
-                                            "Всі корпуси/армії"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                        , div [ class "col-md-4" ]
+                            [ label [ class "form-label" ] [ text "Полк/Бригада:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву полку/бригади"
+                                , value model.filterRegiment
+                                , onInput FilterRegiment
                                 ]
+                                []
+                            ]
+                        , div [ class "col-md-6" ]
+                            [ label [ class "form-label" ] [ text "Батальйон:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву батальйону"
+                                , value model.filterBattalion
+                                , onInput FilterBattalion
+                                ]
+                                []
+                            ]
+                        , div [ class "col-md-6" ]
+                            [ label [ class "form-label" ] [ text "Рота/Взвод:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву роти/взводу"
+                                , value model.filterCompany
+                                , onInput FilterCompany
+                                ]
+                                []
                             ]
                         ]
                     ]
