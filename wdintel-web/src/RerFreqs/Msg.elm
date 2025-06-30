@@ -64,12 +64,6 @@ type Msg
     | RowShowAllPopupChanged (Maybe ( String, ShowAllPopupFor ))
     | SelCallsignMsg (Select.Msg String)
     | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
-    | ReportEtalonkaDownload Bool
-    | ReportEtalonkaDownloadDone (Result ApiError Bytes)
-    | OpenReportModal
-    | CloseReportModal
-    | ChangeReportStatus Bool
-    | SelectReportAdjacentFreqsRange (Select.Msg B.AdjacentFreqDistance)
     | OpenAddNetworkSidebar String
     | CloseAddNetworkSidebar
     | NetworkCreate

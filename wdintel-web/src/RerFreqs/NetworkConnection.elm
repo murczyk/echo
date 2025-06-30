@@ -21,7 +21,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Utils exposing (..)
 import List.Extra as ListX
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ReportCreation(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Route exposing (Route)

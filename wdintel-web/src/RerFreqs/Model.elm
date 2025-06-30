@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), ReportCreation(..), ShowAllPopupFor(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -48,14 +48,6 @@ type alias Model =
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp
     , noMoreToLoad : Bool
-    , reportDownloadInProgress : Bool
-    , reportModalOpen : Bool
-    , reportStatus : ReportCreation
-    , adjacentFreqsRangeSelect :
-        { state : Select.State
-        , items : List (Select.MenuItem B.AdjacentFreqDistance)
-        , selected : B.AdjacentFreqDistance
-        }
     , networkAddStatus : NetworkAddStatus
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
@@ -81,11 +73,6 @@ type alias FilterState =
     , unit : String
     , callsigns : List String
     }
-
-
-type ReportCreation
-    = ReportBasic
-    | ReportWithAdjacentFreqs B.AdjacentFreqDistance
 
 
 type NetworkAddStatus
