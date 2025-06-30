@@ -171,6 +171,7 @@ type Msg
     | FilterRegiment String
     | FilterBattalion String
     | FilterCompany String
+    | ClearFilters
 
 
 type alias EditUnitState =
@@ -495,6 +496,9 @@ update msg model =
 
         FilterCompany v ->
             ( { model | filterCompany = v }, E.none )
+
+        ClearFilters ->
+            ( { model | filterActive = False, filterDivision = "", filterArmy = "", filterRegiment = "", filterBattalion = "", filterCompany = "" }, E.none )
 
 
 filteredUnits : Model -> List B.Unit
@@ -1111,7 +1115,21 @@ contentBlock shared model =
                     [ class "border mb-4 p-3"
                     , style "background-color" "var(--bs-light)"
                     ]
-                    [ h5 [ class "fw-bold mb-3" ] [ text "Фільтри" ]
+                    [ div [ class "d-flex justify-content-between align-items-center mb-3" ]
+                        [ h5 [ class "fw-bold mb-0" ] [ text "Фільтри" ]
+                        , i [ class "bi bi-x-circle-fill"
+                            , style "font-size" "2rem"
+                            , style "color" "#dc3545"
+                            , style "cursor" "pointer"
+                            , attribute "title" "Очистити фільтри"
+                            , onClick ClearFilters
+                            ] []
+                        ]
+                    , div [ class "mb-3 d-flex align-items-center gap-3" ]
+                        [ Checkbox.new { isChecked = model.filterActive, onToggle = FilterActive }
+                            |> Checkbox.withContent [ span [] [ text "Лише активні" ] ]
+                            |> Checkbox.view
+                        ]
                     , div [ class "row g-3" ]
                         [ div [ class "col-md-4" ]
                             [ label [ class "form-label" ] [ text "Рота/Взвод:" ]
