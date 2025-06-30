@@ -540,11 +540,35 @@ filteredUnits model =
             else
                 String.contains (String.toLower model.filterCompany) (String.toLower unit.company)
         )
-        |> List.filter (\unit -> String.contains model.inpCompany unit.company)
-        |> List.filter (\unit -> String.contains model.inpBattalion unit.battalion)
-        |> List.filter (\unit -> String.contains model.inpRegiment unit.regiment)
-        |> List.filter (\unit -> String.contains model.inpDivision unit.division)
-        |> List.filter (\unit -> String.contains model.inpArmy unit.army)
+     
+
+
+potentialDuplicates : Model -> List B.Unit
+potentialDuplicates model =
+    let
+        company = String.toLower (String.trim model.inpCompany)
+        battalion = String.toLower (String.trim model.inpBattalion)
+        regiment = String.toLower (String.trim model.inpRegiment)
+        division = String.toLower (String.trim model.inpDivision)
+        army = String.toLower (String.trim model.inpArmy)
+        anyInput =
+            not (List.all String.isEmpty [ company, battalion, regiment, division, army ])
+
+        matchesField userInput unitField =
+            String.isEmpty userInput
+                || (not (String.isEmpty unitField) && String.contains userInput (String.toLower unitField))
+    in
+    if anyInput then
+        model.units
+            |> List.filter (\unit ->
+                matchesField company unit.company
+                    && matchesField battalion unit.battalion
+                    && matchesField regiment unit.regiment
+                    && matchesField division unit.division
+                    && matchesField army unit.army
+            )
+    else
+        []
 
 
 subscriptions : Model -> Sub Msg
@@ -1111,6 +1135,36 @@ contentBlock shared model =
                     ]
                     [ addUnitPanel
                     ]
+                , let
+                    duplicates = potentialDuplicates model
+                  in
+                  if not (List.isEmpty duplicates) then
+                    div [ class "alert alert-warning mt-2" ]
+                        [ text "Можливо, такі підрозділи вже існують:"
+                        , table [ class "table table-sm mt-2" ]
+                            [ thead [] [ tr []
+                                [ th [] [ text "Назва" ]
+                                , th [] [ text "Рота/Взвод" ]
+                                , th [] [ text "Батальйон" ]
+                                , th [] [ text "Полк/Бригада" ]
+                                , th [] [ text "Дивізія" ]
+                                , th [] [ text "Корпус/Армія" ]
+                                ]
+                              ]
+                            , tbody [] (List.map (\unit ->
+                                tr []
+                                    [ td [] [ text unit.name ]
+                                    , td [] [ text unit.company ]
+                                    , td [] [ text unit.battalion ]
+                                    , td [] [ text unit.regiment ]
+                                    , td [] [ text unit.division ]
+                                    , td [] [ text unit.army ]
+                                    ]
+                              ) duplicates)
+                            ]
+                        ]
+                  else
+                    text ""
                 , div
                     [ class "border mb-4 p-3"
                     , style "background-color" "var(--bs-light)"
