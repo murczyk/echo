@@ -1117,13 +1117,10 @@ contentBlock shared model =
                     ]
                     [ div [ class "d-flex justify-content-between align-items-center mb-3" ]
                         [ h5 [ class "fw-bold mb-0" ] [ text "Фільтри" ]
-                        , i [ class "bi bi-x-circle-fill"
-                            , style "font-size" "2rem"
-                            , style "color" "#dc3545"
-                            , style "cursor" "pointer"
-                            , attribute "title" "Очистити фільтри"
-                            , onClick ClearFilters
-                            ] []
+                        , div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
+                            [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
+                            , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
+                            ]
                         ]
                     , div [ class "mb-3 d-flex align-items-center gap-3" ]
                         [ Checkbox.new { isChecked = model.filterActive, onToggle = FilterActive }
