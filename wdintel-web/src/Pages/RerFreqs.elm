@@ -28,7 +28,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkAddStatus(..), ReportCreation(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), NetworkAddStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.NetworkConnection as NetworkConnection
 import RerFreqs.Table as Table
@@ -92,14 +92,6 @@ init _ =
             , selCallsignMenu = []
             , callsignsForFilter = NotAsked
             , focusedFilterItemsBeforeChange = Nothing
-            , reportDownloadInProgress = False
-            , reportModalOpen = False
-            , reportStatus = ReportBasic
-            , adjacentFreqsRangeSelect =
-                { state = Select.initState (Select.selectIdentifier "selectAdjacentFreqsRange")
-                , items = [ Select.basicMenuItem { item = B.ShortRange, label = Utils.adjacentRangeToLabel B.ShortRange }, Select.basicMenuItem { item = B.LongRange, label = Utils.adjacentRangeToLabel B.LongRange } ]
-                , selected = B.ShortRange
-                }
             , networkAddStatus = NotStarted
             , networkAddLoading = False
             , addKindSelect =
@@ -1190,111 +1182,14 @@ update shared msg model =
         GotFilterCallsigns (Ok rsp) ->
             ( { model
                 | callsignsForFilter = Success rsp.callsigns
-                , selCallsignMenu =
+                , callsigns =
                     List.map
                         (\callsign ->
-                            Select.basicMenuItem
-                                { item = callsign.callsign
-                                , label = callsign.callsign
-                                }
+                            callsign.callsign
                         )
                         rsp.callsigns
               }
             , E.none
-            )
-
-        ReportEtalonkaDownload isFullEtalonka ->
-            ( { model | reportDownloadInProgress = True }
-            , E.sendCmd <| prepareReportDownloadCmd model isFullEtalonka
-            )
-
-        ReportEtalonkaDownloadDone (Err e) ->
-            let
-                m2 =
-                    { model | reportDownloadInProgress = False }
-            in
-            Api.handleHttpError ToastMsg e m2
-
-        ReportEtalonkaDownloadDone (Ok bytes) ->
-            let
-                m2 =
-                    { model | reportDownloadInProgress = False }
-
-                extension =
-                    "docx"
-
-                -- filename like "etalonka_2023-07-17-12-00_2023-07-18-12-00"
-                fname =
-                    case model.zone of
-                        Nothing ->
-                            "etalonka." ++ extension
-
-                        Just zone ->
-                            "etalonka_"
-                                ++ (model.from.datePosix
-                                        |> mmap (Le.Time.renderDateTimeF6 zone)
-                                        |> def ""
-                                   )
-                                ++ "_"
-                                ++ (model.to.datePosix
-                                        |> mmap (Le.Time.renderDateTimeF6 zone)
-                                        |> def ""
-                                   )
-                                ++ "."
-                                ++ extension
-            in
-            ( m2
-            , E.sendCmd <|
-                Download.bytes fname
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    bytes
-            )
-
-        OpenReportModal ->
-            ( { model | reportModalOpen = True }, E.none )
-
-        CloseReportModal ->
-            ( { model | reportModalOpen = False }, E.none )
-
-        ChangeReportStatus _ ->
-            ( { model
-                | reportStatus =
-                    case model.reportStatus of
-                        ReportBasic ->
-                            ReportWithAdjacentFreqs B.ShortRange
-
-                        ReportWithAdjacentFreqs _ ->
-                            ReportBasic
-              }
-            , E.none
-            )
-
-        SelectReportAdjacentFreqsRange imsg ->
-            let
-                ( mAction, imodel2, icmd ) =
-                    Select.update imsg model.adjacentFreqsRangeSelect.state
-
-                adjacentFreqsRangeSelect =
-                    model.adjacentFreqsRangeSelect
-
-                a2 =
-                    { adjacentFreqsRangeSelect
-                        | state = imodel2
-                        , selected =
-                            case mAction of
-                                Just (Select.Select i) ->
-                                    i
-
-                                _ ->
-                                    adjacentFreqsRangeSelect.selected
-                    }
-            in
-            ( { model
-                | adjacentFreqsRangeSelect = a2
-                , reportStatus = ReportWithAdjacentFreqs a2.selected
-              }
-            , E.sendCmd <|
-                Cmd.map SelectReportAdjacentFreqsRange icmd
             )
 
         OpenAddNetworkSidebar freq ->
@@ -1758,43 +1653,6 @@ update shared msg model =
               }
             , E.none
             )
-
-
-prepareReportDownloadCmd : Model -> Bool -> Cmd Msg
-prepareReportDownloadCmd model fullEtalonka =
-    case ( model.from.datePosix, model.to.datePosix ) of
-        ( Just dtFromPosix, Just dtToPosix ) ->
-            let
-                listFreqReq =
-                    { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
-                    , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
-                    , newOnly = model.newOnly
-                    , includeNonActive = model.includeNonActive
-                    , filterFreq = emptySToNothing model.filterState.freq
-                    , sortBy = Just [ model.sortingOrder ]
-                    , filterUnit = emptySToNothing model.filterState.unit
-                    , filterCallsigns = emptyToNothing model.filterState.callsigns
-                    , afterFreqNonincl = Nothing
-                    , filterGroupMasterKeys = Nothing
-                    , filterSenderProfileIds = Nothing
-                    }
-
-                etalonkaReq =
-                    { fullEtalonkaReport = fullEtalonka
-                    , listFreqReq = listFreqReq
-                    , adjacentFreqsDistance =
-                        case model.reportStatus of
-                            ReportBasic ->
-                                Nothing
-
-                            ReportWithAdjacentFreqs x ->
-                                Just x
-                    }
-            in
-            Api.rer_freq_report_etalonka ReportEtalonkaDownloadDone etalonkaReq
-
-        _ ->
-            Cmd.none
 
 
 changeSortOrder : B.ListFreqsSortBy -> B.ListFreqsSortBy

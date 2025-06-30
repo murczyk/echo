@@ -13,7 +13,7 @@ import Le.Block.Select
 import Le.Block.Spinner
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (..)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ReportCreation(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Select
@@ -84,74 +84,4 @@ view shared model =
         , span [ class "me-2" ] [ text "позивні" ]
         , tabFiltersCallsigns
         , span [ class "grow-1" ] []
-        , Button.new { label = "Звіт \"Еталонка\"", onClick = OpenReportModal } |> Button.view
-        , let
-            dialogContent =
-                [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                    [ div [ class "pb-12" ]
-                        [ h2 [] [ text "Звіт \"еталонка\"" ]
-                        , p [] [ text "Еталонка по фільтру дата/частота/підрозділ" ]
-                        , div
-                            [ class "form-check mb-2" ]
-                            [ input
-                                [ class "form-check-input"
-                                , type_ "checkbox"
-                                , id "include-adjacent-freqs"
-                                , onCheck <| ChangeReportStatus
-                                , checked (model.reportStatus == ReportWithAdjacentFreqs B.ShortRange || model.reportStatus == ReportWithAdjacentFreqs B.LongRange)
-                                ]
-                                []
-                            , label
-                                [ class "form-check-label"
-                                , for "include-adjacent-freqs"
-                                ]
-                                [ text "Включати суміжні частоти" ]
-                            ]
-                        , div
-                            [ style "width" "100%"
-                            , style "font-size" ".8rem"
-                            ]
-                            [ let
-                                selItem =
-                                    Just
-                                        (Select.basicMenuItem
-                                            { item = model.adjacentFreqsRangeSelect.selected
-                                            , label = Utils.adjacentRangeToLabel model.adjacentFreqsRangeSelect.selected
-                                            }
-                                        )
-
-                                options =
-                                    Le.Block.Select.defaultOptions shared.isDarkMode
-
-                                options2 =
-                                    { options | clearable = False, disabled = model.reportStatus == ReportBasic }
-                              in
-                              Html.map SelectReportAdjacentFreqsRange
-                                (Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        selItem
-                                        model.adjacentFreqsRangeSelect.state
-                                        model.adjacentFreqsRangeSelect.items
-                                        "не обрано"
-                                        options2
-                                )
-                            ]
-                        ]
-                    , div [ class "flex justify-between" ]
-                        [ Button.new { label = "Назад", onClick = CloseReportModal } |> Button.withStyleSecondary |> Button.view
-                        , Button.new { label = "Згенерувати", onClick = ReportEtalonkaDownload False }
-                            |> (if model.reportDownloadInProgress then
-                                    Button.withIcon
-                                        [ Le.Block.Spinner.loadingSpinner2Sm
-                                        ]
-
-                                else
-                                    identity
-                               )
-                            |> Button.view
-                        ]
-                    ]
-                ]
-          in
-          ModalDialog.modalDialog model.reportModalOpen CloseReportModal [] dialogContent
         ]

@@ -22,7 +22,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Utils exposing (..)
 import Page exposing (Page)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ReportCreation(..), ShowAllPopupFor(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ShowAllPopupFor(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import Route exposing (Route)
 import Route.Path
