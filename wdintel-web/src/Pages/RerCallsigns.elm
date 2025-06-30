@@ -5,6 +5,7 @@ import Auth
 import Bindings as B
 import Components.Button as Button
 import Components.Checkbox as Checkbox
+import Components.ModalDialog as ModalDialog
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -69,6 +70,7 @@ type alias Model =
     , inpUnit : Maybe Int
     , editCallsign : Dict Int EditCallsignState
     , deleteCallsignConfirmation : Maybe Int
+    , deleteDialogOpen : Bool
     , inpSource : Maybe Int
     , sources : List B.Source
     , filterCallsign : String
@@ -120,6 +122,7 @@ init req _ =
             , inpUnit = Nothing
             , editCallsign = Dict.empty
             , deleteCallsignConfirmation = Nothing
+            , deleteDialogOpen = False
             , inpSource = Nothing
             , sources = []
             , filterCallsign = Maybe.withDefault "" mCallsignName
@@ -720,12 +723,12 @@ update req msg model =
             ( { model | editCallsign = Dict.remove id model.editCallsign }, E.none )
 
         DeleteCallsign id ->
-            ( { model | deleteCallsignConfirmation = Just id }, E.none )
+            ( { model | deleteCallsignConfirmation = Just id, deleteDialogOpen = True }, E.none )
 
         DeleteCallsignConfirm ->
             let
                 m2 =
-                    { model | deleteCallsignConfirmation = Nothing }
+                    { model | deleteCallsignConfirmation = Nothing, deleteDialogOpen = False }
             in
             case model.deleteCallsignConfirmation of
                 Just id ->
@@ -735,7 +738,7 @@ update req msg model =
                     ( m2, E.none )
 
         DeleteCallsignCancel ->
-            ( { model | deleteCallsignConfirmation = Nothing }, E.none )
+            ( { model | deleteCallsignConfirmation = Nothing, deleteDialogOpen = False }, E.none )
 
         DeleteCallsignDone (Err err) ->
             Api.handleHttpError ToastMsg err model
@@ -995,47 +998,38 @@ contentBlock shared model user =
             Le.Auth.hasRole "CallsignsEditor" user || Le.Auth.hasRole "UnitsEditor" user
 
         deleteConfirmationModal =
-            div
-                [ class "modal fade"
-                , attribute "tabindex" "-1"
-                , attribute "role" "dialog"
-                , attribute "aria-hidden" "true"
-                , id "deleteConfirmationModal"
-                ]
-                [ div
-                    [ class "modal-dialog"
-                    , attribute "role" "document"
-                    ]
-                    [ div
-                        [ class "modal-content" ]
-                        [ div
-                            [ class "modal-header" ]
-                            [ h5 [ class "modal-title" ] [ text "Видалення позивного" ]
-                            , button
-                                [ class "btn-close"
-                                , type_ "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , attribute "ariaLabel" "Close"
+            let
+                callsignName =
+                    model.deleteCallsignConfirmation
+                        |> Maybe.andThen (\id -> ListX.find (\c -> c.id == id) model.callsigns)
+                        |> Maybe.map .callsign
+                        |> Maybe.withDefault ""
+
+                dialogContent =
+                    [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                        [ div [ class "pb-12" ]
+                            [ h2 [] [ text "Видалення позивного" ]
+                            , p [] 
+                                [ text "Ви впевнені, що хочете видалити позивний "
+                                , strong [] [ text callsignName ]
+                                , text "?"
                                 ]
-                                []
                             ]
-                        , div
-                            [ class "modal-body p-3" ]
-                            [ text "Ви впевнені, що хочете видалити цей позивний?"
-                            ]
-                        , div
-                            [ class "modal-footer" ]
+                        , div [ class "flex justify-between" ]
                             [ Button.new { label = "Відміна", onClick = DeleteCallsignCancel }
                                 |> Button.withStyleSecondary
-                                |> Button.withOutlined True
                                 |> Button.view
-                            , Button.new { label = "Видалити", onClick = DeleteCallsignConfirm }
-                                |> Button.withOutlined True
-                                |> Button.view
+                            , button
+                                [ class "btn btn-danger"
+                                , type_ "button"
+                                , onClick DeleteCallsignConfirm
+                                ]
+                                [ text "Видалити" ]
                             ]
                         ]
                     ]
-                ]
+            in
+            ModalDialog.modalDialog model.deleteDialogOpen DeleteCallsignCancel [] dialogContent
 
         renderUnitsFromInboxTd : B.Callsign -> Html Msg
         renderUnitsFromInboxTd callsign =
