@@ -12,6 +12,7 @@ import File.Select
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
+import Html.Styled
 import Layouts
 import Le.Auth
 import Le.Block.Popup
@@ -31,6 +32,8 @@ import Time
 import TimeZone
 import View exposing (View)
 import Views
+import Select
+import Le.Block.Select
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -70,6 +73,12 @@ type alias Model =
     , actionsPopupUnitId : Maybe Int
     , removingDuplicateProcess : RemovingDuplicateProcess
     , removeDuplicateLoading : Bool
+    , filterActive : Bool
+    , filterDivision : String
+    , filterArmy : String
+    , filterRegiment : String
+    , filterBattalion : String
+    , filterCompany : String
     }
 
 
@@ -107,6 +116,12 @@ init _ =
       , actionsPopupUnitId = Nothing
       , removeDuplicateLoading = False
       , removingDuplicateProcess = NotStarted
+      , filterActive = False
+      , filterDivision = ""
+      , filterArmy = ""
+      , filterRegiment = ""
+      , filterBattalion = ""
+      , filterCompany = ""
       }
     , E.batch
         [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
@@ -150,6 +165,13 @@ type Msg
     | RemoveDuplicateCancel
     | RemoveDuplicateConfirm
     | RemoveDuplicateDone (Result ApiError B.Unit)
+    | FilterActive Bool
+    | FilterDivision String
+    | FilterArmy String
+    | FilterRegiment String
+    | FilterBattalion String
+    | FilterCompany String
+    | ClearFilters
 
 
 type alias EditUnitState =
@@ -192,7 +214,10 @@ update msg model =
             Api.handleHttpError ToastMsg err model
 
         GotUnits (Ok rsp) ->
-            ( { model | units = rsp.units }
+            let
+                units = rsp.units
+            in
+            ( { model | units = units }
             , E.none
             )
 
@@ -454,15 +479,96 @@ update msg model =
             , loadUnits
             )
 
+        FilterActive v ->
+            ( { model | filterActive = v }, E.none )
+
+        FilterDivision v ->
+            ( { model | filterDivision = v }, E.none )
+
+        FilterArmy v ->
+            ( { model | filterArmy = v }, E.none )
+
+        FilterRegiment v ->
+            ( { model | filterRegiment = v }, E.none )
+
+        FilterBattalion v ->
+            ( { model | filterBattalion = v }, E.none )
+
+        FilterCompany v ->
+            ( { model | filterCompany = v }, E.none )
+
+        ClearFilters ->
+            ( { model | filterActive = False, filterDivision = "", filterArmy = "", filterRegiment = "", filterBattalion = "", filterCompany = "" }, E.none )
+
 
 filteredUnits : Model -> List B.Unit
 filteredUnits model =
     model.units
-        |> List.filter (\unit -> String.contains model.inpCompany unit.company)
-        |> List.filter (\unit -> String.contains model.inpBattalion unit.battalion)
-        |> List.filter (\unit -> String.contains model.inpRegiment unit.regiment)
-        |> List.filter (\unit -> String.contains model.inpDivision unit.division)
-        |> List.filter (\unit -> String.contains model.inpArmy unit.army)
+        |> List.filter (\unit ->
+            if not model.filterActive then
+                True
+            else
+                unit.active == True
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterDivision then
+                True
+            else
+                String.contains (String.toLower model.filterDivision) (String.toLower unit.division)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterArmy then
+                True
+            else
+                String.contains (String.toLower model.filterArmy) (String.toLower unit.army)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterRegiment then
+                True
+            else
+                String.contains (String.toLower model.filterRegiment) (String.toLower unit.regiment)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterBattalion then
+                True
+            else
+                String.contains (String.toLower model.filterBattalion) (String.toLower unit.battalion)
+        )
+        |> List.filter (\unit -> 
+            if String.isEmpty model.filterCompany then
+                True
+            else
+                String.contains (String.toLower model.filterCompany) (String.toLower unit.company)
+        )
+     
+
+
+potentialDuplicates : Model -> List B.Unit
+potentialDuplicates model =
+    let
+        company = String.toLower (String.trim model.inpCompany)
+        battalion = String.toLower (String.trim model.inpBattalion)
+        regiment = String.toLower (String.trim model.inpRegiment)
+        division = String.toLower (String.trim model.inpDivision)
+        army = String.toLower (String.trim model.inpArmy)
+        anyInput =
+            not (List.all String.isEmpty [ company, battalion, regiment, division, army ])
+
+        matchesField userInput unitField =
+            String.isEmpty userInput
+                || (not (String.isEmpty unitField) && String.contains userInput (String.toLower unitField))
+    in
+    if anyInput then
+        model.units
+            |> List.filter (\unit ->
+                matchesField company unit.company
+                    && matchesField battalion unit.battalion
+                    && matchesField regiment unit.regiment
+                    && matchesField division unit.division
+                    && matchesField army unit.army
+            )
+    else
+        []
 
 
 subscriptions : Model -> Sub Msg
@@ -540,13 +646,13 @@ contentBlock shared model =
                                     (Time.millisToPosix unit.createdAt)
                     ]
                 , td [] [ text <| unit.comment ]
-                , td []
-                    [ text <|
-                        if unit.active then
-                            "Так"
-
-                        else
-                            "Ні"
+                , td [ class "text-center align-middle" ]
+                    [ if unit.active then
+                        div [ class "flex flex-col items-center" ]
+                            [ i [ class "bi bi-check-circle-fill", style "color" "#198754", style "font-size" "1.3em", title "Активний" ] [] ]
+                      else
+                        div [ class "flex flex-col items-center" ]
+                            [ i [ class "bi bi-x-circle-fill", style "color" "#dc3545", style "font-size" "1.3em", title "Неактивний" ] [] ]
                     ]
                 , if hasEditorOrAdminRole then
                     td [ class "align-middle" ]
@@ -1029,8 +1135,112 @@ contentBlock shared model =
                     ]
                     [ addUnitPanel
                     ]
-                , table [ class "table table-bordered table" ]
-                    [ thead []
+                , let
+                    duplicates = potentialDuplicates model
+                  in
+                  if not (List.isEmpty duplicates) then
+                    div [ class "alert alert-warning mt-2" ]
+                        [ text "Можливо, такий підрозділ вже існує:"
+                        , table [ class "table table-sm mt-2" ]
+                            [ thead [] [ tr []
+                                [ th [] [ text "Назва" ]
+                                , th [] [ text "Рота/Взвод" ]
+                                , th [] [ text "Батальйон" ]
+                                , th [] [ text "Полк/Бригада" ]
+                                , th [] [ text "Дивізія" ]
+                                , th [] [ text "Корпус/Армія" ]
+                                ]
+                              ]
+                            , tbody [] (List.map (\unit ->
+                                tr []
+                                    [ td [] [ text unit.name ]
+                                    , td [] [ text unit.company ]
+                                    , td [] [ text unit.battalion ]
+                                    , td [] [ text unit.regiment ]
+                                    , td [] [ text unit.division ]
+                                    , td [] [ text unit.army ]
+                                    ]
+                              ) duplicates)
+                            ]
+                        ]
+                  else
+                    text ""
+                , div
+                    [ class "border mb-4 p-3"
+                    , style "background-color" "var(--bs-light)"
+                    ]
+                    [ div [ class "d-flex justify-content-between align-items-center mb-3" ]
+                        [ h5 [ class "fw-bold mb-0" ] [ text "Фільтри" ]
+                        , div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
+                            [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
+                            , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
+                            ]
+                        ]
+                    , div [ class "mb-3 d-flex align-items-center gap-3" ]
+                        [ Checkbox.new { isChecked = model.filterActive, onToggle = FilterActive }
+                            |> Checkbox.withContent [ span [] [ text "Лише активні" ] ]
+                            |> Checkbox.view
+                        ]
+                    , div [ class "row g-3" ]
+                        [ div [ class "col-md-4" ]
+                            [ label [ class "form-label" ] [ text "Рота/Взвод:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву роти/взводу"
+                                , value model.filterCompany
+                                , onInput FilterCompany
+                                ]
+                                []
+                            ]
+                        , div [ class "col-md-4" ]
+                            [ label [ class "form-label" ] [ text "Батальйон:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву батальйону"
+                                , value model.filterBattalion
+                                , onInput FilterBattalion
+                                ]
+                                []
+                            ]
+                        , div [ class "col-md-4" ]
+                            [ label [ class "form-label" ] [ text "Полк/Бригада:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву полку/бригади"
+                                , value model.filterRegiment
+                                , onInput FilterRegiment
+                                ]
+                                []
+                            ]
+                        , div [ class "col-md-6" ]
+                            [ label [ class "form-label" ] [ text "Дивізія:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву дивізії"
+                                , value model.filterDivision
+                                , onInput FilterDivision
+                                ]
+                                []
+                            ]
+                        , div [ class "col-md-6" ]
+                            [ label [ class "form-label" ] [ text "Корпус/Армія:" ]
+                            , input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder "Введіть назву корпусу/армії"
+                                , value model.filterArmy
+                                , onInput FilterArmy
+                                ]
+                                []
+                            ]
+                        ]
+                    ]
+                , table [ class "table table-bordered table", style "position" "relative" ]
+                    [ thead [ style "position" "sticky", style "top" "0", style "z-index" "2", style "background" "#fff" ]
                         [ tr []
                             [ th [ scope "col", class "nowrap" ] [ text "Назва" ]
                             , th [ scope "col", class "nowrap" ] [ text "Рота, взвод" ]
