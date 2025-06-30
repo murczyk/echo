@@ -83,10 +83,9 @@ pub async fn network_list(
 
     if req.filter_further_investigation.unwrap_or(false) {
         networks = networks.filter(sigint_network_unit::Column::Id.is_null());
-    }
-    else
-    {
-        networks = networks.filter(sigint_network_unit::Column::Id.is_not_null());
+    } else {
+        networks =
+            networks.filter(sigint_network_unit::Column::Id.is_not_null());
     }
 
     if req.filter_freq.is_some()
@@ -1891,6 +1890,7 @@ pub async fn network_callsigns_list(
         filter_unit: None,
         network_id: Some(req.network_id.clone()),
         full_etalonka_report: false,
+        filter_further_investigation: None,
     };
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
@@ -1978,6 +1978,7 @@ pub async fn network_freqs_list(
         filter_unit: None,
         network_id: Some(req.network_id.clone()),
         full_etalonka_report: false,
+        filter_further_investigation: None,
     };
 
     let groups = crate::users::get_identity_sigint_groups_noimport(

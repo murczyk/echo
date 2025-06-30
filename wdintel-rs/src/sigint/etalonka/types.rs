@@ -219,6 +219,8 @@ pub struct EtalonkaFilter {
     pub till_date_noninclusive_ms: Option<i64>,
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
+    /// filter_further_investigation - to filter freqs that does not have any unit assigned to them yet
+    pub filter_further_investigation: Option<bool>,
     pub network_id: Option<i64>,
     pub full_etalonka_report: bool,
 }

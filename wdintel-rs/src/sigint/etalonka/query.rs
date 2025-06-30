@@ -502,23 +502,37 @@ async fn query_active_freqs(
         Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
     );
 
-    if let Some(unit) = filter.filter_unit.clone() {
+    let needs_unit_join =
+        filter.filter_unit.as_ref().map_or(false, |s| !s.is_empty())
+            || filter.filter_further_investigation.unwrap_or(false);
+
+    if needs_unit_join {
         q.join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             SigintNetworkUnit::Table,
             Expr::col((SigintNetworkUnit::Table, SigintNetworkUnit::NetworkId))
                 .equals((SigintNetwork::Table, SigintNetwork::Id)),
         )
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             SigintUnit::Table,
             Expr::col((SigintUnit::Table, SigintUnit::Id))
                 .equals((SigintNetworkUnit::Table, SigintNetworkUnit::UnitId)),
-        )
-        .and_where(
+        );
+    }
+
+    if let Some(unit) = filter.filter_unit.clone() {
+        q.and_where(
             Expr::col((SigintUnit::Table, SigintUnit::Deleted)).eq(false),
         )
         .and_where(Expr::col((SigintUnit::Table, SigintUnit::Name)).eq(unit));
+    }
+
+    if filter.filter_further_investigation.unwrap_or(false) {
+        q.and_where(
+            Expr::col((SigintNetworkUnit::Table, SigintNetworkUnit::UnitId))
+                .is_null(),
+        );
     }
 
     if let Some(network_id) = filter.network_id {
@@ -1599,19 +1613,31 @@ pub async fn load_pelengs_map(
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_peleng::Column::Deleted.eq(false));
 
-    if let Some(unit) = filter.filter_unit.clone() {
+    let needs_unit_join =
+        filter.filter_unit.as_ref().map_or(false, |s| !s.is_empty())
+            || filter.filter_further_investigation.unwrap_or(false);
+
+    if needs_unit_join {
         query = query
             .join(
-                JoinType::InnerJoin,
+                JoinType::LeftJoin,
                 sigint_network::Relation::SigintNetworkUnit.def(),
             )
             .join(
-                JoinType::InnerJoin,
+                JoinType::LeftJoin,
                 sigint_network_unit::Relation::SigintUnit.def(),
             )
+    }
+
+    if let Some(unit) = filter.filter_unit.clone() {
+        query = query
             .filter(sigint_unit::Column::Deleted.eq(false))
             .filter(sigint_unit::Column::Name.eq(unit));
     }
+
+    if filter.filter_further_investigation.unwrap_or(false) {
+        query = query.filter(sigint_network_unit::Column::Id.is_null())
+    };
 
     if let Some(network_id) = filter.network_id {
         query = query.filter(sigint_network::Column::Id.eq(network_id));

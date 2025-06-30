@@ -156,6 +156,9 @@ pub async fn report_freqs(
                 filter_unit: Some(unit.clone()),
                 network_id: None,
                 full_etalonka_report: req.full_etalonka_report,
+                filter_further_investigation: req
+                    .list_freq_req
+                    .filter_further_investigation,
             };
 
             async move {
@@ -220,6 +223,9 @@ pub async fn report_freqs(
                     filter_unit: Some(unit.clone()),
                     network_id: None,
                     full_etalonka_report: req.full_etalonka_report,
+                    filter_further_investigation: req
+                        .list_freq_req
+                        .filter_further_investigation,
                 };
 
                 async move {
@@ -837,6 +843,7 @@ pub async fn report_networks(
                 filter_unit: None,
                 network_id: Some(network.id.clone()),
                 full_etalonka_report: false,
+                filter_further_investigation: None,
             };
 
             let callsigns = load_callsigns(

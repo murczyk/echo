@@ -2,7 +2,7 @@ use crate::config::*;
 use crate::types::*;
 use crate::{mk_conn_string, new_redis};
 use actix_identity::IdentityMiddleware;
-use actix_session::{SessionMiddleware, storage::CookieSessionStore};
+use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
