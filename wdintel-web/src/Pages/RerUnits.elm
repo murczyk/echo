@@ -1140,7 +1140,7 @@ contentBlock shared model =
                   in
                   if not (List.isEmpty duplicates) then
                     div [ class "alert alert-warning mt-2" ]
-                        [ text "Можливо, такі підрозділи вже існують:"
+                        [ text "Можливо, такий підрозділ вже існує:"
                         , table [ class "table table-sm mt-2" ]
                             [ thead [] [ tr []
                                 [ th [] [ text "Назва" ]
