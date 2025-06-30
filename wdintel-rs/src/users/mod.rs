@@ -6,6 +6,7 @@ use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
 // use crate::utils::*;
+use crate::organism::bl::load_organism_group_ids;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
 use actix_identity::Identity;
@@ -753,12 +754,14 @@ where
 
     let mut organism_groups_obj = vec![];
     if let Some(organism_id) = login_obj.organism_id {
+        let organism_groups = load_organism_group_ids(txn, organism_id)
+            .await
+            .context(h!())?;
         organism_groups_obj =
             crate::sigint::zone::filter_out_ineligible_secret_chats(
-                organism_group::Entity::find()
-                    .join(
-                        JoinType::InnerJoin,
-                        organism_group::Relation::SignalGroup.def(),
+                signal_group::Entity::find()
+                    .filter(
+                        signal_group::Column::MasterKey.is_in(organism_groups),
                     )
                     .join(
                         JoinType::InnerJoin,
@@ -768,7 +771,6 @@ where
                         JoinType::InnerJoin,
                         datasource::Relation::SigintZoneDatasource.def(),
                     )
-                    .filter(organism_group::Column::OrganismId.eq(organism_id))
                     .filter(
                         sigint_zone_datasource::Column::SigintZoneId
                             .eq(zone_id),
@@ -779,7 +781,7 @@ where
             .await
             .context(h!())?
             .into_iter()
-            .map(|og| og.signal_group_master_key)
+            .map(|og| og.master_key)
             .collect();
     }
 

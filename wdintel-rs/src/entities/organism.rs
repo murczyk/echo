@@ -14,12 +14,21 @@ pub struct Model {
     pub roles: Json,
     pub group_auto_link: Option<bool>,
     pub enabled: bool,
+    pub parent_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::login::Entity")]
     Login,
+    #[sea_orm(
+        belongs_to = "Entity",
+        from = "Column::ParentId",
+        to = "Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SelfRef,
     #[sea_orm(has_many = "super::organism_group::Entity")]
     OrganismGroup,
 }
