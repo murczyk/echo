@@ -295,6 +295,37 @@
 			"response": []
 		},
 		{
+			"name": "sigint/network-info-one",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "2832",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/network-info-one",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"network-info-one"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/freqs",
 			"request": {
 				"auth": {
