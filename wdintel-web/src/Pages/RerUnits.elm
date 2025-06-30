@@ -618,13 +618,13 @@ contentBlock shared model =
                                     (Time.millisToPosix unit.createdAt)
                     ]
                 , td [] [ text <| unit.comment ]
-                , td []
-                    [ text <|
-                        if unit.active then
-                            "Так"
-
-                        else
-                            "Ні"
+                , td [ class "text-center align-middle" ]
+                    [ if unit.active then
+                        div [ class "flex flex-col items-center" ]
+                            [ i [ class "bi bi-check-circle-fill", style "color" "#198754", style "font-size" "1.3em", title "Активний" ] [] ]
+                      else
+                        div [ class "flex flex-col items-center" ]
+                            [ i [ class "bi bi-x-circle-fill", style "color" "#dc3545", style "font-size" "1.3em", title "Неактивний" ] [] ]
                     ]
                 , if hasEditorOrAdminRole then
                     td [ class "align-middle" ]
@@ -1175,8 +1175,8 @@ contentBlock shared model =
                             ]
                         ]
                     ]
-                , table [ class "table table-bordered table" ]
-                    [ thead []
+                , table [ class "table table-bordered table", style "position" "relative" ]
+                    [ thead [ style "position" "sticky", style "top" "0", style "z-index" "2", style "background" "#fff" ]
                         [ tr []
                             [ th [ scope "col", class "nowrap" ] [ text "Назва" ]
                             , th [ scope "col", class "nowrap" ] [ text "Рота, взвод" ]
