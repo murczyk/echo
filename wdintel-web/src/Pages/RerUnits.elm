@@ -1112,31 +1112,26 @@ contentBlock shared model =
                     , style "background-color" "var(--bs-light)"
                     ]
                     [ h5 [ class "fw-bold mb-3" ] [ text "Фільтри" ]
-                    , div [ class "mb-3 d-flex align-items-center gap-3" ]
-                        [ Checkbox.new { isChecked = model.filterActive, onToggle = FilterActive }
-                            |> Checkbox.withContent [ span [] [ text "Лише активні" ] ]
-                            |> Checkbox.view
-                        ]
                     , div [ class "row g-3" ]
                         [ div [ class "col-md-4" ]
-                            [ label [ class "form-label" ] [ text "Дивізія:" ]
+                            [ label [ class "form-label" ] [ text "Рота/Взвод:" ]
                             , input
                                 [ class "form-control"
                                 , type_ "text"
-                                , placeholder "Введіть назву дивізії"
-                                , value model.filterDivision
-                                , onInput FilterDivision
+                                , placeholder "Введіть назву роти/взводу"
+                                , value model.filterCompany
+                                , onInput FilterCompany
                                 ]
                                 []
                             ]
                         , div [ class "col-md-4" ]
-                            [ label [ class "form-label" ] [ text "Корпус/Армія:" ]
+                            [ label [ class "form-label" ] [ text "Батальйон:" ]
                             , input
                                 [ class "form-control"
                                 , type_ "text"
-                                , placeholder "Введіть назву корпусу/армії"
-                                , value model.filterArmy
-                                , onInput FilterArmy
+                                , placeholder "Введіть назву батальйону"
+                                , value model.filterBattalion
+                                , onInput FilterBattalion
                                 ]
                                 []
                             ]
@@ -1152,24 +1147,24 @@ contentBlock shared model =
                                 []
                             ]
                         , div [ class "col-md-6" ]
-                            [ label [ class "form-label" ] [ text "Батальйон:" ]
+                            [ label [ class "form-label" ] [ text "Дивізія:" ]
                             , input
                                 [ class "form-control"
                                 , type_ "text"
-                                , placeholder "Введіть назву батальйону"
-                                , value model.filterBattalion
-                                , onInput FilterBattalion
+                                , placeholder "Введіть назву дивізії"
+                                , value model.filterDivision
+                                , onInput FilterDivision
                                 ]
                                 []
                             ]
                         , div [ class "col-md-6" ]
-                            [ label [ class "form-label" ] [ text "Рота/Взвод:" ]
+                            [ label [ class "form-label" ] [ text "Корпус/Армія:" ]
                             , input
                                 [ class "form-control"
                                 , type_ "text"
-                                , placeholder "Введіть назву роти/взводу"
-                                , value model.filterCompany
-                                , onInput FilterCompany
+                                , placeholder "Введіть назву корпусу/армії"
+                                , value model.filterArmy
+                                , onInput FilterArmy
                                 ]
                                 []
                             ]
