@@ -3,6 +3,8 @@ module RerFreqs.NetworkConnection exposing (view)
 import Bindings as B
 import Bytes exposing (Bytes)
 import Components.Button as Button
+import Components.Checkbox as Checkbox
+import Components.Toggle as Toggle
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -32,13 +34,11 @@ import Time exposing (Posix)
 import Time.Extra
 import Url.Parser exposing (query)
 import View exposing (View)
-import Components.Checkbox as Checkbox
-import Components.Toggle as Toggle
 
 
 view : Model -> Shared.Model -> List (Html Msg)
 view model shared =
-    case model.networkAddStatus of
+    case model.networkWorkflowStatus of
         NotStarted ->
             []
 
@@ -49,18 +49,18 @@ view model shared =
 renderNetworkSidebar : Model -> Shared.Model -> List (Html Msg)
 renderNetworkSidebar model shared =
     [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
-        (case model.networkAddStatus of
+        (case model.networkWorkflowStatus of
             CreateNewNetwork freq addState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
                     :: viewCreateNewNetwork addState freq model shared
 
             SelectingNetwork freq searchState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
-                    :: viewSelectFromExistingNetwork freq searchState model shared
+                    :: viewSelectingNetwork freq searchState model shared
 
             EditingNetwork freq editState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
-                    :: viewEditConnectedNetwork editState model shared
+                    :: viewEditingNetwork editState model shared
 
             NotStarted ->
                 []
@@ -413,8 +413,8 @@ viewCreateNewNetwork addState freq model shared =
     ]
 
 
-viewSelectFromExistingNetwork : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
-viewSelectFromExistingNetwork freq selectedNetworkId model shared =
+viewSelectingNetwork : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
+viewSelectingNetwork freq selectedNetworkId model shared =
     [ div [ class "flex flex-col grow relative" ]
         [ HtmlX.viewIf model.networkAddLoading <|
             span [ class "absolute top-[50%] left-[50%] -translate-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
@@ -464,25 +464,28 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                 ListX.find (\freq_ -> freq_.freq == freq) model.freqs
                     |> Maybe.map .networkIds
                     |> Maybe.withDefault []
-            
+
             -- Filter out networks that are already connected to this frequency
             filterOutAlreadyConnected networks =
                 List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
-            
-            networksToShow = 
+
+            networksToShow =
                 if model.showNetworksWithoutUnit then
                     -- Show ONLY networks without units when checkbox is checked
                     Dict.values model.networks
                         |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
                         |> filterOutAlreadyConnected
+
                 else
                     -- Show only networks with selected unit when checkbox is unchecked
                     case model.networkDialogUnitSelect.selected of
-                        Just unitId -> 
+                        Just unitId ->
                             Dict.values model.networks
                                 |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
                                 |> filterOutAlreadyConnected
-                        Nothing -> []
+
+                        Nothing ->
+                            []
           in
           div [ class "min-h-[200px] flex flex-col" ]
             [ let
@@ -497,7 +500,8 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                             )
               in
               let
-                  options = Le.Block.Select.defaultOptions shared.isDarkMode
+                options =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
               in
               div [ class "flex gap-[8px]" ]
                 [ div [ class "grow-1" ]
@@ -530,19 +534,20 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                     ]
                 ]
             , div [ class "flex items-center gap-2 mb-4 mt-2" ]
-                [ Toggle.new 
+                [ Toggle.new
                     { onToggle = NetworkSearchWithoutUnitToggle
                     , label = "В дорозвідці (показати мережі без підрозділу)"
-                    } 
+                    }
                     |> Toggle.view model.showNetworksWithoutUnit
                 ]
             , div [ class "grow-1 mt-4" ]
                 (if List.length networksToShow > 0 then
                     [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length networksToShow) ++ " мереж знайдено" ]
-                    , div [ class "flex flex-col gap-[4px] mt-2" ] 
+                    , div [ class "flex flex-col gap-[4px] mt-2" ]
                         (List.map (\network -> renderNetworkSelectionItem network selectedNetworkId model.masterUnits) networksToShow)
                     ]
-                  else
+
+                 else
                     [ div [ class "w-full h-full flex justify-center items-center" ]
                         [ span [] [ text "Співпадінь не виявлено" ]
                         ]
@@ -600,8 +605,8 @@ renderNetworkSelectionItem network selectedNetworkId masterUnits =
         ]
 
 
-viewEditConnectedNetwork : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
-viewEditConnectedNetwork editState model shared =
+viewEditingNetwork : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
+viewEditingNetwork editState model shared =
     [ h4 [] [ text "Редагування існуючої мережі" ]
     , div [ class "grid grid-cols-4  gap-y-2 gap-x-4" ]
         [ div [ class "col-span-2" ]

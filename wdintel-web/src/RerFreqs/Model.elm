@@ -48,7 +48,7 @@ type alias Model =
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp
     , noMoreToLoad : Bool
-    , networkAddStatus : NetworkWorkflowStatus
+    , networkWorkflowStatus : NetworkWorkflowStatus
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , showNetworksWithoutUnit : Bool
