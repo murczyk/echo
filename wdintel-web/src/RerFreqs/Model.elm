@@ -52,6 +52,7 @@ type alias Model =
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , showNetworksWithoutUnit : Bool
+    , showFreqsWithoutUnit : Bool
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , addExistingConfirmationInp : Maybe String

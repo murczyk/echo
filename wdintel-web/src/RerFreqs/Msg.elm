@@ -89,3 +89,4 @@ type Msg
     | NetworkAddExistingActiveToChanged String
     | NetworkSearchWithoutUnitToggled Bool
     | NetworkSearchWithoutUnitToggle
+    | FreqSearchWithoutUnitToggle

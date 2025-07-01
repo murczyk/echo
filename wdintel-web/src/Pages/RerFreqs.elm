@@ -173,6 +173,7 @@ init _ =
             , addExistingConfirmationInp = Nothing
             , addConfirmationInp = Nothing
             , showNetworksWithoutUnit = False
+            , showFreqsWithoutUnit = False
             }
     in
     ( m2
@@ -232,7 +233,7 @@ loadFreqs model paginating =
                         Nothing
                 , filterGroupMasterKeys = Nothing
                 , filterSenderProfileIds = Nothing
-                , filterFurtherInvestigation = Nothing
+                , filterFurtherInvestigation = Just model.showFreqsWithoutUnit
                 }
 
         _ ->
@@ -741,6 +742,14 @@ update shared msg model =
                 , networkDialogUnitSelect = unitsSelect
               }
             , E.none
+            )
+
+        FreqSearchWithoutUnitToggle ->
+            let
+                m1 =  { model | showFreqsWithoutUnit = not model.showFreqsWithoutUnit, loading = True }
+            in
+            (m1
+            , E.sendCmd <| loadFreqs m1 False
             )
 
         NetworkAddModulationSelMsg imsg ->
