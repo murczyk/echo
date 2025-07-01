@@ -174,6 +174,7 @@ loadNetworks model shared =
                 , filterFreq = emptySToNothing model.filterState.freq
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
+                , filterFurtherInvestigation = Nothing
                 }
             )
 
@@ -190,6 +191,7 @@ loadNetworksFixLater model shared =
                 , filterFreq = emptySToNothing model.filterState.freq
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
+                , filterFurtherInvestigation = Nothing
                 }
 
         _ ->
@@ -760,7 +762,7 @@ findSuggestedToMergeNetworks networks_ =
     let
         shouldBeMerged : B.Network -> B.Network -> Bool
         shouldBeMerged network1 network2 =
-            network1.purpose == network2.purpose && List.sort network1.unitIds == List.sort network2.unitIds
+            network1.purpose == network2.purpose && List.sort (Maybe.withDefault [] network1.unitIds) == List.sort (Maybe.withDefault [] network2.unitIds)
 
         findPairs : List ( B.Network, B.Network ) -> List B.Network -> List ( B.Network, B.Network )
         findPairs acc remaining =
@@ -1226,7 +1228,7 @@ networksMergeSidebarContent model =
         Merging ( networkA, networkB ) preview remaining ->
             [ div [ class "p-[24px] flex flex-col gap-[24px]" ]
                 [ div []
-                    [ span [] [ text <| String.fromInt (List.length remaining) ++ " рекомендацій по об’єданню мереж залишилося" ]
+                    [ span [] [ text <| String.fromInt (List.length remaining) ++ " рекомендацій по об'єданню мереж залишилося" ]
                     , h3 [] [ text "Поєднання двох мереж" ]
                     , span [] [ text "При поєднанні мереж інформація з другої мережі переноситься в першу. Після чого друга мережа видаляється." ]
                     ]

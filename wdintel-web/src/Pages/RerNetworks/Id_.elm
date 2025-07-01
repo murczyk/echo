@@ -249,6 +249,7 @@ update shared msg model =
                     , filterFreq = Nothing
                     , filterUnit = Nothing
                     , sortBy = Nothing
+                    , filterFurtherInvestigation = Nothing
                     }
 
                 --TODO: do not load if loaded already
@@ -738,8 +739,8 @@ update shared msg model =
             Api.handleHttpError ToastMsg e model
 
         CallsignReportingStatusUpdatedByApi (Ok res) ->
-            case (model.network, model.callsigns, model.callsignsEditingState) of
-                (Success network, Success callsigns, Editing editingDict) ->
+            case ( model.network, model.callsigns, model.callsignsEditingState ) of
+                ( Success network, Success callsigns, Editing editingDict ) ->
                     let
                         updatedCallsigns =
                             List.map
@@ -747,6 +748,7 @@ update shared msg model =
                                     case Dict.get c.callsign editingDict of
                                         Just newIsReported ->
                                             { c | isReported = newIsReported }
+
                                         Nothing ->
                                             c
                                 )
@@ -754,7 +756,7 @@ update shared msg model =
                     in
                     ( { model | callsignsEditingState = Readonly, callsigns = Success updatedCallsigns }, E.none )
 
-                (Success network, Success callsigns, _) ->
+                ( Success network, Success callsigns, _ ) ->
                     ( { model | callsignsEditingState = Readonly }, E.none )
 
                 _ ->

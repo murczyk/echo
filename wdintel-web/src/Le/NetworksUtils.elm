@@ -16,7 +16,7 @@ renderNetworkNameWithoutType network masterUnits =
             , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
-                        network.unitIds
+                        (Maybe.withDefault [] network.unitIds)
                     )
             ]
         ]
@@ -33,7 +33,7 @@ renderNetwork network masterUnits =
             , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
-                        network.unitIds
+                        (Maybe.withDefault [] network.unitIds)
                     )
             , text <|
                 if network.location /= "" then

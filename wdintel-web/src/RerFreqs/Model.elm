@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), ShowAllPopupFor(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -51,6 +51,7 @@ type alias Model =
     , networkAddStatus : NetworkAddStatus
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
+    , showNetworksWithoutUnit : Bool
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , addExistingConfirmationInp : Maybe String
@@ -72,6 +73,12 @@ type alias FilterState =
     { freq : String
     , unit : String
     , callsigns : List String
+    }
+
+
+type alias NetworkSearchState =
+    { showNetworksWithoutUnit : Bool
+    , selectedNetworkId : Maybe Int
     }
 
 

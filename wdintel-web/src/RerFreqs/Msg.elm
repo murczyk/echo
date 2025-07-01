@@ -87,3 +87,4 @@ type Msg
     | UnitsReloadClickedByUser
     | NetworkAddExistingActiveFromChanged String
     | NetworkAddExistingActiveToChanged String
+    | NetworkSearchWithoutUnitToggled Bool

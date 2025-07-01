@@ -6,7 +6,6 @@ import Html exposing (..)
 import Html.Attributes exposing (class)
 import Le.Utils as Utils
 
-
 unitName : Dict Int B.Unit -> Int -> String
 unitName masterUnits unitId =
     case Dict.get unitId masterUnits of
@@ -37,7 +36,7 @@ boldMasterUnit masterUnits network =
             , text <|
                 String.join ", "
                     (List.map (unitName masterUnits)
-                        network.unitIds
+                        (Maybe.withDefault [] network.unitIds)
                     )
             , text <|
                 if network.location /= "" then

@@ -172,6 +172,7 @@ init _ =
                 }
             , addExistingConfirmationInp = Nothing
             , addConfirmationInp = Nothing
+            , showNetworksWithoutUnit = False
             }
     in
     ( m2
@@ -231,6 +232,7 @@ loadFreqs model paginating =
                         Nothing
                 , filterGroupMasterKeys = Nothing
                 , filterSenderProfileIds = Nothing
+                , filterFurtherInvestigation = Nothing
                 }
 
         _ ->
@@ -685,6 +687,27 @@ update shared msg model =
                 Cmd.map
                     NetworkAddUnitSelMsg
                     icmd
+            )
+
+        NetworkSearchWithoutUnitToggled showWithoutUnit ->
+            let
+                -- Clear unit selection when checkbox is checked
+                unitsSelect =
+                    if showWithoutUnit then
+                        let
+                            currentSelect =
+                                model.networkDialogUnitSelect
+                        in
+                        { currentSelect | selected = Nothing }
+
+                    else
+                        model.networkDialogUnitSelect
+            in
+            ( { model
+                | showNetworksWithoutUnit = showWithoutUnit
+                , networkDialogUnitSelect = unitsSelect
+              }
+            , E.none
             )
 
         NetworkAddModulationSelMsg imsg ->
@@ -1302,8 +1325,8 @@ update shared msg model =
         NetworkStartCreatingFlow ->
             ( { model
                 | networkAddStatus =
-                    case ( model.networkDialogUnitSelect.selected, model.networkAddStatus ) of
-                        ( Just unitId, SelectFromExistingNetwork freq _ ) ->
+                    case model.networkAddStatus of
+                        SelectFromExistingNetwork freq _ ->
                             CreateNewNetwork freq
                                 { name = "управління"
                                 , location = ""
@@ -1314,7 +1337,7 @@ update shared msg model =
                                 , purpose = Just "для управління підлеглим особовим складом"
 
                                 --, kind =
-                                , unitIds = [ unitId ]
+                                , unitIds = Maybe.map (\unitId -> [ unitId ]) model.networkDialogUnitSelect.selected
                                 , freqs =
                                     Just
                                         [ { freq = freq
