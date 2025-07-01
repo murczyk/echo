@@ -33,6 +33,7 @@ import Time.Extra
 import Url.Parser exposing (query)
 import View exposing (View)
 import Components.Checkbox as Checkbox
+import Components.Toggle as Toggle
 
 
 view : Model -> Shared.Model -> List (Html Msg)
@@ -457,7 +458,33 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                 [ h5 [ class "" ] [ text ("Уже прив'язані до " ++ freq) ]
                 , div [ class "flex flex-col gap-[4px]" ] networksWithThisFreqBlock
                 ]
-        , div [ class "min-h-[200px] flex flex-col" ]
+        , let
+            -- Get networks already connected to this frequency
+            alreadyConnectedNetworkIds =
+                ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                    |> Maybe.map .networkIds
+                    |> Maybe.withDefault []
+            
+            -- Filter out networks that are already connected to this frequency
+            filterOutAlreadyConnected networks =
+                List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
+            
+            networksToShow = 
+                if model.showNetworksWithoutUnit then
+                    -- Show ONLY networks without units when checkbox is checked
+                    Dict.values model.networks
+                        |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
+                        |> filterOutAlreadyConnected
+                else
+                    -- Show only networks with selected unit when checkbox is unchecked
+                    case model.networkDialogUnitSelect.selected of
+                        Just unitId -> 
+                            Dict.values model.networks
+                                |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
+                                |> filterOutAlreadyConnected
+                        Nothing -> []
+          in
+          div [ class "min-h-[200px] flex flex-col" ]
             [ let
                 selectItem =
                     model.networkDialogUnitSelect.selected
@@ -502,42 +529,15 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                         ]
                     ]
                 ]
-            , div [ class "flex items-center gap-2 mb-4" ]
-                [ Checkbox.new 
-                    { isChecked = model.showNetworksWithoutUnit
-                    , onToggle = NetworkSearchWithoutUnitToggled
-                    }
-                    |> Checkbox.withContent [ text "В дорозвідці (показати мережі без підрозділу)" ]
-                    |> Checkbox.view
+            , div [ class "flex items-center gap-2 mb-4 mt-2" ]
+                [ Toggle.new 
+                    { onToggle = NetworkSearchWithoutUnitToggle
+                    , label = "В дорозвідці (показати мережі без підрозділу)"
+                    } 
+                    |> Toggle.view model.showNetworksWithoutUnit
                 ]
             , div [ class "grow-1 mt-4" ]
-                (let
-                    -- Get networks already connected to this frequency
-                    alreadyConnectedNetworkIds =
-                        ListX.find (\freq_ -> freq_.freq == freq) model.freqs
-                            |> Maybe.map .networkIds
-                            |> Maybe.withDefault []
-                    
-                    -- Filter out networks that are already connected to this frequency
-                    filterOutAlreadyConnected networks =
-                        List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
-                    
-                    networksToShow = 
-                        if model.showNetworksWithoutUnit then
-                            -- Show ONLY networks without units when checkbox is checked
-                            Dict.values model.networks
-                                |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
-                                |> filterOutAlreadyConnected
-                        else
-                            -- Show only networks with selected unit when checkbox is unchecked
-                            case model.networkDialogUnitSelect.selected of
-                                Just unitId -> 
-                                    Dict.values model.networks
-                                        |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
-                                        |> filterOutAlreadyConnected
-                                Nothing -> []
-                 in
-                 if List.length networksToShow > 0 then
+                (if List.length networksToShow > 0 then
                     [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length networksToShow) ++ " мереж знайдено" ]
                     , div [ class "flex flex-col gap-[4px] mt-2" ] 
                         (List.map (\network -> viewNetworkOption network selectedNetworkId model.masterUnits) networksToShow)

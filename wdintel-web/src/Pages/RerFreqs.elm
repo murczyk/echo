@@ -656,8 +656,17 @@ update shared msg model =
                             let
                                 a =
                                     Utils.findConnectedNetworks (Just i) model.networks model.masterUnits
+                                
+                                -- Filter out networks already connected to this frequency
+                                alreadyConnectedNetworkIds =
+                                    ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                                        |> Maybe.map .networkIds
+                                        |> Maybe.withDefault []
+                                
+                                availableNetworks =
+                                    List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) a
                             in
-                            case a of
+                            case availableNetworks of
                                 x :: xs ->
                                     SelectFromExistingNetwork freq (Just x.id)
 
@@ -705,6 +714,28 @@ update shared msg model =
             in
             ( { model
                 | showNetworksWithoutUnit = showWithoutUnit
+                , networkDialogUnitSelect = unitsSelect
+              }
+            , E.none
+            )
+
+        NetworkSearchWithoutUnitToggle ->
+            let
+                newShowWithoutUnit = not model.showNetworksWithoutUnit
+                
+                -- Clear unit selection when checkbox is checked
+                unitsSelect =
+                    if newShowWithoutUnit then
+                        let
+                            currentSelect =
+                                model.networkDialogUnitSelect
+                        in
+                        { currentSelect | selected = Nothing }
+                    else
+                        model.networkDialogUnitSelect
+            in
+            ( { model 
+                | showNetworksWithoutUnit = newShowWithoutUnit
                 , networkDialogUnitSelect = unitsSelect
               }
             , E.none

@@ -88,3 +88,4 @@ type Msg
     | NetworkAddExistingActiveFromChanged String
     | NetworkAddExistingActiveToChanged String
     | NetworkSearchWithoutUnitToggled Bool
+    | NetworkSearchWithoutUnitToggle
