@@ -10,6 +10,7 @@ import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import Set exposing (Set)
 import EnumeratedList as EL exposing (EnumeratedList)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
@@ -93,6 +94,10 @@ type alias Model =
     , loadingMore : Bool
     , inpSourceSelState : Select.State
     , inpSourceSelMenu : List (Select.MenuItem Int)
+    , expandedArmies : Set.Set String
+    , expandedDivisions : Set.Set String
+    , expandedRegiments : Set.Set String
+    , expandedBattalions : Set.Set String
     }
 
 
@@ -145,6 +150,10 @@ init req _ =
             , loadingMore = False
             , inpSourceSelState = Select.initState (Select.selectIdentifier "inpSourceSelState")
             , inpSourceSelMenu = []
+            , expandedArmies = Set.empty
+            , expandedDivisions = Set.empty
+            , expandedRegiments = Set.empty
+            , expandedBattalions = Set.empty
             }
     in
     ( m2
@@ -196,6 +205,10 @@ type Msg
     | SortByCallsignName
     | LoadMore
     | InpSourceSelMsg (Select.Msg Int)
+    | ToggleArmyExpanded String
+    | ToggleDivisionExpanded String String
+    | ToggleRegimentExpanded String String String
+    | ToggleBattalionExpanded String String String String
 
 
 type alias AddState =
@@ -985,6 +998,59 @@ update req msg model =
             , E.sendCmd <| Cmd.map InpSourceSelMsg icmd
             )
 
+        ToggleArmyExpanded armyName ->
+            ( { model
+                | expandedArmies = 
+                    if Set.member armyName model.expandedArmies then
+                        Set.remove armyName model.expandedArmies
+                    else
+                        Set.insert armyName model.expandedArmies
+              }
+            , E.none
+            )
+
+        ToggleDivisionExpanded armyName divisionName ->
+            let
+                key = armyName ++ ":" ++ divisionName
+            in
+            ( { model
+                | expandedDivisions = 
+                    if Set.member key model.expandedDivisions then
+                        Set.remove key model.expandedDivisions
+                    else
+                        Set.insert key model.expandedDivisions
+              }
+            , E.none
+            )
+
+        ToggleRegimentExpanded armyName divisionName regimentName ->
+            let
+                key = armyName ++ ":" ++ divisionName ++ ":" ++ regimentName
+            in
+            ( { model
+                | expandedRegiments = 
+                    if Set.member key model.expandedRegiments then
+                        Set.remove key model.expandedRegiments
+                    else
+                        Set.insert key model.expandedRegiments
+              }
+            , E.none
+            )
+
+        ToggleBattalionExpanded armyName divisionName regimentName battalionName ->
+            let
+                key = armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName
+            in
+            ( { model
+                | expandedBattalions = 
+                    if Set.member key model.expandedBattalions then
+                        Set.remove key model.expandedBattalions
+                    else
+                        Set.insert key model.expandedBattalions
+              }
+            , E.none
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1693,11 +1759,6 @@ contentBlock shared model user =
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock shared model =
     let
-        -- Helper to get unit by id
-        getUnitById : Int -> Maybe B.Unit
-        getUnitById unitId =
-            ListX.find (\u -> u.id == unitId) model.units
-
         -- Helper to get count for a unit
         getUnitCount : Int -> Int
         getUnitCount unitId =
@@ -1705,133 +1766,251 @@ unitsBlock shared model =
                 Just stat -> stat.count
                 Nothing -> 0
 
-        -- Helper to group a list by a key
-        groupBy : (a -> comparable) -> List a -> List ( comparable, List a )
-        groupBy keyFn items =
+        -- Helper to group units by hierarchy levels
+        groupByField : (B.Unit -> String) -> List B.Unit -> List ( String, List B.Unit )
+        groupByField field units =
             let
-                add : a -> Dict.Dict comparable (List a) -> Dict.Dict comparable (List a)
-                add item acc =
-                    let k = keyFn item in
-                    Dict.update k (\maybe -> Just (item :: Maybe.withDefault [] maybe)) acc
+                add : B.Unit -> Dict.Dict String (List B.Unit) -> Dict.Dict String (List B.Unit)
+                add unit acc =
+                    let 
+                        key = field unit
+                    in
+                    Dict.update key (\maybe -> Just (unit :: Maybe.withDefault [] maybe)) acc
             in
-            List.foldr add Dict.empty items
+            List.foldr add Dict.empty units
                 |> Dict.toList
-                |> List.map (\(k, vs) -> (k, vs))
+                |> List.sortBy Tuple.first
 
-        -- Helper to sort known (non-empty) keys first, then empty
-        sortKnownFirst : List ( String, a ) -> List ( String, a )
-        sortKnownFirst xs =
+        -- Group units by army
+        armies : List ( String, List B.Unit )
+        armies =
+            groupByField .army (List.filter .active model.units)
+
+        -- Group units by division within an army
+        divisions : String -> List ( String, List B.Unit )
+        divisions armyName =
+            model.units
+                |> List.filter (\u -> u.active && u.army == armyName)
+                |> groupByField .division
+
+        -- Group units by regiment within a division
+        regiments : String -> String -> List ( String, List B.Unit )
+        regiments armyName divisionName =
+            model.units
+                |> List.filter (\u -> u.active && u.army == armyName && u.division == divisionName)
+                |> groupByField .regiment
+
+        -- Group units by battalion within a regiment
+        battalions : String -> String -> String -> List ( String, List B.Unit )
+        battalions armyName divisionName regimentName =
+            model.units
+                |> List.filter (\u -> u.active && u.army == armyName && u.division == divisionName && u.regiment == regimentName)
+                |> groupByField .battalion
+
+        -- Get companies within a battalion
+        companies : String -> String -> String -> String -> List B.Unit
+        companies armyName divisionName regimentName battalionName =
+            model.units
+                |> List.filter (\u -> u.active && u.army == armyName && u.division == divisionName && u.regiment == regimentName && u.battalion == battalionName)
+                |> List.sortBy .company
+
+        -- Render a single unit with count
+        renderUnit : B.Unit -> Html Msg
+        renderUnit unit =
             let
-                (known, unknown) = List.partition (\(k,_) -> k /= "") xs
+                count = getUnitCount unit.id
+                isSelected = model.filterUnit == unit.name
+                countText = if count > 0 then " (" ++ String.fromInt count ++ ")" else ""
             in
-            List.sortBy Tuple.first known ++ unknown
-
-        echelonIndicator : String -> String -> String -> Html msg
-        echelonIndicator label extraClass tooltip =
-            span
-                [ class ("inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 " ++ extraClass)
-                , Attr.title tooltip
+            div
+                [ class ("px-4 py-2 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors " ++ 
+                        if isSelected then "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500" else "")
+                , onClick (FilterUnitMsg unit.name)
                 ]
-                [ text label ]
+                [ text (unit.name ++ countText) ]
 
+        -- Render companies level
+        renderCompanies : String -> String -> String -> String -> Html Msg
+        renderCompanies armyName divisionName regimentName battalionName =
+            let
+                companyUnits = companies armyName divisionName regimentName battalionName
+            in
+            if List.isEmpty companyUnits then
+                text ""
+            else
+                div [ class "ml-6 space-y-1" ]
+                    (List.map renderUnit companyUnits)
+
+        -- Render battalions level
+        renderBattalions : String -> String -> String -> Html Msg
+        renderBattalions armyName divisionName regimentName =
+            let
+                battalionGroups = battalions armyName divisionName regimentName
+                isExpanded = Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
+            in
+            if List.isEmpty battalionGroups then
+                text ""
+            else if not isExpanded then
+                text ""
+            else
+                div [ class "ml-6 space-y-1" ]
+                    (List.concatMap
+                        (\(battalionName, battalionUnits) ->
+                            if String.isEmpty battalionName then
+                                List.map renderUnit battalionUnits
+                            else
+                                [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                    , onClick (ToggleBattalionExpanded armyName divisionName regimentName battalionName)
+                                    ]
+                                    [ span [ class "flex items-center gap-2" ] 
+                                        [ battalionIndicator
+                                        , text battalionName
+                                        ]
+                                    , i [ class "bi bi-chevron-down text-gray-500" ] []
+                                    ]
+                                , renderCompanies armyName divisionName regimentName battalionName
+                                ]
+                        )
+                        battalionGroups
+                    )
+
+        -- Render regiments level
+        renderRegiments : String -> String -> Html Msg
+        renderRegiments armyName divisionName =
+            let
+                regimentGroups = regiments armyName divisionName
+                isExpanded = Set.member (armyName ++ ":" ++ divisionName) model.expandedDivisions
+            in
+            if List.isEmpty regimentGroups then
+                text ""
+            else if not isExpanded then
+                text ""
+            else
+                div [ class "ml-6 space-y-1" ]
+                    (List.concatMap
+                        (\(regimentName, regimentUnits) ->
+                            if String.isEmpty regimentName then
+                                List.map renderUnit regimentUnits
+                            else
+                                [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                    , onClick (ToggleRegimentExpanded armyName divisionName regimentName)
+                                    ]
+                                    [ span [ class "flex items-center gap-2" ] 
+                                        [ regimentIndicator
+                                        , text regimentName
+                                        ]
+                                    , i [ class "bi bi-chevron-down text-gray-500" ] []
+                                    ]
+                                , renderBattalions armyName divisionName regimentName
+                                ]
+                        )
+                        regimentGroups
+                    )
+
+        -- Render divisions level
+        renderDivisions : String -> Html Msg
+        renderDivisions armyName =
+            let
+                divisionGroups = divisions armyName
+                isExpanded = Set.member armyName model.expandedArmies
+            in
+            if List.isEmpty divisionGroups then
+                text ""
+            else if not isExpanded then
+                text ""
+            else
+                div [ class "ml-6 space-y-1" ]
+                    (List.concatMap
+                        (\(divisionName, divisionUnits) ->
+                            if String.isEmpty divisionName then
+                                List.map renderUnit divisionUnits
+                            else
+                                [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                    , onClick (ToggleDivisionExpanded armyName divisionName)
+                                    ]
+                                    [ span [ class "flex items-center gap-2" ] 
+                                        [ divisionIndicator
+                                        , text divisionName
+                                        ]
+                                    , i [ class "bi bi-chevron-down text-gray-500" ] []
+                                    ]
+                                , renderRegiments armyName divisionName
+                                ]
+                        )
+                        divisionGroups
+                    )
+
+        -- Military hierarchy indicators
         armyIndicator : Html msg
-        armyIndicator = echelonIndicator "XXX" "bg-red-100 text-red-800 border border-red-200" "Армія"
+        armyIndicator = 
+            span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Армія" ] 
+                [ text "XXX" ]
 
         divisionIndicator : Html msg
-        divisionIndicator = echelonIndicator "XX" "bg-red-100 text-red-800 border border-red-200" "Дивізія"
+        divisionIndicator = 
+            span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Дивізія" ] 
+                [ text "XX" ]
 
         regimentIndicator : Html msg
-        regimentIndicator = echelonIndicator "X" "bg-red-100 text-red-800 border border-red-200" "Полк"
+        regimentIndicator = 
+            span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Полк" ] 
+                [ text "X" ]
 
         battalionIndicator : Html msg
-        battalionIndicator = echelonIndicator "I" "bg-red-100 text-red-800 border border-red-200" "Батальйон"
+        battalionIndicator = 
+            span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Батальйон" ] 
+                [ text "I" ]
 
         companyIndicator : Html msg
-        companyIndicator = echelonIndicator "II" "bg-red-100 text-red-800 border border-red-200" "Рота"
+        companyIndicator = 
+            span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Рота" ] 
+                [ text "II" ]
 
-        -- Helper to get the indicator for a given level
-        indicatorForLevel : Int -> Html msg
-        indicatorForLevel level =
-            case level of
-                0 -> armyIndicator
-                1 -> divisionIndicator
-                2 -> regimentIndicator
-                3 -> battalionIndicator
-                4 -> companyIndicator
-                _ -> text ""
-
-        -- Helper to get the field accessor for each level
-        fieldForLevel : Int -> (B.Unit -> String)
-        fieldForLevel level =
-            case level of
-                0 -> .army
-                1 -> .division
-                2 -> .regiment
-                3 -> .battalion
-                4 -> .company
-                _ -> .name
-
-        -- Recursive grouping and rendering for all levels
-        renderUnitGroups : Int -> List B.Unit -> List (Html Msg)
-        renderUnitGroups level units =
+        -- Render army level
+        renderArmy : ( String, List B.Unit ) -> Html Msg
+        renderArmy ( armyName, armyUnits ) =
             let
-                nextLevel = level + 1
-                field = fieldForLevel level
-                grouped =
-                    units
-                        |> List.filter (\u -> u.active)
-                        |> groupBy field
-                        |> sortKnownFirst
+                armyCount = List.sum (List.map (.id >> getUnitCount) armyUnits)
+                armyCountText = if armyCount > 0 then " (" ++ String.fromInt armyCount ++ ")" else ""
+                displayName = if String.isEmpty armyName then "Без армії" else armyName
+                isExpanded = Set.member armyName model.expandedArmies
             in
-            List.concatMap
-                (\(groupName, groupUnits) ->
-                    let
-                        count = groupUnits |> List.map (.id >> getUnitCount) |> List.sum
-                        indent = String.fromInt (level * 20) ++ "px"
-                        indicator = indicatorForLevel level
-                        isLastLevel = level == 4 || List.all (\u -> fieldForLevel nextLevel u == "") groupUnits
-                        groupClass =
-                            case level of
-                                0 -> "bg-muted text-base rounded-t"
-                                1 -> "bg-card text-sm"
-                                2 -> "bg-gray-50 text-sm"
-                                3 -> "bg-gray-50 text-sm"
-                                4 -> "bg-gray-50 text-sm"
-                                _ -> ""
-                    in
-                    [ div [ class ("flex items-center justify-between px-4 py-2 font-semibold border-b border-border " ++ groupClass)
-                          , style "margin-left" indent
-                          ]
-                        [ span [ class "truncate flex items-center gap-2" ] [ indicator, text (if groupName == "" then "Без назви" else groupName) ] ]
+            div [ class "border-b border-gray-200 dark:border-gray-700" ]
+                [ div 
+                    [ class "px-3 py-2 font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-between"
+                    , onClick (ToggleArmyExpanded armyName)
                     ]
-                    ++ if isLastLevel then
-                        List.map
-                            (\unit ->
-                                let
-                                    unitName = unit.name
-                                    unitCount = getUnitCount unit.id
-                                in
-                                div
-                                    [ class "group flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors cursor-pointer border-b border-border bg-white"
-                                    , style "margin-left" (String.fromInt ((level+1) * 20) ++ "px")
-                                    , onClick (FilterUnitMsg unitName)
-                                    ]
-                                    ([ span [ class "truncate text-sm font-normal flex items-center gap-2" ] [ text unitName ] ]
-                                     ++ (if unitCount > 0 then [ span [ class "ml-2 text-xs bg-gray-100 dark:bg-gray-700 rounded px-2 py-0.5 text-gray-600 dark:text-gray-300 font-medium border border-gray-200 dark:border-gray-600" ] [ text (String.fromInt unitCount) ] ] else [])
-                                    )
-                            )
-                            groupUnits
-                       else
-                        renderUnitGroups nextLevel groupUnits
-                )
-                grouped
+                    [ span [ class "flex items-center gap-2" ] 
+                        [ armyIndicator
+                        , text (displayName ++ armyCountText)
+                        ]
+                    , i [ class ("bi " ++ (if isExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                    ]
+                , renderDivisions armyName
+                ]
 
     in
     if model.loadingUnitStats then
         Le.Block.Spinner.loadingSpinner
     else
         div [ class "w-full max-w-md bg-card border rounded-lg shadow-sm overflow-hidden" ]
-            (renderUnitGroups 0 model.units)
+            [ div [ class "p-4 border-b border-gray-200 dark:border-gray-700" ]
+                [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ] 
+                    [ text "Підрозділи" ]
+                , p [ class "text-sm text-gray-600 dark:text-gray-400" ] 
+                    [ text "Оберіть підрозділ для фільтрації" ]
+                ]
+            , div [ class "max-h-96 overflow-y-auto" ]
+                (List.map renderArmy armies)
+            , if not (String.isEmpty model.filterUnit) then
+                div [ class "p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800" ]
+                    [ Button.new { label = "Очистити фільтр", onClick = FilterUnitMsg "" }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    ]
+              else
+                text ""
+            ]
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
