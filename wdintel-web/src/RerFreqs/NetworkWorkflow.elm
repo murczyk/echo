@@ -1,4 +1,4 @@
-module RerFreqs.NetworkConnection exposing (view)
+module RerFreqs.NetworkWorkflow exposing (view)
 
 import Bindings as B
 import Bytes exposing (Bytes)

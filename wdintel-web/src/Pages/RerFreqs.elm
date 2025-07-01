@@ -30,7 +30,7 @@ import PagePorts.RerFreqsPorts as Ports
 import RerFreqs.FilterPanel as FilterPanel
 import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
-import RerFreqs.NetworkConnection as NetworkConnection
+import RerFreqs.NetworkWorkflow as NetworkWorkflow
 import RerFreqs.Table as Table
 import RerFreqs.UnitsFilterSidebar
 import RerFreqs.Utils as Utils
@@ -1813,7 +1813,9 @@ view dark shared user model =
                                         True
                           in
                           div []
-                            [ Sidebar.view networkAddSidebarOpen CloseAddNetworkSidebar (NetworkConnection.view model shared)
+                            [ Sidebar.view networkAddSidebarOpen
+                                CloseAddNetworkSidebar
+                                (NetworkWorkflow.view model shared)
                             , div
                                 [ class "border mb-4 p-2"
                                 ]
