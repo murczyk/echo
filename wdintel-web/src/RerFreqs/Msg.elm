@@ -89,4 +89,4 @@ type Msg
     | NetworkAddExistingActiveToChanged String
     | NetworkSearchWithoutUnitToggled Bool
     | NetworkSearchWithoutUnitToggle
-    | FreqSearchWithoutUnitToggle
+    | FurtherInvestigationFilterChanged RerFreqs.Model.FurtherInvestigationFilter

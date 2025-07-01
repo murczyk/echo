@@ -173,7 +173,7 @@ init _ =
             , addExistingConfirmationInp = Nothing
             , addConfirmationInp = Nothing
             , showNetworksWithoutUnit = False
-            , showFreqsWithoutUnit = False
+            , furtherInvestigationFilter = RerFreqs.Model.All
             }
     in
     ( m2
@@ -233,7 +233,16 @@ loadFreqs model paginating =
                         Nothing
                 , filterGroupMasterKeys = Nothing
                 , filterSenderProfileIds = Nothing
-                , filterFurtherInvestigation = Just model.showFreqsWithoutUnit
+                , filterFurtherInvestigation = 
+                    case model.furtherInvestigationFilter of
+                        RerFreqs.Model.All ->
+                            Nothing
+                        
+                        RerFreqs.Model.NeedsInvestigation ->
+                            Just True
+                        
+                        RerFreqs.Model.DoesNotNeedInvestigation ->
+                            Just False
                 }
 
         _ ->
@@ -744,9 +753,9 @@ update shared msg model =
             , E.none
             )
 
-        FreqSearchWithoutUnitToggle ->
+        FurtherInvestigationFilterChanged filter ->
             let
-                m1 =  { model | showFreqsWithoutUnit = not model.showFreqsWithoutUnit, loading = True }
+                m1 =  { model | furtherInvestigationFilter = filter, loading = True }
             in
             (m1
             , E.sendCmd <| loadFreqs m1 False

@@ -7,6 +7,7 @@ import Bytes exposing (Bytes)
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
+import Components.RadioGroup as RadioGroup
 import Components.Sidebar as Sidebar
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -34,6 +35,7 @@ import Le.Time
 import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Le.Utils exposing (..)
 import List.Extra as ListX
+import RerFreqs.Model exposing (FurtherInvestigationFilter(..))
 import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
@@ -81,6 +83,7 @@ type alias Model =
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
     , reportIncludeConfirmation : Bool
+    , furtherInvestigationFilter : RerFreqs.Model.FurtherInvestigationFilter
     }
 
 
@@ -141,6 +144,7 @@ init _ =
             , reportIncludePelengsMap = True
             , reportIncludeSigintSigns = True
             , reportIncludeConfirmation = True
+            , furtherInvestigationFilter = All
             }
     in
     ( m2
@@ -174,7 +178,16 @@ loadNetworks model shared =
                 , filterFreq = emptySToNothing model.filterState.freq
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
-                , filterFurtherInvestigation = Nothing
+                , filterFurtherInvestigation =
+                    case model.furtherInvestigationFilter of
+                        All ->
+                            Nothing
+                        
+                        NeedsInvestigation ->
+                            Just True
+                        
+                        DoesNotNeedInvestigation ->
+                            Just False
                 }
             )
 
@@ -191,7 +204,16 @@ loadNetworksFixLater model shared =
                 , filterFreq = emptySToNothing model.filterState.freq
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
-                , filterFurtherInvestigation = Nothing
+                , filterFurtherInvestigation =
+                    case model.furtherInvestigationFilter of
+                        All ->
+                            Nothing
+                        
+                        NeedsInvestigation ->
+                            Just True
+                        
+                        DoesNotNeedInvestigation ->
+                            Just False
                 }
 
         _ ->
@@ -233,6 +255,7 @@ type Msg
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
+    | FurtherInvestigationFilterChanged FurtherInvestigationFilter
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -756,6 +779,9 @@ update shared msg model =
             , E.none
             )
 
+        FurtherInvestigationFilterChanged filter ->
+            loadNetworks { model | furtherInvestigationFilter = filter } shared
+
 
 findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
 findSuggestedToMergeNetworks networks_ =
@@ -1008,6 +1034,17 @@ filterPanel shared model =
             , onInput <| \v -> FilterStateMsg { filterState | unit = v }
             ]
             []
+        , div [ class "me-3" ]
+            [ RadioGroup.new
+                "networksFurtherInvestigationFilter"
+                [ ( All, "Всі" )
+                , ( NeedsInvestigation, "Без підрозділу" )
+                , ( DoesNotNeedInvestigation, "З підрозділом" )
+                ]
+                model.furtherInvestigationFilter
+                FurtherInvestigationFilterChanged
+                |> RadioGroup.view
+            ]
         , span [ class "grow-1" ] []
         , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
         , let

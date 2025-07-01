@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkWorkflowStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkWorkflowStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..), FurtherInvestigationFilter(..))
 
 import Api
 import Bindings as B
@@ -13,6 +13,12 @@ import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Select
 import Set exposing (Set)
 import Time
+
+
+type FurtherInvestigationFilter
+    = All
+    | NeedsInvestigation
+    | DoesNotNeedInvestigation
 
 
 type alias Model =
@@ -52,7 +58,7 @@ type alias Model =
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , showNetworksWithoutUnit : Bool
-    , showFreqsWithoutUnit : Bool
+    , furtherInvestigationFilter : FurtherInvestigationFilter
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , addExistingConfirmationInp : Maybe String
