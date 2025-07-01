@@ -1607,3 +1607,66 @@ html[data-bs-theme="dark"] .form-input:disabled {
 .icon-btn-danger {
 	@apply text-[#b94d4d] dark:text-[#f98282] hover:bg-[#b94d4d] hover:text-bw dark:hover:text-[#df7474];
 }
+
+/* Radio Group Styles */
+.radio-group {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+}
+
+.radio-option {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.radio-input {
+	appearance: none;
+	-webkit-appearance: none;
+	width: 16px;
+	height: 16px;
+	border: 2px solid var(--border-color);
+	border-radius: 50%;
+	background: transparent;
+	cursor: pointer;
+	position: relative;
+	transition: border-color 0.2s;
+	outline: none;
+	margin: 0;
+	vertical-align: middle;
+}
+
+.radio-input:checked {
+	border-color: var(--ochre-normal);
+}
+
+.radio-input:checked::before {
+	content: "";
+	display: block;
+	width: 10px;
+	height: 10px;
+	background: var(--ochre-normal);
+	border-radius: 50%;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+}
+
+html[data-bs-theme="dark"] .radio-input:checked::before {
+	background: var(--ochre-normal);
+}
+
+.badge-no-unit {
+	background: var(--ochre-normal);
+	color: #fff;
+	font-size: 0.75em;
+	border-radius: 4px;
+	padding: 4px 6px;
+	margin-left: 4px;
+	vertical-align: middle;
+	display: inline-block;
+}

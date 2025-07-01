@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), ShowAllPopupFor(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkWorkflowStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..), FurtherInvestigationFilter(..))
 
 import Api
 import Bindings as B
@@ -13,6 +13,12 @@ import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Select
 import Set exposing (Set)
 import Time
+
+
+type FurtherInvestigationFilter
+    = All
+    | NeedsInvestigation
+    | DoesNotNeedInvestigation
 
 
 type alias Model =
@@ -48,9 +54,11 @@ type alias Model =
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp
     , noMoreToLoad : Bool
-    , networkAddStatus : NetworkAddStatus
+    , networkWorkflowStatus : NetworkWorkflowStatus
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
+    , showNetworksWithoutUnit : Bool
+    , furtherInvestigationFilter : FurtherInvestigationFilter
     , addKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , addModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , addExistingConfirmationInp : Maybe String
@@ -75,10 +83,16 @@ type alias FilterState =
     }
 
 
-type NetworkAddStatus
+type alias NetworkSearchState =
+    { showNetworksWithoutUnit : Bool
+    , selectedNetworkId : Maybe Int
+    }
+
+
+type NetworkWorkflowStatus
     = NotStarted
-    | SelectFromExistingNetwork String (Maybe Int)
-    | EditConnectedNetwork String B.UpdateNetworkReq
+    | SelectingNetwork String (Maybe Int)
+    | EditingNetwork String B.UpdateNetworkReq
     | CreateNewNetwork String B.CreateNetworkReq
 
 

@@ -7,6 +7,7 @@ import Bytes exposing (Bytes)
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
+import Components.RadioGroup as RadioGroup
 import Components.Sidebar as Sidebar
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -35,6 +36,7 @@ import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
+import RerFreqs.Model exposing (FurtherInvestigationFilter(..))
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -81,6 +83,7 @@ type alias Model =
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
     , reportIncludeConfirmation : Bool
+    , furtherInvestigationFilter : RerFreqs.Model.FurtherInvestigationFilter
     }
 
 
@@ -141,6 +144,7 @@ init _ =
             , reportIncludePelengsMap = True
             , reportIncludeSigintSigns = True
             , reportIncludeConfirmation = True
+            , furtherInvestigationFilter = All
             }
     in
     ( m2
@@ -174,6 +178,16 @@ loadNetworks model shared =
                 , filterFreq = emptySToNothing model.filterState.freq
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
+                , filterFurtherInvestigation =
+                    case model.furtherInvestigationFilter of
+                        All ->
+                            Nothing
+
+                        NeedsInvestigation ->
+                            Just True
+
+                        DoesNotNeedInvestigation ->
+                            Just False
                 }
             )
 
@@ -190,6 +204,16 @@ loadNetworksFixLater model shared =
                 , filterFreq = emptySToNothing model.filterState.freq
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
+                , filterFurtherInvestigation =
+                    case model.furtherInvestigationFilter of
+                        All ->
+                            Nothing
+
+                        NeedsInvestigation ->
+                            Just True
+
+                        DoesNotNeedInvestigation ->
+                            Just False
                 }
 
         _ ->
@@ -231,6 +255,7 @@ type Msg
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
+    | FurtherInvestigationFilterChanged FurtherInvestigationFilter
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -754,13 +779,16 @@ update shared msg model =
             , E.none
             )
 
+        FurtherInvestigationFilterChanged filter ->
+            loadNetworks { model | furtherInvestigationFilter = filter } shared
+
 
 findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
 findSuggestedToMergeNetworks networks_ =
     let
         shouldBeMerged : B.Network -> B.Network -> Bool
         shouldBeMerged network1 network2 =
-            network1.purpose == network2.purpose && List.sort network1.unitIds == List.sort network2.unitIds
+            network1.purpose == network2.purpose && List.sort (Maybe.withDefault [] network1.unitIds) == List.sort (Maybe.withDefault [] network2.unitIds)
 
         findPairs : List ( B.Network, B.Network ) -> List B.Network -> List ( B.Network, B.Network )
         findPairs acc remaining =
@@ -1006,6 +1034,17 @@ filterPanel shared model =
             , onInput <| \v -> FilterStateMsg { filterState | unit = v }
             ]
             []
+        , div [ class "me-3" ]
+            [ RadioGroup.new
+                "networksFurtherInvestigationFilter"
+                [ ( All, "Всі" )
+                , ( NeedsInvestigation, "Без підрозділу" )
+                , ( DoesNotNeedInvestigation, "З підрозділом" )
+                ]
+                model.furtherInvestigationFilter
+                FurtherInvestigationFilterChanged
+                |> RadioGroup.view
+            ]
         , span [ class "grow-1" ] []
         , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
         , let
@@ -1062,18 +1101,23 @@ filterPanel shared model =
         ]
 
 
-contentBlock : List B.Network -> Shared.Model -> Model -> Html Msg
-contentBlock networks shared model =
+contentBlock : Shared.Model -> Model -> Html Msg
+contentBlock shared model =
     div []
         [ div
             [ class "border mb-4 p-2"
             ]
             [ filterPanel shared model
             ]
-        , mainContent
-            networks
-            shared
-            model
+        , case model.networks of
+            Success networks ->
+                mainContent
+                    networks
+                    shared
+                    model
+
+            _ ->
+                div [ class "flex items-center justify-center w-full h-full" ] [ Le.Block.Spinner.loadingSpinner ]
         ]
 
 
@@ -1174,34 +1218,29 @@ view dark shared user model =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "flex rer-networks" ]
                 [ leftPanel shared model
-                , case model.networks of
-                    Success networks ->
-                        div [ class "grow  px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
-                            [ h1 [ class "mb-[16px]!" ]
-                                [ div [ class "d-flex justify-content-between align-items-center" ]
-                                    [ -- Left-side content
-                                      div [ class "d-flex align-items-center me-auto" ]
-                                        [ span [ class "me-2" ] [ text "мережі" ]
-                                        , dateAndPanelsBlock dark model
-                                        ]
-                                    ]
+                , div [ class "grow  px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
+                    [ h1 [ class "mb-[16px]!" ]
+                        [ div [ class "d-flex justify-content-between align-items-center" ]
+                            [ -- Left-side content
+                              div [ class "d-flex align-items-center me-auto" ]
+                                [ span [ class "me-2" ] [ text "мережі" ]
+                                , dateAndPanelsBlock dark model
                                 ]
-                            , case model.networksMergeStatus of
-                                CalculatedSuggestions (x :: xs) ->
-                                    div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                        [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                                        , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                            |> Button.withOutlined True
-                                            |> Button.view
-                                        ]
-
-                                _ ->
-                                    text ""
-                            , contentBlock networks shared model
                             ]
+                        ]
+                    , case model.networksMergeStatus of
+                        CalculatedSuggestions (x :: xs) ->
+                            div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                                [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                                , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                    |> Button.withOutlined True
+                                    |> Button.view
+                                ]
 
-                    _ ->
-                        div [ style "height" "calc(-50px + 100vh)", class "flex items-center justify-center w-full" ] [ Le.Block.Spinner.loadingSpinner ]
+                        _ ->
+                            text ""
+                    , contentBlock shared model
+                    ]
                 , let
                     isOpen =
                         case model.networksMergeStatus of
@@ -1226,7 +1265,7 @@ networksMergeSidebarContent model =
         Merging ( networkA, networkB ) preview remaining ->
             [ div [ class "p-[24px] flex flex-col gap-[24px]" ]
                 [ div []
-                    [ span [] [ text <| String.fromInt (List.length remaining) ++ " рекомендацій по об’єданню мереж залишилося" ]
+                    [ span [] [ text <| String.fromInt (List.length remaining) ++ " рекомендацій по об'єданню мереж залишилося" ]
                     , h3 [] [ text "Поєднання двох мереж" ]
                     , span [] [ text "При поєднанні мереж інформація з другої мережі переноситься в першу. Після чого друга мережа видаляється." ]
                     ]

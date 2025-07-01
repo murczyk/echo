@@ -28,9 +28,9 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkAddStatus(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
-import RerFreqs.NetworkConnection as NetworkConnection
+import RerFreqs.NetworkWorkflow as NetworkWorkflow
 import RerFreqs.Table as Table
 import RerFreqs.UnitsFilterSidebar
 import RerFreqs.Utils as Utils
@@ -92,7 +92,7 @@ init _ =
             , selCallsignMenu = []
             , callsignsForFilter = NotAsked
             , focusedFilterItemsBeforeChange = Nothing
-            , networkAddStatus = NotStarted
+            , networkWorkflowStatus = NotStarted
             , networkAddLoading = False
             , addKindSelect =
                 { state = Select.initState (Select.selectIdentifier "add-network-kind-state")
@@ -172,6 +172,8 @@ init _ =
                 }
             , addExistingConfirmationInp = Nothing
             , addConfirmationInp = Nothing
+            , showNetworksWithoutUnit = False
+            , furtherInvestigationFilter = RerFreqs.Model.All
             }
     in
     ( m2
@@ -231,6 +233,16 @@ loadFreqs model paginating =
                         Nothing
                 , filterGroupMasterKeys = Nothing
                 , filterSenderProfileIds = Nothing
+                , filterFurtherInvestigation = 
+                    case model.furtherInvestigationFilter of
+                        RerFreqs.Model.All ->
+                            Nothing
+                        
+                        RerFreqs.Model.NeedsInvestigation ->
+                            Just True
+                        
+                        RerFreqs.Model.DoesNotNeedInvestigation ->
+                            Just False
                 }
 
         _ ->
@@ -648,25 +660,34 @@ update shared msg model =
                 updatedUnitId =
                     Le.Block.Select.singleUpd mAct model.networkDialogUnitSelect.selected
 
-                networkAddStatus =
-                    case ( model.networkAddStatus, mAct ) of
-                        ( SelectFromExistingNetwork freq _, Just (Select.Select i) ) ->
+                networkWorkflowStatus =
+                    case ( model.networkWorkflowStatus, mAct ) of
+                        ( SelectingNetwork freq _, Just (Select.Select i) ) ->
                             let
                                 a =
                                     Utils.findConnectedNetworks (Just i) model.networks model.masterUnits
+
+                                -- Filter out networks already connected to this frequency
+                                alreadyConnectedNetworkIds =
+                                    ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                                        |> Maybe.map .networkIds
+                                        |> Maybe.withDefault []
+
+                                availableNetworks =
+                                    List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) a
                             in
-                            case a of
+                            case availableNetworks of
                                 x :: xs ->
-                                    SelectFromExistingNetwork freq (Just x.id)
+                                    SelectingNetwork freq (Just x.id)
 
                                 _ ->
-                                    SelectFromExistingNetwork freq Nothing
+                                    SelectingNetwork freq Nothing
 
-                        ( SelectFromExistingNetwork freq _, Just Select.Clear ) ->
-                            SelectFromExistingNetwork freq Nothing
+                        ( SelectingNetwork freq _, Just Select.Clear ) ->
+                            SelectingNetwork freq Nothing
 
                         _ ->
-                            model.networkAddStatus
+                            model.networkWorkflowStatus
 
                 unitsSelect =
                     model.networkDialogUnitSelect
@@ -679,7 +700,7 @@ update shared msg model =
             in
             ( { model
                 | networkDialogUnitSelect = unitsSelect2
-                , networkAddStatus = networkAddStatus
+                , networkWorkflowStatus = networkWorkflowStatus
               }
             , E.sendCmd <|
                 Cmd.map
@@ -687,8 +708,61 @@ update shared msg model =
                     icmd
             )
 
+        NetworkSearchWithoutUnitToggled showWithoutUnit ->
+            let
+                -- Clear unit selection when checkbox is checked
+                unitsSelect =
+                    if showWithoutUnit then
+                        let
+                            currentSelect =
+                                model.networkDialogUnitSelect
+                        in
+                        { currentSelect | selected = Nothing }
+
+                    else
+                        model.networkDialogUnitSelect
+            in
+            ( { model
+                | showNetworksWithoutUnit = showWithoutUnit
+                , networkDialogUnitSelect = unitsSelect
+              }
+            , E.none
+            )
+
+        NetworkSearchWithoutUnitToggle ->
+            let
+                newShowWithoutUnit =
+                    not model.showNetworksWithoutUnit
+
+                -- Clear unit selection when checkbox is checked
+                unitsSelect =
+                    if newShowWithoutUnit then
+                        let
+                            currentSelect =
+                                model.networkDialogUnitSelect
+                        in
+                        { currentSelect | selected = Nothing }
+
+                    else
+                        model.networkDialogUnitSelect
+            in
+            ( { model
+                | showNetworksWithoutUnit = newShowWithoutUnit
+                , networkDialogUnitSelect = unitsSelect
+              }
+            , E.none
+            )
+
+        FurtherInvestigationFilterChanged filter ->
+            let
+                m1 =  { model | furtherInvestigationFilter = filter, loading = True }
+            in
+            (m1
+            , E.sendCmd <| loadFreqs m1 False
+            )
+
         NetworkAddModulationSelMsg imsg ->
-            case model.networkAddStatus of
+            case model.networkWorkflowStatus of
                 CreateNewNetwork freq addNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -717,7 +791,7 @@ update shared msg model =
                         ns2 =
                             { addNetworkState | freqs = f2 }
                     in
-                    ( { model | addModulationSelect = modulationSelect2, networkAddStatus = CreateNewNetwork freq ns2 }
+                    ( { model | addModulationSelect = modulationSelect2, networkWorkflowStatus = CreateNewNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkAddModulationSelMsg
@@ -752,7 +826,7 @@ update shared msg model =
             )
 
         NetworkAddPostsSelMsg imsg ->
-            case model.networkAddStatus of
+            case model.networkWorkflowStatus of
                 CreateNewNetwork freq addNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -773,7 +847,7 @@ update shared msg model =
                         ns2 =
                             { addNetworkState | postIds = updatedNetworkPosts }
                     in
-                    ( { model | addPostsSelect = postsSelect2, networkAddStatus = CreateNewNetwork freq ns2 }
+                    ( { model | addPostsSelect = postsSelect2, networkWorkflowStatus = CreateNewNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkAddPostsSelMsg
@@ -784,8 +858,8 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkEditPostsSelMsg imsg ->
-            case model.networkAddStatus of
-                EditConnectedNetwork freq editNetworkState ->
+            case model.networkWorkflowStatus of
+                EditingNetwork freq editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
                             Select.update imsg model.editPostsSelect.state
@@ -802,7 +876,7 @@ update shared msg model =
                                 , selected = updatedNetworkPosts
                             }
                     in
-                    ( { model | editPostsSelect = postsSelect2, networkAddStatus = EditConnectedNetwork freq editNetworkState }
+                    ( { model | editPostsSelect = postsSelect2, networkWorkflowStatus = EditingNetwork freq editNetworkState }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkEditPostsSelMsg
@@ -813,7 +887,7 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkAddKindSelMsg imsg ->
-            case model.networkAddStatus of
+            case model.networkWorkflowStatus of
                 CreateNewNetwork freq addNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -842,7 +916,7 @@ update shared msg model =
                         ns2 =
                             { addNetworkState | freqs = f2 }
                     in
-                    ( { model | addKindSelect = kindSelect2, networkAddStatus = CreateNewNetwork freq ns2 }
+                    ( { model | addKindSelect = kindSelect2, networkWorkflowStatus = CreateNewNetwork freq ns2 }
                     , E.sendCmd <|
                         Cmd.map
                             NetworkAddKindSelMsg
@@ -879,8 +953,8 @@ update shared msg model =
             )
 
         NetworkEditModulationSelMsg imsg ->
-            case model.networkAddStatus of
-                EditConnectedNetwork freq editNetworkState ->
+            case model.networkWorkflowStatus of
+                EditingNetwork freq editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
                             Select.update imsg model.editModulationSelect.state
@@ -908,8 +982,8 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkEditKindSelMsg imsg ->
-            case model.networkAddStatus of
-                EditConnectedNetwork freq editNetworkState ->
+            case model.networkWorkflowStatus of
+                EditingNetwork freq editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
                             Select.update imsg model.editKindSelect.state
@@ -940,26 +1014,26 @@ update shared msg model =
 
         NetworkAddMsg addNetworkState ->
             ( { model
-                | networkAddStatus =
-                    case model.networkAddStatus of
+                | networkWorkflowStatus =
+                    case model.networkWorkflowStatus of
                         CreateNewNetwork freq _ ->
                             CreateNewNetwork freq addNetworkState
 
                         _ ->
-                            model.networkAddStatus
+                            model.networkWorkflowStatus
               }
             , E.none
             )
 
         NetworkEditMsg editNetworkState ->
             ( { model
-                | networkAddStatus =
-                    case model.networkAddStatus of
-                        EditConnectedNetwork freq _ ->
-                            EditConnectedNetwork freq editNetworkState
+                | networkWorkflowStatus =
+                    case model.networkWorkflowStatus of
+                        EditingNetwork freq _ ->
+                            EditingNetwork freq editNetworkState
 
                         _ ->
-                            model.networkAddStatus
+                            model.networkWorkflowStatus
               }
             , E.none
             )
@@ -1194,7 +1268,7 @@ update shared msg model =
 
         OpenAddNetworkSidebar freq ->
             ( { model
-                | networkAddStatus = SelectFromExistingNetwork freq Nothing
+                | networkWorkflowStatus = SelectingNetwork freq Nothing
 
                 --TODO: remove workaround related to loading from Shared
                 , addPostsSelect =
@@ -1231,10 +1305,10 @@ update shared msg model =
                 unitSelect2 =
                     { unitSelect | selected = Nothing }
             in
-            ( { model | networkAddStatus = NotStarted, networkDialogUnitSelect = unitSelect2 }, E.none )
+            ( { model | networkWorkflowStatus = NotStarted, networkDialogUnitSelect = unitSelect2 }, E.none )
 
         NetworkCreate ->
-            case model.networkAddStatus of
+            case model.networkWorkflowStatus of
                 CreateNewNetwork freq state ->
                     let
                         freqs =
@@ -1277,11 +1351,18 @@ update shared msg model =
 
                         Nothing ->
                             model.freqs
+
+                unitSelect =
+                    model.networkDialogUnitSelect
+
+                unitSelect2 =
+                    { unitSelect | selected = Nothing }
             in
             ( { model
                 | networks = Dict.insert network.id network model.networks
-                , networkAddStatus = NotStarted
+                , networkWorkflowStatus = NotStarted
                 , freqs = freqs2
+                , networkDialogUnitSelect = unitSelect2
               }
             , E.none
             )
@@ -1301,9 +1382,9 @@ update shared msg model =
 
         NetworkStartCreatingFlow ->
             ( { model
-                | networkAddStatus =
-                    case ( model.networkDialogUnitSelect.selected, model.networkAddStatus ) of
-                        ( Just unitId, SelectFromExistingNetwork freq _ ) ->
+                | networkWorkflowStatus =
+                    case model.networkWorkflowStatus of
+                        SelectingNetwork freq _ ->
                             CreateNewNetwork freq
                                 { name = "управління"
                                 , location = ""
@@ -1314,7 +1395,7 @@ update shared msg model =
                                 , purpose = Just "для управління підлеглим особовим складом"
 
                                 --, kind =
-                                , unitIds = [ unitId ]
+                                , unitIds = Maybe.map (\unitId -> [ unitId ]) model.networkDialogUnitSelect.selected
                                 , freqs =
                                     Just
                                         [ { freq = freq
@@ -1335,7 +1416,7 @@ update shared msg model =
                                 }
 
                         _ ->
-                            model.networkAddStatus
+                            model.networkWorkflowStatus
               }
             , E.none
             )
@@ -1343,8 +1424,8 @@ update shared msg model =
         NetworkStartEditingFlow network ->
             let
                 m1 =
-                    case model.networkAddStatus of
-                        SelectFromExistingNetwork freq _ ->
+                    case model.networkWorkflowStatus of
+                        SelectingNetwork freq _ ->
                             let
                                 mFreqObj =
                                     ListX.find (\x -> x.freq == freq) network.freqs
@@ -1367,8 +1448,8 @@ update shared msg model =
                                     }
                             in
                             { model
-                                | networkAddStatus =
-                                    EditConnectedNetwork freq
+                                | networkWorkflowStatus =
+                                    EditingNetwork freq
                                         { id = network.id
                                         , name = network.name
                                         , location = network.location
@@ -1401,20 +1482,20 @@ update shared msg model =
 
         NetworkAddToggleExistingId id ->
             ( { model
-                | networkAddStatus =
-                    case model.networkAddStatus of
-                        SelectFromExistingNetwork freq (Just prevId) ->
+                | networkWorkflowStatus =
+                    case model.networkWorkflowStatus of
+                        SelectingNetwork freq (Just prevId) ->
                             if prevId == id then
-                                SelectFromExistingNetwork freq Nothing
+                                SelectingNetwork freq Nothing
 
                             else
-                                SelectFromExistingNetwork freq (Just id)
+                                SelectingNetwork freq (Just id)
 
-                        SelectFromExistingNetwork freq Nothing ->
-                            SelectFromExistingNetwork freq (Just id)
+                        SelectingNetwork freq Nothing ->
+                            SelectingNetwork freq (Just id)
 
                         _ ->
-                            model.networkAddStatus
+                            model.networkWorkflowStatus
               }
             , E.none
             )
@@ -1478,7 +1559,7 @@ update shared msg model =
             ( { model
                 | networks = Dict.insert network.id network model.networks
                 , freqs = freqs2
-                , networkAddStatus = SelectFromExistingNetwork freq Nothing
+                , networkWorkflowStatus = SelectingNetwork freq Nothing
                 , networkDialogUnitSelect = aus2
                 , networkAddLoading = False
               }
@@ -1516,15 +1597,15 @@ update shared msg model =
             ( { model
                 | networks = Dict.insert network.id network model.networks
                 , freqs = freqs2
-                , networkAddStatus = SelectFromExistingNetwork freq Nothing
+                , networkWorkflowStatus = SelectingNetwork freq Nothing
                 , networkAddLoading = False
               }
             , E.none
             )
 
         NetworkUpdate ->
-            case model.networkAddStatus of
-                EditConnectedNetwork freq state ->
+            case model.networkWorkflowStatus of
+                EditingNetwork freq state ->
                     ( model
                     , E.batch
                         [ E.updateNetworkPosts (NetworkPostsUpdated freq state) { networkId = state.id, postIds = model.editPostsSelect.selected } ]
@@ -1539,7 +1620,7 @@ update shared msg model =
         NetworkUpdated freq (Ok network) ->
             ( { model
                 | networks = Dict.insert network.id network model.networks
-                , networkAddStatus = SelectFromExistingNetwork freq Nothing
+                , networkWorkflowStatus = SelectingNetwork freq Nothing
               }
             , E.none
             )
@@ -1742,7 +1823,7 @@ view dark shared user model =
                     , div [ class "px-2" ]
                         [ let
                             networkAddSidebarOpen =
-                                case model.networkAddStatus of
+                                case model.networkWorkflowStatus of
                                     NotStarted ->
                                         False
 
@@ -1750,7 +1831,9 @@ view dark shared user model =
                                         True
                           in
                           div []
-                            [ Sidebar.view networkAddSidebarOpen CloseAddNetworkSidebar (NetworkConnection.view model shared)
+                            [ Sidebar.view networkAddSidebarOpen
+                                CloseAddNetworkSidebar
+                                (NetworkWorkflow.view model shared)
                             , div
                                 [ class "border mb-4 p-2"
                                 ]

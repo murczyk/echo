@@ -22,7 +22,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Utils exposing (..)
 import Page exposing (Page)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), ShowAllPopupFor(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), ShowAllPopupFor(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import Route exposing (Route)
 import Route.Path
@@ -463,13 +463,17 @@ viewFreqBlock mUser model freq =
                     \networkId ->
                         case Dict.get networkId model.networks of
                             Just network ->
-                                a
-                                    [ class "cursor-pointer"
-                                    , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
-                                    , target "_blank"
+                                span [ class "inline-flex items-center gap-1" ]
+                                    [ a
+                                        [ class "cursor-pointer"
+                                        , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                                        , target "_blank"
+                                        ]
+                                        [ NetworksUtils.renderNetwork network model.masterUnits ]
+                                    , case network.unitIds of
+                                        Nothing -> span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+                                        Just ids -> if List.isEmpty ids then span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ] else text ""
                                     ]
-                                    [ NetworksUtils.renderNetwork network model.masterUnits ]
-
                             _ ->
                                 text "Невідома мережа"
             ]

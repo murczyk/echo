@@ -471,6 +471,7 @@ pub async fn list_freqs(
                 &req.filter_unit,
                 &req.filter_group_master_keys,
                 &req.filter_sender_profile_ids,
+                &req.filter_further_investigation,
             )
             .await?;
 
@@ -552,6 +553,7 @@ pub async fn list_freqs(
                 &req.filter_unit,
                 &req.filter_group_master_keys,
                 &req.filter_sender_profile_ids,
+                &req.filter_further_investigation,
             )
             .await?;
 
@@ -781,6 +783,7 @@ pub async fn list_freqs_v2(
                 &req.filter_unit,
                 &req.filter_group_master_keys,
                 &req.filter_sender_profile_ids,
+                &req.filter_further_investigation,
             )
             .await?;
 
@@ -863,6 +866,7 @@ pub async fn list_freqs_v2(
                 &req.filter_unit,
                 &req.filter_group_master_keys,
                 &req.filter_sender_profile_ids,
+                &req.filter_further_investigation,
             )
             .await?;
 
@@ -1038,6 +1042,7 @@ pub async fn filters_list_freq_search<Q>(
     filter_unit: &Option<String>,
     filter_group_master_keys: &Option<Vec<String>>,
     filter_sender_profile_ids: &Option<Vec<String>>,
+    filter_further_investigation: &Option<bool>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect + Clone,
@@ -1080,7 +1085,10 @@ where
         ));
     };
 
-    if let Some(filter_unit) = filter_unit {
+    let needs_unit_join = filter_unit.as_ref().map_or(false, |s| !s.is_empty())
+        || filter_further_investigation.unwrap_or(false);
+
+    if needs_unit_join {
         q = q
             .join_as(
                 JoinType::InnerJoin,
@@ -1093,20 +1101,28 @@ where
                 Alias::new("sigint_network"),
             )
             .join_as(
-                JoinType::InnerJoin,
+                JoinType::LeftJoin,
                 sigint_network::Relation::SigintNetworkUnit.def(),
                 Alias::new("sigint_network_unit"),
             )
             .join_as(
-                JoinType::InnerJoin,
+                JoinType::LeftJoin,
                 sigint_network_unit::Relation::SigintUnit.def(),
                 Alias::new("sigint_unit"),
             )
-            .filter(sigint_network::Column::Deleted.eq(false))
-            .filter(Expr::cust_with_values(
+    }
+
+    if let Some(filter_unit) = filter_unit {
+        q = q.filter(sigint_network::Column::Deleted.eq(false)).filter(
+            Expr::cust_with_values(
                 "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
                 vec![format!("%{}%", filter_unit.to_lowercase())],
-            ))
+            ),
+        )
+    };
+
+    if filter_further_investigation.unwrap_or(false) {
+        q = q.filter(sigint_network_unit::Column::Id.is_null())
     };
 
     Ok(q)

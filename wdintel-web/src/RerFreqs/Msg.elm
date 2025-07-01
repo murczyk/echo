@@ -87,3 +87,6 @@ type Msg
     | UnitsReloadClickedByUser
     | NetworkAddExistingActiveFromChanged String
     | NetworkAddExistingActiveToChanged String
+    | NetworkSearchWithoutUnitToggled Bool
+    | NetworkSearchWithoutUnitToggle
+    | FurtherInvestigationFilterChanged RerFreqs.Model.FurtherInvestigationFilter

@@ -69,7 +69,7 @@ filterNetworksByFreq networks mFreq =
 
 getAllUnitsIdsForNetworks : List B.Network -> List Int
 getAllUnitsIdsForNetworks networks =
-    List.concatMap (\network -> network.unitIds) networks
+    List.concatMap (\network -> Maybe.withDefault [] network.unitIds) networks
 
 
 getUnitsInfoByIds : List Int -> Dict.Dict Int B.Unit -> List B.Unit
@@ -79,7 +79,7 @@ getUnitsInfoByIds unitIds masterUnits =
 
 getNetworkUnits2 : B.Network -> Dict.Dict Int B.Unit -> List B.Unit
 getNetworkUnits2 network masterUnits =
-    network.unitIds
+    Maybe.withDefault [] network.unitIds
         |> List.filterMap (\id_ -> Dict.get id_ masterUnits)
 
 

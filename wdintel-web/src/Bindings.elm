@@ -3780,6 +3780,7 @@ type alias ListFreqsReq =
     , afterFreqNonincl : Maybe String
     , filterGroupMasterKeys : Maybe (List String)
     , filterSenderProfileIds : Maybe (List String)
+    , filterFurtherInvestigation : Maybe Bool
     }
 
 
@@ -3797,6 +3798,7 @@ listFreqsReqEncoder struct =
         , ( "after_freq_nonincl", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.afterFreqNonincl )
         , ( "filter_group_master_keys", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.filterGroupMasterKeys )
         , ( "filter_sender_profile_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.filterSenderProfileIds )
+        , ( "filter_further_investigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterFurtherInvestigation )
         ]
 
 
@@ -4076,7 +4078,7 @@ freqDailyGroupActivityCountEncoder struct =
 type alias Network =
     { id : Int
     , freqs : List NetworkFreq
-    , unitIds : List Int
+    , unitIds : Maybe (List Int)
     , name : String
     , location : String
     , comment : String
@@ -4100,7 +4102,7 @@ networkEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
         , ( "freqs", Json.Encode.list networkFreqEncoder struct.freqs )
-        , ( "unit_ids", Json.Encode.list Json.Encode.int struct.unitIds )
+        , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.unitIds )
         , ( "name", Json.Encode.string struct.name )
         , ( "location", Json.Encode.string struct.location )
         , ( "comment", Json.Encode.string struct.comment )
@@ -4135,7 +4137,7 @@ updateFreqNetworksReqEncoder struct =
 
 type alias CreateNetworkReq =
     { freqs : Maybe (List AddNetworkFreq)
-    , unitIds : List Int
+    , unitIds : Maybe (List Int)
     , name : String
     , location : String
     , comment : String
@@ -4155,7 +4157,7 @@ createNetworkReqEncoder : CreateNetworkReq -> Json.Encode.Value
 createNetworkReqEncoder struct =
     Json.Encode.object
         [ ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list addNetworkFreqEncoder)) struct.freqs )
-        , ( "unit_ids", Json.Encode.list Json.Encode.int struct.unitIds )
+        , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.unitIds )
         , ( "name", Json.Encode.string struct.name )
         , ( "location", Json.Encode.string struct.location )
         , ( "comment", Json.Encode.string struct.comment )
@@ -4394,6 +4396,7 @@ type alias ListNetworksReq =
     , tillDateNoninclusiveMs : Maybe Int
     , filterFreq : Maybe String
     , filterUnit : Maybe String
+    , filterFurtherInvestigation : Maybe Bool
     , sortBy : Maybe (List ListNetworksSortBy)
     }
 
@@ -4405,6 +4408,7 @@ listNetworksReqEncoder struct =
         , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateNoninclusiveMs )
         , ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
+        , ( "filter_further_investigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterFurtherInvestigation )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listNetworksSortByEncoder)) struct.sortBy )
         ]
 
@@ -7064,6 +7068,7 @@ listFreqsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after_freq_nonincl" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_group_master_keys" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_sender_profile_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_further_investigation" (Json.Decode.nullable Json.Decode.bool)))
 
 
 listFreqsRspDecoder : Json.Decode.Decoder ListFreqsRsp
@@ -7242,7 +7247,7 @@ networkDecoder =
     Json.Decode.succeed Network
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list networkFreqDecoder)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
@@ -7271,7 +7276,7 @@ createNetworkReqDecoder : Json.Decode.Decoder CreateNetworkReq
 createNetworkReqDecoder =
     Json.Decode.succeed CreateNetworkReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list addNetworkFreqDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
@@ -7380,6 +7385,7 @@ listNetworksReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_further_investigation" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listNetworksSortByDecoder))))
 
 

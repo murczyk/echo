@@ -594,7 +594,7 @@ loadMissingMasterUnitsIfPresent : List B.Network -> Dict.Dict Int B.Unit -> Effe
 loadMissingMasterUnitsIfPresent rspNetworks existingMUnits =
     let
         newMessagesUnitIds =
-            rspNetworks |> List.concatMap .unitIds |> Set.fromList |> Set.toList
+            rspNetworks |> List.concatMap (\n -> Maybe.withDefault [] n.unitIds) |> Set.fromList |> Set.toList
 
         notLoadedUnitIds =
             List.filter (\id -> not (List.member id (Dict.keys existingMUnits))) newMessagesUnitIds

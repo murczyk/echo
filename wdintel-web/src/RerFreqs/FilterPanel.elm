@@ -3,6 +3,7 @@ module RerFreqs.FilterPanel exposing (view)
 import Bindings as B
 import Components.Button as Button
 import Components.ModalDialog as ModalDialog
+import Components.Toggle as Toggle
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -13,11 +14,12 @@ import Le.Block.Select
 import Le.Block.Spinner
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (..)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..), FurtherInvestigationFilter(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Select
 import Shared
+import Components.RadioGroup as RadioGroup
 
 
 view : Shared.Model -> Model -> Html Msg
@@ -54,34 +56,47 @@ view shared model =
                 ]
     in
     div
-        [ class "flex justify-start items-center"
-        ]
-        [ div [ class "me-2" ]
+        [ class "flex gap-[8px] items-center" ]
+        [ div [ class "" ]
             [ if model.loading then
                 Le.Block.Spinner.loadingSpinner2Sm
 
               else
                 i [ class "bi bi-filter" ] []
             ]
-        , input
-            [ class "form-control me-2"
-            , style "width" "200px"
-            , type_ "text"
-            , placeholder "частота"
-            , value model.filterState.freq
-            , onInput <| \v -> FilterStateMsg { filterState | freq = v }
+        , div [ class "flex flex-col gap-[8px]" ]
+            [ div [ class "flex justify-start items-center" ]
+                [ input
+                    [ class "form-control me-2"
+                    , style "width" "200px"
+                    , type_ "text"
+                    , placeholder "частота"
+                    , value model.filterState.freq
+                    , onInput <| \v -> FilterStateMsg { filterState | freq = v }
+                    ]
+                    []
+                , input
+                    [ class "form-control me-2"
+                    , style "width" "200px"
+                    , type_ "text"
+                    , placeholder "підрозділ"
+                    , value model.filterState.unit
+                    , onInput <| \v -> FilterStateMsg { filterState | unit = v }
+                    ]
+                    []
+                , span [ class "me-2" ] [ text "позивні" ]
+                , tabFiltersCallsigns
+                ]
+            , div [ class "" ]
+                [ RadioGroup.new
+                    "furtherInvestigationFilter"
+                    [ ( All, "Всі" )
+                    , ( NeedsInvestigation, "Без підрозділу" )
+                    , ( DoesNotNeedInvestigation, "З підрозділом" )
+                    ]
+                    model.furtherInvestigationFilter
+                    FurtherInvestigationFilterChanged
+                    |> RadioGroup.view
+                ]
             ]
-            []
-        , input
-            [ class "form-control me-2"
-            , style "width" "200px"
-            , type_ "text"
-            , placeholder "підрозділ"
-            , value model.filterState.unit
-            , onInput <| \v -> FilterStateMsg { filterState | unit = v }
-            ]
-            []
-        , span [ class "me-2" ] [ text "позивні" ]
-        , tabFiltersCallsigns
-        , span [ class "grow-1" ] []
         ]

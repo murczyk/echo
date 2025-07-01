@@ -1,8 +1,10 @@
-module RerFreqs.NetworkConnection exposing (view)
+module RerFreqs.NetworkWorkflow exposing (view)
 
 import Bindings as B
 import Bytes exposing (Bytes)
 import Components.Button as Button
+import Components.Checkbox as Checkbox
+import Components.Toggle as Toggle
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -21,7 +23,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Utils exposing (..)
 import List.Extra as ListX
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Route exposing (Route)
@@ -36,29 +38,29 @@ import View exposing (View)
 
 view : Model -> Shared.Model -> List (Html Msg)
 view model shared =
-    case model.networkAddStatus of
+    case model.networkWorkflowStatus of
         NotStarted ->
             []
 
         _ ->
-            createNetworkSidebarContent model shared
+            renderNetworkSidebar model shared
 
 
-createNetworkSidebarContent : Model -> Shared.Model -> List (Html Msg)
-createNetworkSidebarContent model shared =
+renderNetworkSidebar : Model -> Shared.Model -> List (Html Msg)
+renderNetworkSidebar model shared =
     [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
-        (case model.networkAddStatus of
+        (case model.networkWorkflowStatus of
             CreateNewNetwork freq addState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
                     :: viewCreateNewNetwork addState freq model shared
 
-            SelectFromExistingNetwork freq mSelectedNetworkId ->
+            SelectingNetwork freq searchState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
-                    :: viewSelectFromExistingNetwork freq mSelectedNetworkId model shared
+                    :: viewSelectingNetwork freq searchState model shared
 
-            EditConnectedNetwork freq editState ->
+            EditingNetwork freq editState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
-                    :: viewEditConnectedNetwork editState model shared
+                    :: viewEditingNetwork editState model shared
 
             NotStarted ->
                 []
@@ -73,7 +75,7 @@ viewCreateNewNetwork addState freq model shared =
             model.networkDialogUnitSelect.selected |> Maybe.andThen (\id -> Dict.get id model.masterUnits) |> Maybe.map .name
 
         title =
-            "Створення нової мережі для підрозділу " ++ Maybe.withDefault "" unitName
+            "Створення нової мережі" ++ (Maybe.map (\name -> " для підрозділу " ++ name) unitName |> Maybe.withDefault "")
     in
     [ h5 [] [ text title ]
     , section [ class "grid grid-cols-12  gap-y-2 gap-x-4" ]
@@ -89,6 +91,50 @@ viewCreateNewNetwork addState freq model shared =
                             { addState | name = v }
                 ]
                 []
+            ]
+        , div [ class "col-span-6" ]
+            [ label [ class "mb-1" ] [ text "Підрозділ (необов'язково)" ]
+            , let
+                selectItem =
+                    model.networkDialogUnitSelect.selected
+                        |> Maybe.map
+                            (\unitId ->
+                                Select.basicMenuItem
+                                    { item = unitId
+                                    , label = Unit.unitName model.masterUnits unitId
+                                    }
+                            )
+              in
+              div [ class "flex gap-[8px]" ]
+                [ div [ class "grow-1" ]
+                    [ Html.map NetworkAddUnitSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.networkDialogUnitSelect.state
+                                model.networkDialogUnitSelect.items
+                                "Виберіть підрозділ"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                    ]
+                , div [ class "flex gap-[4px] items-end" ]
+                    [ a
+                        [ Attr.title "Додати новий підрозділ"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , Route.href { path = Route.Path.RerUnits, query = Dict.empty, hash = Nothing }
+                        , target "_blank"
+                        ]
+                        [ i [ class "bi bi-plus-lg" ] []
+                        ]
+                    , button
+                        [ Attr.title "Оновити список підрозділів"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
+                        , onClick UnitsReloadClickedByUser
+                        ]
+                        [ i [ class "bi bi-arrow-clockwise" ] []
+                        ]
+                    ]
+                ]
+            , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "Мережу можна створити без прив'язки до підрозділу" ]
             ]
         , div [ class "flex flex-col gap-1 col-span-3" ]
             [ label [] [ text "Тип" ]
@@ -367,8 +413,8 @@ viewCreateNewNetwork addState freq model shared =
     ]
 
 
-viewSelectFromExistingNetwork : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
-viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
+viewSelectingNetwork : String -> Maybe Int -> Model -> Shared.Model -> List (Html Msg)
+viewSelectingNetwork freq selectedNetworkId model shared =
     [ div [ class "flex flex-col grow relative" ]
         [ HtmlX.viewIf model.networkAddLoading <|
             span [ class "absolute top-[50%] left-[50%] -translate-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
@@ -401,8 +447,8 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                 ]
                                 [ NetworksUtils.renderNetwork network_ model.masterUnits
                                 , div [ class "flex gap-[8px]" ]
-                                    [ i [ class "bi bi-pencil cursor-pointer text-action hover:text-action-hovered text-[16px]", title "редагувати", onClick <| NetworkStartEditingFlow network_ ] []
-                                    , i [ class "bi bi-trash cursor-pointer text-[#b94d4d] dark:text-[#f98282] dark:hover:text-[#df7474]  text-[16px]", title "видалити", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
+                                    [ i [ class "bi bi-pencil cursor-pointer text-action hover:text-action-hovered text-[16px]", Attr.title "редагувати", onClick <| NetworkStartEditingFlow network_ ] []
+                                    , i [ class "bi bi-trash cursor-pointer text-[#b94d4d] dark:text-[#f98282] dark:hover:text-[#df7474]  text-[16px]", Attr.title "видалити", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
                                     ]
                                 ]
                         )
@@ -412,7 +458,36 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                 [ h5 [ class "" ] [ text ("Уже прив'язані до " ++ freq) ]
                 , div [ class "flex flex-col gap-[4px]" ] networksWithThisFreqBlock
                 ]
-        , div [ class "min-h-[200px] flex flex-col" ]
+        , let
+            -- Get networks already connected to this frequency
+            alreadyConnectedNetworkIds =
+                ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                    |> Maybe.map .networkIds
+                    |> Maybe.withDefault []
+
+            -- Filter out networks that are already connected to this frequency
+            filterOutAlreadyConnected networks =
+                List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
+
+            networksToShow =
+                if model.showNetworksWithoutUnit then
+                    -- Show ONLY networks without units when checkbox is checked
+                    Dict.values model.networks
+                        |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
+                        |> filterOutAlreadyConnected
+
+                else
+                    -- Show only networks with selected unit when checkbox is unchecked
+                    case model.networkDialogUnitSelect.selected of
+                        Just unitId ->
+                            Dict.values model.networks
+                                |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
+                                |> filterOutAlreadyConnected
+
+                        Nothing ->
+                            []
+          in
+          div [ class "min-h-[200px] flex flex-col" ]
             [ let
                 selectItem =
                     model.networkDialogUnitSelect.selected
@@ -424,6 +499,10 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                     }
                             )
               in
+              let
+                options =
+                    Le.Block.Select.defaultOptions shared.isDarkMode
+              in
               div [ class "flex gap-[8px]" ]
                 [ div [ class "grow-1" ]
                     [ h5 [] [ text "Пошук існуючих мереж по підрозділу" ]
@@ -434,11 +513,11 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                 model.networkDialogUnitSelect.state
                                 model.networkDialogUnitSelect.items
                                 "жоден"
-                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                { options | disabled = model.showNetworksWithoutUnit }
                     ]
                 , div [ class "flex gap-[4px] items-end" ]
                     [ a
-                        [ title "Додати новий підрозділ"
+                        [ Attr.title "Додати новий підрозділ"
                         , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
                         , Route.href { path = Route.Path.RerUnits, query = Dict.empty, hash = Nothing }
                         , target "_blank"
@@ -446,7 +525,7 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                         [ i [ class "bi bi-plus-lg" ] []
                         ]
                     , button
-                        [ title "Оновити список підрозділів"
+                        [ Attr.title "Оновити список підрозділів"
                         , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
                         , onClick UnitsReloadClickedByUser
                         ]
@@ -454,146 +533,19 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                         ]
                     ]
                 ]
+            , div [ class "flex items-center gap-2 mb-4 mt-2" ]
+                [ Toggle.new
+                    { onToggle = NetworkSearchWithoutUnitToggle
+                    , label = "В дорозвідці (показати мережі без підрозділу)"
+                    }
+                    |> Toggle.view model.showNetworksWithoutUnit
+                ]
             , div [ class "grow-1 mt-4" ]
-                (let
-                    d =
-                        Utils.findConnectedNetworks model.networkDialogUnitSelect.selected model.networks model.masterUnits
-                 in
-                 if List.length d > 0 then
-                    [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length d) ++ " співпадінь знайдено" ] ]
-                        ++ List.map
-                            (\network ->
-                                let
-                                    isActive =
-                                        case mSelectedNetworkId of
-                                            Just id ->
-                                                id == network.id
-
-                                            Nothing ->
-                                                False
-                                in
-                                div
-                                    [ class "w-full p-2  border-1 border-border rounded-sm text-text  pointer "
-                                    , classList
-                                        [ ( "bg-tag-selected border-1 border-border-selected text-black", isActive )
-                                        , ( "hover-unmuted bg-tag", not isActive )
-                                        ]
-                                    , onClick <| NetworkAddToggleExistingId network.id
-                                    ]
-                                    [ NetworksUtils.renderNetwork network model.masterUnits
-                                    ]
-                            )
-                            d
-                        ++ [ div [ class "grid grid-cols-12 gap-[8px] mt-[8px]" ]
-                                [ div [ class "flex flex-col gap-1 col-span-3" ]
-                                    [ label [] [ text "Тип" ]
-                                    , let
-                                        selectedItem =
-                                            (\item ->
-                                                Select.basicMenuItem
-                                                    { item = item
-                                                    , label = NetworksUtils.networkKindToLabel item
-                                                    }
-                                            )
-                                                model.addExistingKindSelect.selected
-
-                                        defaultOptions =
-                                            Le.Block.Select.defaultOptions shared.isDarkMode
-
-                                        do2 =
-                                            { defaultOptions | clearable = False }
-                                      in
-                                      Html.map NetworkAddExistingKindSelMsg <|
-                                        Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelectSingle
-                                                (Just selectedItem)
-                                                model.addExistingKindSelect.state
-                                                model.addExistingKindSelect.items
-                                                "жоден"
-                                                do2
-                                    ]
-                                , div [ class "col-span-5" ]
-                                    [ label [ class "mb-1" ] [ text "Вид передачі" ]
-                                    , let
-                                        selectedItem =
-                                            Maybe.map
-                                                (\item ->
-                                                    Select.basicMenuItem
-                                                        { item = item
-                                                        , label =
-                                                            RD.withDefault [] model.modulations
-                                                                |> List.filter (\mod -> mod.id == item)
-                                                                |> List.head
-                                                                |> Maybe.map .name
-                                                                |> Maybe.withDefault ""
-                                                        }
-                                                )
-                                                model.addExistingModulationSelect.selected
-
-                                        defaultOptions =
-                                            Le.Block.Select.defaultOptions shared.isDarkMode
-
-                                        do2 =
-                                            { defaultOptions | clearable = False }
-                                      in
-                                      Html.map NetworkAddExistingModulationSelMsg <|
-                                        Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelectSingle
-                                                selectedItem
-                                                model.addExistingModulationSelect.state
-                                                model.addExistingModulationSelect.items
-                                                "жоден"
-                                                do2
-                                    ]
-                                , div [ class "col-span-4" ] []
-                                , div [ class "col-span-4" ]
-                                    [ span [ class "text-[13px]" ] [ text "Активна з:" ]
-                                    , input
-                                        [ type_ "date"
-                                        , class "form-control"
-                                        , case model.addExistingActiveFrom of
-                                            Just x ->
-                                                Time.millisToPosix x
-                                                    |> Le.Time.renderDateF4 shared.timeZone
-                                                    |> value
-
-                                            Nothing ->
-                                                value ""
-                                        , onInput NetworkAddExistingActiveFromChanged
-                                        ]
-                                        []
-                                    ]
-                                , div [ class "col-span-4" ]
-                                    [ span [ class "text-[13px]" ] [ text "Активна по:" ]
-                                    , input
-                                        [ type_ "date"
-                                        , class "form-control"
-                                        , case model.addExistingActiveTo of
-                                            Just x ->
-                                                Time.millisToPosix x
-                                                    |> Le.Time.renderDateF4 shared.timeZone
-                                                    |> value
-
-                                            Nothing ->
-                                                value ""
-                                        , onInput NetworkAddExistingActiveToChanged
-                                        ]
-                                        []
-                                    ]
-                                , div [ class "row-start-3 col-span-12" ]
-                                    [ span [] [ text "Обґрунтування прив'язки" ]
-                                    , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                                        [ textarea
-                                            [ class "textarea__field"
-                                            , placeholder "Введіть обґрунтування прив'язки"
-                                            , value <| Maybe.withDefault "" model.addExistingConfirmationInp
-                                            , onInput ConfirmationInputChangedByUser
-                                            ]
-                                            []
-                                        ]
-                                    ]
-                                ]
-                           ]
+                (if List.length networksToShow > 0 then
+                    [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length networksToShow) ++ " мереж знайдено" ]
+                    , div [ class "flex flex-col gap-[4px] mt-2" ]
+                        (List.map (\network -> renderNetworkSelectionItem network selectedNetworkId model.masterUnits) networksToShow)
+                    ]
 
                  else
                     [ div [ class "w-full h-full flex justify-center items-center" ]
@@ -607,9 +559,9 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
         , div [ class "flex gap-2 justify-end border-t-1 pt-2 border-[var(--neutral-400)]" ]
             [ Button.new { label = "Назад", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
             , Button.new { label = "Створити нову мережу", onClick = NetworkStartCreatingFlow }
-                |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing)
+                |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing && not model.showNetworksWithoutUnit)
                 |> (\b ->
-                        case mSelectedNetworkId of
+                        case selectedNetworkId of
                             Just id ->
                                 Button.withStyleSecondary b
 
@@ -617,10 +569,10 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
                                 b
                    )
                 |> Button.view
-            , case mSelectedNetworkId of
+            , case selectedNetworkId of
                 Just id ->
                     Button.new { label = "Використати цю мережу", onClick = FreqAddToExistingNetwork freq id }
-                        |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing)
+                        |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing && not model.showNetworksWithoutUnit)
                         |> Button.view
 
                 Nothing ->
@@ -630,8 +582,31 @@ viewSelectFromExistingNetwork freq mSelectedNetworkId model shared =
     ]
 
 
-viewEditConnectedNetwork : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
-viewEditConnectedNetwork editState model shared =
+renderNetworkSelectionItem : B.Network -> Maybe Int -> Dict Int B.Unit -> Html Msg
+renderNetworkSelectionItem network selectedNetworkId masterUnits =
+    let
+        isActive =
+            case selectedNetworkId of
+                Just id ->
+                    id == network.id
+
+                Nothing ->
+                    False
+    in
+    div
+        [ class "w-full p-2  border-1 border-border rounded-sm text-text  pointer "
+        , classList
+            [ ( "bg-tag-selected border-1 border-border-selected text-black", isActive )
+            , ( "hover-unmuted bg-tag", not isActive )
+            ]
+        , onClick <| NetworkAddToggleExistingId network.id
+        ]
+        [ NetworksUtils.renderNetwork network masterUnits
+        ]
+
+
+viewEditingNetwork : B.UpdateNetworkReq -> Model -> Shared.Model -> List (Html Msg)
+viewEditingNetwork editState model shared =
     [ h4 [] [ text "Редагування існуючої мережі" ]
     , div [ class "grid grid-cols-4  gap-y-2 gap-x-4" ]
         [ div [ class "col-span-2" ]
