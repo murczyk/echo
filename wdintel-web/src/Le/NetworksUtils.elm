@@ -3,22 +3,35 @@ module Le.NetworksUtils exposing (..)
 import Bindings as B
 import Dict exposing (Dict)
 import Html exposing (..)
+import Html.Attributes exposing (class)
 import Le.Block.Unit as Unit
 import Le.Utils exposing (networkKindVHFMapping)
 
 
 renderNetworkNameWithoutType network masterUnits =
+    let
+        hasNoUnits =
+            case network.unitIds of
+                Nothing -> True
+                Just ids -> List.isEmpty ids
+    in
     div []
         [ div []
-            [ text " р/м "
-            , text network.name
-            , text " "
-            , text <|
+            ([ text " р/м "
+             , text network.name
+             , text " "
+             , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
                         (Maybe.withDefault [] network.unitIds)
                     )
-            ]
+             ] ++
+             (if hasNoUnits then
+                [ span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ] ]
+              else
+                []
+             )
+            )
         ]
 
 
