@@ -512,15 +512,29 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                 ]
             , div [ class "grow-1 mt-4" ]
                 (let
+                    -- Get networks already connected to this frequency
+                    alreadyConnectedNetworkIds =
+                        ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                            |> Maybe.map .networkIds
+                            |> Maybe.withDefault []
+                    
+                    -- Filter out networks that are already connected to this frequency
+                    filterOutAlreadyConnected networks =
+                        List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
+                    
                     networksToShow = 
                         if model.showNetworksWithoutUnit then
                             -- Show ONLY networks without units when checkbox is checked
-                            List.filter (\n -> Maybe.withDefault [] n.unitIds == []) (Dict.values model.networks)
+                            Dict.values model.networks
+                                |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
+                                |> filterOutAlreadyConnected
                         else
                             -- Show only networks with selected unit when checkbox is unchecked
                             case model.networkDialogUnitSelect.selected of
                                 Just unitId -> 
-                                    List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds)) (Dict.values model.networks)
+                                    Dict.values model.networks
+                                        |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
+                                        |> filterOutAlreadyConnected
                                 Nothing -> []
                  in
                  if List.length networksToShow > 0 then
