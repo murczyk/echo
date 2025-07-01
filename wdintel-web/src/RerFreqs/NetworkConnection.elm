@@ -21,7 +21,7 @@ import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Utils exposing (..)
 import List.Extra as ListX
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), NetworkSearchState, TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Route exposing (Route)
@@ -43,22 +43,22 @@ view model shared =
             []
 
         _ ->
-            createNetworkSidebarContent model shared
+            renderNetworkSidebar model shared
 
 
-createNetworkSidebarContent : Model -> Shared.Model -> List (Html Msg)
-createNetworkSidebarContent model shared =
+renderNetworkSidebar : Model -> Shared.Model -> List (Html Msg)
+renderNetworkSidebar model shared =
     [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
         (case model.networkAddStatus of
             CreateNewNetwork freq addState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
                     :: viewCreateNewNetwork addState freq model shared
 
-            SelectFromExistingNetwork freq searchState ->
+            SelectingNetwork freq searchState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
                     :: viewSelectFromExistingNetwork freq searchState model shared
 
-            EditConnectedNetwork freq editState ->
+            EditingNetwork freq editState ->
                 h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
                     :: viewEditConnectedNetwork editState model shared
 
@@ -540,7 +540,7 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
                 (if List.length networksToShow > 0 then
                     [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length networksToShow) ++ " мереж знайдено" ]
                     , div [ class "flex flex-col gap-[4px] mt-2" ] 
-                        (List.map (\network -> viewNetworkOption network selectedNetworkId model.masterUnits) networksToShow)
+                        (List.map (\network -> renderNetworkSelectionItem network selectedNetworkId model.masterUnits) networksToShow)
                     ]
                   else
                     [ div [ class "w-full h-full flex justify-center items-center" ]
@@ -577,8 +577,8 @@ viewSelectFromExistingNetwork freq selectedNetworkId model shared =
     ]
 
 
-viewNetworkOption : B.Network -> Maybe Int -> Dict Int B.Unit -> Html Msg
-viewNetworkOption network selectedNetworkId masterUnits =
+renderNetworkSelectionItem : B.Network -> Maybe Int -> Dict Int B.Unit -> Html Msg
+renderNetworkSelectionItem network selectedNetworkId masterUnits =
     let
         isActive =
             case selectedNetworkId of

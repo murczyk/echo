@@ -13,7 +13,7 @@ import Le.Block.Select
 import Le.Block.Spinner
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (..)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkAddStatus(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Select

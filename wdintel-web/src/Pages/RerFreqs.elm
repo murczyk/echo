@@ -28,7 +28,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkAddStatus(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.NetworkConnection as NetworkConnection
 import RerFreqs.Table as Table
@@ -652,7 +652,7 @@ update shared msg model =
 
                 networkAddStatus =
                     case ( model.networkAddStatus, mAct ) of
-                        ( SelectFromExistingNetwork freq _, Just (Select.Select i) ) ->
+                        ( SelectingNetwork freq _, Just (Select.Select i) ) ->
                             let
                                 a =
                                     Utils.findConnectedNetworks (Just i) model.networks model.masterUnits
@@ -668,13 +668,13 @@ update shared msg model =
                             in
                             case availableNetworks of
                                 x :: xs ->
-                                    SelectFromExistingNetwork freq (Just x.id)
+                                    SelectingNetwork freq (Just x.id)
 
                                 _ ->
-                                    SelectFromExistingNetwork freq Nothing
+                                    SelectingNetwork freq Nothing
 
-                        ( SelectFromExistingNetwork freq _, Just Select.Clear ) ->
-                            SelectFromExistingNetwork freq Nothing
+                        ( SelectingNetwork freq _, Just Select.Clear ) ->
+                            SelectingNetwork freq Nothing
 
                         _ ->
                             model.networkAddStatus

@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkAddStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkWorkflowStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -48,7 +48,7 @@ type alias Model =
     , sortingOrder : B.ListFreqsSortBy
     , groupsMessageCountByDay : GroupsActivityPerDayRsp
     , noMoreToLoad : Bool
-    , networkAddStatus : NetworkAddStatus
+    , networkAddStatus : NetworkWorkflowStatus
     , networkAddLoading : Bool
     , networkDialogUnitSelect : Le.Block.Select.SelectTypeSingle Int
     , showNetworksWithoutUnit : Bool
@@ -82,10 +82,10 @@ type alias NetworkSearchState =
     }
 
 
-type NetworkAddStatus
+type NetworkWorkflowStatus
     = NotStarted
-    | SelectFromExistingNetwork String (Maybe Int)
-    | EditConnectedNetwork String B.UpdateNetworkReq
+    | SelectingNetwork String (Maybe Int)
+    | EditingNetwork String B.UpdateNetworkReq
     | CreateNewNetwork String B.CreateNetworkReq
 
 
