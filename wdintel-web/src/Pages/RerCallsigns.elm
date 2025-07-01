@@ -1859,14 +1859,19 @@ unitsBlock shared model =
                             if String.isEmpty battalionName then
                                 List.map renderUnit battalionUnits
                             else
+                                let
+                                    battalionCount = List.sum (List.map (.id >> getUnitCount) battalionUnits)
+                                    battalionCountText = if battalionCount > 0 then " (" ++ String.fromInt battalionCount ++ ")" else ""
+                                    isBattalionExpanded = Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName) model.expandedBattalions
+                                in
                                 [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                     , onClick (ToggleBattalionExpanded armyName divisionName regimentName battalionName)
                                     ]
                                     [ span [ class "flex items-center gap-2" ] 
                                         [ battalionIndicator
-                                        , text battalionName
+                                        , text (battalionName ++ battalionCountText)
                                         ]
-                                    , i [ class "bi bi-chevron-down text-gray-500" ] []
+                                    , i [ class ("bi " ++ (if isBattalionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                                     ]
                                 , renderCompanies armyName divisionName regimentName battalionName
                                 ]
@@ -1892,14 +1897,19 @@ unitsBlock shared model =
                             if String.isEmpty regimentName then
                                 List.map renderUnit regimentUnits
                             else
+                                let
+                                    regimentCount = List.sum (List.map (.id >> getUnitCount) regimentUnits)
+                                    regimentCountText = if regimentCount > 0 then " (" ++ String.fromInt regimentCount ++ ")" else ""
+                                    isRegimentExpanded = Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
+                                in
                                 [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                     , onClick (ToggleRegimentExpanded armyName divisionName regimentName)
                                     ]
                                     [ span [ class "flex items-center gap-2" ] 
                                         [ regimentIndicator
-                                        , text regimentName
+                                        , text (regimentName ++ regimentCountText)
                                         ]
-                                    , i [ class "bi bi-chevron-down text-gray-500" ] []
+                                    , i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                                     ]
                                 , renderBattalions armyName divisionName regimentName
                                 ]
@@ -1925,14 +1935,19 @@ unitsBlock shared model =
                             if String.isEmpty divisionName then
                                 List.map renderUnit divisionUnits
                             else
+                                let
+                                    divisionCount = List.sum (List.map (.id >> getUnitCount) divisionUnits)
+                                    divisionCountText = if divisionCount > 0 then " (" ++ String.fromInt divisionCount ++ ")" else ""
+                                    isDivisionExpanded = Set.member (armyName ++ ":" ++ divisionName) model.expandedDivisions
+                                in
                                 [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                                     , onClick (ToggleDivisionExpanded armyName divisionName)
                                     ]
                                     [ span [ class "flex items-center gap-2" ] 
                                         [ divisionIndicator
-                                        , text divisionName
+                                        , text (divisionName ++ divisionCountText)
                                         ]
-                                    , i [ class "bi bi-chevron-down text-gray-500" ] []
+                                    , i [ class ("bi " ++ (if isDivisionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                                     ]
                                 , renderRegiments armyName divisionName
                                 ]
