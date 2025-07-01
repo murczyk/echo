@@ -1300,11 +1300,18 @@ update shared msg model =
 
                         Nothing ->
                             model.freqs
+
+                unitSelect =
+                    model.networkDialogUnitSelect
+
+                unitSelect2 =
+                    { unitSelect | selected = Nothing }
             in
             ( { model
                 | networks = Dict.insert network.id network model.networks
                 , networkAddStatus = NotStarted
                 , freqs = freqs2
+                , networkDialogUnitSelect = unitSelect2
               }
             , E.none
             )
