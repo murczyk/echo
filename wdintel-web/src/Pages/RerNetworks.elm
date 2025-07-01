@@ -35,8 +35,8 @@ import Le.Time
 import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Le.Utils exposing (..)
 import List.Extra as ListX
-import RerFreqs.Model exposing (FurtherInvestigationFilter(..))
 import Page exposing (Page)
+import RerFreqs.Model exposing (FurtherInvestigationFilter(..))
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -182,10 +182,10 @@ loadNetworks model shared =
                     case model.furtherInvestigationFilter of
                         All ->
                             Nothing
-                        
+
                         NeedsInvestigation ->
                             Just True
-                        
+
                         DoesNotNeedInvestigation ->
                             Just False
                 }
@@ -208,10 +208,10 @@ loadNetworksFixLater model shared =
                     case model.furtherInvestigationFilter of
                         All ->
                             Nothing
-                        
+
                         NeedsInvestigation ->
                             Just True
-                        
+
                         DoesNotNeedInvestigation ->
                             Just False
                 }
@@ -1101,18 +1101,23 @@ filterPanel shared model =
         ]
 
 
-contentBlock : List B.Network -> Shared.Model -> Model -> Html Msg
-contentBlock networks shared model =
+contentBlock : Shared.Model -> Model -> Html Msg
+contentBlock shared model =
     div []
         [ div
             [ class "border mb-4 p-2"
             ]
             [ filterPanel shared model
             ]
-        , mainContent
-            networks
-            shared
-            model
+        , case model.networks of
+            Success networks ->
+                mainContent
+                    networks
+                    shared
+                    model
+
+            _ ->
+                div [ class "flex items-center justify-center w-full h-full" ] [ Le.Block.Spinner.loadingSpinner ]
         ]
 
 
@@ -1213,34 +1218,29 @@ view dark shared user model =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "flex rer-networks" ]
                 [ leftPanel shared model
-                , case model.networks of
-                    Success networks ->
-                        div [ class "grow  px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
-                            [ h1 [ class "mb-[16px]!" ]
-                                [ div [ class "d-flex justify-content-between align-items-center" ]
-                                    [ -- Left-side content
-                                      div [ class "d-flex align-items-center me-auto" ]
-                                        [ span [ class "me-2" ] [ text "мережі" ]
-                                        , dateAndPanelsBlock dark model
-                                        ]
-                                    ]
+                , div [ class "grow  px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
+                    [ h1 [ class "mb-[16px]!" ]
+                        [ div [ class "d-flex justify-content-between align-items-center" ]
+                            [ -- Left-side content
+                              div [ class "d-flex align-items-center me-auto" ]
+                                [ span [ class "me-2" ] [ text "мережі" ]
+                                , dateAndPanelsBlock dark model
                                 ]
-                            , case model.networksMergeStatus of
-                                CalculatedSuggestions (x :: xs) ->
-                                    div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                        [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                                        , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                            |> Button.withOutlined True
-                                            |> Button.view
-                                        ]
-
-                                _ ->
-                                    text ""
-                            , contentBlock networks shared model
                             ]
+                        ]
+                    , case model.networksMergeStatus of
+                        CalculatedSuggestions (x :: xs) ->
+                            div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                                [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                                , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                    |> Button.withOutlined True
+                                    |> Button.view
+                                ]
 
-                    _ ->
-                        div [ style "height" "calc(-50px + 100vh)", class "flex items-center justify-center w-full" ] [ Le.Block.Spinner.loadingSpinner ]
+                        _ ->
+                            text ""
+                    , contentBlock shared model
+                    ]
                 , let
                     isOpen =
                         case model.networksMergeStatus of
