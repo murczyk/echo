@@ -1793,11 +1793,18 @@ unitsBlock shared model =
                 |> List.filter (\u -> u.active && u.army == armyName)
                 |> groupByField .division
 
-        -- Group units by regiment within a division
+        -- Group units by regiment within a division (or directly under army if no division)
         regiments : String -> String -> List ( String, List B.Unit )
         regiments armyName divisionName =
             model.units
                 |> List.filter (\u -> u.active && u.army == armyName && u.division == divisionName)
+                |> groupByField .regiment
+
+        -- Group units by regiment directly under army (for units without division)
+        regimentsUnderArmy : String -> List ( String, List B.Unit )
+        regimentsUnderArmy armyName =
+            model.units
+                |> List.filter (\u -> u.active && u.army == armyName && String.isEmpty u.division && not (String.isEmpty u.regiment))
                 |> groupByField .regiment
 
         -- Group units by battalion within a regiment
@@ -1805,6 +1812,13 @@ unitsBlock shared model =
         battalions armyName divisionName regimentName =
             model.units
                 |> List.filter (\u -> u.active && u.army == armyName && u.division == divisionName && u.regiment == regimentName)
+                |> groupByField .battalion
+
+        -- Group units by battalion within a regiment (for regiments without division)
+        battalionsUnderArmy : String -> String -> List ( String, List B.Unit )
+        battalionsUnderArmy armyName regimentName =
+            model.units
+                |> List.filter (\u -> u.active && u.army == armyName && String.isEmpty u.division && u.regiment == regimentName)
                 |> groupByField .battalion
 
         -- Get companies within a battalion
@@ -1845,7 +1859,11 @@ unitsBlock shared model =
         renderBattalions : String -> String -> String -> Html Msg
         renderBattalions armyName divisionName regimentName =
             let
-                battalionGroups = battalions armyName divisionName regimentName
+                battalionGroups = 
+                    if String.isEmpty divisionName then
+                        battalionsUnderArmy armyName regimentName
+                    else
+                        battalions armyName divisionName regimentName
                 isExpanded = Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
             in
             if List.isEmpty battalionGroups then
@@ -1922,9 +1940,10 @@ unitsBlock shared model =
         renderDivisions armyName =
             let
                 divisionGroups = divisions armyName
+                regimentsUnderArmyGroups = regimentsUnderArmy armyName
                 isExpanded = Set.member armyName model.expandedArmies
             in
-            if List.isEmpty divisionGroups then
+            if List.isEmpty divisionGroups && List.isEmpty regimentsUnderArmyGroups then
                 text ""
             else if not isExpanded then
                 text ""
@@ -1933,7 +1952,8 @@ unitsBlock shared model =
                     (List.concatMap
                         (\(divisionName, divisionUnits) ->
                             if String.isEmpty divisionName then
-                                List.map renderUnit divisionUnits
+                                -- Don't show units with empty division here - they'll be shown under regiments
+                                []
                             else
                                 let
                                     divisionCount = List.sum (List.map (.id >> getUnitCount) divisionUnits)
@@ -1953,6 +1973,26 @@ unitsBlock shared model =
                                 ]
                         )
                         divisionGroups
+                    ++ List.concatMap
+                        (\(regimentName, regimentUnits) ->
+                            let
+                                regimentCount = List.sum (List.map (.id >> getUnitCount) regimentUnits)
+                                regimentCountText = if regimentCount > 0 then " (" ++ String.fromInt regimentCount ++ ")" else ""
+                                isRegimentExpanded = Set.member (armyName ++ ":" ++ "" ++ ":" ++ regimentName) model.expandedRegiments
+                            in
+                            [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                , onClick (ToggleRegimentExpanded armyName "" regimentName)
+                                ]
+                                [ span [ class "flex items-center gap-2" ] 
+                                    [ regimentIndicator
+                                    , text (regimentName ++ regimentCountText)
+                                    ]
+                                , i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                ]
+                            , renderBattalions armyName "" regimentName
+                            ]
+                        )
+                        regimentsUnderArmyGroups
                     )
 
         -- Military hierarchy indicators
