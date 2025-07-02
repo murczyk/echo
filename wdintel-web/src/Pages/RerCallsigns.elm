@@ -210,6 +210,7 @@ type Msg
     | ToggleDivisionExpanded String String
     | ToggleRegimentExpanded String String String
     | ToggleBattalionExpanded String String String String
+    | ClearFilters
 
 
 type alias AddState =
@@ -1063,6 +1064,9 @@ update req msg model =
             , E.none
             )
 
+        ClearFilters ->
+            ( { model | filterCallsign = "", filterPosition = "", filterComment = "", filterUnit = "" }, loadCallsigns model )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1438,7 +1442,7 @@ contentBlock shared model user =
                         ]
                         []
                     ]
-                , div [ class "col-span-2" ]
+                , div [ class "col-span-3" ]
                     [ HtmlX.viewIf (pos == 0) <|
                         let
                             selectItem =
@@ -1446,13 +1450,11 @@ contentBlock shared model user =
                                     |> Maybe.andThen (\unitId -> ListX.find (\u -> u.id == unitId) model.units)
                                     |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                         in
-                        div
-                            [ class "flex items-center gap-2" ]
+                        div [ class "flex items-center gap-2" ]
                             [ div [ class "flex-grow" ]
                                 [ let
                                     options =
                                         Le.Block.Select.defaultOptions shared.isDarkMode
-
                                     options2 =
                                         { options | disabled = not hasEditorRole }
                                   in
@@ -1465,25 +1467,19 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
-                            , button
-                                [ title "Оновити список підрозділів"
-                                , class "icon-btn icon-btn-primary"
-                                , onClick ReloadUnits
-                                ]
-                                [ i [ class "bi bi-arrow-clockwise" ] [] ]
                             ]
                     ]
-                , div [ class "col-span-3" ]
+                , div [ class "col-span-2" ]
                     [ HtmlX.viewIf (pos == 0) <|
+                        let
+                            selectItem =
+                                model.inpSource
+                                    |> Maybe.andThen (\sourceId -> ListX.find (\s -> s.id == sourceId) model.sources)
+                                    |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                        in
                         div [ class "flex items-center gap-2" ]
-                            [ div [ class "flex-grow" ]
-                                [ let
-                                    selectItem =
-                                        model.inpSource
-                                            |> Maybe.andThen (\sourceId -> ListX.find (\s -> s.id == sourceId) model.sources)
-                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
-                                  in
-                                  Html.map InpSourceSelMsg <|
+                            [ div [ class "w-32" ]
+                                [ Html.map InpSourceSelMsg <|
                                     Styled.toUnstyled <|
                                         Le.Block.Select.renderSelectSingle
                                             selectItem
@@ -1496,15 +1492,20 @@ contentBlock shared model user =
                                                 |> (\opts -> { opts | disabled = not hasEditorRole })
                                             )
                                 ]
-                            , div [ class "flex gap-2" ]
-                                [ Button.new { label = "Додати", onClick = AddCallsign }
-                                    |> Button.withDisabled (not hasEditorRole)
-                                    |> Button.view
-                                , Button.new { label = "Очистити", onClick = ClearInputs }
-                                    |> Button.withStyleSecondary
-                                    |> Button.withDisabled (not hasEditorRole)
-                                    |> Button.view
+                            , button
+                                [ title "Зберегти"
+                                , class "icon-btn icon-btn-primary"
+                                , onClick AddCallsign
+                                , Attr.disabled (not hasEditorRole)
                                 ]
+                                [ i [ class "bi bi-check-lg" ] [] ]
+                            , button
+                                [ title "Очистити"
+                                , class "icon-btn icon-btn-secondary"
+                                , onClick ClearInputs
+                                , Attr.disabled (not hasEditorRole)
+                                ]
+                                [ i [ class "bi bi-x-lg" ] [] ]
                             ]
                     , if Maybe.withDefault 0 model.inpSource == 2 then
                         input
@@ -1515,7 +1516,6 @@ contentBlock shared model user =
                             , value addState.inpRadioFreq
                             ]
                             []
-
                       else
                         text ""
                     ]
@@ -1523,45 +1523,50 @@ contentBlock shared model user =
 
         filterPanel =
             div [ class "flex flex-col gap-3 p-2" ]
-                [ div [ class "flex items-center gap-2" ]
-                    [ if not model.loading then
-                        i [ class "bi bi-filter" ] []
-
-                      else
-                        Le.Block.Spinner.loadingSpinner2Sm
-                    , div [ class "flex flex-wrap gap-2 flex-grow" ]
-                        [ input
-                            [ class "form-input uppercase min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Позивний"
-                            , value model.filterCallsign
-                            , onInput FilterCallsignMsg
+                [ div [ class "flex items-center gap-2 justify-between" ]
+                    [ div [ class "flex items-center gap-2" ]
+                        [ if not model.loading then
+                            i [ class "bi bi-filter" ] []
+                          else
+                            Le.Block.Spinner.loadingSpinner2Sm
+                        , div [ class "flex flex-wrap gap-2 flex-grow" ]
+                            [ input
+                                [ class "form-input uppercase min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Позивний"
+                                , value model.filterCallsign
+                                , onInput FilterCallsignMsg
+                                ]
+                                []
+                            , input
+                                [ class "form-input min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Посада"
+                                , value model.filterPosition
+                                , onInput FilterPositionMsg
+                                ]
+                                []
+                            , input
+                                [ class "form-input min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Коментар"
+                                , value model.filterComment
+                                , onInput FilterCommentMsg
+                                ]
+                                []
+                            , input
+                                [ class "form-input min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Підрозділ"
+                                , value model.filterUnit
+                                , onInput FilterUnitMsg
+                                ]
+                                []
                             ]
-                            []
-                        , input
-                            [ class "form-input min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Посада"
-                            , value model.filterPosition
-                            , onInput FilterPositionMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-input min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Коментар"
-                            , value model.filterComment
-                            , onInput FilterCommentMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-input min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Підрозділ"
-                            , value model.filterUnit
-                            , onInput FilterUnitMsg
-                            ]
-                            []
+                        ]
+                    , div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
+                        [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
+                        , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
                         ]
                     ]
                 , div [ class "flex items-center gap-4" ]
@@ -1606,7 +1611,6 @@ contentBlock shared model user =
                                 { model =
                                     if not model.isIgnoringDateFilter then
                                         model.from
-
                                     else
                                         Le.Block.DateTime.init ()
                                 , toMsg = DateTimeFromMsg
@@ -1620,7 +1624,6 @@ contentBlock shared model user =
                                 { model =
                                     if not model.isIgnoringDateFilter then
                                         model.to
-
                                     else
                                         Le.Block.DateTime.init ()
                                 , toMsg = DateTimeToMsg

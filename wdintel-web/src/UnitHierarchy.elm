@@ -301,13 +301,7 @@ view config units unitStats =
         , div [ class " overflow-y-auto grow-1" ]
             (List.map (renderArmy config unitStats units) hierarchy.armies)
         , if not (String.isEmpty config.selectedUnit) then
-            div [ class "p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800" ]
-                [ Html.button
-                    [ class "btn btn-secondary"
-                    , Html.Events.onClick (config.onUnitClick "")
-                    ]
-                    [ Html.text "Очистити фільтр" ]
-                ]
+            Html.text ""
 
           else
             Html.text ""
