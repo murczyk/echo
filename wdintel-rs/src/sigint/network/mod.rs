@@ -2555,8 +2555,7 @@ pub async fn merge_two_networks(
         }
     }
 
-    // Merge freqs
-    // Step 1: Copy freqs to new network_id (with deleted = false)
+    // Reassign frequencies to the new network
     let freqs_to = sigint_network_freq::Entity::find()
         .select_only()
         .column(sigint_network_freq::Column::Freq)
@@ -2581,26 +2580,9 @@ pub async fn merge_two_networks(
             .context(h!())?
             .ok_or(AppError::NotFound)?;
 
-        // Clone freq before moving it into active model
-        let freq_clone = freq.freq.clone();
-        let kind_clone = freq.kind.clone();
-        let modulation_id_clone = freq.modulation_id.clone();
-        let active_from = freq.active_from.clone();
-
-        // Mark the original frequency as deleted
-        freq.delete(txn).await.context(h!())?;
-
-        // Create a new frequency for a target network
-        let new_freq = sigint_network_freq::ActiveModel {
-            id: ActiveValue::NotSet, // New row, let DB assign an ID
-            network_id: ActiveValue::Set(network_id_to),
-            freq: ActiveValue::Set(freq_clone),
-            kind: ActiveValue::Set(kind_clone),
-            modulation_id: ActiveValue::Set(modulation_id_clone),
-            active_from: ActiveValue::Set(active_from),
-            ..Default::default()
-        };
-        new_freq.insert(txn).await.context(h!())?;
+        let mut freq_model = freq.into_active_model();
+        freq_model.network_id = Set(network_id_to);
+        freq_model.update(txn).await.context(h!())?;
 
         // Log the change of an old dentork in the changelog
         let json_new = sigint_network_freq::Entity::find_by_id(id)
@@ -2624,15 +2606,7 @@ pub async fn merge_two_networks(
         .context(h!())?;
     }
 
-    // Step 2: Mark original freqs as deleted
-    sigint_network_freq::Entity::delete_many()
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
-        .exec(txn)
-        .await
-        .context(h!())?;
-
-    // Merge posts
-    // Step 1: Copy posts to new network_id (with deleted = false)
+    // Reassign posts to the new network
     let posts_to = sigint_network_post::Entity::find()
         .select_only()
         .column(sigint_network_post::Column::Id)
@@ -2649,24 +2623,12 @@ pub async fn merge_two_networks(
         .context(h!())?;
 
     for post in posts_from {
-        // Create a new post for a target network
-        let new_post = sigint_network_post::ActiveModel {
-            id: NotSet,
-            network_id: Set(network_id_to),
-            post_id: Set(post.id.clone()),
-            deleted: Set(false),
-            ..Default::default()
-        };
-        new_post.insert(txn).await.context(h!())?;
-
-        // Mark the original network post as deleted
-        let mut network_post = post.into_active_model();
-        network_post.deleted = Set(true);
-        network_post.update(txn).await.context(h!())?;
+        let mut post_model = post.into_active_model();
+        post_model.network_id = Set(network_id_to);
+        post_model.update(txn).await.context(h!())?;
     }
 
-    // Merge Descriptions
-    // Step 1: Copy descriptions to new network_id (with deleted = false)
+    // Reassign descriptions to the new network
     let descriptions_from = sigint_network_description::Entity::find()
         .filter(
             sigint_network_description::Column::NetworkId.eq(network_id_from),
@@ -2677,25 +2639,31 @@ pub async fn merge_two_networks(
         .context(h!())?;
 
     for description in descriptions_from {
-        // Create a new description for a target network
-        let new_description = sigint_network_description::ActiveModel {
-            id: NotSet,
-            network_id: Set(network_id_to),
-            sigint_network_freq_id: Set(description.sigint_network_freq_id),
-            r#type: Set(description.r#type.clone()),
-            description: Set(description.description.clone()),
-            comment: Set(description.comment.clone()),
-            login: Set(login.clone()),
-            deleted: Set(false),
-            created_at: NotSet,
-        };
-        new_description.insert(txn).await.context(h!())?;
-
-        // Mark the original network post as deleted
-        let mut network_description_from = description.into_active_model();
-        network_description_from.deleted = Set(true);
-        network_description_from.update(txn).await.context(h!())?;
+        let mut descr_model = description.into_active_model();
+        descr_model.network_id = Set(network_id_to);
+        descr_model.update(txn).await.context(h!())?;
     }
+
+    // Delete all remaining descriptions in the source network (those not reassigned)
+    sigint_network_description::Entity::delete_many()
+        .filter(sigint_network_description::Column::NetworkId.eq(network_id_from))
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    // Delete all remaining posts in the source network (those not reassigned)
+    sigint_network_post::Entity::delete_many()
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id_from))
+        .exec(txn)
+        .await
+        .context(h!())?;
+
+    // Delete all remaining freqs in the source network (those not reassigned)
+    sigint_network_freq::Entity::delete_many()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
+        .exec(txn)
+        .await
+        .context(h!())?;
 
     // Update network_to attributes by concatenating only unique values
     let new_location = concat_unique(
@@ -2729,6 +2697,13 @@ pub async fn merge_two_networks(
     network_to_model.active_from = Set(new_active_from);
     network_to_model.active_to = Set(new_active_to);
     network_to_model.update(txn).await.context(h!())?;
+
+    // delete old freqs and freqs descriptions
+    sigint_network_freq::Entity::delete_many()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
+        .exec(txn)
+        .await
+        .context(h!())?;
 
     // Mark network_from as deleted, set merget_to field
     let mut network_from_model: sigint_network::ActiveModel =
