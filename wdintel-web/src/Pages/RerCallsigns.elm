@@ -1772,6 +1772,10 @@ unitsBlock shared model =
             , isRegimentExpanded = \armyName divisionName regimentName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
             , isBattalionExpanded = \armyName divisionName regimentName battalionName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName) model.expandedBattalions
             , selectedUnit = model.filterUnit
+            , autoExpandArmies = False
+            , autoExpandDivisions = True
+            , autoExpandRegiments = True
+            , autoExpandBattalions = True
             }
     in
     if model.loadingUnitStats then

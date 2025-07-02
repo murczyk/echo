@@ -15,6 +15,9 @@ making it testable and reusable across the application.
 
 The hierarchy follows the military structure: Army -> Division -> Regiment -> Battalion -> Company
 
+Units without child levels (e.g., units that are themselves the army/division/regiment/battalion)
+are rendered as clickable filter options rather than expandable dropdowns.
+
 ## Usage
 
 ```elm
@@ -67,6 +70,10 @@ type alias Config msg =
     , isRegimentExpanded : String -> String -> String -> Bool
     , isBattalionExpanded : String -> String -> String -> String -> Bool
     , selectedUnit : String
+    , autoExpandArmies : Bool
+    , autoExpandDivisions : Bool
+    , autoExpandRegiments : Bool
+    , autoExpandBattalions : Bool
     }
 
 
@@ -198,6 +205,55 @@ sortUnitsByName units =
     List.sortBy .name units
 
 
+-- Auto-expansion helper functions
+
+{-| Counts total units under a specific army branch
+-}
+countUnitsUnderArmy : String -> List B.Unit -> Int
+countUnitsUnderArmy armyName units =
+    units
+        |> filterActiveUnits
+        |> List.filter (\u -> u.army == armyName)
+        |> List.length
+
+
+{-| Counts total units under a specific division branch
+-}
+countUnitsUnderDivision : String -> String -> List B.Unit -> Int
+countUnitsUnderDivision armyName divisionName units =
+    units
+        |> filterActiveUnits
+        |> List.filter (\u -> u.army == armyName && u.division == divisionName)
+        |> List.length
+
+
+{-| Counts total units under a specific regiment branch
+-}
+countUnitsUnderRegiment : String -> String -> String -> List B.Unit -> Int
+countUnitsUnderRegiment armyName divisionName regimentName units =
+    units
+        |> filterActiveUnits
+        |> List.filter (\u -> u.army == armyName && u.division == divisionName && u.regiment == regimentName)
+        |> List.length
+
+
+{-| Counts total units under a specific battalion branch
+-}
+countUnitsUnderBattalion : String -> String -> String -> String -> List B.Unit -> Int
+countUnitsUnderBattalion armyName divisionName regimentName battalionName units =
+    units
+        |> filterActiveUnits
+        |> List.filter (\u -> u.army == armyName && u.division == divisionName && u.regiment == regimentName && u.battalion == battalionName)
+        |> List.length
+
+
+{-| Determines if a branch should be auto-expanded (≤ 3 total units)
+-}
+shouldAutoExpand : Int -> Bool
+shouldAutoExpand unitCount =
+    unitCount <= 3
+
+
 -- Public API
 
 {-| Builds the complete unit hierarchy from a list of units
@@ -248,18 +304,52 @@ renderArmy config unitStats units ( armyName, armyUnits ) =
         armyCountText = if armyCount > 0 then " (" ++ String.fromInt armyCount ++ ")" else ""
         displayName = if String.isEmpty armyName then "Без армії" else armyName
         isExpanded = config.isArmyExpanded armyName
+
+        -- Check if this army has any child levels
+        divisionGroups = buildDivisions armyName units
+        regimentsUnderArmyGroups = buildRegimentsUnderArmy armyName units
+        hasChildLevels = not (List.isEmpty divisionGroups) || not (List.isEmpty regimentsUnderArmyGroups)
+
+        -- True leaf: only one unit, and all child fields are empty
+        isTrueLeaf =
+            case armyUnits of
+                [u] ->
+                    String.isEmpty u.division && String.isEmpty u.regiment && String.isEmpty u.battalion && String.isEmpty u.company
+                _ ->
+                    False
+
+        -- If no child levels or true leaf, treat as a clickable unit
+        isClickableUnit = (not hasChildLevels) || isTrueLeaf
+        
+        -- Auto-expansion logic
+        shouldAutoExpandArmy = config.autoExpandArmies && shouldAutoExpand (countUnitsUnderArmy armyName units)
+        effectiveIsExpanded = isExpanded || shouldAutoExpandArmy
     in
     div [ class "border-b border-gray-200 dark:border-gray-700" ]
-        [ div 
-            [ class "px-3 py-2 font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-between"
-            , Html.Events.onClick (config.onArmyToggle armyName)
-            ]
-            [ Html.span [ class "flex items-center gap-2" ] 
-                [ armyIndicator
-                , Html.text (displayName ++ armyCountText)
+        [ if isClickableUnit then
+            -- Render as clickable unit
+            div 
+                [ class ("px-3 py-2 font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors " ++ 
+                        if config.selectedUnit == displayName then "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500" else "")
+                , Html.Events.onClick (config.onUnitClick displayName)
                 ]
-            , Html.i [ class ("bi " ++ (if isExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
-            ]
+                [ Html.span [ class "flex items-center gap-2" ] 
+                    [ armyIndicator
+                    , Html.text (displayName ++ armyCountText)
+                    ]
+                ]
+          else
+            -- Render as expandable army
+            div 
+                [ class "px-3 py-2 font-semibold text-gray-900 dark:text-gray-100 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-between"
+                , Html.Events.onClick (config.onArmyToggle armyName)
+                ]
+                [ Html.span [ class "flex items-center gap-2" ] 
+                    [ armyIndicator
+                    , Html.text (displayName ++ armyCountText)
+                    ]
+                , Html.i [ class ("bi " ++ (if effectiveIsExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                ]
         , renderDivisions config unitStats units armyName
         ]
 
@@ -270,10 +360,14 @@ renderDivisions config unitStats units armyName =
         divisionGroups = buildDivisions armyName units
         regimentsUnderArmyGroups = buildRegimentsUnderArmy armyName units
         isExpanded = config.isArmyExpanded armyName
+        
+        -- Auto-expansion logic
+        shouldAutoExpandArmy = config.autoExpandArmies && shouldAutoExpand (countUnitsUnderArmy armyName units)
+        effectiveIsExpanded = isExpanded || shouldAutoExpandArmy
     in
     if List.isEmpty divisionGroups && List.isEmpty regimentsUnderArmyGroups then
         Html.text ""
-    else if not isExpanded then
+    else if not effectiveIsExpanded then
         Html.text ""
     else
         div [ class "ml-6 space-y-1" ]
@@ -286,18 +380,41 @@ renderDivisions config unitStats units armyName =
                             divisionCount = calculateGroupCount divisionUnits unitStats
                             divisionCountText = if divisionCount > 0 then " (" ++ String.fromInt divisionCount ++ ")" else ""
                             isDivisionExpanded = config.isDivisionExpanded armyName divisionName
+                            
+                            -- Check if this division has any child levels
+                            regimentGroups = buildRegiments armyName divisionName units
+                            hasChildLevels = not (List.isEmpty regimentGroups)
+                            isClickableUnit = not hasChildLevels
+                            
+                            -- Auto-expansion logic for division
+                            shouldAutoExpandDivision = config.autoExpandDivisions && shouldAutoExpand (countUnitsUnderDivision armyName divisionName units)
+                            effectiveIsDivisionExpanded = isDivisionExpanded || shouldAutoExpandDivision
                         in
-                        [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                            , Html.Events.onClick (config.onDivisionToggle armyName divisionName)
-                            ]
-                            [ Html.span [ class "flex items-center gap-2" ] 
-                                [ divisionIndicator
-                                , Html.text (divisionName ++ divisionCountText)
+                        if isClickableUnit then
+                            -- Render as clickable unit
+                            [ div [ class ("font-medium text-gray-700 dark:text-gray-300 py-1 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors " ++ 
+                                    if config.selectedUnit == divisionName then "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500" else "")
+                                , Html.Events.onClick (config.onUnitClick divisionName)
                                 ]
-                            , Html.i [ class ("bi " ++ (if isDivisionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                [ Html.span [ class "flex items-center gap-2" ] 
+                                    [ divisionIndicator
+                                    , Html.text (divisionName ++ divisionCountText)
+                                    ]
+                                ]
                             ]
-                        , renderRegiments config unitStats units armyName divisionName
-                        ]
+                        else
+                            -- Render as expandable division
+                            [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                , Html.Events.onClick (config.onDivisionToggle armyName divisionName)
+                                ]
+                                [ Html.span [ class "flex items-center gap-2" ] 
+                                    [ divisionIndicator
+                                    , Html.text (divisionName ++ divisionCountText)
+                                    ]
+                                , Html.i [ class ("bi " ++ (if effectiveIsDivisionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                ]
+                            , renderRegiments config unitStats units armyName divisionName
+                            ]
                 )
                 divisionGroups
             ++ List.concatMap
@@ -306,18 +423,41 @@ renderDivisions config unitStats units armyName =
                         regimentCount = calculateGroupCount regimentUnits unitStats
                         regimentCountText = if regimentCount > 0 then " (" ++ String.fromInt regimentCount ++ ")" else ""
                         isRegimentExpanded = config.isRegimentExpanded armyName "" regimentName
+                        
+                        -- Check if this regiment has any child levels
+                        battalionGroups = buildBattalionsUnderArmy armyName regimentName units
+                        hasChildLevels = not (List.isEmpty battalionGroups)
+                        isClickableUnit = not hasChildLevels
+                        
+                        -- Auto-expansion logic for regiment
+                        shouldAutoExpandRegiment = config.autoExpandRegiments && shouldAutoExpand (countUnitsUnderRegiment armyName "" regimentName units)
+                        effectiveIsRegimentExpanded = isRegimentExpanded || shouldAutoExpandRegiment
                     in
-                    [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                        , Html.Events.onClick (config.onRegimentToggle armyName "" regimentName)
-                        ]
-                        [ Html.span [ class "flex items-center gap-2" ] 
-                            [ regimentIndicator
-                            , Html.text (regimentName ++ regimentCountText)
+                    if isClickableUnit then
+                        -- Render as clickable unit
+                        [ div [ class ("font-medium text-gray-700 dark:text-gray-300 py-1 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors " ++ 
+                                if config.selectedUnit == regimentName then "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500" else "")
+                            , Html.Events.onClick (config.onUnitClick regimentName)
                             ]
-                        , Html.i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                            [ Html.span [ class "flex items-center gap-2" ] 
+                                [ regimentIndicator
+                                , Html.text (regimentName ++ regimentCountText)
+                                ]
+                            ]
                         ]
-                    , renderBattalions config unitStats units armyName "" regimentName
-                    ]
+                    else
+                        -- Render as expandable regiment
+                        [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            , Html.Events.onClick (config.onRegimentToggle armyName "" regimentName)
+                            ]
+                            [ Html.span [ class "flex items-center gap-2" ] 
+                                [ regimentIndicator
+                                , Html.text (regimentName ++ regimentCountText)
+                                ]
+                            , Html.i [ class ("bi " ++ (if effectiveIsRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                            ]
+                        , renderBattalions config unitStats units armyName "" regimentName
+                        ]
                 )
                 regimentsUnderArmyGroups
             )
@@ -328,10 +468,14 @@ renderRegiments config unitStats units armyName divisionName =
     let
         regimentGroups = buildRegiments armyName divisionName units
         isExpanded = config.isDivisionExpanded armyName divisionName
+        
+        -- Auto-expansion logic for division
+        shouldAutoExpandDivision = config.autoExpandDivisions && shouldAutoExpand (countUnitsUnderDivision armyName divisionName units)
+        effectiveIsExpanded = isExpanded || shouldAutoExpandDivision
     in
     if List.isEmpty regimentGroups then
         Html.text ""
-    else if not isExpanded then
+    else if not effectiveIsExpanded then
         Html.text ""
     else
         div [ class "ml-6 space-y-1" ]
@@ -344,18 +488,41 @@ renderRegiments config unitStats units armyName divisionName =
                             regimentCount = calculateGroupCount regimentUnits unitStats
                             regimentCountText = if regimentCount > 0 then " (" ++ String.fromInt regimentCount ++ ")" else ""
                             isRegimentExpanded = config.isRegimentExpanded armyName divisionName regimentName
+                            
+                            -- Check if this regiment has any child levels
+                            battalionGroups = buildBattalions armyName divisionName regimentName units
+                            hasChildLevels = not (List.isEmpty battalionGroups)
+                            isClickableUnit = not hasChildLevels
+                            
+                            -- Auto-expansion logic for regiment
+                            shouldAutoExpandRegiment = config.autoExpandRegiments && shouldAutoExpand (countUnitsUnderRegiment armyName divisionName regimentName units)
+                            effectiveIsRegimentExpanded = isRegimentExpanded || shouldAutoExpandRegiment
                         in
-                        [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                            , Html.Events.onClick (config.onRegimentToggle armyName divisionName regimentName)
-                            ]
-                            [ Html.span [ class "flex items-center gap-2" ] 
-                                [ regimentIndicator
-                                , Html.text (regimentName ++ regimentCountText)
+                        if isClickableUnit then
+                            -- Render as clickable unit
+                            [ div [ class ("font-medium text-gray-700 dark:text-gray-300 py-1 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors " ++ 
+                                    if config.selectedUnit == regimentName then "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500" else "")
+                                , Html.Events.onClick (config.onUnitClick regimentName)
                                 ]
-                            , Html.i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                [ Html.span [ class "flex items-center gap-2" ] 
+                                    [ regimentIndicator
+                                    , Html.text (regimentName ++ regimentCountText)
+                                    ]
+                                ]
                             ]
-                        , renderBattalions config unitStats units armyName divisionName regimentName
-                        ]
+                        else
+                            -- Render as expandable regiment
+                            [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                , Html.Events.onClick (config.onRegimentToggle armyName divisionName regimentName)
+                                ]
+                                [ Html.span [ class "flex items-center gap-2" ] 
+                                    [ regimentIndicator
+                                    , Html.text (regimentName ++ regimentCountText)
+                                    ]
+                                , Html.i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                ]
+                            , renderBattalions config unitStats units armyName divisionName regimentName
+                            ]
                 )
                 regimentGroups
             )
@@ -370,10 +537,14 @@ renderBattalions config unitStats units armyName divisionName regimentName =
             else
                 buildBattalions armyName divisionName regimentName units
         isExpanded = config.isRegimentExpanded armyName divisionName regimentName
+        
+        -- Auto-expansion logic for regiment
+        shouldAutoExpandRegiment = config.autoExpandRegiments && shouldAutoExpand (countUnitsUnderRegiment armyName divisionName regimentName units)
+        effectiveIsExpanded = isExpanded || shouldAutoExpandRegiment
     in
     if List.isEmpty battalionGroups then
         Html.text ""
-    else if not isExpanded then
+    else if not effectiveIsExpanded then
         Html.text ""
     else
         div [ class "ml-6 space-y-1" ]
@@ -386,18 +557,41 @@ renderBattalions config unitStats units armyName divisionName regimentName =
                             battalionCount = calculateGroupCount battalionUnits unitStats
                             battalionCountText = if battalionCount > 0 then " (" ++ String.fromInt battalionCount ++ ")" else ""
                             isBattalionExpanded = config.isBattalionExpanded armyName divisionName regimentName battalionName
+                            
+                            -- Check if this battalion has any child levels
+                            companyUnits = buildCompanies armyName divisionName regimentName battalionName units
+                            hasChildLevels = not (List.isEmpty companyUnits)
+                            isClickableUnit = not hasChildLevels
+                            
+                            -- Auto-expansion logic for battalion
+                            shouldAutoExpandBattalion = config.autoExpandBattalions && shouldAutoExpand (countUnitsUnderBattalion armyName divisionName regimentName battalionName units)
+                            effectiveIsBattalionExpanded = isBattalionExpanded || shouldAutoExpandBattalion
                         in
-                        [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                            , Html.Events.onClick (config.onBattalionToggle armyName divisionName regimentName battalionName)
-                            ]
-                            [ Html.span [ class "flex items-center gap-2" ] 
-                                [ battalionIndicator
-                                , Html.text (battalionName ++ battalionCountText)
+                        if isClickableUnit then
+                            -- Render as clickable unit
+                            [ div [ class ("font-medium text-gray-700 dark:text-gray-300 py-1 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors " ++ 
+                                    if config.selectedUnit == battalionName then "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500" else "")
+                                , Html.Events.onClick (config.onUnitClick battalionName)
                                 ]
-                            , Html.i [ class ("bi " ++ (if isBattalionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                [ Html.span [ class "flex items-center gap-2" ] 
+                                    [ battalionIndicator
+                                    , Html.text (battalionName ++ battalionCountText)
+                                    ]
+                                ]
                             ]
-                        , renderCompanies config unitStats units armyName divisionName regimentName battalionName
-                        ]
+                        else
+                            -- Render as expandable battalion
+                            [ div [ class "font-medium text-gray-700 dark:text-gray-300 py-1 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                , Html.Events.onClick (config.onBattalionToggle armyName divisionName regimentName battalionName)
+                                ]
+                                [ Html.span [ class "flex items-center gap-2" ] 
+                                    [ battalionIndicator
+                                    , Html.text (battalionName ++ battalionCountText)
+                                    ]
+                                , Html.i [ class ("bi " ++ (if effectiveIsBattalionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                ]
+                            , renderCompanies config unitStats units armyName divisionName regimentName battalionName
+                            ]
                 )
                 battalionGroups
             )

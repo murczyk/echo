@@ -73,5 +73,16 @@ suite =
                         |> .armies
                         |> List.length
                         |> Expect.equal 1
+            , test "handles units with no child levels" <|
+                \_ ->
+                    let
+                        units =
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "управління авіацією ПКС зс рф", comment = "", name = "управління авіацією ПКС зс рф", active = True, createdAt = 0, createdBy = "" }
+                            ]
+                    in
+                    UnitHierarchy.buildHierarchy units
+                        |> .armies
+                        |> List.length
+                        |> Expect.equal 1
             ]
         ] 
