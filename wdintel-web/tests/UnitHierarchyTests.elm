@@ -1,0 +1,77 @@
+module UnitHierarchyTests exposing (suite)
+
+import Bindings as B
+import Expect
+import Test exposing (Test, describe, test)
+import UnitHierarchy
+
+
+suite : Test
+suite =
+    describe "UnitHierarchy"
+        [ describe "getUnitCount"
+            [ test "returns 0 for non-existent unit" <|
+                \_ ->
+                    let
+                        unitStats =
+                            [ { unitId = 1, count = 5 }
+                            , { unitId = 2, count = 3 }
+                            ]
+                    in
+                    UnitHierarchy.getUnitCount 999 unitStats
+                        |> Expect.equal 0
+            , test "returns correct count for existing unit" <|
+                \_ ->
+                    let
+                        unitStats =
+                            [ { unitId = 1, count = 5 }
+                            , { unitId = 2, count = 3 }
+                            ]
+                    in
+                    UnitHierarchy.getUnitCount 1 unitStats
+                        |> Expect.equal 5
+            ]
+        , describe "calculateGroupCount"
+            [ test "calculates total count for a group of units" <|
+                \_ ->
+                    let
+                        units =
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "", comment = "", name = "Unit 1", active = True, createdAt = 0, createdBy = "" }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "", comment = "", name = "Unit 2", active = True, createdAt = 0, createdBy = "" }
+                            ]
+                        unitStats =
+                            [ { unitId = 1, count = 5 }
+                            , { unitId = 2, count = 3 }
+                            ]
+                    in
+                    UnitHierarchy.calculateGroupCount units unitStats
+                        |> Expect.equal 8
+            ]
+        , describe "buildHierarchy"
+            [ test "builds hierarchy from units" <|
+                \_ ->
+                    let
+                        units =
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", comment = "", name = "Unit 1", active = True, createdAt = 0, createdBy = "" }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", comment = "", name = "Unit 2", active = True, createdAt = 0, createdBy = "" }
+                            , { id = 3, company = "", battalion = "", regiment = "", division = "", army = "Army A", comment = "", name = "Unit 3", active = True, createdAt = 0, createdBy = "" }
+                            ]
+                    in
+                    UnitHierarchy.buildHierarchy units
+                        |> .armies
+                        |> List.length
+                        |> Expect.equal 2
+            , test "filters out inactive units" <|
+                \_ ->
+                    let
+                        units =
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", comment = "", name = "Unit 1", active = True, createdAt = 0, createdBy = "" }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", comment = "", name = "Unit 2", active = False, createdAt = 0, createdBy = "" }
+                            ]
+                    in
+                    UnitHierarchy.buildHierarchy units
+                        |> .armies
+                        |> List.length
+                        |> Expect.equal 1
+            ]
+        ] 
