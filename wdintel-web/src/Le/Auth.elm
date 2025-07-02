@@ -43,6 +43,9 @@ hasRole role user =
         "DeleteMsg" ->
             List.member "DeleteMsg" user.roles
 
+        "NoAutoLogout" ->
+            List.member "NoAutoLogout" user.roles
+
         _ ->
             -- impossible! unknown role
             False

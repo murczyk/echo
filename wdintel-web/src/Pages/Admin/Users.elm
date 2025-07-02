@@ -156,7 +156,7 @@ type alias LoginEdit =
 
 roles : List String
 roles =
-    [ "Admin", "Api", "Rer", "Bpla", "Full", "Basic", "UnitsEditor", "CallsignsEditor", "DeleteMsg" ]
+    [ "Admin", "Api", "Rer", "Bpla", "Full", "Basic", "UnitsEditor", "CallsignsEditor", "DeleteMsg", "NoAutoLogout" ]
 
 
 init : ( Model, Effect Msg )

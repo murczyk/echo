@@ -13,6 +13,7 @@ use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
 use sea_orm::*;
+use sea_query::Expr;
 use std::collections::BTreeMap;
 
 pub mod types;
@@ -72,6 +73,9 @@ pub async fn has_any_role(
             "CallsignsEditor" => {
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"CallsignsEditor".to_string())
+            }
+            "NoAutoLogout" => {
+                roles.contains(&"NoAutoLogout".to_string())                    
             }
             role => {
                 return Err(AppError::BL {
@@ -639,7 +643,7 @@ pub async fn register_user(
         organism_id: Set(organism_id),
         deleted: Set(false),
         delta_login_id: NotSet,
-        last_active_at: NotSet,
+        last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
     }
     .insert(&txn)
@@ -1074,6 +1078,11 @@ async fn inactive_users_worker_1(
                 .lte(threshold)
                 .or(login::Column::LastActiveAt.is_null()),
         )
+        // This checks that 'NoAutoLogout' is NOT present in the roles JSONB array
+        .filter(Expr::cust_with_values(
+            "NOT (roles @> $1::jsonb)",
+            vec![r#"["NoAutoLogout"]"#.to_string()],
+        ))
         .all(dbx)
         .await
         .context(h!())?;
