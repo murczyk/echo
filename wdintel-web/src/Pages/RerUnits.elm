@@ -1166,11 +1166,10 @@ contentBlock shared model =
                   else
                     text ""
                 , div
-                    [ class "border mb-4 p-3"
-                    , style "background-color" "var(--bs-light)"
+                    [ class "border mb-4 p-3 bg-card rounded-lg"
                     ]
                     [ div [ class "d-flex justify-content-between align-items-center mb-3" ]
-                        [ h5 [ class "fw-bold mb-0" ] [ text "Фільтри" ]
+                        [ h5 [ class "fw-bold mb-0 text-gray-900 dark:text-gray-100" ] [ text "Фільтри" ]
                         , div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
                             [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
                             , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
@@ -1178,14 +1177,14 @@ contentBlock shared model =
                         ]
                     , div [ class "mb-3 d-flex align-items-center gap-3" ]
                         [ Checkbox.new { isChecked = model.filterActive, onToggle = FilterActive }
-                            |> Checkbox.withContent [ span [] [ text "Лише активні" ] ]
+                            |> Checkbox.withContent [ span [ class "text-gray-900 dark:text-gray-100" ] [ text "Лише активні" ] ]
                             |> Checkbox.view
                         ]
                     , div [ class "row g-3" ]
                         [ div [ class "col-md-4" ]
-                            [ label [ class "form-label" ] [ text "Рота/Взвод:" ]
+                            [ label [ class "form-label text-gray-900 dark:text-gray-100" ] [ text "Рота/Взвод:" ]
                             , input
-                                [ class "form-control"
+                                [ class "form-control bg-card border border-border text-gray-900 dark:text-gray-100"
                                 , type_ "text"
                                 , placeholder "Введіть назву роти/взводу"
                                 , value model.filterCompany
@@ -1194,9 +1193,9 @@ contentBlock shared model =
                                 []
                             ]
                         , div [ class "col-md-4" ]
-                            [ label [ class "form-label" ] [ text "Батальйон:" ]
+                            [ label [ class "form-label text-gray-900 dark:text-gray-100" ] [ text "Батальйон:" ]
                             , input
-                                [ class "form-control"
+                                [ class "form-control bg-card border border-border text-gray-900 dark:text-gray-100"
                                 , type_ "text"
                                 , placeholder "Введіть назву батальйону"
                                 , value model.filterBattalion
@@ -1205,9 +1204,9 @@ contentBlock shared model =
                                 []
                             ]
                         , div [ class "col-md-4" ]
-                            [ label [ class "form-label" ] [ text "Полк/Бригада:" ]
+                            [ label [ class "form-label text-gray-900 dark:text-gray-100" ] [ text "Полк/Бригада:" ]
                             , input
-                                [ class "form-control"
+                                [ class "form-control bg-card border border-border text-gray-900 dark:text-gray-100"
                                 , type_ "text"
                                 , placeholder "Введіть назву полку/бригади"
                                 , value model.filterRegiment
@@ -1216,9 +1215,9 @@ contentBlock shared model =
                                 []
                             ]
                         , div [ class "col-md-6" ]
-                            [ label [ class "form-label" ] [ text "Дивізія:" ]
+                            [ label [ class "form-label text-gray-900 dark:text-gray-100" ] [ text "Дивізія:" ]
                             , input
-                                [ class "form-control"
+                                [ class "form-control bg-card border border-border text-gray-900 dark:text-gray-100"
                                 , type_ "text"
                                 , placeholder "Введіть назву дивізії"
                                 , value model.filterDivision
@@ -1227,9 +1226,9 @@ contentBlock shared model =
                                 []
                             ]
                         , div [ class "col-md-6" ]
-                            [ label [ class "form-label" ] [ text "Корпус/Армія:" ]
+                            [ label [ class "form-label text-gray-900 dark:text-gray-100" ] [ text "Корпус/Армія:" ]
                             , input
-                                [ class "form-control"
+                                [ class "form-control bg-card border border-border text-gray-900 dark:text-gray-100"
                                 , type_ "text"
                                 , placeholder "Введіть назву корпусу/армії"
                                 , value model.filterArmy
