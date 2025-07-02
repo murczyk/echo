@@ -411,7 +411,10 @@ renderDivisions config unitStats units armyName =
                                     [ divisionIndicator
                                     , Html.text (divisionName ++ divisionCountText)
                                     ]
-                                , Html.i [ class ("bi " ++ (if effectiveIsDivisionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                , if config.autoExpandDivisions then
+                                    Html.text ""
+                                  else
+                                    Html.i [ class ("bi " ++ (if isDivisionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                                 ]
                             , renderRegiments config unitStats units armyName divisionName
                             ]
@@ -454,7 +457,10 @@ renderDivisions config unitStats units armyName =
                                 [ regimentIndicator
                                 , Html.text (regimentName ++ regimentCountText)
                                 ]
-                            , Html.i [ class ("bi " ++ (if effectiveIsRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                            , if config.autoExpandRegiments then
+                                Html.text ""
+                              else
+                                Html.i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                             ]
                         , renderBattalions config unitStats units armyName "" regimentName
                         ]
@@ -519,7 +525,10 @@ renderRegiments config unitStats units armyName divisionName =
                                     [ regimentIndicator
                                     , Html.text (regimentName ++ regimentCountText)
                                     ]
-                                , Html.i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                , if config.autoExpandRegiments then
+                                    Html.text ""
+                                  else
+                                    Html.i [ class ("bi " ++ (if isRegimentExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                                 ]
                             , renderBattalions config unitStats units armyName divisionName regimentName
                             ]
@@ -588,7 +597,10 @@ renderBattalions config unitStats units armyName divisionName regimentName =
                                     [ battalionIndicator
                                     , Html.text (battalionName ++ battalionCountText)
                                     ]
-                                , Html.i [ class ("bi " ++ (if effectiveIsBattalionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
+                                , if config.autoExpandBattalions then
+                                    Html.text ""
+                                  else
+                                    Html.i [ class ("bi " ++ (if isBattalionExpanded then "bi-chevron-up" else "bi-chevron-down") ++ " text-gray-500") ] []
                                 ]
                             , renderCompanies config unitStats units armyName divisionName regimentName battalionName
                             ]
