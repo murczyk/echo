@@ -1530,14 +1530,22 @@ contentBlock shared model user =
                 ]
 
         filterPanel =
-            div [ class "flex flex-col gap-3 p-2" ]
-                [ div [ class "flex items-center gap-2 justify-between" ]
-                    [ div [ class "flex items-center gap-2" ]
+            div [ class "flex flex-col gap-3 p-2 relative" ]
+                [ div [ class "absolute top-2 right-2" ]
+                    [ div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
+                        [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
+                        , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
+                        ]
+                    ]
+                , div [ class "flex items-center gap-3" ]
+                    [ div [ class "flex items-center justify-center w-8" ]
                         [ if not model.loading then
-                            i [ class "bi bi-filter" ] []
+                            i [ class "bi bi-filter text-lg" ] []
                           else
                             Le.Block.Spinner.loadingSpinner2Sm
-                        , div [ class "flex flex-wrap gap-2 flex-grow" ]
+                        ]
+                    , div [ class "flex-grow" ]
+                        [ div [ class "flex flex-wrap gap-2 mb-2" ]
                             [ input
                                 [ class "form-input uppercase min-w-[180px]"
                                 , type_ "text"
@@ -1570,75 +1578,77 @@ contentBlock shared model user =
                                 , onInput FilterUnitMsg
                                 ]
                                 []
+                            , button
+                                [ class "btn btn-sm btn-outline-secondary"
+                                , onClick ToggleSidebar
+                                , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
+                                ]
+                                [ text "Підрозділи" ]
                             ]
-                        ]
-                    , div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
-                        [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
-                        , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
-                        ]
-                    ]
-                , div [ class "flex items-center gap-4" ]
-                    [ div [ class "flex items-center gap-2" ]
-                        [ div [ class "flex items-center gap-1" ]
-                            [ input
-                                [ type_ "radio"
-                                , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-                                , id "btnradio1"
-                                , autocomplete False
-                                , checked model.isIgnoringDateFilter
-                                , onClick <| ToggleIsIgnoringDateFilter True
+                        , div [ class "flex items-center gap-4" ]
+                            [ div [ class "flex items-center gap-2" ]
+                                [ div [ class "flex items-center gap-1" ]
+                                    [ input
+                                        [ type_ "radio"
+                                        , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        , id "btnradio1"
+                                        , autocomplete False
+                                        , checked model.isIgnoringDateFilter
+                                        , onClick <| ToggleIsIgnoringDateFilter True
+                                        ]
+                                        []
+                                    , label
+                                        [ class "text-sm text-gray-700 dark:text-gray-300"
+                                        , for "btnradio1"
+                                        ]
+                                        [ text "Весь час" ]
+                                    ]
+                                , div [ class "flex items-center gap-1" ]
+                                    [ input
+                                        [ type_ "radio"
+                                        , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        , id "btnradio2"
+                                        , autocomplete False
+                                        , checked (not model.isIgnoringDateFilter)
+                                        , onClick <| ToggleIsIgnoringDateFilter False
+                                        ]
+                                        []
+                                    , label
+                                        [ class "text-sm text-gray-700 dark:text-gray-300"
+                                        , for "btnradio2"
+                                        ]
+                                        [ text "Період" ]
+                                    ]
                                 ]
-                                []
-                            , label
-                                [ class "text-sm text-gray-700 dark:text-gray-300"
-                                , for "btnradio1"
+                            , div [ class "flex items-center gap-2" ]
+                                [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
+                                , div [ class "inline-flex" ]
+                                    (Le.Block.DateTime.new
+                                        { model =
+                                            if not model.isIgnoringDateFilter then
+                                                model.from
+                                            else
+                                                Le.Block.DateTime.init ()
+                                        , toMsg = DateTimeFromMsg
+                                        }
+                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Le.Block.DateTime.view
+                                    )
+                                , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
+                                , div [ class "inline-flex" ]
+                                    (Le.Block.DateTime.new
+                                        { model =
+                                            if not model.isIgnoringDateFilter then
+                                                model.to
+                                            else
+                                                Le.Block.DateTime.init ()
+                                        , toMsg = DateTimeToMsg
+                                        }
+                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Le.Block.DateTime.view
+                                    )
                                 ]
-                                [ text "Весь час" ]
                             ]
-                        , div [ class "flex items-center gap-1" ]
-                            [ input
-                                [ type_ "radio"
-                                , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-                                , id "btnradio2"
-                                , autocomplete False
-                                , checked (not model.isIgnoringDateFilter)
-                                , onClick <| ToggleIsIgnoringDateFilter False
-                                ]
-                                []
-                            , label
-                                [ class "text-sm text-gray-700 dark:text-gray-300"
-                                , for "btnradio2"
-                                ]
-                                [ text "Період" ]
-                            ]
-                        ]
-                    , div [ class "flex items-center gap-2" ]
-                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
-                        , div [ class "inline-flex" ]
-                            (Le.Block.DateTime.new
-                                { model =
-                                    if not model.isIgnoringDateFilter then
-                                        model.from
-                                    else
-                                        Le.Block.DateTime.init ()
-                                , toMsg = DateTimeFromMsg
-                                }
-                                |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                |> Le.Block.DateTime.view
-                            )
-                        , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
-                        , div [ class "inline-flex" ]
-                            (Le.Block.DateTime.new
-                                { model =
-                                    if not model.isIgnoringDateFilter then
-                                        model.to
-                                    else
-                                        Le.Block.DateTime.init ()
-                                , toMsg = DateTimeToMsg
-                                }
-                                |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                |> Le.Block.DateTime.view
-                            )
                         ]
                     ]
                 ]
@@ -1706,13 +1716,13 @@ contentBlock shared model user =
                                 , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "width" "18%"
+                                    , style "width" "21%"
                                     ]
                                     [ text "Коментар" ]
                                 , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "width" "13%"
+                                    , style "width" "16%"
                                     ]
                                     [ text "Підрозділ" ]
                                 , th
@@ -1727,7 +1737,7 @@ contentBlock shared model user =
                                     th
                                         [ scope "col"
                                         , class "nowrap"
-                                        , style "width" "11%"
+                                        , style "width" "5%"
                                         ]
                                         [ text "Дії" ]
 
@@ -1825,15 +1835,7 @@ view dark shared user model =
                         , unitsBlock shared model
                         ]
                   else
-                    div
-                        [ class "flex items-center justify-center min-w-[32px] max-w-[32px] h-full bg-card border-r border-border" ]
-                        [ button
-                            [ class "btn btn-sm btn-outline-secondary rotate-180"
-                            , onClick ToggleSidebar
-                            , attribute "title" "Показати підрозділи"
-                            ]
-                            [ i [ class "bi bi-chevron-left" ] [] ]
-                        ]
+                    text ""
                 , div
                     [ class (if model.showSidebar then "grow h-full overflow-auto" else "grow h-full overflow-auto mx-auto max-w-[98vw]") ]
                     [ h1 [ class "py-2 ps-4" ]
