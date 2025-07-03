@@ -99,6 +99,7 @@ type alias Model =
     , expandedDivisions : Set.Set String
     , expandedRegiments : Set.Set String
     , expandedBattalions : Set.Set String
+    , showSidebar : Bool
     }
 
 
@@ -155,6 +156,7 @@ init req _ =
             , expandedDivisions = Set.empty
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
+            , showSidebar = True
             }
     in
     ( m2
@@ -211,6 +213,7 @@ type Msg
     | ToggleRegimentExpanded String String String
     | ToggleBattalionExpanded String String String String
     | ClearFilters
+    | ToggleSidebar
 
 
 type alias AddState =
@@ -1067,6 +1070,9 @@ update req msg model =
         ClearFilters ->
             ( { model | filterCallsign = "", filterPosition = "", filterComment = "", filterUnit = "" }, loadCallsigns model )
 
+        ToggleSidebar ->
+            ( { model | showSidebar = not model.showSidebar }, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1806,14 +1812,30 @@ view dark shared user model =
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "flex justify-start items-start h-[calc(100vh-50px)]" ]
-                [ div
-                    [ class "self-stretch max-h-full min-w-[200px] overflow-y-auto"
-                    ]
-                    [ unitsBlock shared model
-                    ]
+                [ if model.showSidebar then
+                    div
+                        [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
+                        ]
+                        [ button
+                            [ class "absolute top-2 right-2 z-10 btn btn-sm btn-outline-secondary"
+                            , onClick ToggleSidebar
+                            , attribute "title" "Сховати підрозділи"
+                            ]
+                            [ i [ class "bi bi-chevron-left" ] [] ]
+                        , unitsBlock shared model
+                        ]
+                  else
+                    div
+                        [ class "flex items-center justify-center min-w-[32px] max-w-[32px] h-full bg-card border-r border-border" ]
+                        [ button
+                            [ class "btn btn-sm btn-outline-secondary rotate-180"
+                            , onClick ToggleSidebar
+                            , attribute "title" "Показати підрозділи"
+                            ]
+                            [ i [ class "bi bi-chevron-left" ] [] ]
+                        ]
                 , div
-                    [ class "grow h-full overflow-auto"
-                    ]
+                    [ class (if model.showSidebar then "grow h-full overflow-auto" else "grow h-full overflow-auto mx-auto max-w-[98vw]") ]
                     [ h1 [ class "py-2 ps-4" ]
                         [ span [ class "me-2" ] [ text "позивні" ]
                         , button
@@ -1825,7 +1847,6 @@ view dark shared user model =
                             ]
                             (if model.loading then
                                 [ Le.Block.Spinner.loadingSpinner2Sm ]
-
                              else
                                 [ i [ class "bi bi-arrow-repeat" ] [] ]
                             )
