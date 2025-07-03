@@ -31,10 +31,12 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Select
+import Set exposing (Set)
 import Shared
 import Task
 import Time
 import TimeZone
+import UnitHierarchy
 import View exposing (View)
 
 
@@ -93,6 +95,11 @@ type alias Model =
     , loadingMore : Bool
     , inpSourceSelState : Select.State
     , inpSourceSelMenu : List (Select.MenuItem Int)
+    , expandedArmies : Set.Set String
+    , expandedDivisions : Set.Set String
+    , expandedRegiments : Set.Set String
+    , expandedBattalions : Set.Set String
+    , showSidebar : Bool
     }
 
 
@@ -145,6 +152,11 @@ init req _ =
             , loadingMore = False
             , inpSourceSelState = Select.initState (Select.selectIdentifier "inpSourceSelState")
             , inpSourceSelMenu = []
+            , expandedArmies = Set.empty
+            , expandedDivisions = Set.empty
+            , expandedRegiments = Set.empty
+            , expandedBattalions = Set.empty
+            , showSidebar = True
             }
     in
     ( m2
@@ -196,6 +208,12 @@ type Msg
     | SortByCallsignName
     | LoadMore
     | InpSourceSelMsg (Select.Msg Int)
+    | ToggleArmyExpanded String
+    | ToggleDivisionExpanded String String
+    | ToggleRegimentExpanded String String String
+    | ToggleBattalionExpanded String String String String
+    | ClearFilters
+    | ToggleSidebar
 
 
 type alias AddState =
@@ -537,24 +555,27 @@ update req msg model =
                     mUnitId |> andThen (\unitId -> ListX.find (\y -> y.id == unitId) model.units)
 
                 -- Only update filterUnit if there's an actual selection change
-                shouldUpdateFilter = 
+                shouldUpdateFilter =
                     case mAction of
                         Just (Select.Select item) ->
                             case model.inpUnit of
-                                Just currentId -> 
+                                Just currentId ->
                                     item /= currentId
-                                Nothing -> 
+
+                                Nothing ->
                                     True
-                        _ -> 
+
+                        _ ->
                             False
 
                 m2 =
                     { model
                         | inpUnitSelState = iState
                         , inpUnit = mUnitId
-                        , filterUnit = 
+                        , filterUnit =
                             if shouldUpdateFilter then
                                 mUnit |> mmap .name |> def ""
+
                             else
                                 model.filterUnit
                     }
@@ -564,6 +585,7 @@ update req msg model =
                 [ E.sendCmd <| Cmd.map AddUnitSelMsg iCmd
                 , if shouldUpdateFilter then
                     E.sendCmd <| loadCallsignsCmd m2
+
                   else
                     E.none
                 ]
@@ -942,9 +964,9 @@ update req msg model =
         ToggleIsIgnoringDateFilter isChecked ->
             let
                 m2 =
-                    { model 
-                    | isIgnoringDateFilter = isChecked
-                    , loading = True
+                    { model
+                        | isIgnoringDateFilter = isChecked
+                        , loading = True
                     }
             in
             ( m2, loadCallsigns m2 )
@@ -985,6 +1007,72 @@ update req msg model =
             , E.sendCmd <| Cmd.map InpSourceSelMsg icmd
             )
 
+        ToggleArmyExpanded armyName ->
+            ( { model
+                | expandedArmies =
+                    if Set.member armyName model.expandedArmies then
+                        Set.remove armyName model.expandedArmies
+
+                    else
+                        Set.insert armyName model.expandedArmies
+              }
+            , E.none
+            )
+
+        ToggleDivisionExpanded armyName divisionName ->
+            let
+                key =
+                    armyName ++ ":" ++ divisionName
+            in
+            ( { model
+                | expandedDivisions =
+                    if Set.member key model.expandedDivisions then
+                        Set.remove key model.expandedDivisions
+
+                    else
+                        Set.insert key model.expandedDivisions
+              }
+            , E.none
+            )
+
+        ToggleRegimentExpanded armyName divisionName regimentName ->
+            let
+                key =
+                    armyName ++ ":" ++ divisionName ++ ":" ++ regimentName
+            in
+            ( { model
+                | expandedRegiments =
+                    if Set.member key model.expandedRegiments then
+                        Set.remove key model.expandedRegiments
+
+                    else
+                        Set.insert key model.expandedRegiments
+              }
+            , E.none
+            )
+
+        ToggleBattalionExpanded armyName divisionName regimentName battalionName ->
+            let
+                key =
+                    armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName
+            in
+            ( { model
+                | expandedBattalions =
+                    if Set.member key model.expandedBattalions then
+                        Set.remove key model.expandedBattalions
+
+                    else
+                        Set.insert key model.expandedBattalions
+              }
+            , E.none
+            )
+
+        ClearFilters ->
+            ( { model | filterCallsign = "", filterPosition = "", filterComment = "", filterUnit = "" }, loadCallsigns model )
+
+        ToggleSidebar ->
+            ( { model | showSidebar = not model.showSidebar }, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1009,7 +1097,7 @@ contentBlock shared model user =
                     [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
                         [ div [ class "pb-12" ]
                             [ h2 [] [ text "Видалення позивного" ]
-                            , p [] 
+                            , p []
                                 [ text "Ви впевнені, що хочете видалити позивний "
                                 , strong [] [ text callsignName ]
                                 , text "?"
@@ -1360,7 +1448,7 @@ contentBlock shared model user =
                         ]
                         []
                     ]
-                , div [ class "col-span-2" ]
+                , div [ class "col-span-3" ]
                     [ HtmlX.viewIf (pos == 0) <|
                         let
                             selectItem =
@@ -1368,13 +1456,11 @@ contentBlock shared model user =
                                     |> Maybe.andThen (\unitId -> ListX.find (\u -> u.id == unitId) model.units)
                                     |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                         in
-                        div
-                            [ class "flex items-center gap-2" ]
+                        div [ class "flex items-center gap-2" ]
                             [ div [ class "flex-grow" ]
                                 [ let
                                     options =
                                         Le.Block.Select.defaultOptions shared.isDarkMode
-
                                     options2 =
                                         { options | disabled = not hasEditorRole }
                                   in
@@ -1387,25 +1473,19 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
-                            , button
-                                [ title "Оновити список підрозділів"
-                                , class "icon-btn icon-btn-primary"
-                                , onClick ReloadUnits
-                                ]
-                                [ i [ class "bi bi-arrow-clockwise" ] [] ]
                             ]
                     ]
-                , div [ class "col-span-3" ]
+                , div [ class "col-span-2" ]
                     [ HtmlX.viewIf (pos == 0) <|
+                        let
+                            selectItem =
+                                model.inpSource
+                                    |> Maybe.andThen (\sourceId -> ListX.find (\s -> s.id == sourceId) model.sources)
+                                    |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                        in
                         div [ class "flex items-center gap-2" ]
-                            [ div [ class "flex-grow" ]
-                                [ let
-                                    selectItem =
-                                        model.inpSource
-                                            |> Maybe.andThen (\sourceId -> ListX.find (\s -> s.id == sourceId) model.sources)
-                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
-                                  in
-                                  Html.map InpSourceSelMsg <|
+                            [ div [ class "w-32" ]
+                                [ Html.map InpSourceSelMsg <|
                                     Styled.toUnstyled <|
                                         Le.Block.Select.renderSelectSingle
                                             selectItem
@@ -1415,18 +1495,25 @@ contentBlock shared model user =
                                             )
                                             "жоден"
                                             (Le.Block.Select.defaultOptions shared.isDarkMode
-                                                |> (\opts -> { opts | disabled = not hasEditorRole })
+                                                |> (\opts -> { opts | disabled =
+                                                    not hasEditorRole
+                                                    , clearable = False})
                                             )
                                 ]
-                            , div [ class "flex gap-2" ]
-                                [ Button.new { label = "Додати", onClick = AddCallsign }
-                                    |> Button.withDisabled (not hasEditorRole)
-                                    |> Button.view
-                                , Button.new { label = "Очистити", onClick = ClearInputs }
-                                    |> Button.withStyleSecondary
-                                    |> Button.withDisabled (not hasEditorRole)
-                                    |> Button.view
+                            , button
+                                [ title "Зберегти"
+                                , class "icon-btn icon-btn-primary"
+                                , onClick AddCallsign
+                                , Attr.disabled (not hasEditorRole)
                                 ]
+                                [ i [ class "bi bi-check-lg" ] [] ]
+                            , button
+                                [ title "Очистити"
+                                , class "icon-btn icon-btn-secondary"
+                                , onClick ClearInputs
+                                , Attr.disabled (not hasEditorRole)
+                                ]
+                                [ i [ class "bi bi-x-lg" ] [] ]
                             ]
                     , if Maybe.withDefault 0 model.inpSource == 2 then
                         input
@@ -1437,119 +1524,131 @@ contentBlock shared model user =
                             , value addState.inpRadioFreq
                             ]
                             []
-
                       else
                         text ""
                     ]
                 ]
 
         filterPanel =
-            div [ class "flex flex-col gap-3 p-2" ]
-                [ div [ class "flex items-center gap-2" ]
-                    [ if not model.loading then
-                        i [ class "bi bi-filter" ] []
-
-                      else
-                        Le.Block.Spinner.loadingSpinner2Sm
-                    , div [ class "flex flex-wrap gap-2 flex-grow" ]
-                        [ input
-                            [ class "form-input uppercase min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Позивний"
-                            , value model.filterCallsign
-                            , onInput FilterCallsignMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-input min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Посада"
-                            , value model.filterPosition
-                            , onInput FilterPositionMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-input min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Коментар"
-                            , value model.filterComment
-                            , onInput FilterCommentMsg
-                            ]
-                            []
-                        , input
-                            [ class "form-input min-w-[180px]"
-                            , type_ "text"
-                            , placeholder "Підрозділ"
-                            , value model.filterUnit
-                            , onInput FilterUnitMsg
-                            ]
-                            []
+            div [ class "flex flex-col gap-3 p-2 relative" ]
+                [ div [ class "absolute top-2 right-2" ]
+                    [ div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
+                        [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
+                        , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
                         ]
                     ]
-                , div [ class "flex items-center gap-4" ]
-                    [ div [ class "flex items-center gap-2" ]
-                        [ div [ class "flex items-center gap-1" ]
-                            [ input
-                                [ type_ "radio"
-                                , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-                                , id "btnradio1"
-                                , autocomplete False
-                                , checked model.isIgnoringDateFilter
-                                , onClick <| ToggleIsIgnoringDateFilter True
-                                ]
-                                []
-                            , label
-                                [ class "text-sm text-gray-700 dark:text-gray-300"
-                                , for "btnradio1"
-                                ]
-                                [ text "Весь час" ]
-                            ]
-                        , div [ class "flex items-center gap-1" ]
-                            [ input
-                                [ type_ "radio"
-                                , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
-                                , id "btnradio2"
-                                , autocomplete False
-                                , checked (not model.isIgnoringDateFilter)
-                                , onClick <| ToggleIsIgnoringDateFilter False
-                                ]
-                                []
-                            , label
-                                [ class "text-sm text-gray-700 dark:text-gray-300"
-                                , for "btnradio2"
-                                ]
-                                [ text "Період" ]
-                            ]
+                , div [ class "flex items-center gap-3" ]
+                    [ div [ class "flex items-center justify-center w-8" ]
+                        [ if not model.loading then
+                            i [ class "bi bi-filter text-lg" ] []
+                          else
+                            Le.Block.Spinner.loadingSpinner2Sm
                         ]
-                    , div [ class "flex items-center gap-2" ]
-                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
-                        , div [ class "inline-flex" ] (
-                            Le.Block.DateTime.new
-                                { model =
-                                    if not model.isIgnoringDateFilter then
-                                        model.from
-
-                                    else
-                                        Le.Block.DateTime.init ()
-                                , toMsg = DateTimeFromMsg
-                                }
-                                |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                |> Le.Block.DateTime.view
-                          )
-                        , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
-                        , div [ class "inline-flex" ] (
-                            Le.Block.DateTime.new
-                                { model =
-                                    if not model.isIgnoringDateFilter then
-                                        model.to
-
-                                    else
-                                        Le.Block.DateTime.init ()
-                                , toMsg = DateTimeToMsg
-                                }
-                                |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                |> Le.Block.DateTime.view
-                          )
+                    , div [ class "flex-grow" ]
+                        [ div [ class "flex flex-wrap gap-2 mb-2" ]
+                            [ input
+                                [ class "form-input uppercase min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Позивний"
+                                , value model.filterCallsign
+                                , onInput FilterCallsignMsg
+                                ]
+                                []
+                            , input
+                                [ class "form-input min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Посада"
+                                , value model.filterPosition
+                                , onInput FilterPositionMsg
+                                ]
+                                []
+                            , input
+                                [ class "form-input min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Коментар"
+                                , value model.filterComment
+                                , onInput FilterCommentMsg
+                                ]
+                                []
+                            , input
+                                [ class "form-input min-w-[180px]"
+                                , type_ "text"
+                                , placeholder "Підрозділ"
+                                , value model.filterUnit
+                                , onInput FilterUnitMsg
+                                ]
+                                []
+                            , button
+                                [ class "btn btn-sm btn-outline-secondary"
+                                , onClick ToggleSidebar
+                                , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
+                                ]
+                                [ text "Підрозділи" ]
+                            ]
+                        , div [ class "flex items-center gap-4" ]
+                            [ div [ class "flex items-center gap-2" ]
+                                [ div [ class "flex items-center gap-1" ]
+                                    [ input
+                                        [ type_ "radio"
+                                        , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        , id "btnradio1"
+                                        , autocomplete False
+                                        , checked model.isIgnoringDateFilter
+                                        , onClick <| ToggleIsIgnoringDateFilter True
+                                        ]
+                                        []
+                                    , label
+                                        [ class "text-sm text-gray-700 dark:text-gray-300"
+                                        , for "btnradio1"
+                                        ]
+                                        [ text "Весь час" ]
+                                    ]
+                                , div [ class "flex items-center gap-1" ]
+                                    [ input
+                                        [ type_ "radio"
+                                        , class "h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        , id "btnradio2"
+                                        , autocomplete False
+                                        , checked (not model.isIgnoringDateFilter)
+                                        , onClick <| ToggleIsIgnoringDateFilter False
+                                        ]
+                                        []
+                                    , label
+                                        [ class "text-sm text-gray-700 dark:text-gray-300"
+                                        , for "btnradio2"
+                                        ]
+                                        [ text "Період" ]
+                                    ]
+                                ]
+                            , div [ class "flex items-center gap-2" ]
+                                [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
+                                , div [ class "inline-flex" ]
+                                    (Le.Block.DateTime.new
+                                        { model =
+                                            if not model.isIgnoringDateFilter then
+                                                model.from
+                                            else
+                                                Le.Block.DateTime.init ()
+                                        , toMsg = DateTimeFromMsg
+                                        }
+                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Le.Block.DateTime.view
+                                    )
+                                , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
+                                , div [ class "inline-flex" ]
+                                    (Le.Block.DateTime.new
+                                        { model =
+                                            if not model.isIgnoringDateFilter then
+                                                model.to
+                                            else
+                                                Le.Block.DateTime.init ()
+                                        , toMsg = DateTimeToMsg
+                                        }
+                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Le.Block.DateTime.view
+                                    )
+                                ]
+                            ]
                         ]
                     ]
                 ]
@@ -1589,7 +1688,7 @@ contentBlock shared model user =
                                 [ th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "200px"
+                                    , style "width" "13%"
                                     ]
                                     [ text "Позивний "
                                     , i
@@ -1597,92 +1696,91 @@ contentBlock shared model user =
                                             (case model.sortingOrder of
                                                 Default ->
                                                     "bi bi-sort-alpha-down"
-
                                                 AscAlphabetically ->
                                                     "bi bi-sort-alpha-up"
-
                                                 DescAlphabetically ->
                                                     "bi bi-sort-alpha-down"
                                             )
                                         , style "cursor" "pointer"
                                         , style "font-size" "16px"
                                         , onClick SortByCallsignName
+                                        ]
+                                        []
                                     ]
-                                    []
-                                ]
-                            , th
-                                [ scope "col"
-                                , class "nowrap"
-                                , style "min-width" "200px"
-                                ]
-                                [ text "Посада" ]
-                            , th
-                                [ scope "col"
-                                , class "nowrap"
-                                , style "min-width" "200px"
-                                ]
-                                [ text "Коментар" ]
-                            , th
-                                [ scope "col"
-                                , class "nowrap"
-                                , style "min-width" "200px"
-                                ]
-                                [ text "Підрозділ" ]
-                            , th
-                                [ scope "col"
-                                , class "nowrap"
-                                , style "min-width" "210px"
-                                ]
-                                [ text "Зустрічається у підрозділах" ]
-                            , th [ scope "col", class "nowrap" ] [ text "Джерело" ]
-                            , th [ scope "col", class "nowrap" ] [ text "Створено" ]
-                            , if hasEditorRole then
-                                th
+                                , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "100px"
+                                    , style "width" "10%"
                                     ]
-                                    [ text "Дії" ]
+                                    [ text "Посада" ]
+                                , th
+                                    [ scope "col"
+                                    , class "nowrap"
+                                    , style "width" "21%"
+                                    ]
+                                    [ text "Коментар" ]
+                                , th
+                                    [ scope "col"
+                                    , class "nowrap"
+                                    , style "width" "16%"
+                                    ]
+                                    [ text "Підрозділ" ]
+                                , th
+                                    [ scope "col"
+                                    , class "nowrap"
+                                    , style "width" "15%"
+                                    ]
+                                    [ text "Зустрічається у підрозділах" ]
+                                , th [ scope "col", class "nowrap", style "width" "10%" ] [ text "Джерело" ]
+                                , th [ scope "col", class "nowrap", style "width" "10%" ] [ text "Створено" ]
+                                , if hasEditorRole then
+                                    th
+                                        [ scope "col"
+                                        , class "nowrap"
+                                        , style "width" "5%"
+                                        ]
+                                        [ text "Дії" ]
 
-                              else
-                                text ""
+                                  else
+                                    text ""
+                                ]
                             ]
+                        , tbody [] <|
+                            List.indexedMap renderCallsignTr (model.callsigns |> sortByName model)
                         ]
-                    , tbody [] <|
-                        List.indexedMap renderCallsignTr (model.callsigns |> sortByName model)
+                    , if model.loading then
+                        div
+                            [ class "absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
+                            , style "backdrop-filter" "blur(1px)"
+                            ]
+                            [ div [ class "flex flex-col items-center gap-2" ]
+                                [ Le.Block.Spinner.loadingSpinner
+                                , div [ class "text-sm text-gray-600 dark:text-gray-300" ]
+                                    [ text "Завантаження даних..." ]
+                                ]
+                            ]
+
+                      else
+                        text ""
                     ]
-                , if model.loading then
-                    div 
-                        [ class "absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
-                        , style "backdrop-filter" "blur(1px)"
-                        ] 
-                        [ div [ class "flex flex-col items-center gap-2" ]
-                            [ Le.Block.Spinner.loadingSpinner
-                            , div [ class "text-sm text-gray-600 dark:text-gray-300" ] 
-                                [ text "Завантаження даних..." ]
-                            ]
+                , div [ class "flex justify-center mt-3 mb-3" ] <|
+                    if model.showLoadMore then
+                        [ Button.new { label = "Завантажити ще", onClick = LoadMore }
+                            |> Button.withStyleSecondary
+                            |> Button.withDisabled model.loadingMore
+                            |> Button.withIcon
+                                (if model.loadingMore then
+                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                                 else
+                                    []
+                                )
+                            |> Button.view
                         ]
-                  else
-                    text ""
+
+                    else
+                        []
                 ]
-            , div [ class "flex justify-center mt-3 mb-3" ] <|
-                if model.showLoadMore then
-                    [ Button.new { label = "Завантажити ще", onClick = LoadMore }
-                        |> Button.withStyleSecondary
-                        |> Button.withDisabled model.loadingMore
-                        |> Button.withIcon
-                            (if model.loadingMore then
-                                [ Le.Block.Spinner.loadingSpinner2Sm ]
-
-                             else
-                                []
-                            )
-                        |> Button.view
-                    ]
-
-                else
-                    []
-            ]
     in
     div []
         [ deleteConfirmationModal
@@ -1693,45 +1791,29 @@ contentBlock shared model user =
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock shared model =
     let
-        renderUnitStat : B.CallsignUnitStatRow -> List (Html Msg)
-        renderUnitStat stat =
-            let
-                unitName =
-                    case ListX.find (\u -> u.id == stat.unitId) model.units of
-                        Nothing ->
-                            "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
-
-                        Just unit ->
-                            unit.name
-            in
-            [ div
-                [ class "flex justify-between items-between p-2 pointer max-w-[220px]"
-                , onClick <| FilterUnitMsg unitName
-                ]
-                [ div [ class "grow text-end me-2" ] [ text unitName ]
-                , div [ class "me-2" ]
-                    [ div
-                        [ style "min-width" "30px"
-                        , class "text-center"
-                        ]
-                        [ span
-                            [ class "badge badge-sm rounded-pill text-bg-secondary"
-                            , style "font-size" "0.6rem"
-                            ]
-                            [ text <| String.fromInt stat.count
-                            ]
-                        ]
-                    ]
-                ]
-            , div [ class "border-bottom" ] []
-            ]
+        config : UnitHierarchy.Config Msg
+        config =
+            { onUnitClick = FilterUnitMsg
+            , onArmyToggle = ToggleArmyExpanded
+            , onDivisionToggle = ToggleDivisionExpanded
+            , onRegimentToggle = ToggleRegimentExpanded
+            , onBattalionToggle = ToggleBattalionExpanded
+            , isArmyExpanded = \armyName -> Set.member armyName model.expandedArmies
+            , isDivisionExpanded = \armyName divisionName -> Set.member (armyName ++ ":" ++ divisionName) model.expandedDivisions
+            , isRegimentExpanded = \armyName divisionName regimentName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
+            , isBattalionExpanded = \armyName divisionName regimentName battalionName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName) model.expandedBattalions
+            , selectedUnit = model.filterUnit
+            , autoExpandArmies = False
+            , autoExpandDivisions = True
+            , autoExpandRegiments = True
+            , autoExpandBattalions = True
+            }
     in
     if model.loadingUnitStats then
         Le.Block.Spinner.loadingSpinner
 
     else
-        div [ style "font-size" ".8rem" ] <|
-            List.concatMap renderUnitStat model.unitStats
+        UnitHierarchy.view config model.units model.unitStats
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
@@ -1740,19 +1822,22 @@ view dark shared user model =
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "flex justify-start items-start h-[calc(100vh-50px)]" ]
-                [ div
-                    [ class "self-stretch max-h-full min-w-[200px] overflow-y-auto"
-                    ]
-                    [ div
-                        [ class "flex flex-col pt-1"
+                [ if model.showSidebar then
+                    div
+                        [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
                         ]
-                        [ unitsBlock shared model
-                        , div [ class "grow" ] []
+                        [ button
+                            [ class "absolute top-2 right-2 z-10 btn btn-sm btn-outline-secondary"
+                            , onClick ToggleSidebar
+                            , attribute "title" "Сховати підрозділи"
+                            ]
+                            [ i [ class "bi bi-chevron-left" ] [] ]
+                        , unitsBlock shared model
                         ]
-                    ]
+                  else
+                    text ""
                 , div
-                    [ class "grow h-full overflow-auto"
-                    ]
+                    [ class (if model.showSidebar then "grow h-full overflow-auto" else "grow h-full overflow-auto mx-auto max-w-[98vw]") ]
                     [ h1 [ class "py-2 ps-4" ]
                         [ span [ class "me-2" ] [ text "позивні" ]
                         , button
@@ -1764,7 +1849,6 @@ view dark shared user model =
                             ]
                             (if model.loading then
                                 [ Le.Block.Spinner.loadingSpinner2Sm ]
-
                              else
                                 [ i [ class "bi bi-arrow-repeat" ] [] ]
                             )
