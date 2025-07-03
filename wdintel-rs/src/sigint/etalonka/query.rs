@@ -1856,9 +1856,11 @@ pub async fn load_networks(
             );
 
         if let Some(filter_freq) = &req.filter_freq {
-            subquery = subquery
-                .filter(sigint_network_freq::Column::Freq.eq(filter_freq));
-        }
+            subquery = subquery.filter(Expr::cust_with_values(
+                "sigint_network_freq.freq ilike $1",
+                vec![format!("{}%", filter_freq).as_str()],
+            ));
+        }        
         if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
             subquery = subquery.filter(
                 sigint_inbox_item::Column::Datetime

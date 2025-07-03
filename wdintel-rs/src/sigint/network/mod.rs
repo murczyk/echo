@@ -109,7 +109,8 @@ pub async fn network_list(
                 sigint_network_freq::Column::NetworkId
                     .into_simple_expr()
                     .eq(sigint_network::Column::Id.into_simple_expr()),
-            );
+            )
+            .filter(sigint_network_freq::Column::ActiveTo.is_null());
 
         if let Some(filter_freq) = &req.filter_freq {
             subquery = subquery.filter(Expr::cust_with_values(
