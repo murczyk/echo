@@ -1495,7 +1495,9 @@ contentBlock shared model user =
                                             )
                                             "жоден"
                                             (Le.Block.Select.defaultOptions shared.isDarkMode
-                                                |> (\opts -> { opts | disabled = not hasEditorRole })
+                                                |> (\opts -> { opts | disabled =
+                                                    not hasEditorRole
+                                                    , clearable = False})
                                             )
                                 ]
                             , button
@@ -1676,7 +1678,7 @@ contentBlock shared model user =
                                 [ th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "200px"
+                                    , style "width" "13%"
                                     ]
                                     [ text "Позивний "
                                     , i
@@ -1684,10 +1686,8 @@ contentBlock shared model user =
                                             (case model.sortingOrder of
                                                 Default ->
                                                     "bi bi-sort-alpha-down"
-
                                                 AscAlphabetically ->
                                                     "bi bi-sort-alpha-up"
-
                                                 DescAlphabetically ->
                                                     "bi bi-sort-alpha-down"
                                             )
@@ -1700,34 +1700,34 @@ contentBlock shared model user =
                                 , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "200px"
+                                    , style "width" "10%"
                                     ]
                                     [ text "Посада" ]
                                 , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "200px"
+                                    , style "width" "18%"
                                     ]
                                     [ text "Коментар" ]
                                 , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "200px"
+                                    , style "width" "13%"
                                     ]
                                     [ text "Підрозділ" ]
                                 , th
                                     [ scope "col"
                                     , class "nowrap"
-                                    , style "min-width" "210px"
+                                    , style "width" "15%"
                                     ]
                                     [ text "Зустрічається у підрозділах" ]
-                                , th [ scope "col", class "nowrap" ] [ text "Джерело" ]
-                                , th [ scope "col", class "nowrap" ] [ text "Створено" ]
+                                , th [ scope "col", class "nowrap", style "width" "10%" ] [ text "Джерело" ]
+                                , th [ scope "col", class "nowrap", style "width" "10%" ] [ text "Створено" ]
                                 , if hasEditorRole then
                                     th
                                         [ scope "col"
                                         , class "nowrap"
-                                        , style "min-width" "100px"
+                                        , style "width" "11%"
                                         ]
                                         [ text "Дії" ]
 
