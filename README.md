@@ -180,3 +180,8 @@ Batch-deploy:
 for server in echo-kherson echo-soledarnist; do echo "\n🚀🚀🚀 deploying $server 🚀🚀🚀\n"; just server=$server deploy-echo; done
 ```
 ## [Postman.md](postman/Postman.md)
+
+# Generate rust docs
+```bash
+just server=echo-gpu deploy-rustdocs
+```

@@ -784,3 +784,23 @@ setup-server-interactive:
 _build-whatsapp-bin-local:
     (cd echo-whatsapp/whatsmeow/echo-whatsapp && /usr/local/go/bin/go mod tidy && /usr/local/go/bin/go build)
     mv echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/echo-whatsapp
+
+
+deploy-rustdocs:
+    @set -e
+    @echo "Cleaning..."
+    rm -rf ./deploy/echo-docs.zip
+    ssh {{ server }} -- 'rm -rf ./echo-docs && sudo rm -rf /usr/share/echo-docs && sudo rm -rf /etc/nginx/sites-enabled/echo-docs'
+    @echo "Building docs..."
+    cd wdintel-rs && cargo doc
+    @echo "Creating archive..."
+    zip -r ./deploy/echo-docs.zip ./deploy/nginx/echo-docs ./wdintel-rs/target/doc
+    @echo "Deploying nginx config..."
+    ssh {{ server }} -- 'mkdir -p echo-docs'
+    rsync -avz --progress ./deploy/echo-docs.zip {{ server }}:~/echo-docs
+    @echo "Deploying docs..."
+    ssh {{ server }} -- 'cd echo-docs && unzip ./echo-docs.zip'
+    ssh {{ server }} -- 'cd echo-docs && sudo cp ./deploy/nginx/echo-docs /etc/nginx/sites-enabled/ && sudo cp -R ./wdintel-rs/target/doc /usr/share/echo-docs'
+    @echo "Restarting nginx..."
+    ssh {{ server }} -- 'sudo chown -R root:root /usr/share/echo-docs && sudo systemctl restart nginx'
+    @echo "Done."
