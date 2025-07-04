@@ -1,4 +1,5 @@
 ## NEXT
+- [#988](https://github.com/echoua/echo/issues/988) Еталонка. Можливість формувати звіт зі сторінки мережі
 - [#987](https://github.com/echoua/echo/issues/987) Еталонка. Виправлено формування звіту коли задано фільтр по конкретній частоті
 - [#984](https://github.com/echoua/echo/issues/984) Адміністрування користувачів. Не блокувати не активні логіни для NoAutoLogout ролі
 - [#983](https://github.com/echoua/echo/issues/983) Мережа. Виправлено помилку об'єднання 2х мереж
