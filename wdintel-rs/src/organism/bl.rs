@@ -17,7 +17,7 @@ where
     let mut organism_ids =
         parents.into_iter().map(|x| x.id).collect::<Vec<_>>();
     organism_ids.push(organism_id);
-    let groups = organism_group::Entity::find()
+    let mut groups = organism_group::Entity::find()
         .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
         .all(txn)
         .await
@@ -32,6 +32,10 @@ where
             .collect_vec();
         if !new_group_ids.is_empty() {
             group_ids = new_group_ids;
+            groups = groups
+                .into_iter()
+                .filter(|g| group_ids.contains(&g.signal_group_master_key))
+                .collect_vec();
         }
     }
     Ok(group_ids)
@@ -90,25 +94,79 @@ where
         .into_iter()
         .map(|x| (x.id, x))
         .collect::<BTreeMap<_, _>>();
-
-    fn find_parent_chain(
-        organisms: &BTreeMap<i64, organism::Model>,
-        child_id: i64,
-    ) -> Vec<i64> {
-        if let Some(child) = organisms.get(&child_id) {
-            let Some(parent_id) = &child.parent_id else {
-                return vec![];
-            };
-            let mut parents_chain = find_parent_chain(organisms, *parent_id);
-            parents_chain.push(*parent_id);
-        }
-        vec![]
-    }
-    let parent_ids = find_parent_chain(&all_organisms, organism_id);
+    let parent_ids =
+        find_parent_chain(&all_organisms, organism_id).context(h!())?;
     let child = all_organisms.remove(&organism_id).context(h!())?;
     let mut parents = vec![];
     for parent in parent_ids {
         parents.push(all_organisms.remove(&parent).context(h!())?);
     }
     Ok((child, parents))
+}
+
+fn find_parent_chain(
+    organisms: &BTreeMap<i64, organism::Model>,
+    child_id: i64,
+) -> anyhow::Result<Vec<i64>> {
+    let child = organisms.get(&child_id).context(h!())?.clone();
+    let Some(parent_id) = child.parent_id else {
+        return Ok(vec![]);
+    };
+    let mut parents_chain =
+        find_parent_chain(organisms, parent_id).context(h!())?;
+    parents_chain.push(parent_id);
+    Ok(parents_chain)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_parent_chain() {
+        let mut organisms = BTreeMap::new();
+        organisms.insert(1, mk_organism_with_parent(1, -1));
+        organisms.insert(2, mk_organism_with_parent(2, -1));
+        organisms.insert(3, mk_organism_with_parent(3, -1));
+        organisms.insert(11, mk_organism_with_parent(11, 1));
+        organisms.insert(12, mk_organism_with_parent(12, 1));
+        organisms.insert(13, mk_organism_with_parent(13, 1));
+        organisms.insert(21, mk_organism_with_parent(21, 2));
+        organisms.insert(111, mk_organism_with_parent(111, 11));
+        organisms.insert(121, mk_organism_with_parent(121, 12));
+        organisms.insert(122, mk_organism_with_parent(122, 12));
+
+        fn assert_parents(
+            expected_parents: Vec<i64>,
+            id: i64,
+            organisms: &BTreeMap<i64, organism::Model>,
+        ) {
+            let parents = find_parent_chain(&organisms, id).unwrap();
+            assert_eq!(expected_parents, parents);
+        }
+
+        assert_parents(vec![], 1, &organisms);
+        assert_parents(vec![], 2, &organisms);
+        assert_parents(vec![], 3, &organisms);
+        assert_parents(vec![1], 11, &organisms);
+        assert_parents(vec![1], 12, &organisms);
+        assert_parents(vec![1], 13, &organisms);
+        assert_parents(vec![2], 21, &organisms);
+        assert_parents(vec![1, 11], 111, &organisms);
+        assert_parents(vec![1, 12], 121, &organisms);
+        assert_parents(vec![1, 12], 122, &organisms);
+    }
+
+    fn mk_organism_with_parent(id: i64, parent_id: i64) -> organism::Model {
+        let parent_id = if parent_id < 0 { None } else { Some(parent_id) };
+        organism::Model {
+            id,
+            parent_id,
+            name: "".to_string(),
+            created_at: Default::default(),
+            roles: Default::default(),
+            group_auto_link: None,
+            enabled: true,
+        }
+    }
 }
