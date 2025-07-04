@@ -1,7 +1,9 @@
 use self::types::*;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::organism::bl::load_organism_with_children;
+use crate::organism::bl::{
+    load_organism_group_ids, load_organism_with_children,
+};
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
@@ -148,6 +150,35 @@ pub async fn organism_group_list(
         signal_group::Entity::find()
             .all(&env.dbx)
             .await?
+            .into_iter()
+            .map(|g| SignalGroupFull {
+                master_key: g.master_key,
+                name: g.name.unwrap_or("".to_string()),
+                datasource_id: g.datasource_id.unwrap_or(0),
+            })
+            .collect(),
+    ))
+}
+
+// this method returns actual list of all groups that are available for users from it
+#[post("/api/organism/available-groups")]
+pub async fn organism_available_groups(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<i64>,
+) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    let groups = load_organism_group_ids(&env.dbx, req.into_inner())
+        .await
+        .context(h!())?;
+
+    let groups_list = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.is_in(groups))
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(
+        groups_list
             .into_iter()
             .map(|g| SignalGroupFull {
                 master_key: g.master_key,

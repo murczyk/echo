@@ -285,6 +285,7 @@ pub async fn main_server(
             .service(crate::organism::add_group_to_organism)
             .service(crate::organism::remove_group_from_organism)
             .service(crate::organism::organism_group_list)
+            .service(crate::organism::organism_available_groups)
             .service(crate::datasource::list_datasources)
             .service(crate::datasource::datasource_group_list)
             .service(crate::sigint::zone::zones_list)
