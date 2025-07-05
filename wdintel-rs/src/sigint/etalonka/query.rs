@@ -1860,7 +1860,7 @@ pub async fn load_networks(
                 "sigint_network_freq.freq ilike $1",
                 vec![format!("{}%", filter_freq).as_str()],
             ));
-        }        
+        }
         if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
             subquery = subquery.filter(
                 sigint_inbox_item::Column::Datetime

@@ -2647,7 +2647,9 @@ pub async fn merge_two_networks(
 
     // Delete all remaining descriptions in the source network (those not reassigned)
     sigint_network_description::Entity::delete_many()
-        .filter(sigint_network_description::Column::NetworkId.eq(network_id_from))
+        .filter(
+            sigint_network_description::Column::NetworkId.eq(network_id_from),
+        )
         .exec(txn)
         .await
         .context(h!())?;

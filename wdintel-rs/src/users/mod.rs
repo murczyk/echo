@@ -74,9 +74,7 @@ pub async fn has_any_role(
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"CallsignsEditor".to_string())
             }
-            "NoAutoLogout" => {
-                roles.contains(&"NoAutoLogout".to_string())                    
-            }
+            "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
             role => {
                 return Err(AppError::BL {
                     msg: format!("impossible! unknown role {}", role),

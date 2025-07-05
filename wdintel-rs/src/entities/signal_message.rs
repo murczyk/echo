@@ -48,7 +48,6 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SignalGroup,
-
 }
 
 impl Related<super::datasource::Entity> for Entity {

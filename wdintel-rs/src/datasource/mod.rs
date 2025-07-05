@@ -50,16 +50,9 @@ pub async fn datasource_group_list(
 
     if datasource.kind == "signal" || datasource.kind == "whatsapp" {
         let now = Utc::now();
-        #[derive(FromQueryResult)]
-        struct Row {
-            group_master_key: String,
-        }
-        let rows = signal_message::Entity::find()
+        let res = signal_message::Entity::find()
             .select_only()
-            .column_as(
-                signal_message::Column::GroupMasterKey,
-                "group_master_key",
-            )
+            .column(signal_message::Column::GroupMasterKey)
             .filter(
                 signal_message::Column::CreatedAt
                     .gte(now - chrono::Duration::days(7)),
@@ -77,14 +70,10 @@ pub async fn datasource_group_list(
             .filter(signal_message::Column::DatasourceId.eq(datasource_id))
             .filter(signal_message::Column::Deleted.eq(false))
             .group_by(Expr::cust("1"))
-            .into_model::<Row>()
+            .into_tuple::<String>()
             .all(&env.dbx)
-            .await?;
-
-        let mut res = vec![];
-        for row in rows {
-            res.push(row.group_master_key.clone());
-        }
+            .await
+            .context(h!())?;
         return Ok(Json(res));
     } else if datasource.kind == "api" {
         let datasource = datasource::Entity::find_by_id(datasource_id)

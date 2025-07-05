@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
                 (roles @> '[\"Admin\"]'::jsonb
                     OR roles @> '[\"Api\"]'::jsonb)
                 AND NOT (roles @> '[\"NoAutoLogout\"]'::jsonb);
-            ",        
+            ",
         )
         .await?;
         Ok(())
