@@ -64,6 +64,8 @@ type alias Model =
     , orphanGroupAssignmentInProgress : Maybe String  -- Track which group is being assigned
     , orphanGroupAssignmentError : Maybe String
     , groupRemovalConfirmation : Maybe { zoneId : Int, datasourceId : Int, groupKey : String, groupName : String }
+    , orphanGroupZoneSelector : Maybe { groupKey : String, selectedZones : List Int }
+
     }
 
 
@@ -181,6 +183,8 @@ init _ =
       , orphanGroupAssignmentInProgress = Nothing
       , orphanGroupAssignmentError = Nothing
       , groupRemovalConfirmation = Nothing
+      , orphanGroupZoneSelector = Nothing
+      
       }
     , E.sendCmd <|
         Cmd.batch
@@ -220,6 +224,11 @@ type Msg
     | ConfirmRemoveGroup
     | RemoveGroupFromDatasource Int Int String  -- zoneId, datasourceId, groupKey
     | RemoveGroupFromDatasourceDone (Result ApiError ()) Int Int String  -- result, zoneId, datasourceId, groupKey
+    | OpenOrphanGroupZoneSelector String  -- groupKey
+    | CloseOrphanGroupZoneSelector
+    | ToggleOrphanGroupZone String Int  -- groupKey, zoneId
+    | SaveOrphanGroupZones
+
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -1007,6 +1016,92 @@ update msg model =
             -- Handle error - could show a toast or set an error state
             Api.handleHttpError ToastMsg e model
 
+        OpenOrphanGroupZoneSelector groupKey ->
+            ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [] } }
+            , E.none
+            )
+
+        CloseOrphanGroupZoneSelector ->
+            ( { model | orphanGroupZoneSelector = Nothing }
+            , E.none
+            )
+
+        ToggleOrphanGroupZone groupKey zoneId ->
+            case model.orphanGroupZoneSelector of
+                Just selector ->
+                    if selector.groupKey == groupKey then
+                        let
+                            updatedZones = 
+                                if List.member zoneId selector.selectedZones then
+                                    List.filter ((/=) zoneId) selector.selectedZones
+                                else
+                                    zoneId :: selector.selectedZones
+                        in
+                        ( { model | orphanGroupZoneSelector = Just { selector | selectedZones = updatedZones } }
+                        , E.none
+                        )
+                    else
+                        -- Переключаємося на іншу групу
+                        ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [zoneId] } }
+                        , E.none
+                        )
+                Nothing ->
+                    -- Створюємо новий селектор для групи
+                    ( { model | orphanGroupZoneSelector = Just { groupKey = groupKey, selectedZones = [zoneId] } }
+                    , E.none
+                    )
+
+        SaveOrphanGroupZones ->
+            let
+                maybeSelector = model.orphanGroupZoneSelector
+                maybeOrphanGroup = 
+                    maybeSelector
+                        |> Maybe.andThen (\selector -> findOrphanGroup model selector.groupKey)
+                maybeDatasourceId = 
+                    maybeOrphanGroup
+                        |> Maybe.andThen .datasourceId
+            in
+            case (maybeSelector, maybeOrphanGroup, maybeDatasourceId) of
+                (Just selector, Just orphanGroup, Just datasourceId) ->
+                    let
+                        requests = 
+                            List.map (\zoneId ->
+                                let
+                                    req : B.ZoneDatasourceGroupAddReq
+                                    req =
+                                        { zoneId = zoneId
+                                        , datasourceId = datasourceId
+                                        , masterKey = selector.groupKey
+                                        , isSecret = False
+                                        , userLogins = []
+                                        }
+                                in
+                                Api.zone_datasource_group_add AssignOrphanGroupDone req
+                            ) selector.selectedZones
+                    in
+                    ( { model 
+                        | orphanGroupAssignmentInProgress = Just selector.groupKey
+                        , orphanGroupAssignmentError = Nothing
+                        , orphanGroupZoneSelector = Nothing
+                      }
+                    , E.sendCmd <| Cmd.batch requests
+                    )
+                
+                (Just _, Just _, Nothing) ->
+                    ( { model | orphanGroupAssignmentError = Just "У групи немає прив'язаного напрямку" }
+                    , E.none
+                    )
+                
+                (Just _, Nothing, _) ->
+                    ( { model | orphanGroupAssignmentError = Just "Не вдалося знайти групу" }
+                    , E.none
+                    )
+                
+                (Nothing, _, _) ->
+                    ( model, E.none )
+
+
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1123,16 +1218,48 @@ renderOrphanGroup model group =
                             ]
                     Nothing -> text ""
               else
-                -- Кілька зон - показуємо кнопки для кожної зони
-                div [ class "flex gap-2" ]
-                    (List.map (\(zoneId, zone) ->
+                -- Кілька зон - показуємо теги з напрямками
+                let
+                    selectedZones = 
+                        case model.orphanGroupZoneSelector of
+                            Just selector -> 
+                                if selector.groupKey == group.masterKey then
+                                    selector.selectedZones
+                                else
+                                    []
+                            Nothing -> []
+                    
+                    hasSelection = not (List.isEmpty selectedZones)
+                in
+                div [ class "flex items-center gap-2 flex-wrap" ]
+                    ([ span [ class "text-sm text-gray-700" ] [ text "→" ] ]
+                    ++ (List.map (\(zoneId, zone) ->
+                        let
+                            isSelected = List.member zoneId selectedZones
+                        in
                         button
-                            [ class "px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full transition-colors"
-                            , onClick (AssignOrphanGroup zoneId group.masterKey)
-                            , title ("Додати до " ++ zone.name)
+                            [ class <| "px-2 py-1 text-xs rounded-full transition-colors " ++
+                                if isSelected then
+                                    "bg-blue-100 text-blue-700 border border-blue-300"
+                                else
+                                    "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
+                            , onClick (ToggleOrphanGroupZone group.masterKey zoneId)
+                            , title <| if isSelected then "Прибрати " ++ zone.name else "Додати " ++ zone.name
                             ]
                             [ text zone.name ]
                     ) model.zones)
+                    ++ (if hasSelection then
+                        [ button
+                            [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
+                            , onClick SaveOrphanGroupZones
+                            , title "Додати до вибраних напрямків"
+                            ]
+                            [ i [ class "bi bi-plus text-sm" ] [] ]
+                        ]
+                    else
+                        []
+                    )
+                    )
             ]
         ]
 
@@ -1441,6 +1568,7 @@ body dark shared user model =
                 Nothing ->
                     []
            )
+
 
 
 
