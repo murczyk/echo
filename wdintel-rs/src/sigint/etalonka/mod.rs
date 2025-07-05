@@ -20,10 +20,11 @@ const OLD_CALLSIGNS_COLOR: &str = "696969";
 const DEFAULT_PURPOSE: &str =
     "для управління підлеглим особовим складом підрозділу.";
 const DEFAULT_OPERATION_MODE: &str =
-    "з використанням дуплексного способу організації зв’язку";
+    "дуплекс";
 const DEFAULT_OPERATION_TYPE: &str =
-    "перевірка зв’язку, ведення службового радіообміну";
+    "ведення службового радіообміну";
 const DEFAULT_OPERATION_PERIOD: &str = "цілодобово";
+const DEFAULT_MODULATION: &str = "уточнюється";
 
 pub mod query;
 pub mod types;
@@ -1206,7 +1207,7 @@ pub async fn report_networks(
                                         &freq
                                             .modulation
                                             .clone()
-                                            .unwrap_or_default(),
+                                            .unwrap_or(DEFAULT_MODULATION.to_string()),
                                         None,
                                         false,
                                     ),
