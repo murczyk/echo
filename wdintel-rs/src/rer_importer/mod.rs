@@ -352,7 +352,7 @@ pub async fn signal_group_info_batch(
 /// 
 /// # Повертає
 /// 
-/// Список неприв'язаних до напрямків груп у форматі `Vec<OrphanSignalGroupEntry>`, 
+/// Список неприв'язаних до напрямків груп у форматі Vec<[`OrphanSignalGroupEntry`]>, 
 /// 
 #[post("/api/rer-importer/orphan-signal-groups")]
 pub async fn orphan_signal_groups(
