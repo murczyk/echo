@@ -119,7 +119,7 @@ renderGroup model zoneId activeSourceId group =
               else
                 text ""
             ]
-        , div [ class "w-1/4 flex items-center justify-end" ]
+        , div [ class "w-1/4 flex items-center justify-end gap-4" ]
             [ div
                 [ style "pointer-events"
                     (if isLoading then
@@ -141,6 +141,12 @@ renderGroup model zoneId activeSourceId group =
 
               else
                 text ""
+            , button
+                [ class "cursor-pointer text-red-600 hover:text-red-800 transition-colors ml-2"
+                , onClick (RemoveGroupFromDatasource zoneId activeSourceId group.groupMasterKey)
+                , title "Видалити групу з цього напрямку"
+                ]
+                [ i [ class "bi bi-x-lg" ] [] ]
             ]
         ]
 
@@ -207,6 +213,8 @@ type Msg
     | GotOrphanGroups (Result ApiError (List B.OrphanSignalGroupEntry))
     | AssignOrphanGroup Int String
     | AssignOrphanGroupDone (Result ApiError B.ZoneDatasourceGroupAddRsp)
+    | RemoveGroupFromDatasource Int Int String  -- zoneId, datasourceId, groupKey
+    | RemoveGroupFromDatasourceDone (Result ApiError ()) Int Int String  -- result, zoneId, datasourceId, groupKey
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -866,7 +874,7 @@ update msg model =
                 , zoneSourceGroups = updatedZoneSourceGroups
                 , groupInfos = updatedGroupInfos
               }
-            , E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "✅ Групу успішно призначено!"
+            , E.none  
             )
 
         AssignOrphanGroupDone (Err e) ->
@@ -876,6 +884,91 @@ update msg model =
               }
             , E.none
             )
+
+        RemoveGroupFromDatasource zoneId datasourceId groupKey ->
+            -- Find the sigintZoneDatasourceId for this group
+            let
+                groupToRemove : Maybe B.ZoneDatasourceGroup
+                groupToRemove =
+                    Dict.get ( zoneId, datasourceId ) model.zoneSourceGroups
+                        |> def []
+                        |> List.filter (\g -> g.groupMasterKey == groupKey)
+                        |> List.head
+            in
+            case groupToRemove of
+                Just group ->
+                    ( model
+                    , E.sendCmd <| Api.zone_datasource_group_delete 
+                        (\result -> RemoveGroupFromDatasourceDone result zoneId datasourceId groupKey)
+                        group.sigintZoneDatasourceId
+                    )
+                Nothing ->
+                    ( model, E.none )
+
+        RemoveGroupFromDatasourceDone (Ok ()) zoneId datasourceId groupKey ->
+            -- Remove the group from local state and add it back to orphan groups
+            let
+                -- Remove from zoneSourceGroups
+                updatedZoneSourceGroups =
+                    Dict.update (zoneId, datasourceId)
+                        (\maybeGroups ->
+                            case maybeGroups of
+                                Just groups -> 
+                                    groups
+                                    |> List.filter (\g -> g.groupMasterKey /= groupKey)
+                                    |> Just
+                                Nothing -> Nothing
+                        )
+                        model.zoneSourceGroups
+                
+                -- Remove from datasourceGroups
+                updatedDatasourceGroups =
+                    Dict.update datasourceId
+                        (\maybeGroups ->
+                            case maybeGroups of
+                                Just groups -> 
+                                    groups
+                                    |> List.filter (\g -> g /= groupKey)
+                                    |> Just
+                                Nothing -> Nothing
+                        )
+                        model.datasourceGroups
+                
+                -- Add back to orphan groups
+                updatedOrphanGroups =
+                    case model.orphanGroups of
+                        RD.Success groups ->
+                            -- Get group info to create the orphan entry
+                            let
+                                groupInfo = Dict.get groupKey model.groupInfos
+                                
+                                newOrphanGroup : B.OrphanSignalGroupEntry
+                                newOrphanGroup =
+                                    { masterKey = groupKey
+                                    , name = groupInfo |> Maybe.map .name |> Maybe.withDefault ""
+                                    , datasourceId = Just datasourceId
+                                    , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
+                                    }
+                            in
+                            -- Only add if not already in orphan groups
+                            if List.any (\g -> g.masterKey == groupKey) groups then
+                                RD.Success groups
+                            else
+                                RD.Success (newOrphanGroup :: groups)
+                        
+                        other -> other
+            in
+            ( { model 
+                | zoneSourceGroups = updatedZoneSourceGroups
+                , datasourceGroups = updatedDatasourceGroups
+                , orphanGroups = updatedOrphanGroups
+              }
+            , E.none
+            )
+
+        RemoveGroupFromDatasourceDone (Err e) _ _ _ ->
+            -- Handle error - could show a toast or set an error state
+            Api.handleHttpError ToastMsg e model
 
 
 subscriptions : Model -> Sub Msg

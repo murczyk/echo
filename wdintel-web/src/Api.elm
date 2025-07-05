@@ -729,6 +729,18 @@ zone_datasource_group_add toMsg req =
         }
 
 
+zone_datasource_group_delete :
+    (Result ApiError () -> msg)
+    -> Int
+    -> Cmd msg
+zone_datasource_group_delete toMsg sigintZoneDatasourceId =
+    Http.post
+        { url = "/api/sigint/zones/zone-datasource-group-delete"
+        , body = Http.jsonBody (Encode.int sigintZoneDatasourceId)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 inbox_message_tags_add :
     (Result ApiError () -> msg)
     -> InboxMessageTagsAddReq
