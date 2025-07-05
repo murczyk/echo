@@ -251,7 +251,7 @@ async fn zones_datasources_group_update_bl(
 
     if let Some(group) = m_group {
         let master_key = group.master_key.clone();
-        
+
         // Update the group's secret status
         let mut active_group: signal_group::ActiveModel = group.into();
         active_group.is_secret = Set(is_secret);

@@ -19,10 +19,8 @@ use std::str::FromStr;
 const OLD_CALLSIGNS_COLOR: &str = "696969";
 const DEFAULT_PURPOSE: &str =
     "для управління підлеглим особовим складом підрозділу.";
-const DEFAULT_OPERATION_MODE: &str =
-    "дуплекс";
-const DEFAULT_OPERATION_TYPE: &str =
-    "ведення службового радіообміну";
+const DEFAULT_OPERATION_MODE: &str = "дуплекс";
+const DEFAULT_OPERATION_TYPE: &str = "ведення службового радіообміну";
 const DEFAULT_OPERATION_PERIOD: &str = "цілодобово";
 const DEFAULT_MODULATION: &str = "уточнюється";
 
@@ -1204,10 +1202,9 @@ pub async fn report_networks(
                                     ),
                                     create_table_data_cell(
                                         width_unit * 3,
-                                        &freq
-                                            .modulation
-                                            .clone()
-                                            .unwrap_or(DEFAULT_MODULATION.to_string()),
+                                        &freq.modulation.clone().unwrap_or(
+                                            DEFAULT_MODULATION.to_string(),
+                                        ),
                                         None,
                                         false,
                                     ),

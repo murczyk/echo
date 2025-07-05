@@ -42,6 +42,9 @@ pub async fn datasource_group_list(
     req: Json<i64>,
 ) -> Result<Json<Vec<String>>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .is_ok();
     let datasource_id: i64 = req.into_inner().clone();
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(&env.dbx)
@@ -50,14 +53,17 @@ pub async fn datasource_group_list(
 
     if datasource.kind == "signal" || datasource.kind == "whatsapp" {
         let now = Utc::now();
-        let res = signal_message::Entity::find()
+        let mut select = signal_message::Entity::find()
             .select_only()
             .column(signal_message::Column::GroupMasterKey)
             .filter(
                 signal_message::Column::CreatedAt
                     .gte(now - chrono::Duration::days(7)),
             )
-            .filter(
+            .filter(signal_message::Column::DatasourceId.eq(datasource_id))
+            .filter(signal_message::Column::Deleted.eq(false));
+        if !is_admin {
+            select = select.filter(
                 signal_message::Column::GroupMasterKey.is_in(
                     crate::users::get_identity_sigint_groups(
                         &env.dbx,
@@ -66,16 +72,14 @@ pub async fn datasource_group_list(
                     .await
                     .context(h!())?,
                 ),
-            )
-            .filter(signal_message::Column::DatasourceId.eq(datasource_id))
-            .filter(signal_message::Column::Deleted.eq(false))
+            );
+        }
+        let res = select
+            .group_by(Expr::cust("1"))
             .into_tuple::<String>()
             .all(&env.dbx)
             .await
-            .context(h!())?
-            .into_iter()
-            .unique()
-            .collect_vec();
+            .context(h!())?;
         return Ok(Json(res));
     } else if datasource.kind == "api" {
         let datasource = datasource::Entity::find_by_id(datasource_id)

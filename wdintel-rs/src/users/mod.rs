@@ -793,7 +793,9 @@ where
                     JoinType::InnerJoin,
                     sigint_zone_datasource::Relation::SignalGroup.def(),
                 )
-                .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id)),
+                .filter(
+                    sigint_zone_datasource::Column::SigintZoneId.eq(zone_id),
+                ),
             login,
         )
         .all(txn)
