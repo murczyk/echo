@@ -78,13 +78,13 @@ async fn rer_importer_callsigns(
     let res1 = sqlx::query!(
         r#"
 select
-  jsonb_array_elements_text(sii.callsigns) as callsign, 
+  jsonb_array_elements_text(sii.callsigns) as callsign,
   array_agg(distinct coalesce(sii.freq, '')) as freqs
 from sigint_inbox_item sii
 inner join signal_message sm on sm.id = sii.id
-inner join datasource d on d.id=sm.datasource_id 
-inner join sigint_zone_datasource szd on szd.datasource_id = d.id 
-inner join sigint_zone sz on sz.id=szd.sigint_zone_id 
+inner join datasource d on d.id=sm.datasource_id
+inner join sigint_zone_datasource szd on szd.datasource_id = d.id
+inner join sigint_zone sz on sz.id=szd.sigint_zone_id
 inner join login l on l.sigint_zone_id = sz.id
 where sm.created_at >= $1 and sii.checked and l.login=$2
  group by 1"#,
@@ -285,7 +285,7 @@ pub async fn unread_counters(
         Some(true) => {
             sqlx::query!(
                 r#"
-SELECT count(*) as cnt 
+SELECT count(*) as cnt
 FROM signal_message sm
 INNER JOIN sigint_inbox_item sii ON sm.id=sii.id
 WHERE sm.id > $1 AND sm.duplicate_of is null
@@ -346,6 +346,44 @@ pub async fn signal_group_info_batch(
         req.groups.iter().map(|b| b.master_key.clone()).collect();
     let data = collect_groups(keys, &env.dbx).await?;
     Ok(Json(SignalGroupsRsp { data }))
+}
+
+#[post("/api/rer-importer/orphan-signal-groups")]
+pub async fn orphan_signal_groups(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+
+    // Отримати всі master_key, які вже прив'язані
+    let assigned_keys: Vec<String> = sigint_zone_datasource::Entity::find()
+        .select_only()
+        .column(sigint_zone_datasource::Column::GroupMasterKey)
+        .into_tuple::<String>()
+        .all(&env.dbx)
+        .await?;
+
+    // Знайти всі signal_group, яких немає серед assigned_keys
+    let orphan_groups = signal_group::Entity::find()
+        .filter(
+                signal_group::Column::MasterKey.is_not_in(assigned_keys)
+        )
+        .all(&env.dbx)
+        .await?;
+
+    let data: Vec<OrphanSignalGroupEntry> = orphan_groups
+        .into_iter()
+        .filter_map(|g| {
+            g.name.clone().map(|name| OrphanSignalGroupEntry {
+                name,
+                master_key: g.master_key,
+                ignore_operativny: g.ignore_operativny,
+                datasource_id: g.datasource_id,
+            })
+        })
+        .collect();
+
+    Ok(Json(data))
 }
 
 pub async fn collect_groups(

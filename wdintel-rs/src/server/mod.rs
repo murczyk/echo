@@ -203,6 +203,7 @@ pub async fn main_server(
             .service(crate::rer_importer::unread_counters)
             .service(crate::rer_importer::signal_group_info)
             .service(crate::rer_importer::signal_group_info_batch)
+            .service(crate::rer_importer::orphan_signal_groups)
             .service(crate::rer_importer::signal_profile_info)
             .service(crate::rer_importer::signal_profile_info_batch)
             .service(crate::rer_importer::signal_profile_save)

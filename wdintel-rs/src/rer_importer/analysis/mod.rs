@@ -2097,7 +2097,7 @@ async fn collect_group_names(
             result.push(SignalGroupEntry {
                 master_key,
                 name,
-                ignore_operativny,
+                ignore_operativny
             });
         }
     }
@@ -2114,7 +2114,7 @@ async fn collect_group_names(
         result.push(SignalGroupEntry {
             master_key,
             name,
-            ignore_operativny,
+            ignore_operativny
         });
     }
     Ok(result)
