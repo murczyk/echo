@@ -1,4 +1,4 @@
-//! This implements REST stuff for https://github.com/bbernhard/signal-cli-rest-api
+//! This implements REST stuff for [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api)
 
 use crate::entities::*;
 use crate::error::AppError;

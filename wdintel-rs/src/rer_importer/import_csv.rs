@@ -202,7 +202,7 @@ pub async fn rer_csv_import(
     Ok(Json(bgtask_id))
 }
 
-/// Import CSV with coordinates as exported from Delta https://github.com/k-bx/echo/issues/7
+/// Import CSV with coordinates as exported from Delta [issue](https://github.com/k-bx/echo/issues/7)
 #[post("/api/rer/delta-csv-import")]
 pub async fn rer_delta_csv_import(
     user: actix_identity::Identity,
