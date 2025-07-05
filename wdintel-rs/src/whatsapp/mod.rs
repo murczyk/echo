@@ -169,6 +169,7 @@ pub async fn sync_groups(
                     master_key: Set(wg.jid.clone()),
                     name: Set(Some(wg.name.clone())),
                     created_at: NotSet,
+                    is_secret: Set(false),
                     datasource_id: Set(Some(datasource.id)),
                     ignore_operativny: Default::default(),
                 }

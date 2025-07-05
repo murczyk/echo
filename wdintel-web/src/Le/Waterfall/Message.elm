@@ -733,8 +733,10 @@ leftColumn ( messageId, message ) ps model =
 rightColumn : ( Int, B.InboxMessage ) -> ViewParams -> Model -> Html Msg
 rightColumn ( messageId, message ) ps model =
     div
-        [ class "mb-2 rounded-3 px-2 pt-2 pb-2 w-100 message-div bg-card relative"
+        [ class "mb-2 rounded-3 px-2 pt-2 pb-2 basis-3/4 flex-1 message-div bg-card relative"
         , style "z-index" "200"
+        , style "overflow-wrap" "break-word"
+        , style "word-break" "break-word"
         , id <| waterfallMessageDivId ps.waterfallId model.id
         , attribute "data-waterfall-id" ps.waterfallId
         , attribute "data-message-id" (String.fromInt model.id)
@@ -814,7 +816,9 @@ rightColumn ( messageId, message ) ps model =
                                         ]
                                     , div
                                         [ class "me-2 fw-semibold"
-
+                                        , style "overflow-wrap" "break-word"
+                                        , style "word-break" "break-word"
+                                        , style "min-width" "0"
                                         -- , class "text-nowrap"
                                         ]
                                         [ i [ class "bi bi-geo text-icons", title "Локація" ] []
@@ -867,6 +871,9 @@ rightColumn ( messageId, message ) ps model =
                                         [ div
                                             [ class "flex justify-start"
                                             , style "font-size" ".9rem"
+                                            , style "overflow-wrap" "break-word"
+                                            , style "word-break" "break-word"
+                                            , style "min-width" "0"
                                             ]
                                           <|
                                             [ span [ class "me-1" ] [ text "Хто: " ]

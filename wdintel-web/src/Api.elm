@@ -683,26 +683,38 @@ zones_datasources_list toMsg req =
 
 
 zones_datasources_groups_list :
-    (Result ApiError (List String) -> msg)
+    (Result ApiError ZoneDatasourceGroupListRsp -> msg)
     -> ZoneDatasourceGroupsReq
     -> Cmd msg
 zones_datasources_groups_list toMsg req =
     Http.post
         { url = "/api/sigint/zones/zone-datasource-groups"
         , body = Http.jsonBody (zoneDatasourceGroupsReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.list Decode.string)
+        , expect = leExpectJson toMsg zoneDatasourceGroupListRspDecoder
         }
 
 
-zones_datasources_groups_list_save :
-    (Result ApiError () -> msg)
-    -> ZoneDatasourceGroupsSaveReq
+zone_datasource_group_update :
+    (Result ApiError ZoneDatasourceGroup -> msg)
+    -> ZoneDatasourceGroupUpdateReq
     -> Cmd msg
-zones_datasources_groups_list_save toMsg req =
+zone_datasource_group_update toMsg req =
     Http.post
-        { url = "/api/sigint/zones/zone-datasource-groups-save"
-        , body = Http.jsonBody (zoneDatasourceGroupsSaveReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
+        { url = "/api/sigint/zones/zone-datasource-group-update"
+        , body = Http.jsonBody (zoneDatasourceGroupUpdateReqEncoder req)
+        , expect = leExpectJson toMsg zoneDatasourceGroupDecoder
+        }
+
+
+zone_datasource_group_add :
+    (Result ApiError ZoneDatasourceGroup -> msg)
+    -> ZoneDatasourceGroupAddReq
+    -> Cmd msg
+zone_datasource_group_add toMsg req =
+    Http.post
+        { url = "/api/sigint/zones/zone-datasource-group-add"
+        , body = Http.jsonBody (zoneDatasourceGroupAddReqEncoder req)
+        , expect = leExpectJson toMsg zoneDatasourceGroupDecoder
         }
 
 

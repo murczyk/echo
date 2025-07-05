@@ -21,6 +21,7 @@ pub use super::organism_group::Entity as OrganismGroup;
 pub use super::rer_gdoc_callsign::Entity as RerGdocCallsign;
 pub use super::restream::Entity as Restream;
 pub use super::restream_setup::Entity as RestreamSetup;
+pub use super::secret_group_user::Entity as SecretGroupUser;
 pub use super::settlement::Entity as Settlement;
 pub use super::sigint_bookmark::Entity as SigintBookmark;
 pub use super::sigint_callsign::Entity as SigintCallsign;

@@ -41,6 +41,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Organism,
+    #[sea_orm(has_many = "super::secret_group_user::Entity")]
+    SecretGroupUser,
     #[sea_orm(has_many = "super::sigint_callsign_bind::Entity")]
     SigintCallsignBind,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
@@ -84,6 +86,12 @@ impl Related<super::log_users_report_generation::Entity> for Entity {
 impl Related<super::organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Organism.def()
+    }
+}
+
+impl Related<super::secret_group_user::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SecretGroupUser.def()
     }
 }
 
