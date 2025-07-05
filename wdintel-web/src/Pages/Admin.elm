@@ -1149,7 +1149,7 @@ renderOrphanGroupsSection isDark model user =
                 div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
                     [ h3 [ class "text-lg font-semibold mb-4" ]
                         [ text <| "Непризначені групи (" ++ String.fromInt (List.length groups) ++ ")" ]
-                    , div [ class "space-y-3" ]
+                    , div [ class "max-h-96 overflow-y-auto space-y-3" ]
                         (List.map (renderOrphanGroup model) groups)
                     ]
 

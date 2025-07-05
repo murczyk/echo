@@ -385,10 +385,12 @@ pub async fn orphan_signal_groups(
     ;
 
     // Знайти всі signal_group, яких немає серед assigned_keys
+    // Сортувати за часом створення (найновіші першими)
     let orphan_groups = signal_group::Entity::find()
         .filter(
                 signal_group::Column::MasterKey.is_not_in(assigned_keys)
         )
+        .order_by_desc(signal_group::Column::CreatedAt)
         .all(&env.dbx)
         .await
         .context(h!())?
