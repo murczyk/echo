@@ -1473,248 +1473,53 @@ fn build_freqs_table(
                     })
                     .unwrap_or_default();
 
-                                TableRow::new(vec![
-                                    create_table_data_cell(
-                                        width_unit * 4,
-                                        &freq.freq,
-                                        None,
-                                        false,
-                                    ),
-                                    create_table_data_cell(
-                                        width_unit * 3,
-                                        &freq.modulation.clone().unwrap_or(
-                                            DEFAULT_MODULATION.to_string(),
-                                        ),
-                                        None,
-                                        false,
-                                    ),
-                                    create_table_data_cell(
-                                        width_unit * 2,
-                                        &freq.message_count.clone().to_string(),
-                                        None,
-                                        false,
-                                    ),
-                                    create_table_data_cell(
-                                        width_unit * 25,
-                                        &formatted_callsigns,
-                                        None,
-                                        false,
-                                    ),
-                                    create_table_data_cell(
-                                        width_unit * 7,
-                                        &format_datetime_field(
-                                            freq.last_datetime,
-                                        ),
-                                        get_color(!freq.is_active),
-                                        false,
-                                    ),
-                                    create_table_data_cell(
-                                        width_unit * 7,
-                                        &format_datetime_field(Some(
-                                            freq.created_at,
-                                        )),
-                                        get_color(!freq.is_active),
-                                        false,
-                                    ),
-                                ])
-                            }))
-                            .collect(),
-                        )
-                        .width(width_unit * 48, WidthType::Dxa)
-                        .set_borders(TableBorders::with_empty()),
-                    )
-                    .add_paragraph(Paragraph::new());
-            }
-
-            let modulations = freqs
-                .iter()
-                .filter_map(|f| f.modulation.clone())
-                .collect::<Vec<String>>();
-            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
-
-            doc = add_field(doc, "7. Вид передачі: ", &unique_modulation);
-            doc = add_field(
-                doc,
-                "8. Режим роботи радіомережі: ",
-                network
-                    .operation_mode
-                    .as_ref()
-                    .map(String::as_str)
-                    .unwrap_or(DEFAULT_OPERATION_MODE),
-            );
-            doc = add_field(
-                doc,
-                "9. Характер роботи: ",
-                network
-                    .operation_type
-                    .as_ref()
-                    .map(String::as_str)
-                    .unwrap_or(DEFAULT_OPERATION_TYPE),
-            );
-            doc = add_field(
-                doc,
-                "10. Період функціонування: ",
-                network
-                    .operation_period
-                    .as_ref()
-                    .map(String::as_str)
-                    .unwrap_or(DEFAULT_OPERATION_PERIOD),
-            );
-
-            if !req.networks_only {
-                let network_descriptions =
-                    crate::sigint::network::get_network_descriptions(
-                        &env.dbx, network.id,
-                    )
-                    .await
-                    .context(h!())?;
-
-                doc = add_field(
-                    doc,
-                    "Розвідувальні ознаки підрозділу: ",
-                    &String::default(),
-                );
-
-                if req.include_sigint_signs {
-                    // first add network description with Sign type
-                    doc = add_network_description_table(
-                        doc,
-                        &network_descriptions,
-                        NetworkDescrType::Sign,
-                        width_unit,
-                    );
-
-                    // then add network unit signals for each unit in network
-                    let network_unit_signals =
-                        load_signals_per_network(&env.dbx, network.id)
-                            .await
-                            .context(h!())?;
-                    for unit_signals in &network_unit_signals {
-                        // if network has multiple units, add unit name
-                        if network_unit_signals.len() > 1
-                            && !unit_signals.signals.is_empty()
-                        {
-                            doc = doc
-                                .add_paragraph(
-                                    Paragraph::new()
-                                        .style(&paragraph_2_style_id)
-                                        .add_run(
-                                            Run::new()
-                                                .add_text(
-                                                    format!(
-                                                        "{}: ",
-                                                        unit_signals.unit_name
-                                                    )
-                                                    .as_str(),
-                                                )
-                                                .bold(),
-                                        ),
-                                )
-                                .add_paragraph(Paragraph::new());
-                        }
-                        // Add signals table for each unit
-                        if !unit_signals.signals.is_empty() {
-                            doc = doc
-                            .add_table(
-                                Table::new(
-                                    vec![]
-                                        .into_iter()
-                                        .chain(unit_signals.signals.iter().map(|signal| {
-                                            TableRow::new(vec![
-                                                create_table_data_cell(
-                                                    width_unit * 15,
-                                                    &signal.text,
-                                                    None,
-                                                    false,
-                                                ),
-                                                create_table_data_cell(
-                                                    width_unit * 33,
-                                                    &signal.meaning.clone().unwrap_or_default(),
-                                                    None,
-                                                    false,
-                                                ),
-                                            ])
-                                        }))
-                                        .collect(),
-                                )
-                                .width(width_unit * 48, WidthType::Dxa)
-                                .set_borders(TableBorders::with_empty()),
-                            )
-                            .add_paragraph(Paragraph::new());
-                        }
-                    }
-                }
-
-                if req.include_confirmation {
-                    // first add network comments
-                    doc = add_field(
-                        doc,
-                        "Примітки (аргументація): ",
-                        &network.comment,
-                    );
-
-                    // then add network description with Confitmation type
-                    doc = add_network_description_table(
-                        doc,
-                        &network_descriptions,
-                        NetworkDescrType::Confirmation,
-                        width_unit,
-                    );
-                }
-
-                if req.include_pelengs_map {
-                    let pelengs_map =
-                        load_pelengs_map(&env.dbx, &groups, &filter)
-                            .await
-                            .context(h!())?;
-
-                    if let Some(img) = pelengs_map {
-                        let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
-
-                        doc = doc
-                            // Add map locations
-                            .add_paragraph(
-                                Paragraph::new()
-                                    .add_run(Run::new().add_break(BreakType::Page)),
-                            )
-                            .add_paragraph(
-                                Paragraph::new()
-                                    .style(&paragraph_2_style_id)
-                                    .add_run(Run::new().add_text(
-                                    "Карта пеленгів частот підрозділу за звітний період:",
-                                ).bold()),
-                            )
-                            .add_paragraph(Paragraph::new())
-                            .add_paragraph(
-                                Paragraph::new()
-                                    .add_run(Run::new().add_image(pic))
-                                    .align(docx_rs::alignment_type::AlignmentType::Center),
-                            )
-                            .add_paragraph(Paragraph::new());
-                    }
-                }
-
-                doc = doc.add_paragraph(Paragraph::new());
-            }
-        }
-
-        // Add a page break after each network if this is NOT the last
-        if i < networks_data.len() - 1 {
-            doc = doc.add_paragraph(Paragraph::new().page_break_before(true));
-        }
-    }
-
-    doc.build().pack(file).context(h!())?;
-
-    save_report_log(
-        &env.dbx,
-        format!("reports_log/{}", filename),
-        &serde_json::to_string(&req).context(h!())?,
-        &user_login,
+                TableRow::new(vec![
+                    create_table_data_cell(
+                        width_unit * 4,
+                        &freq.freq,
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 3,
+                        &freq
+                            .modulation
+                            .clone()
+                            .unwrap_or(DEFAULT_MODULATION.to_string()),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 2,
+                        &freq.message_count.clone().to_string(),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 25,
+                        &formatted_callsigns,
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 7,
+                        &format_datetime_field(freq.last_datetime),
+                        get_color(!freq.is_active),
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 7,
+                        &format_datetime_field(Some(freq.created_at)),
+                        get_color(!freq.is_active),
+                        false,
+                    ),
+                ])
+            }))
+            .collect(),
+        )
+        .width(width_unit * 48, WidthType::Dxa)
+        .set_borders(TableBorders::with_empty()),
     )
-    .await
-    .context(h!())?;
-    Ok(actix_files::NamedFile::open(outpath)?.into_response(&http_req))
 }
 
 fn add_field(
