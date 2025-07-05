@@ -350,23 +350,10 @@ pub async fn signal_group_info_batch(
 
 /// Отримує список груп, які не прив'язані до жодного напрямку
 /// 
-/// # Безпека
-/// 
-/// Потребує ролі "Admin" для доступу до цього ендпоінту.
-/// 
 /// # Повертає
 /// 
 /// Список неприв'язаних до напрямків груп у форматі `Vec<OrphanSignalGroupEntry>`, 
-/// де кожен запис містить:
-/// - `master_key`: Унікальний ідентифікатор групи
-/// - `name`: Назва групи 
-/// - `ignore_operativny`: Прапорець ігнорування в Оперативному
-/// - `datasource_id`: Ідентифікатор джерела даних (може бути None)
 /// 
-/// # Помилки
-/// 
-/// - `AppError::Unauthorized` - якщо користувач не має ролі "Admin"
-/// - `AppError::Database` - при помилках бази даних
 #[post("/api/rer-importer/orphan-signal-groups")]
 pub async fn orphan_signal_groups(
     user: actix_identity::Identity,

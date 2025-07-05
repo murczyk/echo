@@ -360,23 +360,17 @@ pub struct SignalGroupEntry {
 
 
 /// Запис групи, яка не прив'язана до жодного напрямку
-/// 
-/// Представляє групу, яка не прив'язана до жодного напрямку.
-/// 
-/// # Поля
-/// 
-/// - `master_key`: Унікальний ідентифікатор групи
-/// - `name`: Назва групи
-/// - `ignore_operativny`: Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
-/// - `datasource_id`: Ідентифікатор джерела даних, з якого походить група (може бути None)
-/// ```
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct OrphanSignalGroupEntry {
+    /// Унікальний ідентифікатор групи
     pub master_key: String,
+    /// Назва групи
     pub name: String,
+    /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
     pub ignore_operativny: bool,
+    /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
 }
 
