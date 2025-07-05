@@ -299,7 +299,7 @@ body isDarkMode deltaLoginFlag model =
                                      else
                                         "/img/echo-logo.svg"
                                     )
-                                , height 50
+                                ,class "h-[50px]"
                                 ]
                                 []
                             ]

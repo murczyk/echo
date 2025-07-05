@@ -1451,6 +1451,11 @@ dialog {
 	padding: 1rem;
 	border: none;
 	border-radius: 6px;
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	margin: 0;
 }
 
 dialog:modal>.modal-filler {
