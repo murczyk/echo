@@ -54,3 +54,14 @@ pub struct ZoneDatasourceGroupAddReq {
     pub master_key: String,
     pub user_logins: Vec<String>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ZoneDatasourceGroupAddRsp {
+    pub zone_id: i64,
+    pub datasource_id: i64,
+    pub group_master_key: String,
+    pub group_name: Option<String>,
+    pub zone_datasource_group: ZoneDatasourceGroup,
+}

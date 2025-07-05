@@ -378,6 +378,17 @@ rer_importer_signal_group_info_batch toMsg req =
         }
 
 
+orphan_signal_groups :
+    (Result ApiError (List OrphanSignalGroupEntry) -> msg)
+    -> Cmd msg
+orphan_signal_groups toMsg =
+    Http.post
+        { url = "/api/rer-importer/orphan-signal-groups"
+        , body = Http.emptyBody
+        , expect = leExpectJson toMsg (Decode.list orphanSignalGroupEntryDecoder)
+        }
+
+
 rer_importer_signal_profile_info_batch :
     (Result ApiError SignalProfilesRsp -> msg)
     -> BatchSignalProfileReq
@@ -707,14 +718,26 @@ zone_datasource_group_update toMsg req =
 
 
 zone_datasource_group_add :
-    (Result ApiError ZoneDatasourceGroup -> msg)
+    (Result ApiError ZoneDatasourceGroupAddRsp -> msg)
     -> ZoneDatasourceGroupAddReq
     -> Cmd msg
 zone_datasource_group_add toMsg req =
     Http.post
         { url = "/api/sigint/zones/zone-datasource-group-add"
         , body = Http.jsonBody (zoneDatasourceGroupAddReqEncoder req)
-        , expect = leExpectJson toMsg zoneDatasourceGroupDecoder
+        , expect = leExpectJson toMsg zoneDatasourceGroupAddRspDecoder
+        }
+
+
+zone_datasource_group_delete :
+    (Result ApiError () -> msg)
+    -> Int
+    -> Cmd msg
+zone_datasource_group_delete toMsg sigintZoneDatasourceId =
+    Http.post
+        { url = "/api/sigint/zones/zone-datasource-group-delete"
+        , body = Http.jsonBody (Encode.int sigintZoneDatasourceId)
+        , expect = leExpectJson toMsg (Decode.succeed ())
         }
 
 

@@ -358,6 +358,22 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
 }
 
+
+/// Запис групи, яка не прив'язана до жодного напрямку
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrphanSignalGroupEntry {
+    /// Унікальний ідентифікатор групи
+    pub master_key: String,
+    /// Назва групи
+    pub name: String,
+    /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
+    pub ignore_operativny: bool,
+    /// Ідентифікатор джерела даних, з якого походить група (може бути None)
+    pub datasource_id: Option<i64>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

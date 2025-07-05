@@ -41,6 +41,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::SignalProfileRsp,
             crate::rer_importer::types::SignalProfilesRsp,
             crate::rer_importer::types::SignalGroupEntry,
+            crate::rer_importer::types::OrphanSignalGroupEntry,
             crate::rer_importer::types::SignalProfileEntry,
             crate::rer_importer::types::BatchSignalGroupReq,
             crate::rer_importer::types::SignalGroupsRsp,
@@ -266,6 +267,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
             crate::delta::login::DeltaLoginUrl,
+            crate::sigint::types::ZoneDatasourceGroupAddRsp,
         ],
         decoders: [
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
@@ -330,6 +332,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::CorrelatedFreq,
             crate::rer_importer::types::CorrelatedFreqsRsp,
             crate::rer_importer::types::BatchSignalProfileReq,
+            crate::rer_importer::types::OrphanSignalGroupEntry,
             crate::rer_importer::types::RerAnalysisQueryState,
             crate::rer_importer::types::EditFreqUnitNameReq,
             crate::rer_importer::types::BatchSignalGroupReq,
@@ -525,6 +528,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::FreqPelengsEntry,
             crate::rer_importer::types::InboxByGroupDigestRsp,
             crate::delta::login::DeltaLoginUrl,
+            crate::sigint::types::ZoneDatasourceGroupAddRsp,
 
         ],
         queries: [],

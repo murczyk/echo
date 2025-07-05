@@ -1264,6 +1264,24 @@ signalGroupEntryEncoder struct =
         ]
 
 
+type alias OrphanSignalGroupEntry =
+    { masterKey : String
+    , name : String
+    , ignoreOperativny : Bool
+    , datasourceId : Maybe Int
+    }
+
+
+orphanSignalGroupEntryEncoder : OrphanSignalGroupEntry -> Json.Encode.Value
+orphanSignalGroupEntryEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", Json.Encode.string struct.masterKey )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
+        , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.datasourceId )
+        ]
+
+
 type alias SignalProfileEntry =
     { givenName : Maybe String
     , familyName : Maybe String
@@ -5056,6 +5074,26 @@ deltaLoginUrlEncoder struct =
         ]
 
 
+type alias ZoneDatasourceGroupAddRsp =
+    { zoneId : Int
+    , datasourceId : Int
+    , groupMasterKey : String
+    , groupName : Maybe String
+    , zoneDatasourceGroup : ZoneDatasourceGroup
+    }
+
+
+zoneDatasourceGroupAddRspEncoder : ZoneDatasourceGroupAddRsp -> Json.Encode.Value
+zoneDatasourceGroupAddRspEncoder struct =
+    Json.Encode.object
+        [ ( "zone_id", Json.Encode.int struct.zoneId )
+        , ( "datasource_id", Json.Encode.int struct.datasourceId )
+        , ( "group_master_key", Json.Encode.string struct.groupMasterKey )
+        , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.groupName )
+        , ( "zone_datasource_group", zoneDatasourceGroupEncoder struct.zoneDatasourceGroup )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -5951,6 +5989,15 @@ batchSignalProfileReqDecoder : Json.Decode.Decoder BatchSignalProfileReq
 batchSignalProfileReqDecoder =
     Json.Decode.succeed BatchSignalProfileReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "profiles" (Json.Decode.list signalProfileReqDecoder)))
+
+
+orphanSignalGroupEntryDecoder : Json.Decode.Decoder OrphanSignalGroupEntry
+orphanSignalGroupEntryDecoder =
+    Json.Decode.succeed OrphanSignalGroupEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable Json.Decode.int)))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
@@ -7842,3 +7889,13 @@ deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl
 deltaLoginUrlDecoder =
     Json.Decode.succeed DeltaLoginUrl
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.nullable Json.Decode.string)))
+
+
+zoneDatasourceGroupAddRspDecoder : Json.Decode.Decoder ZoneDatasourceGroupAddRsp
+zoneDatasourceGroupAddRspDecoder =
+    Json.Decode.succeed ZoneDatasourceGroupAddRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_datasource_group" zoneDatasourceGroupDecoder))

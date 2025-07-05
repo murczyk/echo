@@ -186,7 +186,7 @@ pub async fn zones_datasources_group_add(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupAddReq>,
-) -> Result<Json<()>, AppError> {
+) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
     let txn = env.dbx.begin().await?;
@@ -194,7 +194,7 @@ pub async fn zones_datasources_group_add(
     let szd = sigint_zone_datasource::ActiveModel {
         sigint_zone_id: Set(req.zone_id),
         datasource_id: Set(req.datasource_id),
-        group_master_key: Set(req.master_key),
+        group_master_key: Set(req.master_key.clone()),
         ..Default::default()
     }
     .insert(&txn)
@@ -202,16 +202,46 @@ pub async fn zones_datasources_group_add(
     .context(h!())?;
 
     zones_datasources_group_update_bl(
-        req.user_logins,
+        req.user_logins.clone(),
         req.is_secret,
-        szd,
+        szd.clone(),
         &txn,
     )
     .await
     .context(h!())?;
 
+    // Fetch the final allowed users after update
+    let allowed_users = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq(&szd.group_master_key))
+        .all(&txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|u| u.login)
+        .collect::<Vec<_>>();
+
+    // Fetch the group name
+    let group_name = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .and_then(|g| g.name);
+
     txn.commit().await?;
-    Ok(Json(()))
+    
+    Ok(Json(ZoneDatasourceGroupAddRsp {
+        zone_id: req.zone_id,
+        datasource_id: req.datasource_id,
+        group_master_key: req.master_key,
+        group_name,
+        zone_datasource_group: ZoneDatasourceGroup {
+            sigint_zone_datasource_id: szd.id,
+            group_master_key: szd.group_master_key,
+            is_group_secret: req.is_secret,
+            allowed_users,
+        },
+    }))
 }
 
 #[post("/api/sigint/zones/zone-datasource-group-delete")]
