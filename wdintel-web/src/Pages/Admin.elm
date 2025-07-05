@@ -184,7 +184,7 @@ init _ =
       , orphanGroupAssignmentError = Nothing
       , groupRemovalConfirmation = Nothing
       , orphanGroupZoneSelector = Nothing
-      
+
       }
     , E.sendCmd <|
         Cmd.batch
@@ -839,16 +839,16 @@ update msg model =
             -- Locally update the state instead of fetching from server
             let
                 -- Remove the group from orphan groups
-                updatedOrphanGroups = 
+                updatedOrphanGroups =
                     case model.orphanGroups of
                         RD.Success groups ->
                             groups
                             |> List.filter (\g -> g.masterKey /= response.groupMasterKey)
                             |> RD.Success
                         other -> other
-                
+
                 -- Add the group to the appropriate datasource groups
-                updatedDatasourceGroups = 
+                updatedDatasourceGroups =
                     Dict.update response.datasourceId
                         (\maybeGroups ->
                             case maybeGroups of
@@ -856,7 +856,7 @@ update msg model =
                                 Nothing -> Just [response.groupMasterKey]
                         )
                         model.datasourceGroups
-                
+
                 -- Add the ZoneDatasourceGroup to the appropriate zone-datasource combination
                 updatedZoneSourceGroups =
                     Dict.update (response.zoneId, response.datasourceId)
@@ -866,9 +866,9 @@ update msg model =
                                 Nothing -> Just [response.zoneDatasourceGroup]
                         )
                         model.zoneSourceGroups
-                
+
                 -- Add group info if we have the name from the response
-                updatedGroupInfos = 
+                updatedGroupInfos =
                     case response.groupName of
                         Just name ->
                             Dict.insert response.groupMasterKey
@@ -880,7 +880,7 @@ update msg model =
                         Nothing ->
                             model.groupInfos
             in
-            ( { model 
+            ( { model
                 | orphanGroupAssignmentInProgress = Nothing
                 , orphanGroupAssignmentError = Nothing
                 , orphanGroups = updatedOrphanGroups
@@ -888,11 +888,11 @@ update msg model =
                 , zoneSourceGroups = updatedZoneSourceGroups
                 , groupInfos = updatedGroupInfos
               }
-            , E.none  
+            , E.none
             )
 
         AssignOrphanGroupDone (Err e) ->
-            ( { model 
+            ( { model
                 | orphanGroupAssignmentInProgress = Nothing
                 , orphanGroupAssignmentError = Just "Не вдалося призначити групу"
               }
@@ -944,7 +944,7 @@ update msg model =
             case groupToRemove of
                 Just group ->
                     ( model
-                    , E.sendCmd <| Api.zone_datasource_group_delete 
+                    , E.sendCmd <| Api.zone_datasource_group_delete
                         (\result -> RemoveGroupFromDatasourceDone result zoneId datasourceId groupKey)
                         group.sigintZoneDatasourceId
                     )
@@ -959,52 +959,64 @@ update msg model =
                     Dict.update (zoneId, datasourceId)
                         (\maybeGroups ->
                             case maybeGroups of
-                                Just groups -> 
+                                Just groups ->
                                     groups
                                     |> List.filter (\g -> g.groupMasterKey /= groupKey)
                                     |> Just
                                 Nothing -> Nothing
                         )
                         model.zoneSourceGroups
-                
+
                 -- Remove from datasourceGroups
                 updatedDatasourceGroups =
                     Dict.update datasourceId
                         (\maybeGroups ->
                             case maybeGroups of
-                                Just groups -> 
+                                Just groups ->
                                     groups
                                     |> List.filter (\g -> g /= groupKey)
                                     |> Just
                                 Nothing -> Nothing
                         )
                         model.datasourceGroups
-                
-                -- Add back to orphan groups
+
+                -- Add back to orphan groups only if the group is not assigned to any other zone
                 updatedOrphanGroups =
                     case model.orphanGroups of
                         RD.Success groups ->
-                            -- Get group info to create the orphan entry
+                            -- Check if the group is still assigned to any other zone
                             let
-                                groupInfo = Dict.get groupKey model.groupInfos
-                                
-                                newOrphanGroup : B.OrphanSignalGroupEntry
-                                newOrphanGroup =
-                                    { masterKey = groupKey
-                                    , name = groupInfo |> Maybe.map .name |> Maybe.withDefault ""
-                                    , datasourceId = Just datasourceId
-                                    , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
-                                    }
+                                isStillAssigned =
+                                    updatedZoneSourceGroups
+                                        |> Dict.values
+                                        |> List.concat
+                                        |> List.any (\g -> g.groupMasterKey == groupKey)
                             in
-                            -- Only add if not already in orphan groups
-                            if List.any (\g -> g.masterKey == groupKey) groups then
+                            if isStillAssigned then
+                                -- Group is still assigned to other zones, don't add to orphans
                                 RD.Success groups
                             else
-                                RD.Success (newOrphanGroup :: groups)
-                        
+                                -- Group is no longer assigned anywhere, add to orphans
+                                let
+                                    groupInfo = Dict.get groupKey model.groupInfos
+
+                                    newOrphanGroup : B.OrphanSignalGroupEntry
+                                    newOrphanGroup =
+                                        { masterKey = groupKey
+                                        , name = groupInfo |> Maybe.map .name |> Maybe.withDefault ""
+                                        , datasourceId = Just datasourceId
+                                        , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
+                                        }
+                                in
+                                -- Only add if not already in orphan groups
+                                if List.any (\g -> g.masterKey == groupKey) groups then
+                                    RD.Success groups
+                                else
+                                    RD.Success (newOrphanGroup :: groups)
+
                         other -> other
             in
-            ( { model 
+            ( { model
                 | zoneSourceGroups = updatedZoneSourceGroups
                 , datasourceGroups = updatedDatasourceGroups
                 , orphanGroups = updatedOrphanGroups
@@ -1031,7 +1043,7 @@ update msg model =
                 Just selector ->
                     if selector.groupKey == groupKey then
                         let
-                            updatedZones = 
+                            updatedZones =
                                 if List.member zoneId selector.selectedZones then
                                     List.filter ((/=) zoneId) selector.selectedZones
                                 else
@@ -1054,17 +1066,17 @@ update msg model =
         SaveOrphanGroupZones ->
             let
                 maybeSelector = model.orphanGroupZoneSelector
-                maybeOrphanGroup = 
+                maybeOrphanGroup =
                     maybeSelector
                         |> Maybe.andThen (\selector -> findOrphanGroup model selector.groupKey)
-                maybeDatasourceId = 
+                maybeDatasourceId =
                     maybeOrphanGroup
                         |> Maybe.andThen .datasourceId
             in
             case (maybeSelector, maybeOrphanGroup, maybeDatasourceId) of
                 (Just selector, Just orphanGroup, Just datasourceId) ->
                     let
-                        requests = 
+                        requests =
                             List.map (\zoneId ->
                                 let
                                     req : B.ZoneDatasourceGroupAddReq
@@ -1079,24 +1091,24 @@ update msg model =
                                 Api.zone_datasource_group_add AssignOrphanGroupDone req
                             ) selector.selectedZones
                     in
-                    ( { model 
+                    ( { model
                         | orphanGroupAssignmentInProgress = Just selector.groupKey
                         , orphanGroupAssignmentError = Nothing
                         , orphanGroupZoneSelector = Nothing
                       }
                     , E.sendCmd <| Cmd.batch requests
                     )
-                
+
                 (Just _, Just _, Nothing) ->
                     ( { model | orphanGroupAssignmentError = Just "У групи немає прив'язаного напрямку" }
                     , E.none
                     )
-                
+
                 (Just _, Nothing, _) ->
                     ( { model | orphanGroupAssignmentError = Just "Не вдалося знайти групу" }
                     , E.none
                     )
-                
+
                 (Nothing, _, _) ->
                     ( model, E.none )
 
@@ -1148,7 +1160,7 @@ renderOrphanGroupsSection isDark model user =
             else
                 div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
                     [ h3 [ class "text-lg font-semibold mb-4" ]
-                        [ text <| "Непризначені групи (" ++ String.fromInt (List.length groups) ++ ")" ]
+                        [ text <| "Неприв'язані групи (" ++ String.fromInt (List.length groups) ++ ")" ]
                     , div [ class "max-h-96 overflow-y-auto space-y-3" ]
                         (List.map (renderOrphanGroup model) groups)
                     ]
@@ -1220,15 +1232,15 @@ renderOrphanGroup model group =
               else
                 -- Кілька зон - показуємо теги з напрямками
                 let
-                    selectedZones = 
+                    selectedZones =
                         case model.orphanGroupZoneSelector of
-                            Just selector -> 
+                            Just selector ->
                                 if selector.groupKey == group.masterKey then
                                     selector.selectedZones
                                 else
                                     []
                             Nothing -> []
-                    
+
                     hasSelection = not (List.isEmpty selectedZones)
                 in
                 div [ class "flex items-center gap-2 flex-wrap" ]
@@ -1462,7 +1474,9 @@ zoneCard2 isDark model user ( zoneId, zone ) =
 mainBlock : Bool -> Model -> B.User -> Html Msg
 mainBlock isDark model user =
     div [ class "space-y-6" ]
-        [ div [ class "bg-[var(--bs-tertiary-bg)] rounded-lg border p-4" ]
+        [
+         renderOrphanGroupsSection isDark model user
+        , div [ class "bg-[var(--bs-tertiary-bg)] rounded-lg border p-4" ]
             [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Фільтри" ]
             , div [ class "flex flex-col space-y-6" ]
                 [ div [ class "flex flex-col" ]
@@ -1490,7 +1504,6 @@ mainBlock isDark model user =
                     ]
                 ]
             ]
-        , renderOrphanGroupsSection isDark model user
         , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
         ]
 
@@ -1550,9 +1563,9 @@ body dark shared user model =
                         [ class "small-modal"
                         ]
                         [ div [ class "p-6" ]
-                            [ div [ class "mb-4 text-lg font-semibold text-gray-900" ] 
+                            [ div [ class "mb-4 text-lg font-semibold text-gray-900" ]
                                 [ text "Підтвердження видалення" ]
-                            , div [ class "mb-6 text-gray-700" ] 
+                            , div [ class "mb-6 text-gray-700" ]
                                 [ text ("Ви дійсно хочете видалити групу \"" ++ confirmation.groupName ++ "\" з цього напрямку?") ]
                             , div [ class "flex justify-end gap-3" ]
                                 [ Button.view
