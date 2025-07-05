@@ -785,14 +785,19 @@ _build-whatsapp-bin-local:
     (cd echo-whatsapp/whatsmeow/echo-whatsapp && /usr/local/go/bin/go mod tidy && /usr/local/go/bin/go build)
     mv echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/echo-whatsapp
 
-
 deploy-rustdocs:
     #!/bin/bash
     set -euxo pipefail
 
     NGINX_CONF=./deploy/nginx/echo-docs
     OUT_ZIP=./deploy/echo-docs.zip
+    ZIP_FILENAME=$(basename "$OUT_ZIP")
 
-    . deploy/utils.sh
-
-    build_and_deploy_rust_docs {{ server }} $NGINX_CONF $OUT_ZIP
+    (cd "wdintel-rs" && cargo doc)
+    rm -f "$OUT_ZIP"
+    zip -r "$OUT_ZIP" "$NGINX_CONF" "wdintel-rs/target/doc"
+    ssh {{ server }} -- 'rm -rf ./echo-docs && sudo rm -rf /usr/share/echo-docs && sudo rm -rf /etc/nginx/sites-enabled/echo-docs'
+    ssh {{ server }} -- 'mkdir -p echo-docs'
+    rsync -aqz "$OUT_ZIP" "{{ server }}:~/echo-docs/"
+    ssh {{ server }} -- "cd echo-docs && unzip -q ./${ZIP_FILENAME} && sudo cp -r ./${NGINX_CONF} /etc/nginx/sites-enabled/ && sudo cp -R ./wdintel-rs/target/doc /usr/share/echo-docs"
+    ssh {{ server }} -- 'sudo chown -R root:root /usr/share/echo-docs && sudo systemctl restart nginx'
