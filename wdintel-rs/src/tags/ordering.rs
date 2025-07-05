@@ -276,7 +276,7 @@ fn factorials(num: i32) -> Vec<i32> {
 /// 3rd: 4 -> G, Remaining: [B, C, E, F]
 /// 4th: 3 -> F, Remaining: [B, C, E]
 /// 5th: 0 -> B, Remaining: [C, E]
-/// 6th: 1 -> E, Remaining: [C]
+/// 6th: 1 -> E, Remaining: \[C\]
 /// 7th: 0 -> C, Remaining: []
 /// Therefore, the permutation corresponding to option #356 is [A, D, G, F, B, E, C].
 fn get_permutation(n: usize, items: Vec<usize>) -> Vec<usize> {

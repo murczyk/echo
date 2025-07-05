@@ -44,7 +44,7 @@ pub struct CNCallsign {
     pub end: usize,
     /// etalon, lowercase
     pub etalon: String,
-    /// exact part of message being highlighed, == msg[begin:end]
+    /// exact part of message being highlighed, == msg\[begin:end\]
     pub text: String,
 }
 
@@ -130,7 +130,7 @@ impl HighlightOpts {
 }
 
 /// ts_headline: result of ts_headline call in PostgreSQL with default
-/// <b> param and HighlightAll=true
+/// <b> param and HighlightAll=true </b>
 pub fn highlight(
     input: &str,
     input_no_header: Option<&NoHeadersBody>,

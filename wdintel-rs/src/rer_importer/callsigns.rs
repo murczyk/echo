@@ -828,7 +828,7 @@ pub async fn oneoff_reprocess_callsigns(
     Ok(())
 }
 
-/// Graph data in D3 format. See https://github.com/eisman/neo4jd3
+/// Graph data in D3 format. See [neo4jd3](https://github.com/eisman/neo4jd3)
 #[post("/api/rer/analysis/callsigns-graph")]
 pub async fn callsigns_graph(
     user: actix_identity::Identity,

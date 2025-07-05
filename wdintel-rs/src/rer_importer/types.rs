@@ -661,7 +661,7 @@ pub struct NetJSONLink {
     pub properties: Option<NetJSONLinkProperties>,
 }
 
-/// See https://github.com/eisman/neo4jd3
+/// See [neo4jd3](https://github.com/eisman/neo4jd3)
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
