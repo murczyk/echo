@@ -69,11 +69,13 @@ pub async fn datasource_group_list(
             )
             .filter(signal_message::Column::DatasourceId.eq(datasource_id))
             .filter(signal_message::Column::Deleted.eq(false))
-            .group_by(Expr::cust("1"))
             .into_tuple::<String>()
             .all(&env.dbx)
             .await
-            .context(h!())?;
+            .context(h!())?
+            .into_iter()
+            .unique()
+            .collect_vec();
         return Ok(Json(res));
     } else if datasource.kind == "api" {
         let datasource = datasource::Entity::find_by_id(datasource_id)
