@@ -63,6 +63,7 @@ type alias Model =
     , orphanGroups : RemoteData ApiError (List B.OrphanSignalGroupEntry)
     , orphanGroupAssignmentInProgress : Maybe String  -- Track which group is being assigned
     , orphanGroupAssignmentError : Maybe String
+    , groupRemovalConfirmation : Maybe { zoneId : Int, datasourceId : Int, groupKey : String, groupName : String }
     }
 
 
@@ -143,7 +144,7 @@ renderGroup model zoneId activeSourceId group =
                 text ""
             , button
                 [ class "cursor-pointer text-red-600 hover:text-red-800 transition-colors ml-2"
-                , onClick (RemoveGroupFromDatasource zoneId activeSourceId group.groupMasterKey)
+                , onClick (ShowRemoveGroupConfirmation zoneId activeSourceId group.groupMasterKey)
                 , title "Видалити групу з цього напрямку"
                 ]
                 [ i [ class "bi bi-x-lg" ] [] ]
@@ -179,6 +180,7 @@ init _ =
       , orphanGroups = RD.NotAsked
       , orphanGroupAssignmentInProgress = Nothing
       , orphanGroupAssignmentError = Nothing
+      , groupRemovalConfirmation = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -213,6 +215,9 @@ type Msg
     | GotOrphanGroups (Result ApiError (List B.OrphanSignalGroupEntry))
     | AssignOrphanGroup Int String
     | AssignOrphanGroupDone (Result ApiError B.ZoneDatasourceGroupAddRsp)
+    | ShowRemoveGroupConfirmation Int Int String  -- zoneId, datasourceId, groupKey
+    | CancelRemoveGroup
+    | ConfirmRemoveGroup
     | RemoveGroupFromDatasource Int Int String  -- zoneId, datasourceId, groupKey
     | RemoveGroupFromDatasourceDone (Result ApiError ()) Int Int String  -- result, zoneId, datasourceId, groupKey
 
@@ -885,6 +890,38 @@ update msg model =
             , E.none
             )
 
+        ShowRemoveGroupConfirmation zoneId datasourceId groupKey ->
+            let
+                groupName : String
+                groupName =
+                    Dict.get groupKey model.groupInfos
+                        |> Maybe.map .name
+                        |> def groupKey
+                        |> (\name ->
+                                if String.isEmpty name then
+                                    String.right 5 groupKey
+                                else
+                                    name
+                           )
+            in
+            ( { model | groupRemovalConfirmation = Just { zoneId = zoneId, datasourceId = datasourceId, groupKey = groupKey, groupName = groupName } }
+            , E.none
+            )
+
+        CancelRemoveGroup ->
+            ( { model | groupRemovalConfirmation = Nothing }
+            , E.none
+            )
+
+        ConfirmRemoveGroup ->
+            case model.groupRemovalConfirmation of
+                Just { zoneId, datasourceId, groupKey } ->
+                    ( { model | groupRemovalConfirmation = Nothing }
+                    , E.sendMsg (RemoveGroupFromDatasource zoneId datasourceId groupKey)
+                    )
+                Nothing ->
+                    ( model, E.none )
+
         RemoveGroupFromDatasource zoneId datasourceId groupKey ->
             -- Find the sigintZoneDatasourceId for this group
             let
@@ -1376,6 +1413,31 @@ body dark shared user model =
                         ]
                     ]
 
+                Nothing ->
+                    []
+           )
+        ++ (case model.groupRemovalConfirmation of
+                Just confirmation ->
+                    [ ModalDialog.modalDialog True
+                        CancelRemoveGroup
+                        [ class "small-modal"
+                        ]
+                        [ div [ class "p-6" ]
+                            [ div [ class "mb-4 text-lg font-semibold text-gray-900" ] 
+                                [ text "Підтвердження видалення" ]
+                            , div [ class "mb-6 text-gray-700" ] 
+                                [ text ("Ви дійсно хочете видалити групу \"" ++ confirmation.groupName ++ "\" з цього напрямку?") ]
+                            , div [ class "flex justify-end gap-3" ]
+                                [ Button.view
+                                    (Button.new { label = "Скасувати", onClick = CancelRemoveGroup }
+                                        |> Button.withOutlined True
+                                    )
+                                , Button.view
+                                    (Button.new { label = "Видалити", onClick = ConfirmRemoveGroup })
+                                ]
+                            ]
+                        ]
+                    ]
                 Nothing ->
                     []
            )
