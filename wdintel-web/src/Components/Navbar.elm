@@ -129,7 +129,7 @@ navBar user shared activeName =
                     ]
                 , img
                     [ src "/img/echo-logo-white.svg"
-                    , height 16
+                    , class "h-[16px]"
                     ]
                     []
                 ]
