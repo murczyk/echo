@@ -348,6 +348,25 @@ pub async fn signal_group_info_batch(
     Ok(Json(SignalGroupsRsp { data }))
 }
 
+/// Отримує список груп, які не прив'язані до жодного напрямку
+/// 
+/// # Безпека
+/// 
+/// Потребує ролі "Admin" для доступу до цього ендпоінту.
+/// 
+/// # Повертає
+/// 
+/// Список неприв'язаних до напрямків груп у форматі `Vec<OrphanSignalGroupEntry>`, 
+/// де кожен запис містить:
+/// - `master_key`: Унікальний ідентифікатор групи
+/// - `name`: Назва групи 
+/// - `ignore_operativny`: Прапорець ігнорування в Оперативному
+/// - `datasource_id`: Ідентифікатор джерела даних (може бути None)
+/// 
+/// # Помилки
+/// 
+/// - `AppError::Unauthorized` - якщо користувач не має ролі "Admin"
+/// - `AppError::Database` - при помилках бази даних
 #[post("/api/rer-importer/orphan-signal-groups")]
 pub async fn orphan_signal_groups(
     user: actix_identity::Identity,
@@ -361,7 +380,9 @@ pub async fn orphan_signal_groups(
         .column(sigint_zone_datasource::Column::GroupMasterKey)
         .into_tuple::<String>()
         .all(&env.dbx)
-        .await?;
+        .await
+        .context(h!())?
+    ;
 
     // Знайти всі signal_group, яких немає серед assigned_keys
     let orphan_groups = signal_group::Entity::find()
@@ -369,7 +390,9 @@ pub async fn orphan_signal_groups(
                 signal_group::Column::MasterKey.is_not_in(assigned_keys)
         )
         .all(&env.dbx)
-        .await?;
+        .await
+        .context(h!())?
+    ;
 
     let data: Vec<OrphanSignalGroupEntry> = orphan_groups
         .into_iter()
@@ -393,7 +416,9 @@ pub async fn collect_groups(
     let signal_groups = SignalGroup::find()
         .filter(signal_group::Column::MasterKey.is_in(keys))
         .all(txn)
-        .await?;
+        .await
+        .context(h!())?
+    ;
     let data: Vec<SignalGroupEntry> = signal_groups
         .iter()
         .filter_map(|g| {

@@ -358,6 +358,30 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
 }
 
+
+/// Запис групи, яка не прив'язана до жодного напрямку
+/// 
+/// Представляє групу, яка не прив'язана до жодного напрямку.
+/// 
+/// # Поля
+/// 
+/// - `master_key`: Унікальний ідентифікатор групи
+/// - `name`: Назва групи
+/// - `ignore_operativny`: Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
+/// - `datasource_id`: Ідентифікатор джерела даних, з якого походить група (може бути None)
+/// 
+/// # Приклади
+/// 
+/// ```rust
+/// use crate::rer_importer::types::OrphanSignalGroupEntry;
+/// 
+/// let orphan_group = OrphanSignalGroupEntry {
+///     master_key: "group_123".to_string(),
+///     name: "Група А".to_string(),
+///     ignore_operativny: false,
+///     datasource_id: Some(456),
+/// };
+/// ```
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
