@@ -109,7 +109,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroup(sm.\"timestamp\",'1d',0) as time, \n  sg.name as metric,\n  COUNT(sm.id) as value\nFROM signal_message sm\nINNER JOIN sigint_inbox_item sii ON sm.id=sii.id\nLEFT JOIN signal_group sg ON sg.master_key=sm.group_master_key\ninner join datasource d on d.id=sm.datasource_id \ninner join sigint_zone_datasource szd on szd.datasource_id = d.id \ninner join sigint_zone sz on sz.id=szd.sigint_zone_id \ninner join login l on l.sigint_zone_id = sz.id\nWHERE $__timeFilter(\"timestamp\") \n\tand szd.group_master_keys ? sm.group_master_key \n  AND l.login = replace('${__user.login}', 'admin', 'ziggy')\n  AND sii.freq = '$freq'\nGROUP BY 1, 2\nORDER BY 1",
+          "rawSql": "SELECT $__timeGroup(sm.\"timestamp\",'1d',0) as time, \n  sg.name as metric,\n  COUNT(sm.id) as value\nFROM signal_message sm\nINNER JOIN sigint_inbox_item sii ON sm.id=sii.id\nLEFT JOIN signal_group sg ON sg.master_key=sm.group_master_key\ninner join datasource d on d.id=sm.datasource_id \ninner join sigint_zone_datasource szd on szd.datasource_id = d.id \ninner join sigint_zone sz on sz.id=szd.sigint_zone_id \ninner join login l on l.sigint_zone_id = sz.id\nWHERE $__timeFilter(\"timestamp\") \n\tand szd.group_master_key=sm.group_master_key \n  AND l.login = replace('${__user.login}', 'admin', 'ziggy')\n  AND sii.freq = '$freq'\nGROUP BY 1, 2\nORDER BY 1",
           "refId": "A",
           "sql": {
             "columns": [
