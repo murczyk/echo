@@ -461,6 +461,82 @@
 				}
 			},
 			"response": []
+		},
+		{
+			"name": "sigint/zones/zone-datasource-groups",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"zone_id\": 1,\n    \"datasource_id\": 1\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "sigint/zones/zone-datasource-groups",
+					"host": [
+						"sigint"
+					],
+					"path": [
+						"zones",
+						"zone-datasource-groups"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "sigint/zones/zone-datasource-group-update",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"id\": 2,\n    \"is_secret\": true,\n    \"user_logins\": [\"btc\", \"taras\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/zones/zone-datasource-group-update",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"zones",
+						"zone-datasource-group-update"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "sigint/zones/zone-datasource-group-add",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/sigint/zones/zone-datasource-group-add",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"zones",
+						"zone-datasource-group-add"
+					]
+				}
+			},
+			"response": []
 		}
 	],
 	"event": [

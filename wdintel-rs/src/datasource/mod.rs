@@ -64,6 +64,16 @@ pub async fn datasource_group_list(
                 signal_message::Column::CreatedAt
                     .gte(now - chrono::Duration::days(7)),
             )
+            .filter(
+                signal_message::Column::GroupMasterKey.is_in(
+                    crate::users::get_identity_sigint_groups(
+                        &env.dbx,
+                        &user.id()?,
+                    )
+                    .await
+                    .context(h!())?,
+                ),
+            )
             .filter(signal_message::Column::DatasourceId.eq(datasource_id))
             .filter(signal_message::Column::Deleted.eq(false))
             .group_by(Expr::cust("1"))

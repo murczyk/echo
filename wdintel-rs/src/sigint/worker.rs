@@ -194,6 +194,7 @@ pub async fn do_sync_state(
                     master_key: Set(group.master_key.clone()),
                     name: Set(Some(group.name.clone())),
                     datasource_id: Set(Some(datasource_id)),
+                    is_secret: Set(false),
                     created_at: NotSet,
                     ignore_operativny: Default::default(),
                 }

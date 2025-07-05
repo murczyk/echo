@@ -537,6 +537,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                 [ Toggle.new
                     { onToggle = NetworkSearchWithoutUnitToggle
                     , label = "В дорозвідці (показати мережі без підрозділу)"
+                    , id = "network-search-without-unit-toggle"
                     }
                     |> Toggle.view model.showNetworksWithoutUnit
                 ]

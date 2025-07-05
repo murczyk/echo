@@ -3,6 +3,10 @@ module Pages.Admin exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
+import Components.ModalDialog as ModalDialog
+import Components.Tabs as Tabs
+import Components.Toggle as Toggle
 import Components.Watermark as Watermark
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -16,7 +20,7 @@ import Le.Block.Spinner
 import Le.Block.Toast
 import Le.RerMessage
 import Le.Types exposing (..)
-import Le.Utils exposing (..)
+import Le.Utils as Utils exposing (..)
 import Maybe
 import Page exposing (Page)
 import Route exposing (Route)
@@ -38,10 +42,103 @@ type alias Model =
     , datasourceGroups : Dict Int (List String)
     , zoneSourceGroupsState : Dict ( Int, Int ) Select.State
     , zoneSourceGroupsMenu : Dict ( Int, Int ) (List (Select.MenuItem String))
-    , zoneSourceGroups : Dict ( Int, Int ) (List String)
+    , zoneSourceGroups : Dict ( Int, Int ) (List B.ZoneDatasourceGroup)
     , groupInfos : Dict String B.SignalGroupEntry
     , saveInProgress : Dict Int (Set Int)
+    , userSelectorDialog : Maybe { zoneId : Int, sourceId : Int, groupKey : String }
+    , allLogins : List String
+    , userSelectorSelect :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItems : List String
+        }
+    , userSelectorLoading : Bool
+    , userSelectorError : Maybe String
+    , groupUpdateInProgress : Maybe ( Int, Int, String )
+    , groupUpdateError : Maybe { zoneId : Int, sourceId : Int, groupKey : String, error : String }
+    , zoneActiveTabs : Dict Int Int
+    , showOnlyHidden : Bool
+    , groupNameFilter : String
     }
+
+
+renderGroup : Model -> Int -> Int -> B.ZoneDatasourceGroup -> Html Msg
+renderGroup model zoneId activeSourceId group =
+    let
+        groupName : String
+        groupName =
+            Dict.get group.groupMasterKey model.groupInfos
+                |> Maybe.map .name
+                |> def group.groupMasterKey
+                |> (\name ->
+                        if String.isEmpty name then
+                            String.right 5 group.groupMasterKey
+
+                        else
+                            name
+                   )
+
+        isLoading : Bool
+        isLoading =
+            case model.groupUpdateInProgress of
+                Just ( z, s, k ) ->
+                    z == zoneId && s == activeSourceId && k == group.groupMasterKey
+
+                Nothing ->
+                    False
+    in
+    div [ class "flex items-center border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
+        [ div [ class "w-1/4 flex items-center" ]
+            [ span [ class "font-semibold mr-2" ] [ text groupName ]
+            , if group.isGroupSecret then
+                span [ class "ml-1 text-lg" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
+
+              else
+                text ""
+            ]
+        , div [ class "w-1/2 flex flex-col justify-center" ]
+            [ if group.isGroupSecret then
+                div [ class "mb-2 flex items-center" ]
+                    [ span [ class "mr-2 text-sm" ] [ text "видима для:" ]
+                    , span
+                        [ class "cursor-pointer ml-2"
+                        , onClick (OpenUserSelector zoneId activeSourceId group.groupMasterKey group.allowedUsers)
+                        ]
+                        [ i [ class "bi bi-pencil-square text-action" ] [] ]
+                    ]
+
+              else
+                text ""
+            , if group.isGroupSecret then
+                div [ class "text-sm" ] [ text (String.join ", " group.allowedUsers) ]
+
+              else
+                text ""
+            ]
+        , div [ class "w-1/4 flex items-center justify-end" ]
+            [ div
+                [ style "pointer-events"
+                    (if isLoading then
+                        "none"
+
+                     else
+                        "auto"
+                    )
+                ]
+                [ Toggle.new
+                    { onToggle = ToggleGroupSecret zoneId activeSourceId group
+                    , label = "Прихована"
+                    , id = "toggle-" ++ String.fromInt zoneId ++ "-" ++ String.fromInt activeSourceId ++ "-" ++ group.groupMasterKey
+                    }
+                    |> Toggle.view group.isGroupSecret
+                ]
+            , if isLoading then
+                span [ class "ml-2" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+              else
+                text ""
+            ]
+        ]
 
 
 init : () -> ( Model, Effect Msg )
@@ -59,6 +156,16 @@ init _ =
       , zoneSourceGroups = Dict.empty
       , groupInfos = Dict.empty
       , saveInProgress = Dict.empty
+      , userSelectorDialog = Nothing
+      , allLogins = []
+      , userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = [], selectedItems = [] }
+      , userSelectorLoading = False
+      , userSelectorError = Nothing
+      , groupUpdateInProgress = Nothing
+      , groupUpdateError = Nothing
+      , zoneActiveTabs = Dict.empty
+      , showOnlyHidden = False
+      , groupNameFilter = ""
       }
     , E.sendCmd <|
         Api.datasource_list GotDatasourceList
@@ -72,11 +179,21 @@ type Msg
     | SelectDatasourceMsg Int (Select.Msg Int)
     | GotZonesDatasources Int (Result ApiError (List Int))
     | GotDatasourceGroups Int (Result ApiError (List String))
-    | GotZoneDatasourceGroups Int Int (Result ApiError (List String))
-    | SelectGroupsMsg Int Int (Select.Msg String)
+    | GotZoneDatasourceGroups Int Int (Result ApiError B.ZoneDatasourceGroupListRsp)
     | GotGroupInfos (Result ApiError B.SignalGroupsRsp)
     | Save Int
     | SaveDone Int Int (Result ApiError ())
+    | OpenUserSelector Int Int String (List String)
+    | CloseUserSelector
+    | UserSelectorSelMsg (Select.Msg String)
+    | UserSelectorSave
+    | UserSelectorLoginsLoaded (Result ApiError B.ListLoginsRsp)
+    | UserSelectorSaveDone (Result ApiError B.ZoneDatasourceGroup)
+    | ToggleGroupSecret Int Int B.ZoneDatasourceGroup
+    | ToggleGroupSecretDone (Result ApiError B.ZoneDatasourceGroup) Int Int String
+    | ZoneTabChanged Int Int
+    | ToggleShowOnlyHidden
+    | UpdateGroupNameFilter String
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -101,17 +218,21 @@ toLayout user model =
 resetDatasourceGroupsSelect : Model -> Model
 resetDatasourceGroupsSelect model =
     let
+        f1 : ( Int, B.SigintZone ) -> Model -> Model
         f1 ( zoneId, _ ) acc =
             List.foldl (f2 zoneId) acc (Dict.get zoneId acc.zoneSources |> def [])
 
+        f2 : Int -> Int -> Model -> Model
         f2 zoneId sourceId acc =
             let
+                selId : String
                 selId =
                     "source-zone-groups-"
                         ++ String.fromInt zoneId
                         ++ "-"
                         ++ String.fromInt sourceId
 
+                zoneSourceGroupsMenu2 : Dict ( Int, Int ) (List (Select.MenuItem String))
                 zoneSourceGroupsMenu2 =
                     Dict.insert ( zoneId, sourceId )
                         (List.map
@@ -219,6 +340,7 @@ update msg model =
                         ( mAction, imodel2, icmd ) =
                             Select.update imsg zoneSourceState
 
+                        m2 : Model
                         m2 =
                             { model
                                 | zoneSourcesState =
@@ -231,6 +353,7 @@ update msg model =
                                         model.zoneSources
                             }
 
+                        m3 : Model
                         m3 =
                             resetDatasourceGroupsSelect m2
                     in
@@ -261,21 +384,25 @@ update msg model =
 
         GotDatasourceGroups sourceId (Ok groupKeys) ->
             let
+                groupKeysExisting : Set String
                 groupKeysExisting =
                     Dict.keys model.groupInfos
                         |> Set.fromList
 
+                groupKeysNew : List String
                 groupKeysNew =
                     groupKeys
                         |> Set.fromList
                         |> (\x -> Set.diff x groupKeysExisting)
                         |> Set.toList
 
+                m2 : Model
                 m2 =
                     { model
                         | datasourceGroups = Dict.insert sourceId groupKeys model.datasourceGroups
                     }
 
+                m3 : Model
                 m3 =
                     resetDatasourceGroupsSelect m2
             in
@@ -289,62 +416,41 @@ update msg model =
         GotZoneDatasourceGroups _ _ (Err e) ->
             Api.handleHttpError ToastMsg e model
 
-        GotZoneDatasourceGroups zoneId sourceId (Ok groupKeys) ->
+        GotZoneDatasourceGroups zoneId sourceId (Ok res) ->
             let
+                m2 : Model
                 m2 =
                     { model
                         | zoneSourceGroups =
                             Dict.insert ( zoneId, sourceId )
-                                groupKeys
+                                res.zoneDatasourceGroups
                                 model.zoneSourceGroups
                     }
 
+                m3 : Model
                 m3 =
                     resetDatasourceGroupsSelect m2
 
+                signalGroupEff : Cmd Msg
                 signalGroupEff =
                     Api.rer_importer_signal_group_info_batch
                         GotGroupInfos
-                        { groups = groupKeys |> List.map (\key -> { masterKey = key }) }
+                        { groups = res.zoneDatasourceGroups |> List.map (\group -> { masterKey = group.groupMasterKey }) }
             in
             ( m3
             , E.sendCmd signalGroupEff
             )
-
-        SelectGroupsMsg zoneId sourceId imsg ->
-            case Dict.get ( zoneId, sourceId ) model.zoneSourceGroupsState of
-                Nothing ->
-                    ( model, E.none )
-
-                Just state ->
-                    let
-                        ( mAction, imodel2, icmd ) =
-                            Select.update imsg state
-
-                        m2 =
-                            { model
-                                | zoneSourceGroupsState =
-                                    Dict.insert ( zoneId, sourceId )
-                                        imodel2
-                                        model.zoneSourceGroupsState
-                                , zoneSourceGroups =
-                                    Dict.update ( zoneId, sourceId )
-                                        (def [] >> Le.Block.Select.multiUpdS mAction >> Just)
-                                        model.zoneSourceGroups
-                            }
-                    in
-                    ( m2
-                    , E.sendCmd <| Cmd.map (SelectGroupsMsg zoneId sourceId) icmd
-                    )
 
         GotGroupInfos (Err e) ->
             Api.handleHttpError ToastMsg e model
 
         GotGroupInfos (Ok groups) ->
             let
+                m2 : Model
                 m2 =
                     { model | groupInfos = groups.data |> List.foldl (\group acc -> Dict.insert group.masterKey group acc) model.groupInfos }
 
+                m3 : Model
                 m3 =
                     resetDatasourceGroupsSelect m2
             in
@@ -354,6 +460,7 @@ update msg model =
 
         Save zoneId ->
             let
+                saveInProgress2 : Dict Int (Set Int)
                 saveInProgress2 =
                     Dict.update zoneId
                         (always
@@ -366,9 +473,11 @@ update msg model =
                         )
                         model.saveInProgress
 
+                m2 : Model
                 m2 =
                     { model | saveInProgress = saveInProgress2 }
 
+                cmds : Cmd Msg
                 cmds =
                     Dict.get zoneId model.zoneSources
                         |> def []
@@ -377,12 +486,7 @@ update msg model =
                                 Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
                                     |> def []
                                     |> (\groups ->
-                                            Api.zones_datasources_groups_list_save
-                                                (SaveDone zoneId sourceId)
-                                                { zoneId = zoneId
-                                                , datasourceId = sourceId
-                                                , groups = groups
-                                                }
+                                            Cmd.none
                                        )
                             )
                         |> Cmd.batch
@@ -391,10 +495,12 @@ update msg model =
 
         SaveDone zoneId sourceId (Err e) ->
             let
+                saveInProgress2 : Dict Int (Set Int)
                 saveInProgress2 =
                     model.saveInProgress
                         |> Dict.update zoneId (mmap (Set.remove sourceId))
 
+                m2 : Model
                 m2 =
                     { model | saveInProgress = saveInProgress2 }
             in
@@ -402,14 +508,258 @@ update msg model =
 
         SaveDone zoneId sourceId (Ok ()) ->
             let
+                saveInProgress2 : Dict Int (Set Int)
                 saveInProgress2 =
                     model.saveInProgress
                         |> Dict.update zoneId (mmap (Set.remove sourceId))
 
+                m2 : Model
                 m2 =
                     { model | saveInProgress = saveInProgress2 }
             in
             ( m2, E.none )
+
+        OpenUserSelector zoneId sourceId groupKey selected ->
+            if List.isEmpty model.allLogins then
+                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey }, userSelectorLoading = True, userSelectorError = Nothing }
+                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                )
+
+            else
+                let
+                    menu : List (Select.MenuItem String)
+                    menu =
+                        List.map (\login -> Select.basicMenuItem { item = login, label = login }) model.allLogins
+                in
+                ( { model | userSelectorDialog = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey }, userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = menu, selectedItems = selected }, userSelectorLoading = False, userSelectorError = Nothing }
+                , E.none
+                )
+
+        UserSelectorLoginsLoaded (Ok rsp) ->
+            let
+                logins : List String
+                logins =
+                    List.map .login rsp.users
+
+                menu : List (Select.MenuItem String)
+                menu =
+                    List.map (\login -> Select.basicMenuItem { item = login, label = login }) logins
+                
+                -- Get the original selected users from the dialog context
+                originalSelected : List String
+                originalSelected =
+                    case model.userSelectorDialog of
+                        Just _ ->
+                            -- We need to get the original selected users from the group
+                            -- This is a bit tricky since we removed it from dialog state
+                            -- Let's get it from the group data
+                            case model.userSelectorDialog of
+                                Just { zoneId, sourceId, groupKey } ->
+                                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
+                                        |> def []
+                                        |> List.filter (\g -> g.groupMasterKey == groupKey)
+                                        |> List.head
+                                        |> Maybe.map .allowedUsers
+                                        |> Maybe.withDefault []
+                                
+                                Nothing ->
+                                    []
+                        
+                        Nothing ->
+                            []
+            in
+            ( { model | allLogins = logins, userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = menu, selectedItems = originalSelected }, userSelectorLoading = False, userSelectorError = Nothing }
+            , E.none
+            )
+
+        UserSelectorLoginsLoaded (Err e) ->
+            ( { model | userSelectorLoading = False, userSelectorError = Just "Не вдалося завантажити користувачів" }
+            , E.none
+            )
+
+        UserSelectorSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.userSelectorSelect.selectState
+
+                selected : List String
+                selected =
+                    Le.Block.Select.multiUpdS mAction model.userSelectorSelect.selectedItems
+            in
+            ( { model | userSelectorSelect = { selectState = imodel2, items = model.userSelectorSelect.items, selectedItems = selected } }
+            , E.sendCmd <| Cmd.map UserSelectorSelMsg icmd
+            )
+
+        CloseUserSelector ->
+            ( { model | userSelectorDialog = Nothing, userSelectorError = Nothing }
+            , E.none
+            )
+
+        UserSelectorSave ->
+            case model.userSelectorDialog of
+                Just { zoneId, sourceId, groupKey } ->
+                    let
+                        group : Maybe B.ZoneDatasourceGroup
+                        group =
+                            Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
+                                |> def []
+                                |> List.filter (\g -> g.groupMasterKey == groupKey)
+                                |> List.head
+                    in
+                    case group of
+                        Just g ->
+                            let
+                                req : B.ZoneDatasourceGroupUpdateReq
+                                req =
+                                    { id = g.sigintZoneDatasourceId, isSecret = g.isGroupSecret, userLogins = model.userSelectorSelect.selectedItems }
+                            in
+                            ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
+
+                        Nothing ->
+                            ( model, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UserSelectorSaveDone (Ok updatedGroup) ->
+            let
+                { sigintZoneDatasourceId, groupMasterKey } =
+                    updatedGroup
+
+                findZoneSource : Maybe ( Int, Int )
+                findZoneSource =
+                    Dict.toList model.zoneSourceGroups
+                        |> List.filterMap
+                            (\( ( zid, sid ), groups ) ->
+                                if List.any (\g -> g.sigintZoneDatasourceId == sigintZoneDatasourceId) groups then
+                                    Just ( zid, sid )
+
+                                else
+                                    Nothing
+                            )
+                        |> List.head
+
+                zoneSourceTuple : ( Int, Int )
+                zoneSourceTuple =
+                    case findZoneSource of
+                        Just v ->
+                            v
+
+                        Nothing ->
+                            ( 0, 0 )
+
+                zoneId : Int
+                zoneId =
+                    Tuple.first zoneSourceTuple
+
+                sourceId : Int
+                sourceId =
+                    Tuple.second zoneSourceTuple
+
+                oldGroups : List B.ZoneDatasourceGroup
+                oldGroups =
+                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+
+                newGroups : List B.ZoneDatasourceGroup
+                newGroups =
+                    List.map
+                        (\g ->
+                            if g.groupMasterKey == groupMasterKey then
+                                updatedGroup
+
+                            else
+                                g
+                        )
+                        oldGroups
+
+                m2 : Model
+                m2 =
+                    { model | userSelectorDialog = Nothing, userSelectorError = Nothing, zoneSourceGroups = Dict.insert ( zoneId, sourceId ) newGroups model.zoneSourceGroups }
+
+                needInfo : Bool
+                needInfo =
+                    not (Dict.member updatedGroup.groupMasterKey model.groupInfos)
+
+                eff : Cmd Msg
+                eff =
+                    if needInfo then
+                        Api.rer_importer_signal_group_info_batch GotGroupInfos { groups = [ { masterKey = updatedGroup.groupMasterKey } ] }
+
+                    else
+                        Cmd.none
+            in
+            ( m2, E.sendCmd eff )
+
+        UserSelectorSaveDone (Err e) ->
+            ( { model | userSelectorError = Just "Не вдалося зберегти" }
+            , E.none
+            )
+
+        ToggleGroupSecret zoneId sourceId group ->
+            let
+                req : B.ZoneDatasourceGroupUpdateReq
+                req =
+                    { id = group.sigintZoneDatasourceId, isSecret = not group.isGroupSecret, userLogins = group.allowedUsers }
+            in
+            ( { model | groupUpdateInProgress = Just ( zoneId, sourceId, group.groupMasterKey ), groupUpdateError = Nothing }
+            , E.sendCmd <| Api.zone_datasource_group_update (\res -> ToggleGroupSecretDone res zoneId sourceId group.groupMasterKey) req
+            )
+
+        ToggleGroupSecretDone (Ok updatedGroup) zoneId sourceId groupKey ->
+            let
+                oldGroups : List B.ZoneDatasourceGroup
+                oldGroups =
+                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+
+                newGroups : List B.ZoneDatasourceGroup
+                newGroups =
+                    List.map
+                        (\g ->
+                            if g.groupMasterKey == groupKey then
+                                updatedGroup
+
+                            else
+                                g
+                        )
+                        oldGroups
+
+                m2 : Model
+                m2 =
+                    { model | groupUpdateInProgress = Nothing, groupUpdateError = Nothing, zoneSourceGroups = Dict.insert ( zoneId, sourceId ) newGroups model.zoneSourceGroups }
+
+                needInfo : Bool
+                needInfo =
+                    not (Dict.member updatedGroup.groupMasterKey model.groupInfos)
+
+                eff : Cmd Msg
+                eff =
+                    if needInfo then
+                        Api.rer_importer_signal_group_info_batch GotGroupInfos { groups = [ { masterKey = updatedGroup.groupMasterKey } ] }
+
+                    else
+                        Cmd.none
+            in
+            ( m2, E.sendCmd eff )
+
+        ToggleGroupSecretDone (Err e) zoneId sourceId groupKey ->
+            ( { model | groupUpdateInProgress = Nothing, groupUpdateError = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, error = "Не вдалося зберегти" } }
+            , E.none
+            )
+
+        ZoneTabChanged zoneId sourceId ->
+            ( { model | zoneActiveTabs = Dict.insert zoneId sourceId model.zoneActiveTabs }
+            , E.none
+            )
+
+        ToggleShowOnlyHidden ->
+            ( { model | showOnlyHidden = not model.showOnlyHidden }
+            , E.none
+            )
+
+        UpdateGroupNameFilter newFilter ->
+            ( { model | groupNameFilter = newFilter }
+            , E.none
+            )
 
 
 subscriptions : Model -> Sub Msg
@@ -417,185 +767,295 @@ subscriptions model =
     Sub.none
 
 
-zoneCard : Bool -> Model -> B.User -> ( Int, B.SigintZone ) -> Html Msg
-zoneCard isDark model user ( zoneId, zone ) =
+
+-- Helper functions for datasource grouping and tabs
+
+
+type alias DatasourceType =
+    { id : Int
+    , name : String
+    , datasources : List ( Int, B.Datasource )
+    }
+
+
+groupDatasourcesByType : Int -> Model -> List DatasourceType
+groupDatasourcesByType zoneId model =
     let
-        groupSelectBlock sourceId =
-            case Dict.get ( zoneId, sourceId ) model.zoneSourceGroupsState of
-                Nothing ->
-                    []
+        zoneSources : List Int
+        zoneSources =
+            Dict.get zoneId model.zoneSources |> Maybe.withDefault []
 
-                Just state ->
+        -- Get datasources for this zone
+        zoneDatasources : List ( Int, B.Datasource )
+        zoneDatasources =
+            List.filterMap
+                (\sourceId ->
                     let
-                        items =
-                            Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
-                                |> def []
-                                |> List.map
-                                    (\groupKey ->
-                                        Select.basicMenuItem
-                                            { item = groupKey
-                                            , label =
-                                                Dict.get groupKey model.groupInfos
-                                                    |> Maybe.map .name
-                                                    |> def groupKey
-                                            }
-                                    )
-
-                        menu =
-                            Dict.get ( zoneId, sourceId ) model.zoneSourceGroupsMenu |> def []
+                        source : Maybe B.Datasource
+                        source =
+                            findK sourceId model.datasources
                     in
-                    [ Html.map (SelectGroupsMsg zoneId sourceId)
-                        (Styled.toUnstyled <|
-                            Le.Block.Select.renderSelect
-                                items
-                                state
-                                menu
-                                "жодна"
-                                (Le.Block.Select.defaultOptions isDark)
+                    case source of
+                        Nothing ->
+                            Nothing
+
+                        Just ds ->
+                            Just ( sourceId, ds )
+                )
+                zoneSources
+
+        -- Group by kind
+        groupedByKind : Dict String (List ( Int, B.Datasource ))
+        groupedByKind =
+            List.foldl
+                (\( sourceId, datasource ) acc ->
+                    Dict.update datasource.kind
+                        (\maybeList ->
+                            case maybeList of
+                                Just list ->
+                                    Just (( sourceId, datasource ) :: list)
+
+                                Nothing ->
+                                    Just [ ( sourceId, datasource ) ]
                         )
-                    ]
+                        acc
+                )
+                Dict.empty
+                zoneDatasources
 
-        renderSourceConfig sourceId =
-            case findK sourceId model.datasources of
-                Nothing ->
-                    []
-
-                Just source ->
-                    if source.kind == "signal" || source.kind == "whatsapp" then
-                        [ div [ class "d-flex justify-content-center align-items-center" ]
-                            [ div
-                                [ class "me-2 text-end"
-                                , style "width" "260px"
-                                ]
-                                [ span [ class "badge bg-secondary" ]
-                                    [ text <| source.displayName ]
-                                ]
-                            , div
-                                [ style "width" "600px"
-                                , style "font-size" ".8rem"
-                                ]
-                                (groupSelectBlock sourceId)
-                            ]
-                        ]
-
-                    else if source.kind == "api" then
+        -- Convert to DatasourceType list
+        datasourceTypes : List DatasourceType
+        datasourceTypes =
+            Dict.toList groupedByKind
+                |> List.indexedMap
+                    (\index ( kind, datasources ) ->
                         let
-                            groupKeys =
-                                Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
-                                    |> def []
+                            -- Get signal_phone from the first datasource in the group
+                            -- All datasources in a group should have the same signal_phone
+                            signalPhone : String
+                            signalPhone =
+                                List.head datasources
+                                    |> Maybe.map (\( _, ds ) -> ds.signalPhone)
+                                    |> Maybe.withDefault Nothing
+                                    |> Maybe.withDefault "Unknown"
+
+                            -- Calculate total groups for this datasource type
+                            totalGroups : Int
+                            totalGroups =
+                                List.foldl
+                                    (\( sourceId, _ ) acc ->
+                                        let
+                                            groups : List B.ZoneDatasourceGroup
+                                            groups =
+                                                Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+                                        in
+                                        acc + List.length groups
+                                    )
+                                    0
+                                    datasources
                         in
-                        [ div [ class "d-flex justify-content-center align-items-center" ]
-                            [ div
-                                [ class "me-2 text-end"
-                                , style "width" "260px"
-                                ]
-                                [ span [ class "badge bg-secondary" ]
-                                    [ text <| source.displayName ]
-                                ]
-                            , div
-                                [ style "width" "600px"
-                                ]
-                                (List.map
-                                    (\gk ->
-                                        span [ class "badge bg-secondary me-2" ]
-                                            [ text <| Le.RerMessage.groupName gk model.groupInfos
-                                            ]
-                                    )
-                                    groupKeys
-                                )
-                            ]
-                        ]
-
-                    else
-                        []
+                        { id = index + 1
+                        , name = Utils.capitalize kind ++ " " ++ signalPhone ++ " (" ++ String.fromInt totalGroups ++ " груп)"
+                        , datasources = List.reverse datasources -- Keep original order
+                        }
+                    )
     in
-    case Dict.get zoneId model.zoneSourcesState of
-        Nothing ->
-            div [] []
+    datasourceTypes
 
-        Just state ->
+
+zoneCard2 : Bool -> Model -> B.User -> ( Int, B.SigintZone ) -> Html Msg
+zoneCard2 isDark model user ( zoneId, zone ) =
+    let
+        activeTab : Int
+        activeTab =
+            Dict.get zoneId model.zoneActiveTabs |> Maybe.withDefault 1
+
+        -- Group datasources by type
+        datasourceTypes : List DatasourceType
+        datasourceTypes =
+            groupDatasourcesByType zoneId model
+
+        -- Create tab definitions
+        tabDefinitions : List { id : Int, label : String }
+        tabDefinitions =
+            List.map
+                (\dsType ->
+                    { id = dsType.id
+                    , label = dsType.name
+                    }
+                )
+                datasourceTypes
+
+        renderDatasourceSection : ( Int, B.Datasource ) -> Html Msg
+        renderDatasourceSection ( sourceId, source ) =
             let
-                items =
-                    Dict.get zoneId model.zoneSources
+                groups : List B.ZoneDatasourceGroup
+                groups =
+                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
                         |> def []
-                        |> List.map
-                            (\sourceId ->
-                                Select.basicMenuItem
-                                    { item = sourceId
-                                    , label =
-                                        findK sourceId model.datasources
-                                            |> mmap .displayName
-                                            |> def (String.fromInt sourceId)
-                                    }
+                        |> List.filter (\group -> not model.showOnlyHidden || group.isGroupSecret)
+                        |> List.filter (\group -> 
+                            let
+                                groupName : String
+                                groupName =
+                                    Dict.get group.groupMasterKey model.groupInfos
+                                        |> Maybe.map .name
+                                        |> def group.groupMasterKey
+                                        |> (\name ->
+                                                if String.isEmpty name then
+                                                    String.right 5 group.groupMasterKey
+                                                else
+                                                    name
+                                           )
+                            in
+                            String.isEmpty model.groupNameFilter || 
+                            String.contains (String.toLower model.groupNameFilter) (String.toLower groupName)
+                        )
+                        |> List.sortBy
+                            (\group ->
+                                let
+                                    groupName : String
+                                    groupName =
+                                        Dict.get group.groupMasterKey model.groupInfos
+                                            |> Maybe.map .name
+                                            |> def group.groupMasterKey
+                                            |> (\name ->
+                                                    if String.isEmpty name then
+                                                        String.right 5 group.groupMasterKey
+
+                                                    else
+                                                        name
+                                               )
+                                in
+                                groupName
                             )
-
-                menu =
-                    Dict.get zoneId model.zoneSourcesMenu |> def []
             in
-            div [ class "card mb-4" ]
-                [ div [ class "card-header" ]
-                    [ text <| "Напрямок: " ++ zone.name ]
-                , div [ class "card-body relative" ] <|
-                    div [ class "flex justify-center items-center mb-2" ]
-                        [ div
-                            [ class "me-2 text-end"
-                            , style "width" "260px"
-                            ]
-                            [ text "Джерела: " ]
-                        , div
-                            [ style "width" "600px"
-                            , style "font-size" ".8rem"
-                            ]
-                            [ Html.map (SelectDatasourceMsg zoneId)
-                                (Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        items
-                                        state
-                                        menu
-                                        "жодне"
-                                        (Le.Block.Select.defaultOptions isDark)
-                                )
-                            ]
-                        ]
-                        :: List.concatMap renderSourceConfig
-                            (Dict.get zoneId model.zoneSources |> def [])
-                        ++ [ div [ class "d-flex justify-content-center align-items-center mt-4" ]
-                                [ button
-                                    [ class "btn btn-primary btn-sm"
-                                    , onClick (Save zoneId)
-                                    ]
-                                  <|
-                                    (if
-                                        Set.isEmpty
-                                            (Dict.get zoneId model.saveInProgress
-                                                |> def Set.empty
-                                            )
-                                     then
-                                        [ i [ class "bi bi-save fade-in" ] [] ]
+            if List.isEmpty groups then
+                text ""
 
-                                     else
-                                        [ Le.Block.Spinner.loadingSpinner2Sm ]
-                                    )
-                                        ++ [ text " зберегти"
-                                           ]
-                                ]
-                           ]
-                        ++ [ Watermark.new user.name |> Watermark.withPositioning (5, 50) |> Watermark.view
-                           ]
+            else
+                div [ class "space-y-3" ]
+                    (List.map (renderGroup model zoneId sourceId) groups)
+
+        -- Get active datasource type
+        activeType : Maybe DatasourceType
+        activeType =
+            List.filter (\dsType -> dsType.id == activeTab) datasourceTypes |> List.head
+
+        -- Render tab content
+        tabContent : Html Msg
+        tabContent =
+            case activeType of
+                Just dsType ->
+                    div [ class "space-y-3" ]
+                        (List.map renderDatasourceSection dsType.datasources)
+
+                Nothing ->
+                    div [ class "text-center opacity-70" ]
+                        [ text "Немає доступних джерел даних" ]
+    in
+    div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-0 mb-6 overflow-hidden" ]
+        [ div [ class "px-6 py-4 border-b" ]
+            [ h3 [ class "text-lg font-semibold mb-0" ]
+                [ text <| "Напрямок: " ++ zone.name ]
+            ]
+        , if List.isEmpty datasourceTypes then
+            div [ class "p-6 text-center opacity-70" ]
+                [ text "Немає доступних джерел даних" ]
+
+          else
+            div [ class "p-6" ]
+                [ -- Tab navigation
+                  Tabs.view tabDefinitions activeTab (ZoneTabChanged zoneId)
+                , -- Tab content
+                  div [ class "mt-4" ] [ tabContent ]
                 ]
+        ]
 
 
-mainBlock : Bool -> Model -> B.User -> List (Html Msg)
+mainBlock : Bool -> Model -> B.User -> Html Msg
 mainBlock isDark model user =
-    List.map (zoneCard isDark model user) model.zones
+    div [ class "space-y-6" ] 
+        [ div [ class "bg-[var(--bs-tertiary-bg)] rounded-lg border p-4" ]
+            [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Фільтри" ]
+            , div [ class "flex flex-col space-y-6" ]
+                [ div [ class "flex flex-col" ]
+                    [ label 
+                        [ for "group-name-filter"
+                        , class "mb-1 text-sm font-medium"
+                        ] 
+                        [ text "Назва групи:" ]
+                    , input 
+                        [ type_ "text"
+                        , id "group-name-filter"
+                        , value model.groupNameFilter
+                        , onInput UpdateGroupNameFilter
+                        , placeholder "Введіть назву групи..."
+                        , class "flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-[var(--bs-body-bg)]"
+                        ] []
+                    ]
+                , div [ class "flex items-center pt-2 border-t border-gray-100" ]
+                    [ Toggle.new
+                        { onToggle = ToggleShowOnlyHidden
+                        , label = "Лише приховані"
+                        , id = "show-only-hidden-filter"
+                        }
+                        |> Toggle.view model.showOnlyHidden
+                    ]
+                ]
+            ]
+        , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
+        ]
 
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ -- , Views.navBarAdmin dark "zones"
-      Views.noHeaderAndContent ToastMsg model.toasts <|
-        div [ class "mt-2" ] (mainBlock dark model user)
+    [ Views.noHeaderAndContent ToastMsg model.toasts <|
+        div [ class "mt-2" ] [ mainBlock dark model user ]
     ]
+        ++ (case model.userSelectorDialog of
+                Just dialog ->
+                    [ ModalDialog.modalDialog True
+                        CloseUserSelector
+                        [ class "medium-modal overflow-visible"
+                        ]
+                        [ div [ class "p-8" ]
+                            [ div [ class "mb-2 font-semibold text-gray-900" ] [ text "Виберіть користувачів, яким видима група" ]
+                            , if model.userSelectorLoading then
+                                div [ class "text-gray-600" ] [ text "Завантаження..." ]
+
+                              else
+                                div [ class "" ]
+                                    [ Html.map UserSelectorSelMsg <|
+                                        Styled.toUnstyled <|
+                                            Le.Block.Select.renderSelectVirtual
+                                                (List.map (\login -> Select.basicMenuItem { item = login, label = login }) model.userSelectorSelect.selectedItems)
+                                                model.userSelectorSelect.selectState
+                                                model.userSelectorSelect.items
+                                                "користувачі"
+                                                { loading = False, disabled = False, isDark = dark }
+                                    ]
+                            , case model.userSelectorError of
+                                Just err ->
+                                    div [ class "text-red-600 mt-2" ] [ text err ]
+
+                                Nothing ->
+                                    text ""
+                            , div [ class "mt-3 flex justify-end gap-2" ]
+                                [ Button.view
+                                    (Button.new { label = "Скасувати", onClick = CloseUserSelector }
+                                        |> Button.withOutlined True
+                                    )
+                                , Button.view
+                                    (Button.new { label = "Зберегти", onClick = UserSelectorSave })
+                                ]
+                            ]
+                        ]
+                    ]
+
+                Nothing ->
+                    []
+           )
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg

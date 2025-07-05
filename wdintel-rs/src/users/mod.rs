@@ -217,9 +217,7 @@ pub async fn update_login(
     if req.sigint_zone_id.is_some() {
         login_obj.sigint_zone_id = Set(req.sigint_zone_id.clone());
     }
-    if req.organism_id.is_some() {
-        login_obj.organism_id = Set(req.organism_id.clone());
-    }
+    login_obj.organism_id = Set(req.organism_id.clone());
     if req.deactivation_reason.is_some() {
         login_obj.deactivation_reason = Set(req
             .deactivation_reason
@@ -757,21 +755,28 @@ where
 
     let mut organism_groups_obj = vec![];
     if let Some(organism_id) = login_obj.organism_id {
-        organism_groups_obj = organism_group::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                organism_group::Relation::SignalGroup.def(),
+        organism_groups_obj =
+            crate::sigint::zone::filter_out_ineligible_secret_chats(
+                organism_group::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        organism_group::Relation::SignalGroup.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        signal_group::Relation::Datasource.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        datasource::Relation::SigintZoneDatasource.def(),
+                    )
+                    .filter(organism_group::Column::OrganismId.eq(organism_id))
+                    .filter(
+                        sigint_zone_datasource::Column::SigintZoneId
+                            .eq(zone_id),
+                    ),
+                login,
             )
-            .join(
-                JoinType::InnerJoin,
-                signal_group::Relation::Datasource.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                datasource::Relation::SigintZoneDatasource.def(),
-            )
-            .filter(organism_group::Column::OrganismId.eq(organism_id))
-            .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
             .all(txn)
             .await
             .context(h!())?
@@ -780,25 +785,27 @@ where
             .collect();
     }
 
-    let mut res = vec![];
     if organism_groups_obj.len() > 0 {
-        res = organism_groups_obj;
+        Ok(organism_groups_obj)
     } else {
-        let szds = sigint_zone_datasource::Entity::find()
-            .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
-            .all(txn)
-            .await
-            .context(h!())?;
-        for szd in szds {
-            let Some(group_master_keys) = szd.group_master_keys else {
-                continue;
-            };
-            let mut groups: Vec<String> =
-                serde_json::from_value(group_master_keys).context(h!())?;
-            res.append(&mut groups);
-        }
+        // Apply secret group filtering to the fallback path as well
+        let szds = crate::sigint::zone::filter_out_ineligible_secret_chats(
+            sigint_zone_datasource::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    sigint_zone_datasource::Relation::SignalGroup.def(),
+                )
+                .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id)),
+            login,
+        )
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|model| model.group_master_key)
+        .collect();
+        Ok(szds)
     }
-    Ok(res)
 }
 
 /// Gets group keys similar to get_identity_sigint_groups but without the import group id

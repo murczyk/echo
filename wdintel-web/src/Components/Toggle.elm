@@ -13,6 +13,7 @@ type Toggle msg
     = Settings
         { onToggle : msg
         , label : String
+        , id : String
         }
 
 
@@ -20,11 +21,12 @@ type Toggle msg
 -- Create a new Toggle with required properties
 
 
-new : { onToggle : msg, label : String } -> Toggle msg
+new : { onToggle : msg, label : String, id : String } -> Toggle msg
 new options =
     Settings
         { onToggle = options.onToggle
         , label = options.label
+        , id = options.id
         }
 
 
@@ -35,9 +37,9 @@ new options =
 view : Bool -> Toggle msg -> Html msg
 view isActive (Settings settings) =
     div [ class "switcher flex gap-[4px] items-center" ]
-        [ input [ type_ "checkbox", id "toggle", class "w-0 h-0 hidden", onClick settings.onToggle, checked isActive ] []
+        [ input [ type_ "checkbox", id settings.id, class "w-0 h-0 hidden", onClick settings.onToggle, checked isActive ] []
         , label
-            [ for "toggle"
+            [ for settings.id
             , class "switcher-label"
             ]
             []
