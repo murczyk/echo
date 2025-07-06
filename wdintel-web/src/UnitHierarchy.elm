@@ -292,19 +292,9 @@ view config units unitStats =
             buildHierarchy units
     in
     div [ class "w-full h-full max-w-md bg-card border rounded-lg flex flex-col" ]
-        [ div [ class "p-4 border-b border-border" ]
-            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
-                [ Html.text "Підрозділи" ]
-            , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
-                [ Html.text "Оберіть підрозділ для фільтрації" ]
-            ]
-        , div [ class " overflow-y-auto grow-1" ]
+        [
+         div [ class " overflow-y-auto grow-1" ]
             (List.map (renderArmy config unitStats units) hierarchy.armies)
-        , if not (String.isEmpty config.selectedUnit) then
-            Html.text ""
-
-          else
-            Html.text ""
         ]
 
 
@@ -910,7 +900,7 @@ renderUnit config unitStats unit =
 armyIndicator : Html msg
 armyIndicator =
     Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Армія" ]
-        [ Html.text "XXX" ]
+        [ Html.text "XXXX" ]
 
 
 divisionIndicator : Html msg
@@ -922,13 +912,13 @@ divisionIndicator =
 regimentIndicator : Html msg
 regimentIndicator =
     Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Полк" ]
-        [ Html.text "X" ]
+        [ Html.text "III" ]
 
 
 battalionIndicator : Html msg
 battalionIndicator =
     Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Батальйон" ]
-        [ Html.text "I" ]
+        [ Html.text "II" ]
 
 
 companyIndicator : Html msg
