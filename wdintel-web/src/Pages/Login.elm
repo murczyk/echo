@@ -299,7 +299,7 @@ body isDarkMode deltaLoginFlag model =
                                      else
                                         "/img/echo-logo.svg"
                                     )
-                                ,class "h-[50px]"
+                                , class "h-[50px]"
                                 ]
                                 []
                             ]
@@ -362,7 +362,7 @@ body isDarkMode deltaLoginFlag model =
                             ]
                             [ img
                                 [ src "/img/delta-icon.webp"
-                                , class "me-2"
+                                , class "me-2 inline-block"
                                 , style "height" "18px"
                                 ]
                                 []
