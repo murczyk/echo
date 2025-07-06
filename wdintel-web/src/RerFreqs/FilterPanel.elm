@@ -14,12 +14,11 @@ import Le.Block.Select
 import Le.Block.Spinner
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (..)
-import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..), FurtherInvestigationFilter(..))
+import RerFreqs.Model exposing (FilterName(..), Model, NetworkWorkflowStatus(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Select
 import Shared
-import Components.RadioGroup as RadioGroup
 
 
 view : Shared.Model -> Model -> Html Msg
@@ -88,15 +87,12 @@ view shared model =
                 , tabFiltersCallsigns
                 ]
             , div [ class "" ]
-                [ RadioGroup.new
-                    "furtherInvestigationFilter"
-                    [ ( All, "Всі" )
-                    , ( NeedsInvestigation, "Без підрозділу" )
-                    , ( DoesNotNeedInvestigation, "З підрозділом" )
+                [ button
+                    [ class "btn btn-sm btn-outline-secondary"
+                    , onClick ToggleSidebar
+                    , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
                     ]
-                    model.furtherInvestigationFilter
-                    FurtherInvestigationFilterChanged
-                    |> RadioGroup.view
+                    [ text "Підрозділи" ]
                 ]
             ]
         ]

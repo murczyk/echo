@@ -42,6 +42,7 @@ import Shared
 import Task
 import Time exposing (Posix)
 import Time.Extra
+import UnitHierarchy
 import View exposing (View)
 
 
@@ -174,6 +175,12 @@ init _ =
             , addConfirmationInp = Nothing
             , showNetworksWithoutUnit = False
             , furtherInvestigationFilter = RerFreqs.Model.All
+            , showSidebar = True
+            , expandedArmies = Set.empty
+            , expandedDivisions = Set.empty
+            , expandedRegiments = Set.empty
+            , expandedBattalions = Set.empty
+            , showOnlyInvestigating = False
             }
     in
     ( m2
@@ -234,15 +241,10 @@ loadFreqs model paginating =
                 , filterGroupMasterKeys = Nothing
                 , filterSenderProfileIds = Nothing
                 , filterFurtherInvestigation = 
-                    case model.furtherInvestigationFilter of
-                        RerFreqs.Model.All ->
-                            Nothing
-                        
-                        RerFreqs.Model.NeedsInvestigation ->
-                            Just True
-                        
-                        RerFreqs.Model.DoesNotNeedInvestigation ->
-                            Just False
+                    if model.showOnlyInvestigating then
+                        Just True
+                    else
+                        Nothing
                 }
 
         _ ->
@@ -1735,6 +1737,72 @@ update shared msg model =
             , E.none
             )
 
+        ToggleSidebar ->
+            ( { model | showSidebar = not model.showSidebar }, E.none )
+
+        ToggleShowOnlyInvestigating val ->
+            let
+                newFilterState =
+                    { freq = model.filterState.freq
+                    , unit = ""
+                    , callsigns = model.filterState.callsigns
+                    }
+                m2 = { model | showOnlyInvestigating = val, filterState = newFilterState, loading = True }
+            in
+            (m2, E.sendCmd <| loadFreqs m2 False)
+
+        ToggleArmyExpanded army ->
+            ( { model | expandedArmies =
+                if Set.member army model.expandedArmies then
+                    Set.remove army model.expandedArmies
+                else
+                    Set.insert army model.expandedArmies
+              }, E.none )
+
+        ToggleDivisionExpanded army division ->
+            let
+                key = army ++ ":" ++ division
+            in
+            ( { model | expandedDivisions =
+                if Set.member key model.expandedDivisions then
+                    Set.remove key model.expandedDivisions
+                else
+                    Set.insert key model.expandedDivisions
+              }, E.none )
+
+        ToggleRegimentExpanded army division regiment ->
+            let
+                key = army ++ ":" ++ division ++ ":" ++ regiment
+            in
+            ( { model | expandedRegiments =
+                if Set.member key model.expandedRegiments then
+                    Set.remove key model.expandedRegiments
+                else
+                    Set.insert key model.expandedRegiments
+              }, E.none )
+
+        ToggleBattalionExpanded army division regiment battalion ->
+            let
+                key = army ++ ":" ++ division ++ ":" ++ regiment ++ ":" ++ battalion
+            in
+            ( { model | expandedBattalions =
+                if Set.member key model.expandedBattalions then
+                    Set.remove key model.expandedBattalions
+                else
+                    Set.insert key model.expandedBattalions
+              }, E.none )
+
+        FilterUnitMsg unitName ->
+            let
+                newFilterState =
+                    { freq = model.filterState.freq
+                    , unit = unitName
+                    , callsigns = model.filterState.callsigns
+                    }
+                m2 = { model | filterState = newFilterState, showOnlyInvestigating = False, loading = True }
+            in
+            (m2, E.sendCmd <| loadFreqs m2 False)
+
 
 changeSortOrder : B.ListFreqsSortBy -> B.ListFreqsSortBy
 changeSortOrder order =
@@ -1786,13 +1854,87 @@ dateAndPanelsBlock _ model =
         ]
 
 
+leftPanel : Shared.Model -> Model -> Html Msg
+leftPanel shared model =
+    div
+        [ class "self-stretch max-h-full min-w-[300px]  w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
+        ]
+        [ button
+            [ class "absolute top-2 right-2 z-10 px-2 py-1 rounded border border-border bg-card hover:bg-gray-100 transition"
+            , onClick ToggleSidebar
+            , attribute "title" "Сховати підрозділи"
+            ]
+            [ i [ class "bi bi-chevron-left" ] [] ]
+        , unitsBlock shared model
+        , div [ class "flex-grow-1" ] []
+        ]
+
+
+unitsBlock : Shared.Model -> Model -> Html Msg
+unitsBlock shared model =
+    let
+        config : UnitHierarchy.Config Msg
+        config =
+            { onUnitClick = FilterUnitMsg
+            , onArmyToggle = ToggleArmyExpanded
+            , onDivisionToggle = ToggleDivisionExpanded
+            , onRegimentToggle = ToggleRegimentExpanded
+            , onBattalionToggle = ToggleBattalionExpanded
+            , isArmyExpanded = \armyName -> Set.member armyName model.expandedArmies
+            , isDivisionExpanded = \armyName divisionName -> Set.member (armyName ++ ":" ++ divisionName) model.expandedDivisions
+            , isRegimentExpanded = \armyName divisionName regimentName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
+            , isBattalionExpanded = \armyName divisionName regimentName battalionName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName) model.expandedBattalions
+            , selectedUnit = if model.showOnlyInvestigating then "" else model.filterState.unit
+            , autoExpandArmies = False
+            , autoExpandDivisions = True
+            , autoExpandRegiments = True
+            , autoExpandBattalions = True
+            }
+
+        investigatingFilter =
+            div
+                [ class
+                    ("px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-border "
+                        ++ (if model.showOnlyInvestigating then
+                                "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500"
+                            else
+                                ""
+                           )
+                    )
+                , onClick <| ToggleShowOnlyInvestigating True
+                ]
+                [ div [ class "flex items-center gap-2" ]
+                    [ span [ class "text-sm font-medium" ] [ text "В дорозвідці" ]
+                    ]
+                ]
+    in
+    if model.loadingUnitStats then
+        Le.Block.Spinner.loadingSpinner
+    else
+        div [ class "flex flex-col h-full" ]
+            [
+                div [ class "p-4 border-b border-border" ]
+                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
+                                [ Html.text "Підрозділи" ]
+                            , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
+                                [ Html.text "Оберіть підрозділ для фільтрації" ]
+                            ]
+             ,investigatingFilter
+            , div [ class "overflow-y-auto grow-1" ]
+                [ UnitHierarchy.view config (Dict.toList model.masterUnits |> List.map Tuple.second) model.unitStats ]
+            ]
+
+
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "частоти"
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "flex justify-start items-start page-rer-freqs" ]
-                [ RerFreqs.UnitsFilterSidebar.view shared model
+                [ if model.showSidebar then
+                    leftPanel shared model
+                  else
+                    text ""
                 , div
                     [ class "border-start flex-grow-1"
                     , style "height" "calc(-50px + 100vh)"
