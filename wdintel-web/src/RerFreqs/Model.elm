@@ -73,6 +73,12 @@ type alias Model =
     , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
     , addExistingActiveFrom : Maybe Int
     , addExistingActiveTo : Maybe Int
+    , showSidebar : Bool
+    , expandedArmies : Set.Set String
+    , expandedDivisions : Set.Set String
+    , expandedRegiments : Set.Set String
+    , expandedBattalions : Set.Set String
+    , showOnlyInvestigating : Bool
     }
 
 

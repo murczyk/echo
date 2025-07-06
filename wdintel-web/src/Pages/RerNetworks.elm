@@ -45,6 +45,7 @@ import Shared
 import Task
 import Time exposing (Posix)
 import TimeZone
+import UnitHierarchy
 import Url.Builder
 import View exposing (View)
 
@@ -83,7 +84,14 @@ type alias Model =
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
     , reportIncludeConfirmation : Bool
-    , furtherInvestigationFilter : RerFreqs.Model.FurtherInvestigationFilter
+    , showSidebar : Bool
+    , expandedArmies : Set.Set String
+    , expandedDivisions : Set.Set String
+    , expandedRegiments : Set.Set String
+    , expandedBattalions : Set.Set String
+    , showOnlyInvestigating : Bool
+    , units : List B.Unit
+    , loadingUnitStats : Bool
     }
 
 
@@ -144,7 +152,14 @@ init _ =
             , reportIncludePelengsMap = True
             , reportIncludeSigintSigns = True
             , reportIncludeConfirmation = True
-            , furtherInvestigationFilter = All
+            , showSidebar = True
+            , expandedArmies = Set.empty
+            , expandedDivisions = Set.empty
+            , expandedRegiments = Set.empty
+            , expandedBattalions = Set.empty
+            , showOnlyInvestigating = False
+            , units = []
+            , loadingUnitStats = True
             }
     in
     ( m2
@@ -179,15 +194,10 @@ loadNetworks model shared =
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
                 , filterFurtherInvestigation =
-                    case model.furtherInvestigationFilter of
-                        All ->
-                            Nothing
-
-                        NeedsInvestigation ->
-                            Just True
-
-                        DoesNotNeedInvestigation ->
-                            Just False
+                    if model.showOnlyInvestigating then
+                        Just True
+                    else
+                        Nothing
                 }
             )
 
@@ -205,15 +215,10 @@ loadNetworksFixLater model shared =
                 , filterUnit = emptySToNothing model.filterState.unit
                 , sortBy = Nothing
                 , filterFurtherInvestigation =
-                    case model.furtherInvestigationFilter of
-                        All ->
-                            Nothing
-
-                        NeedsInvestigation ->
-                            Just True
-
-                        DoesNotNeedInvestigation ->
-                            Just False
+                    if model.showOnlyInvestigating then
+                        Just True
+                    else
+                        Nothing
                 }
 
         _ ->
@@ -255,7 +260,13 @@ type Msg
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
-    | FurtherInvestigationFilterChanged FurtherInvestigationFilter
+    | ToggleShowOnlyInvestigating Bool
+    | ToggleArmyExpanded String
+    | ToggleDivisionExpanded String String
+    | ToggleRegimentExpanded String String String
+    | ToggleBattalionExpanded String String String String
+    | FilterUnitMsg String
+    | ToggleSidebar
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -436,6 +447,8 @@ update shared msg model =
                     rsp.units
                         |> List.map (\x -> ( x.id, x ))
                         |> Dict.fromList
+                , units = rsp.units
+                , loadingUnitStats = False
               }
             , E.none
             )
@@ -538,6 +551,7 @@ update shared msg model =
                     { model
                         | filterState = filterState
                         , filterStateDebounce = debounce
+                        , showOnlyInvestigating = False
                     }
             in
             ( m2
@@ -607,6 +621,7 @@ update shared msg model =
         UnitStatsReturnedByApi (Ok rsp) ->
             ( { model
                 | unitStats = Success rsp.units
+                , loadingUnitStats = False
               }
             , E.none
             )
@@ -689,6 +704,18 @@ update shared msg model =
 
         ReportIncludeSigintSignsCheckedByUser isChecked ->
             ( { model | reportIncludeSigintSigns = isChecked }, E.none )
+
+        ToggleShowOnlyInvestigating val ->
+            let
+                newFilterState =
+                    { freq = model.filterState.freq
+                    , unit = ""
+                    , callsigns = model.filterState.callsigns
+                    }
+                m2 = { model | showOnlyInvestigating = val, filterState = newFilterState }
+                (m3, eff) = loadNetworks m2 shared
+            in
+            ( m3, eff )
 
         NetworksMergeStart ->
             ( { model
@@ -779,8 +806,61 @@ update shared msg model =
             , E.none
             )
 
-        FurtherInvestigationFilterChanged filter ->
-            loadNetworks { model | furtherInvestigationFilter = filter } shared
+        ToggleArmyExpanded army ->
+            ( { model | expandedArmies =
+                if Set.member army model.expandedArmies then
+                    Set.remove army model.expandedArmies
+                else
+                    Set.insert army model.expandedArmies
+              }, E.none )
+
+        ToggleDivisionExpanded army division ->
+            let
+                key = army ++ ":" ++ division
+            in
+            ( { model | expandedDivisions =
+                if Set.member key model.expandedDivisions then
+                    Set.remove key model.expandedDivisions
+                else
+                    Set.insert key model.expandedDivisions
+              }, E.none )
+
+        ToggleRegimentExpanded army division regiment ->
+            let
+                key = army ++ ":" ++ division ++ ":" ++ regiment
+            in
+            ( { model | expandedRegiments =
+                if Set.member key model.expandedRegiments then
+                    Set.remove key model.expandedRegiments
+                else
+                    Set.insert key model.expandedRegiments
+              }, E.none )
+
+        ToggleBattalionExpanded army division regiment battalion ->
+            let
+                key = army ++ ":" ++ division ++ ":" ++ regiment ++ ":" ++ battalion
+            in
+            ( { model | expandedBattalions =
+                if Set.member key model.expandedBattalions then
+                    Set.remove key model.expandedBattalions
+                else
+                    Set.insert key model.expandedBattalions
+              }, E.none )
+
+        FilterUnitMsg unitName ->
+            let
+                newFilterState =
+                    { freq = model.filterState.freq
+                    , unit = unitName
+                    , callsigns = model.filterState.callsigns
+                    }
+                m2 = { model | filterState = newFilterState, showOnlyInvestigating = False }
+                (m3, eff) = loadNetworks m2 shared
+            in
+            ( m3, eff )
+
+        ToggleSidebar ->
+            ( { model | showSidebar = not model.showSidebar }, E.none )
 
 
 findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
@@ -1034,17 +1114,12 @@ filterPanel shared model =
             , onInput <| \v -> FilterStateMsg { filterState | unit = v }
             ]
             []
-        , div [ class "me-3" ]
-            [ RadioGroup.new
-                "networksFurtherInvestigationFilter"
-                [ ( All, "Всі" )
-                , ( NeedsInvestigation, "Без підрозділу" )
-                , ( DoesNotNeedInvestigation, "З підрозділом" )
+            , button
+                [ class "btn btn-sm btn-outline-secondary"
+                , onClick ToggleSidebar
+                , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
                 ]
-                model.furtherInvestigationFilter
-                FurtherInvestigationFilterChanged
-                |> RadioGroup.view
-            ]
+                [ text "Підрозділи" ]
         , span [ class "grow-1" ] []
         , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
         , let
@@ -1156,59 +1231,72 @@ dateAndPanelsBlock _ model =
 leftPanel : Shared.Model -> Model -> Html Msg
 leftPanel shared model =
     div
-        [ class "align-self-stretch border-r-1 border-border "
-        , style "width" "220px"
-        , style "min-width" "220px"
-        , style "height" "calc(-50px + 100vh)"
-        , style "overflow-y" "scroll"
+        [ class "self-stretch max-h-full min-w-[300px]  w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
         ]
-        [ div
-            [ class "filter-col d-flex flex-column pt-1 left-panel"
-            , style "height" "100%"
+        [ button
+            [ class "absolute top-2 right-2 z-10 px-2 py-1 rounded border border-border bg-card hover:bg-gray-100 transition"
+            , onClick ToggleSidebar
+            , attribute "title" "Сховати підрозділи"
             ]
-            [ unitStatsBlock shared model
-            , div [ class "flex-grow-1" ] []
-            ]
+            [ i [ class "bi bi-chevron-left" ] [] ]
+        , unitsBlock shared model
+        , div [ class "flex-grow-1" ] []
         ]
 
 
-unitStatsBlock : Shared.Model -> Model -> Html Msg
-unitStatsBlock _ model =
+unitsBlock : Shared.Model -> Model -> Html Msg
+unitsBlock shared model =
     let
-        filterState =
-            model.filterState
+        config : UnitHierarchy.Config Msg
+        config =
+            { onUnitClick = FilterUnitMsg
+            , onArmyToggle = ToggleArmyExpanded
+            , onDivisionToggle = ToggleDivisionExpanded
+            , onRegimentToggle = ToggleRegimentExpanded
+            , onBattalionToggle = ToggleBattalionExpanded
+            , isArmyExpanded = \armyName -> Set.member armyName model.expandedArmies
+            , isDivisionExpanded = \armyName divisionName -> Set.member (armyName ++ ":" ++ divisionName) model.expandedDivisions
+            , isRegimentExpanded = \armyName divisionName regimentName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
+            , isBattalionExpanded = \armyName divisionName regimentName battalionName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName) model.expandedBattalions
+            , selectedUnit = if model.showOnlyInvestigating then "" else model.filterState.unit
+            , autoExpandArmies = False
+            , autoExpandDivisions = True
+            , autoExpandRegiments = True
+            , autoExpandBattalions = True
+            }
 
-        renderUnitStat : B.FreqUnitStatRow -> List (Html Msg)
-        renderUnitStat stat =
-            [ div
-                [ class "d-flex justify-content-between align-items-between p-2 pointer"
-                , onClick <| FilterStateMsg { filterState | unit = Unit.unitName model.masterUnits stat.unitId }
+        investigatingFilter =
+            div
+                [ class
+                    ("px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-border "
+                        ++ (if model.showOnlyInvestigating then
+                                "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500"
+                            else
+                                ""
+                           )
+                    )
+                , onClick <| ToggleShowOnlyInvestigating True
                 ]
-                [ div [ class "flex-grow-1 text-end me-2" ] [ text <| Unit.unitName model.masterUnits stat.unitId ]
-                , div [ class "me-2" ]
-                    [ div
-                        [ style "min-width" "30px"
-                        , class "text-center"
-                        ]
-                        [ span
-                            [ class "badge badge-sm rounded-pill text-bg-secondary"
-                            , style "font-size" "0.6rem"
-                            ]
-                            [ text <| String.fromInt stat.count
-                            ]
-                        ]
+                [ div [ class "flex items-center gap-2" ]
+                    [ span [ class "text-sm font-medium" ] [ text "В дорозвідці" ]
                     ]
                 ]
-            , div [ class "border-bottom" ] []
-            ]
     in
-    case model.unitStats of
-        Success unitStats ->
-            div [ style "font-size" ".8rem" ] <|
-                List.concatMap renderUnitStat unitStats
-
-        _ ->
-            Le.Block.Spinner.loadingSpinner
+    if model.loadingUnitStats then
+        Le.Block.Spinner.loadingSpinner
+    else
+        div [ class "flex flex-col h-full" ]
+            [
+                div [ class "p-4 border-b border-border" ]
+                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
+                                [ Html.text "Підрозділи" ]
+                            , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
+                                [ Html.text "Оберіть підрозділ для фільтрації" ]
+                            ]
+             ,investigatingFilter
+            , div [ class "overflow-y-auto grow-1" ]
+                [ UnitHierarchy.view config model.units (RD.withDefault [] model.unitStats) ]
+            ]
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
@@ -1216,45 +1304,47 @@ view dark shared user model =
     { title = "мережі"
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "flex rer-networks" ]
-                [ leftPanel shared model
-                , div [ class "grow  px-[32px] py-[16px] overflow-auto", style "height" "calc(-50px + 100vh)" ]
-                    [ h1 [ class "mb-[16px]!" ]
-                        [ div [ class "d-flex justify-content-between align-items-center" ]
-                            [ -- Left-side content
-                              div [ class "d-flex align-items-center me-auto" ]
-                                [ span [ class "me-2" ] [ text "мережі" ]
-                                , dateAndPanelsBlock dark model
-                                ]
-                            ]
-                        ]
-                    , case model.networksMergeStatus of
-                        CalculatedSuggestions (x :: xs) ->
-                            div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                                , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                    |> Button.withOutlined True
-                                    |> Button.view
-                                ]
-
-                        _ ->
+            div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)"]
+                    [
+                        if model.showSidebar then
+                            leftPanel shared model
+                        else
                             text ""
-                    , contentBlock shared model
-                    ]
-                , let
-                    isOpen =
-                        case model.networksMergeStatus of
-                            Merging _ _ _ ->
-                                True
+                        ,div [ class "grow  px-[32px] py-[16px] overflow-auto"  ]
+                        [ h1 [ class "mb-[16px]!" ]
+                            [ text "мережі" ]
+                        , div [ class "d-flex justify-content-between align-items-center mb-[16px]!" ]
+                            [ div [ class "d-flex align-items-center me-auto" ]
+                                [ dateAndPanelsBlock dark model ]
+                            ]
+                        , case model.networksMergeStatus of
+                            CalculatedSuggestions (x :: xs) ->
+                                div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                                    [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                                    , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                        |> Button.withOutlined True
+                                        |> Button.view
+                                    ]
 
                             _ ->
-                                False
-                  in
-                  Sidebar.view
-                    isOpen
-                    NetworksMergeFinish
-                    (networksMergeSidebarContent model)
-                ]
+                                text ""
+                        , contentBlock shared model
+                        ]
+                    , let
+                        isOpen =
+                            case model.networksMergeStatus of
+                                Merging _ _ _ ->
+                                    True
+
+                                _ ->
+                                    False
+                      in
+                      Sidebar.view
+                        isOpen
+                        NetworksMergeFinish
+                        (networksMergeSidebarContent model)
+                    ]
+
         ]
     }
 

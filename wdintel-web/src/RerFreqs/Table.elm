@@ -442,7 +442,7 @@ viewFreqBlock mUser model freq =
                             [ div [ style "font-size" ".8rem" ]
                                 [ button
                                     [ title "Редагувати прив'язки"
-                                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[16px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
+                                    , class "outline-0! px-[4px] border-1! border-border rounded-sm! bg-transparent text-action text-[16px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
                                     , onClick <| OpenAddNetworkSidebar freq.freq
                                     ]
                                     [ i [ class "bi bi-pencil" ] []

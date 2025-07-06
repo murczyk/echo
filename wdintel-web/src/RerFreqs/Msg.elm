@@ -90,3 +90,10 @@ type Msg
     | NetworkSearchWithoutUnitToggled Bool
     | NetworkSearchWithoutUnitToggle
     | FurtherInvestigationFilterChanged RerFreqs.Model.FurtherInvestigationFilter
+    | ToggleSidebar
+    | ToggleShowOnlyInvestigating Bool
+    | ToggleArmyExpanded String
+    | ToggleDivisionExpanded String String
+    | ToggleRegimentExpanded String String String
+    | ToggleBattalionExpanded String String String String
+    | FilterUnitMsg String

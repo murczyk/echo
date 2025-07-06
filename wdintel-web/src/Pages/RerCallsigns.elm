@@ -1813,7 +1813,15 @@ unitsBlock shared model =
         Le.Block.Spinner.loadingSpinner
 
     else
-        UnitHierarchy.view config model.units model.unitStats
+        section [] [
+                div [ class "p-4 border-b border-border" ]
+                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
+                                [ Html.text "Підрозділи" ]
+                            , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
+                                [ Html.text "Оберіть підрозділ для фільтрації" ]
+                            ]
+            ,UnitHierarchy.view config model.units model.unitStats
+            ]
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
