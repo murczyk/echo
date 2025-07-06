@@ -103,7 +103,7 @@ view : Auth.User -> String -> Shared.Model -> { toContentMsg : Msg -> contentMsg
 view user activeName shared { toContentMsg, model, content } =
     { title = content.title
     , body =
-        [ div [ classList [ ( "h-[50px]", model.isNavbarVisible ) ] ]
+        [ div []
             [ div
                 [ class "fixed top-0 left-0 right-0 z-500 transition-all duration-300 ease-in-out"
                 , class
@@ -137,13 +137,13 @@ view user activeName shared { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            [ class "transition-all duration-300 ease-in-out min-h-screen"
+            [ class "transition-all duration-300 ease-in-out flex"
             , class
                 (if model.isNavbarVisible then
-                    "pt-[0px]"
+                    "pt-[50px] min-h-[calc(100vh-50px)]"
 
                  else
-                    "pt-0"
+                    "pt-0 min-h-screen"
                 )
             ]
             content.body

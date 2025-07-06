@@ -2370,7 +2370,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo model =
     in
     div
         [ style "position" "relative"
-        , class "waterfall bg-column min-w-[300px]"
+        , class "waterfall bg-column min-w-[300px] grow-1"
         , style "z-index" "50"
         ]
         [ div
@@ -3086,7 +3086,7 @@ messageTab ps model =
                        )
     in
     div
-        [ class "relative max-w-[800px]"
+        [ class "relative max-w-[800px] flex flex-col"
         ]
         [ deleteFilterModal
         , deleteMessageModal
