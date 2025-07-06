@@ -28,6 +28,7 @@ type alias Menu =
 type alias Props msg =
     { onToggleTheme : msg
     , onNavbarVisibilityChange : msg
+    , isRerDuty : Bool
     }
 
 
@@ -138,14 +139,21 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-6" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                    [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
-                    , div
-                        [ class "pointer"
-                        , onClick props.onNavbarVisibilityChange
-                        ]
-                        [ i [ class "bi bi-arrows-fullscreen" ] []
-                        ]
-                    ]
+                                         ([ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
+                      ]
+                         ++ (if props.isRerDuty then
+                                 [ div
+                                     [ class "pointer"
+                                     , onClick props.onNavbarVisibilityChange
+                                     ]
+                                     [ i [ class "bi bi-arrows-fullscreen" ] []
+                                     ]
+                                 ]
+
+                             else
+                                 []
+                            )
+                     )
                 ]
             ]
         ]

@@ -26,7 +26,7 @@ layout props shared route =
     Layout.new
         { init = init
         , update = update route
-        , view = view props.user props.activeName shared
+        , view = view props.user props.activeName shared route
         , subscriptions = subscriptions
         }
 
@@ -99,8 +99,8 @@ subscriptions model =
 -- VIEW
 
 
-view : Auth.User -> String -> Shared.Model -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
-view user activeName shared { toContentMsg, model, content } =
+view : Auth.User -> String -> Shared.Model -> Route () -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
+view user activeName shared route { toContentMsg, model, content } =
     { title = content.title
     , body =
         [ div []
@@ -114,26 +114,30 @@ view user activeName shared { toContentMsg, model, content } =
                         "-translate-y-full"
                     )
                 ]
-                [ navBar user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility } ]
-            , if not model.isNavbarVisible then
-                div
-                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
-                    [ div
-                        [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
-                        , onClick ToggleNavbarVisibility
+                [ navBar user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
+            , if route.url.path == "/rer-duty" then
+                if not model.isNavbarVisible then
+                    div
+                        [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
+                        [ div
+                            [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
+                            , onClick ToggleNavbarVisibility
+                            ]
+                            [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
                         ]
-                        [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
-                    ]
+
+                else
+                    div
+                        [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-0 pointer-events-none" ]
+                        [ div
+                            [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
+                            , onClick ToggleNavbarVisibility
+                            ]
+                            [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
+                        ]
 
               else
-                div
-                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-0 pointer-events-none" ]
-                    [ div
-                        [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
-                        , onClick ToggleNavbarVisibility
-                        ]
-                        [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
-                    ]
+                div [] []
             ]
             |> Html.map toContentMsg
         , div
