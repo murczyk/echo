@@ -83,16 +83,20 @@ view shared model =
                     , onInput <| \v -> FilterStateMsg { filterState | unit = v }
                     ]
                     []
-                , span [ class "me-2" ] [ text "позивні" ]
-                , tabFiltersCallsigns
-                ]
-            , div [ class "" ]
-                [ button
-                    [ class "btn btn-sm btn-outline-secondary"
+                , button
+                    [ class "btn btn-sm btn-outline-secondary mr-8!"
                     , onClick ToggleSidebar
-                    , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
+                    , attribute "title"
+                        (if model.showSidebar then
+                            "Сховати підрозділи"
+
+                         else
+                            "Показати підрозділи"
+                        )
                     ]
                     [ text "Підрозділи" ]
+                , span [ class "me-2" ] [ text "позивні" ]
+                , tabFiltersCallsigns
                 ]
             ]
         ]
