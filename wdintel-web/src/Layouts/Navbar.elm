@@ -87,7 +87,7 @@ update route msg model =
             ( model, E.none )
 
         ToggleNavbarVisibility ->
-            ( { model | isNavbarVisible = not model.isNavbarVisible }, E.none )
+            ( { model | isNavbarVisible = not model.isNavbarVisible }, E.triggerResize )
 
 
 subscriptions : Model -> Sub Msg

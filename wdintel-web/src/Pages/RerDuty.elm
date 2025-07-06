@@ -439,7 +439,7 @@ body isDarkMode shared user model =
                         )
                 )
                 model.waterfalls
-        , div [ class "shrink" ]
+        , div [ class "shrink mt-12" ]
             [ newTabBlock ]
         ]
     ]

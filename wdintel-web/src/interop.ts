@@ -396,6 +396,18 @@ export const onReady = ({ app, env }) => {
 		});
 	}
 
+	if (app.ports && app.ports.shared_triggerResize) {
+		app.ports.shared_triggerResize.subscribe(() => {
+			// Use requestAnimationFrame to ensure DOM changes are applied first
+			requestAnimationFrame(() => {
+				// Then add a delay to allow CSS transitions to complete
+				setTimeout(() => {
+					window.dispatchEvent(new Event('resize'));
+				}, 300); // Match the transition duration from CSS
+			});
+		});
+	}
+
 
 	if (app.ports && app.ports.shared_getLocation && app.ports.shared_getLocationRes) {
 		app.ports.shared_getLocation.subscribe(() => {

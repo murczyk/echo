@@ -18,3 +18,4 @@ type Msg
     | CallsignsInfoAskedByPage (List String)
     | PostLoadAll B.ListPostsReq
     | PostsReturnedByApi (Result ApiError (List B.Post))
+    | TriggerResize

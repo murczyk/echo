@@ -123,6 +123,11 @@ update req msg model =
             , E.sendCmd <| Ports.shared_toggleDarkMode ()
             )
 
+        TriggerResize ->
+            ( model
+            , E.sendCmd <| Ports.shared_triggerResize ()
+            )
+
         SignOut ->
             ( { model | user = Nothing }
             , E.sendCmd <| Api.logout SignOutDone
