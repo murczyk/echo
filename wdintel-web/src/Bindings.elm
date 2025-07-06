@@ -3634,12 +3634,7 @@ type alias EtalonkaJimForksReq =
     , filterFreq : Maybe String
     , filterUnit : Maybe String
     , sortBy : Maybe (List EtalonkaJimForksSortBy)
-    , networksOnly : Bool
-    , activeCallsignsOnly : Bool
-    , activeFreqsOnly : Bool
-    , includePelengsMap : Bool
-    , includeSigintSigns : Bool
-    , includeConfirmation : Bool
+    , settings : EtalonkaSettings
     }
 
 
@@ -3651,12 +3646,7 @@ etalonkaJimForksReqEncoder struct =
         , ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list etalonkaJimForksSortByEncoder)) struct.sortBy )
-        , ( "networks_only", Json.Encode.bool struct.networksOnly )
-        , ( "active_callsigns_only", Json.Encode.bool struct.activeCallsignsOnly )
-        , ( "active_freqs_only", Json.Encode.bool struct.activeFreqsOnly )
-        , ( "include_pelengs_map", Json.Encode.bool struct.includePelengsMap )
-        , ( "include_sigint_signs", Json.Encode.bool struct.includeSigintSigns )
-        , ( "include_confirmation", Json.Encode.bool struct.includeConfirmation )
+        , ( "settings", etalonkaSettingsEncoder struct.settings )
         ]
 
 
@@ -3673,6 +3663,44 @@ etalonkaJimForksSortByEncoder enum =
 
         NetworkNameDesc ->
             Json.Encode.string "NetworkNameDesc"
+
+
+type alias EtalonkaSettings =
+    { networksOnly : Bool
+    , activeCallsignsOnly : Bool
+    , activeFreqsOnly : Bool
+    , includePelengsMap : Bool
+    , includeSigintSigns : Bool
+    , includeConfirmation : Bool
+    }
+
+
+etalonkaSettingsEncoder : EtalonkaSettings -> Json.Encode.Value
+etalonkaSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "networks_only", Json.Encode.bool struct.networksOnly )
+        , ( "active_callsigns_only", Json.Encode.bool struct.activeCallsignsOnly )
+        , ( "active_freqs_only", Json.Encode.bool struct.activeFreqsOnly )
+        , ( "include_pelengs_map", Json.Encode.bool struct.includePelengsMap )
+        , ( "include_sigint_signs", Json.Encode.bool struct.includeSigintSigns )
+        , ( "include_confirmation", Json.Encode.bool struct.includeConfirmation )
+        ]
+
+
+type alias EtalonkaNetworkBatchReq =
+    { networkIds : List Int
+    , sortBy : Maybe (List EtalonkaJimForksSortBy)
+    , settings : EtalonkaSettings
+    }
+
+
+etalonkaNetworkBatchReqEncoder : EtalonkaNetworkBatchReq -> Json.Encode.Value
+etalonkaNetworkBatchReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_ids", Json.Encode.list Json.Encode.int struct.networkIds )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list etalonkaJimForksSortByEncoder)) struct.sortBy )
+        , ( "settings", etalonkaSettingsEncoder struct.settings )
+        ]
 
 
 type AdjacentFreqDistance
@@ -7043,12 +7071,7 @@ etalonkaJimForksReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list etalonkaJimForksSortByDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_only" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_callsigns_only" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_pelengs_map" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
 
 
 etalonkaJimForksSortByDecoder : Json.Decode.Decoder EtalonkaJimForksSortBy
@@ -7075,6 +7098,25 @@ etalonkaJimForksSortByDecoder =
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
         ]
+
+
+etalonkaSettingsDecoder : Json.Decode.Decoder EtalonkaSettings
+etalonkaSettingsDecoder =
+    Json.Decode.succeed EtalonkaSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_callsigns_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_pelengs_map" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" Json.Decode.bool))
+
+
+etalonkaNetworkBatchReqDecoder : Json.Decode.Decoder EtalonkaNetworkBatchReq
+etalonkaNetworkBatchReqDecoder =
+    Json.Decode.succeed EtalonkaNetworkBatchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list etalonkaJimForksSortByDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
 
 
 adjacentFreqDistanceDecoder : Json.Decode.Decoder AdjacentFreqDistance

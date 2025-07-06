@@ -5,6 +5,7 @@ import Auth
 import Bindings as B
 import Components.Button as Button
 import Components.Checkbox as Checkbox
+import Components.ModalDialog as ModalDialog
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -33,6 +34,8 @@ import Shared
 import Time
 import Time.Extra
 import View exposing (View)
+import Bytes exposing (Bytes)
+import File.Download as Download
 
 
 page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
@@ -95,6 +98,14 @@ type alias Model =
     , addSignsInp : String
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
     , descriptionsEditDict : Dict Int B.NetworkDescription
+    , reportModalOpened : Bool
+    , reportDownloadInProgress : Bool
+    , reportNetworksOnly : Bool
+    , reportActiveCallsignsOnly : Bool
+    , reportActiveFreqsOnly : Bool
+    , reportIncludePelengsMap : Bool
+    , reportIncludeSigintSigns : Bool
+    , reportIncludeConfirmation : Bool
     }
 
 
@@ -139,6 +150,14 @@ init route shared () =
       , addSignsInp = ""
       , signals = NotAsked
       , descriptionsEditDict = Dict.empty
+      , reportModalOpened = False
+      , reportDownloadInProgress = False
+      , reportNetworksOnly = False
+      , reportActiveCallsignsOnly = True
+      , reportActiveFreqsOnly = True
+      , reportIncludePelengsMap = True
+      , reportIncludeSigintSigns = True
+      , reportIncludeConfirmation = True
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -193,6 +212,16 @@ type Msg
     | AddConfirmationFreqSelMsg (Select.Msg String)
     | CallsignReportingStatusToggledByUser CallsignResModified Bool
     | CallsignReportingStatusUpdatedByApi (Result ApiError Bool)
+    | ReportModalOpenedByUser
+    | ReportModalClosedByUser
+    | ReportDownloadClickedByUser
+    | ReportDownloadReturnedByApi (Result ApiError Bytes)
+    | ReportNetworksOnlyCheckedByUser Bool
+    | ReportActiveFreqsOnlyCheckedByUser Bool
+    | ReportActiveCallsignsOnlyCheckedByUser Bool
+    | ReportIncludePelengsMapCheckedByUser Bool
+    | ReportIncludeConfirmationCheckedByUser Bool
+    | ReportIncludeSigintSignsCheckedByUser Bool
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -783,6 +812,74 @@ update shared msg model =
         CallsignsEditCanceledByUser ->
             ( { model | callsignsEditingState = Readonly }, E.none )
 
+        ReportModalOpenedByUser ->
+            ( { model | reportModalOpened = True }, E.none )
+
+        ReportModalClosedByUser ->
+            ( { model | reportModalOpened = False }, E.none )
+
+        ReportDownloadClickedByUser ->
+            case model.network of
+                Success network ->
+                    ( { model | reportDownloadInProgress = True }
+                    , E.getNetworkReportBatch ReportDownloadReturnedByApi
+                        { networkIds = [ network.id ]
+                        , sortBy = Nothing
+                        , settings =
+                            { networksOnly = model.reportNetworksOnly
+                            , activeCallsignsOnly = model.reportActiveCallsignsOnly
+                            , activeFreqsOnly = model.reportActiveFreqsOnly
+                            , includePelengsMap = model.reportIncludePelengsMap
+                            , includeSigintSigns = model.reportIncludeSigintSigns
+                            , includeConfirmation = model.reportIncludeConfirmation
+                            }
+                        }
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        ReportDownloadReturnedByApi (Err e) ->
+            let
+                m2 = { model | reportDownloadInProgress = False }
+            in
+            Api.handleHttpError ToastMsg e m2
+
+        ReportDownloadReturnedByApi (Ok bytes) ->
+            let
+                m2 = { model | reportDownloadInProgress = False }
+                extension = "docx"
+                fname = "etalonka_network_" ++ 
+                    (case model.network of
+                        Success network -> String.fromInt network.id
+                        _ -> "unknown"
+                    ) ++ "." ++ extension
+            in
+            ( m2
+            , E.sendCmd <|
+                Download.bytes fname
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    bytes
+            )
+
+        ReportNetworksOnlyCheckedByUser isChecked ->
+            ( { model | reportNetworksOnly = isChecked }, E.none )
+
+        ReportActiveFreqsOnlyCheckedByUser isChecked ->
+            ( { model | reportActiveFreqsOnly = isChecked }, E.none )
+
+        ReportActiveCallsignsOnlyCheckedByUser isChecked ->
+            ( { model | reportActiveCallsignsOnly = isChecked }, E.none )
+
+        ReportIncludePelengsMapCheckedByUser isChecked ->
+            ( { model | reportIncludePelengsMap = isChecked }, E.none )
+
+        ReportIncludeConfirmationCheckedByUser isChecked ->
+            ( { model | reportIncludeConfirmation = isChecked }, E.none )
+
+        ReportIncludeSigintSignsCheckedByUser isChecked ->
+            ( { model | reportIncludeSigintSigns = isChecked }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1253,8 +1350,11 @@ freqsTableEditing updateFreqReq freq model shared =
 
 contentBlock : Auth.User -> Shared.Model -> B.Network -> Model -> List (Html Msg)
 contentBlock user shared network model =
-    [ h2 []
-        [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
+    [ div [ class "flex justify-between items-center mb-[16px]" ]
+        [ h2 []
+            [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
+            ]
+        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
         [ div [ class "col-span-7 grid  gap-[30px]", style "grid-template-rows" "520px 370px" ]
@@ -1801,6 +1901,57 @@ view user shared model =
                             _ ->
                                 [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
                         )
+                    , let
+                        dialogContent =
+                            [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                                [ div [ class "pb-12" ]
+                                    [ h2 [] [ text "Звіт \"еталонка\"" ]
+                                    , p [] [ text "Еталонка для мережі" ]
+                                    , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
+                                        ([ Checkbox.new { isChecked = model.reportNetworksOnly, onToggle = ReportNetworksOnlyCheckedByUser }
+                                            |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
+                                            |> Checkbox.view
+                                         , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
+                                            |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
+                                            |> Checkbox.view
+                                         , Checkbox.new { isChecked = model.reportActiveCallsignsOnly, onToggle = ReportActiveCallsignsOnlyCheckedByUser }
+                                            |> Checkbox.withContent [ span [] [ text "Лише активні позивні" ] ]
+                                            |> Checkbox.view
+                                         ]
+                                            ++ (if not model.reportNetworksOnly then
+                                                    [ Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
+                                                        |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
+                                                        |> Checkbox.view
+                                                    , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
+                                                        |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
+                                                        |> Checkbox.view
+                                                    , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
+                                                        |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
+                                                        |> Checkbox.view
+                                                    ]
+
+                                                else
+                                                    []
+                                               )
+                                        )
+                                    ]
+                                , div [ class "flex justify-between" ]
+                                    [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
+                                    , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
+                                        |> (if model.reportDownloadInProgress then
+                                                Button.withIcon
+                                                    [ Le.Block.Spinner.loadingSpinner2Sm
+                                                    ]
+
+                                            else
+                                                identity
+                                           )
+                                        |> Button.view
+                                    ]
+                                ]
+                            ]
+                      in
+                      ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
                     ]
             ]
         ]
