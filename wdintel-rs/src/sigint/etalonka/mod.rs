@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::sigint::network::types::{NetworkDescrType, NetworkDescription};
+use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
 use actix_web::web::Json;
@@ -273,63 +274,63 @@ pub async fn report_freqs(
                     vec![TableRow::new(vec![
                         create_table_header_cell(
                             width_unit * 1,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Частота",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "К-ть перехоплень",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Тип передачі",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "р/c",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 3,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Назва р/м",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Підтвердження приналежності р/м",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Призначення, х-р роботи",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Локація",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Вперше відмічена",
                             false,
@@ -423,42 +424,42 @@ pub async fn report_freqs(
                     vec![TableRow::new(vec![
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Позивний",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Посада",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 5,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Коментар",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Останній раз в етері",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Частоти",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            "f2f2f2",
+                            Some("f2f2f2"),
                             &table_header_style_id,
                             "Радіомережі",
                             false,
@@ -635,28 +636,28 @@ pub async fn report_freqs(
                 vec![TableRow::new(vec![
                     create_table_header_cell(
                         width_unit * 2,
-                        "f2f2f2",
+                        Some("f2f2f2"),
                         &table_header_style_id,
                         "Частоти",
                         false,
                     ),
                     create_table_header_cell(
                         width_unit * 1,
-                        "f2f2f2",
+                        Some("f2f2f2"),
                         &table_header_style_id,
                         "К-ть перехоплень",
                         false,
                     ),
                     create_table_header_cell(
                         width_unit * 7,
-                        "f2f2f2",
+                        Some("f2f2f2"),
                         &table_header_style_id,
                         "Позивні",
                         false,
                     ),
                     create_table_header_cell(
                         width_unit * 4,
-                        "f2f2f2",
+                        Some("f2f2f2"),
                         &table_header_style_id,
                         "Локація",
                         false,
@@ -829,7 +830,6 @@ pub async fn generate_networks_docx_report(
     let all_known_callsigns =
         find_all_known_callsigns(&env.dbx).await.context(h!())?;
 
-    let width_unit = 300;
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
@@ -869,10 +869,31 @@ pub async fn generate_networks_docx_report(
         AlignmentType::Center,
     );
 
+    let invisible_paragraph = Paragraph::new()
+        .add_run(Run::new().size(1)) 
+        .line_spacing(LineSpacing::new().before(0).after(0).line(0));
+
+    // Unit	Twips Equivalent
+    // 1 inch	1440 twips
+    // 1 cm	~567 twips
+    // 1 pt (point)	20 twips
+    let width_unit;
+
+    let mut doc = docx_rs::Docx::new();
+
+    if settings.networks_only {
+        width_unit = 195;
+        doc = doc
+            .page_orient(PageOrientationType::Portrait)
+            .page_size(11906, 16838)
+    } else {
+        width_unit = 300;
+        doc = doc
+            .page_orient(PageOrientationType::Landscape)
+            .page_size(16838, 11906)
+    }
     // Create report document
-    let mut doc = docx_rs::Docx::new()
-        .page_orient(PageOrientationType::Landscape)
-        .page_size(16838, 11906)
+    doc = doc
         .default_size(24)
         .default_fonts(RunFonts::new().ascii("Times New Roman"))
         .page_margin(
@@ -888,14 +909,14 @@ pub async fn generate_networks_docx_report(
         .add_paragraph(
             Paragraph::new()
                 .style(&paragraph_1_style_id)
-                .add_run(Run::new().size(28).add_text(
+                .add_run(Run::new().add_text(
                     "ДОНЕСЕННЯ").bold())
                 .align(docx_rs::alignment_type::AlignmentType::Center),
         )
         .add_paragraph(
             Paragraph::new()
                 .style(&paragraph_1_style_id)
-                .add_run(Run::new().size(28).add_text(
+                .add_run(Run::new().add_text(
                     r#"“Еталонні описи джерел радіовипромінювання противника у зоні відповідальності угруповання військ (сил)”"#).bold())
                 .align(docx_rs::alignment_type::AlignmentType::Center),
         )
@@ -908,7 +929,7 @@ pub async fn generate_networks_docx_report(
         // Add unit name as title
         doc = doc.add_paragraph(
             Paragraph::new()
-                .add_run(Run::new().add_text(unit_name).bold().size(32)), // .align(JustificationType::Center),
+                .add_run(Run::new().size(28).bold().add_text(unit_name)), // .align(JustificationType::Center),
         );
 
         for (_index, network) in unit_networks.iter().enumerate() {
@@ -974,6 +995,13 @@ pub async fn generate_networks_docx_report(
             .await
             .context(h!())?;
 
+            let network_descriptions =
+                crate::sigint::network::get_network_descriptions(
+                    &env.dbx, network.id,
+                )
+                .await
+                .context(h!())?;
+
             // doc = add_field(doc, "0. Id: ", &network.id.to_string());
             doc = add_field(
                 doc,
@@ -1009,9 +1037,9 @@ pub async fn generate_networks_docx_report(
                 // Add known callsigns in table
                 if let Some(table) = build_callsigns_table(
                     &callsigns,
+                    &callsigns_reporting,
                     width_unit,
                     &table_header_style_id,
-                    &callsigns_reporting,
                     settings.networks_only,
                 ) {
                     doc = doc.add_table(table);
@@ -1026,27 +1054,26 @@ pub async fn generate_networks_docx_report(
                     .join(", ");
 
                 if !callsigns_other.is_empty() {
-                    doc = doc
-                        .add_paragraph(
-                            Paragraph::new()
-                                .add_run(
-                                    Run::new()
-                                        .add_text(
-                                            "Приналежність встановлюється - ",
-                                        )
-                                        .bold(),
-                                )
-                                .add_run(Run::new().add_text(callsigns_other)), // .align(
-                                                                                //     docx_rs::alignment_type::AlignmentType::Justified,
-                                                                                // ),
-                        )
-                        .add_paragraph(Paragraph::new());
+                    doc = doc.add_paragraph(
+                        Paragraph::new()
+                            .add_run(
+                                Run::new()
+                                    .add_text("Приналежність встановлюється - ")
+                                    .bold(),
+                            )
+                            .add_run(Run::new().add_text(callsigns_other)), // .align(
+                                                                            //     docx_rs::alignment_type::AlignmentType::Justified,
+                                                                            // ),
+                    );
                 }
             }
             doc = add_field(doc, "6. Робочі частоти: ", &String::new());
-            if let Some(table) =
-                build_freqs_table(&freqs, width_unit, &table_header_style_id)
-            {
+            if let Some(table) = build_freqs_table(
+                &freqs,
+                width_unit,
+                &table_header_style_id,
+                settings.networks_only,
+            ) {
                 doc = doc.add_table(table);
             }
 
@@ -1085,107 +1112,86 @@ pub async fn generate_networks_docx_report(
                     .unwrap_or(DEFAULT_OPERATION_PERIOD),
             );
 
-            if !settings.networks_only {
-                let network_descriptions =
-                    crate::sigint::network::get_network_descriptions(
-                        &env.dbx, network.id,
-                    )
-                    .await
-                    .context(h!())?;
-
+            if settings.include_sigint_signs {
                 doc = add_field(
                     doc,
-                    "Розвідувальні ознаки підрозділу: ",
+                    "11. Розвідувальні ознаки підрозділу: ",
                     &String::default(),
                 );
+                // first add network description with Sign type
+                if let Some(table) = build_network_description_table(
+                    &network_descriptions,
+                    NetworkDescrType::Sign,
+                    width_unit,
+                    &table_header_style_id,
+                ) {
+                    doc = doc.add_table(table);
+                }
 
-                if settings.include_sigint_signs {
-                    // first add network description with Sign type
-                    doc = add_network_description_table(
-                        doc,
-                        &network_descriptions,
-                        NetworkDescrType::Sign,
-                        width_unit,
-                    );
+                // then add network unit signals for each unit in network
+                let network_unit_signals =
+                    load_signals_per_network(&env.dbx, network.id)
+                        .await
+                        .context(h!())?;
 
-                    // then add network unit signals for each unit in network
-                    let network_unit_signals =
-                        load_signals_per_network(&env.dbx, network.id)
-                            .await
-                            .context(h!())?;
-                    for unit_signals in &network_unit_signals {
-                        // if network has multiple units, add unit name
-                        if network_unit_signals.len() > 1
-                            && !unit_signals.signals.is_empty()
-                        {
-                            doc = doc
-                                .add_paragraph(
-                                    Paragraph::new()
-                                        .style(&paragraph_2_style_id)
-                                        .add_run(
-                                            Run::new()
-                                                .add_text(
-                                                    format!(
-                                                        "{}: ",
-                                                        unit_signals.unit_name
-                                                    )
-                                                    .as_str(),
-                                                )
-                                                .bold(),
-                                        ),
-                                )
-                                .add_paragraph(Paragraph::new());
-                        }
-                        // Add signals table for each unit
-                        if !unit_signals.signals.is_empty() {
-                            doc = doc
-                            .add_table(
-                                Table::new(
-                                    vec![]
-                                        .into_iter()
-                                        .chain(unit_signals.signals.iter().map(|signal| {
-                                            TableRow::new(vec![
-                                                create_table_data_cell(
-                                                    width_unit * 15,
-                                                    &signal.text,
-                                                    None,
-                                                    false,
-                                                ),
-                                                create_table_data_cell(
-                                                    width_unit * 33,
-                                                    &signal.meaning.clone().unwrap_or_default(),
-                                                    None,
-                                                    false,
-                                                ),
-                                            ])
-                                        }))
-                                        .collect(),
-                                )
-                                .width(width_unit * 48, WidthType::Dxa)
-                                .set_borders(TableBorders::with_empty()),
-                            )
-                            .add_paragraph(Paragraph::new());
+                // add invisible paragraph between two tables to avoid ms word issue with corrupted rendering of the first table
+                if !network_unit_signals.is_empty() {
+                    doc = doc.add_paragraph(invisible_paragraph.clone());
+                }
+                for unit_signals in &network_unit_signals {
+                    // if network has multiple units, add unit name
+                    if network_unit_signals.len() > 1
+                        && !unit_signals.signals.is_empty()
+                    {
+                        doc = doc.add_paragraph(
+                            Paragraph::new()
+                                .style(&paragraph_2_style_id)
+                                .add_run(
+                                    Run::new()
+                                        .add_text(
+                                            format!(
+                                                "{}: ",
+                                                unit_signals.unit_name
+                                            )
+                                            .as_str(),
+                                        )
+                                        .bold(),
+                                ),
+                        );
+                    }
+                    // Add signals table for each unit
+                    if !unit_signals.signals.is_empty() {
+                        if let Some(table) = build_network_unit_signals_table(
+                            &unit_signals.signals,
+                            width_unit,
+                            &table_header_style_id,
+                        ) {
+                            doc = doc.add_table(table);
                         }
                     }
                 }
+            }
 
-                if settings.include_confirmation {
-                    // first add network comments
-                    doc = add_field(
-                        doc,
-                        "Примітки (аргументація): ",
-                        &network.comment,
-                    );
+            if settings.include_confirmation {
+                // first add network comments
+                doc = add_field(
+                    doc,
+                    "12. Обгрунтування  прив'язки: ",
+                    &network.comment,
+                );
 
-                    // then add network description with Confitmation type
-                    doc = add_network_description_table(
-                        doc,
-                        &network_descriptions,
-                        NetworkDescrType::Confirmation,
-                        width_unit,
-                    );
+                // then add network description with Confitmation type
+                if let Some(table) = build_network_description_table(
+                    &network_descriptions,
+                    NetworkDescrType::Confirmation,
+                    width_unit,
+                    &table_header_style_id,
+                ) {
+                    doc = doc.add_table(table);
                 }
+            }
 
+            if !settings.networks_only {
                 if settings.include_pelengs_map {
                     let pelengs_map =
                         load_pelengs_map(&env.dbx, &groups, &filter)
@@ -1235,9 +1241,9 @@ pub async fn generate_networks_docx_report(
 /// Helper: Generate the callsigns table
 fn build_callsigns_table(
     callsigns: &[CallsignRes],
+    callsigns_reporting: &BTreeMap<String, bool>,
     width_unit: usize,
     table_header_style_id: &str,
-    callsigns_reporting: &BTreeMap<String, bool>,
     networks_only: bool,
 ) -> Option<Table> {
     let filtered_callsigns: Vec<&CallsignRes> = callsigns
@@ -1264,69 +1270,110 @@ fn build_callsigns_table(
         return None;
     }
 
-    Some(
-        Table::new(
-            vec![TableRow::new(vec![
+    let (headers, row_builder): (
+        Vec<TableCell>,
+        Box<dyn Fn(&CallsignRes) -> Vec<TableCell>>,
+    ) = if networks_only {
+        (
+            vec![
+                create_table_header_cell(
+                    width_unit * 18,
+                    None,
+                    table_header_style_id,
+                    "Позивний",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 30,
+                    None,
+                    table_header_style_id,
+                    "Приналежність",
+                    false,
+                ),
+            ],
+            Box::new(move |callsign: &CallsignRes| {
+                vec![
+                    create_table_data_cell(
+                        width_unit * 18,
+                        &callsign.callsign.to_uppercase(),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 30,
+                        get_unique_field_as_string(
+                            &callsign.known_callsigns,
+                            |item| item.position.clone(),
+                        )
+                        .as_str(),
+                        None,
+                        false,
+                    ),
+                ]
+            }),
+        )
+    } else {
+        (
+            vec![
                 create_table_header_cell(
                     width_unit * 6,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Позивний",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 10,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
-                    "Посада",
+                    "Приналежність",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 10,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Коментар",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 1,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "К-ть перехоплень",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 3,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Частоти",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Останній раз в етері",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Дата прив'язки",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 5,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Джерело",
                     false,
                 ),
-            ])]
-            .into_iter()
-            .chain(filtered_callsigns.into_iter().map(|callsign| {
-                TableRow::new(vec![
+            ],
+            Box::new(move |callsign: &CallsignRes| {
+                vec![
                     create_table_data_cell(
                         width_unit * 6,
                         &callsign.callsign.to_uppercase(),
@@ -1394,11 +1441,23 @@ fn build_callsigns_table(
                         get_color(callsign.is_old),
                         false,
                     ),
-                ])
-            }))
-            .collect(),
+                ]
+            }),
+        )
+    };
+
+    Some(
+        Table::new(
+            std::iter::once(TableRow::new(headers))
+                .chain(
+                    filtered_callsigns
+                        .into_iter()
+                        .map(|callsign| TableRow::new(row_builder(callsign))),
+                )
+                .collect(),
         )
         .width(width_unit * 48, WidthType::Dxa)
+        .layout(TableLayoutType::Fixed)
         .set_borders(TableBorders::with_empty()),
     )
 }
@@ -1408,59 +1467,113 @@ fn build_freqs_table(
     freqs: &[NetworkFreqsRes],
     width_unit: usize,
     table_header_style_id: &str,
+    networks_only: bool,
 ) -> Option<Table> {
     if freqs.is_empty() {
         return None;
     }
 
-    Some(
-        Table::new(
-            vec![TableRow::new(vec![
+    let (headers, row_builder): (
+        Vec<TableCell>,
+        Box<dyn Fn(&NetworkFreqsRes) -> Vec<TableCell>>,
+    ) = if networks_only {
+        (
+            vec![
+                create_table_header_cell(
+                    width_unit * 16,
+                    None,
+                    table_header_style_id,
+                    "Частота",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 16,
+                    None,
+                    table_header_style_id,
+                    "Модуляція",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 16,
+                    None,
+                    table_header_style_id,
+                    "Останній раз в етері",
+                    false,
+                ),
+            ],
+            Box::new(move |freq: &NetworkFreqsRes| {
+                vec![
+                    create_table_data_cell(
+                        width_unit * 16,
+                        &freq.freq,
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 16,
+                        &freq
+                            .modulation
+                            .clone()
+                            .unwrap_or(DEFAULT_MODULATION.to_string()),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 16,
+                        &format_datetime_field(freq.last_datetime),
+                        get_color(!freq.is_active),
+                        false,
+                    ),
+                ]
+            }),
+        )
+    } else {
+        (
+            vec![
                 create_table_header_cell(
                     width_unit * 4,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Частота",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 3,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Модуляція",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 2,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "К-ть перехоплень",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 25,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Позивні",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Останній раз в етері",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    "f2f2f2",
+                    Some("f2f2f2"),
                     table_header_style_id,
                     "Дата прив'язки",
                     false,
                 ),
-            ])]
-            .into_iter()
-            .chain(freqs.iter().map(|freq| {
+            ],
+            Box::new(move |freq: &NetworkFreqsRes| {
                 let formatted_callsigns = freq
                     .callsigns
                     .as_ref()
@@ -1473,7 +1586,7 @@ fn build_freqs_table(
                     })
                     .unwrap_or_default();
 
-                TableRow::new(vec![
+                vec![
                     create_table_data_cell(
                         width_unit * 4,
                         &freq.freq,
@@ -1513,11 +1626,119 @@ fn build_freqs_table(
                         get_color(!freq.is_active),
                         false,
                     ),
-                ])
-            }))
-            .collect(),
+                ]
+            }),
+        )
+    };
+
+    Some(
+        Table::new(
+            std::iter::once(TableRow::new(headers))
+                .chain(
+                    freqs.iter().map(|freq| TableRow::new(row_builder(freq))),
+                )
+                .collect(),
         )
         .width(width_unit * 48, WidthType::Dxa)
+        .layout(TableLayoutType::Fixed)
+        .set_borders(TableBorders::with_empty()),
+    )
+}
+
+pub fn build_network_description_table(
+    network_descriptions: &[NetworkDescription],
+    filter_type: NetworkDescrType,
+    width_unit: usize,
+    _table_header_style_id: &str,
+) -> Option<Table> {
+    let filtered_descriptions = network_descriptions
+        .iter()
+        .filter(|desc| desc.descr_type == filter_type)
+        .collect::<Vec<_>>();
+
+    if filtered_descriptions.is_empty() {
+        return None;
+    }
+
+    let row_builder = |descr: &NetworkDescription| {
+        vec![
+            create_table_data_cell(
+                width_unit * 48,
+                &descr.description,
+                None,
+                false,
+            ),
+            // create_table_data_cell(
+            //     width_unit * 15,
+            //     &descr.comment.clone().unwrap_or_default(),
+            //     None,
+            //     false,
+            // ),
+        ]
+    };
+
+    Some(
+        Table::new(
+            filtered_descriptions
+                .iter()
+                .map(|descr| TableRow::new(row_builder(descr)))
+                .collect(),
+        )
+        .width(width_unit * 48, WidthType::Dxa)
+        .layout(TableLayoutType::Fixed)
+        .set_borders(TableBorders::with_empty()),
+    )
+}
+
+pub fn build_network_unit_signals_table(
+    signals: &[Signal],
+    width_unit: usize,
+    _table_header_style_id: &str,
+) -> Option<Table> {
+    if signals.is_empty() {
+        return None;
+    }
+
+    // let headers = vec![
+    //     create_table_header_cell(
+    //         width_unit * 10,
+    //         None,
+    //         table_header_style_id,
+    //         "Сигнал",
+    //         false,
+    //     ),
+    //     create_table_header_cell(
+    //         width_unit * 30,
+    //         None,
+    //         table_header_style_id,
+    //         "Значення",
+    //         false,
+    //     ),
+    // ];
+
+    let row_builder = |signal: &Signal| {
+        vec![
+            create_table_data_cell(width_unit * 10, &signal.text, None, false),
+            create_table_data_cell(
+                width_unit * 38,
+                &signal.meaning.clone().unwrap_or_default(),
+                None,
+                false,
+            ),
+        ]
+    };
+
+    Some(
+        Table::new(
+            // std::iter::once(TableRow::new(headers))
+            //     .chain(
+            signals
+                .iter()
+                .map(|signal| TableRow::new(row_builder(signal)))
+                .collect(),
+        )
+        .width(width_unit * 48, WidthType::Dxa)
+        .layout(TableLayoutType::Fixed)
         .set_borders(TableBorders::with_empty()),
     )
 }
@@ -1581,7 +1802,7 @@ fn get_color(is_old: bool) -> Option<String> {
 
 fn create_table_header_cell(
     width: usize,
-    fill: &str,
+    fill: Option<&str>,
     style_id: &str,
     text: &str,
     with_empty_borders: bool,
@@ -1592,15 +1813,20 @@ fn create_table_header_cell(
         TableCellBorders::new()
     };
 
-    TableCell::new()
+    let mut cell = TableCell::new()
         .width(width, WidthType::Dxa)
-        .shading(Shading::new().fill(fill))
         .add_paragraph(
             Paragraph::new()
                 .style(style_id)
                 .add_run(Run::new().add_text(text)),
         )
-        .set_borders(table_cell_borders)
+        .set_borders(table_cell_borders);
+
+    if let Some(fill_color) = fill {
+        cell = cell.shading(Shading::new().fill(fill_color));
+    }
+
+    cell
 }
 
 fn create_table_data_cell(
@@ -1653,46 +1879,4 @@ where
     } else {
         String::new()
     }
-}
-
-pub fn add_network_description_table(
-    mut doc: Docx,
-    network_descriptions: &Vec<NetworkDescription>,
-    filter_type: NetworkDescrType,
-    width_unit: usize,
-) -> Docx {
-    let filtered_descriptions = network_descriptions
-        .iter()
-        .filter(|desc| desc.descr_type == filter_type)
-        .collect::<Vec<_>>();
-
-    if !filtered_descriptions.is_empty() {
-        let table = Table::new(
-            filtered_descriptions
-                .iter()
-                .map(|descr| {
-                    TableRow::new(vec![
-                        create_table_data_cell(
-                            width_unit * 48,
-                            &descr.description,
-                            None,
-                            false,
-                        ),
-                        // create_table_data_cell(
-                        //     width_unit * 15,
-                        //     &descr.comment.clone().unwrap_or_default(),
-                        //     None,
-                        //     false,
-                        // ),
-                    ])
-                })
-                .collect(),
-        )
-        .width(width_unit * 48, WidthType::Dxa)
-        .set_borders(TableBorders::with_empty());
-
-        doc = doc.add_table(table).add_paragraph(Paragraph::new());
-    }
-
-    doc
 }
