@@ -1,4 +1,4 @@
-module Le.Block.Toast exposing (Level(..), Model, Msg(..), Toast, addError, addErrors, addWarning, init, update, view)
+module Le.Block.Toast exposing (Level(..), Model, Msg(..), Toast, addError, addErrors, addWarning, init, overlay, update, view)
 
 import EnumeratedList as EL exposing (EnumeratedItem, EnumeratedList)
 import Html exposing (..)
@@ -147,8 +147,11 @@ viewToast toMsg count toastEi =
         ]
 
 
-view : (Msg -> msg) -> Model -> Html msg -> Html msg
-view toMsg model inner =
+{-| New overlay-only view. Returns HTML with toast notifications positioned absolutely/fixed.
+Use this from pages/layouts **in addition** to your main content. Does not wrap or influence layout size.
+-}
+overlay : (Msg -> msg) -> Model -> Html msg
+overlay toMsg model =
     let
         toasts2 =
             EL.drop (EL.length model.toasts - 1) model.toasts
@@ -156,10 +159,28 @@ view toMsg model inner =
         count =
             EL.length model.toasts
     in
+    div [ class "toasts" ]
+        [ div [ class "toasts__wrap" ]
+            (EL.toList (EL.map (viewToast toMsg count) toasts2))
+        ]
+
+
+{-| Legacy wrapper that embeds `overlay` plus given `inner` content into `div.h-full`.
+Deprecated: prefer using `overlay` directly.
+-}
+viewLegacy : (Msg -> msg) -> Model -> Html msg -> Html msg
+viewLegacy toMsg model inner =
     div [ class "h-full" ]
-        [ div [ class "toasts" ]
-            [ div [ class "toasts__wrap" ]
-                (EL.toList (EL.map (viewToast toMsg count) toasts2))
-            ]
+        [ overlay toMsg model
         , inner
         ]
+
+
+-- BACKWARD COMPATIBILITY ---------------------------------------------------
+{-| Existing codebase still refers to `Le.Block.Toast.view` with the old
+wrapper signature.  We keep an alias so nothing breaks, but encourage moving
+to `overlay` and eventually removing this.
+-}
+
+view : (Msg -> msg) -> Model -> Html msg -> Html msg
+view = viewLegacy

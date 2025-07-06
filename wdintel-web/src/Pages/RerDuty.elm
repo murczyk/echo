@@ -14,7 +14,7 @@ import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
-import Le.Block.Toast
+import Le.Block.Toast exposing (overlay)
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Le.Waterfall exposing (Msg(..), waterfallDivId)
@@ -410,38 +410,38 @@ newTabBlock =
 
 body : Bool -> Shared.Model -> User -> Model -> List (Html Msg)
 body isDarkMode shared user model =
-    [ Views.noHeaderAndContentNoContainer ToastMsg model.toasts <|
-        div [ class "bg-background flex rer-duty h-full" ] <|
-            [ div
-                [ class
-                    ("grid-container grow-1 "
-                        ++ (if List.length model.waterfalls <= 2 then
-                                "justify-items-center"
+    [ Le.Block.Toast.overlay ToastMsg model.toasts
+    , div [ class "bg-background flex rer-duty h-full" ] <|
+        [ div
+            [ class
+                ("grid-container grow-1 "
+                    ++ (if List.length model.waterfalls <= 2 then
+                            "justify-items-center"
 
-                            else
-                                ""
-                           )
-                    )
-                ]
-              <|
-                List.map
-                    (\( id_, wf ) ->
-                        Html.map (WaterfallMsg id_)
-                            (Le.Waterfall.messageTab
-                                { isDarkMode = isDarkMode
-                                , duplicates = model.duplicates
-                                , datasources = model.datasources
-                                , serverInfo = shared.serverInfo
-                                , user = user
-                                , waterfallsAmount = List.length model.waterfalls
-                                }
-                                wf
-                            )
-                    )
-                    model.waterfalls
-            , div [ class "shrink" ]
-                [ newTabBlock ]
+                        else
+                            ""
+                       )
+                )
             ]
+          <|
+            List.map
+                (\( id_, wf ) ->
+                    Html.map (WaterfallMsg id_)
+                        (Le.Waterfall.messageTab
+                            { isDarkMode = isDarkMode
+                            , duplicates = model.duplicates
+                            , datasources = model.datasources
+                            , serverInfo = shared.serverInfo
+                            , user = user
+                            , waterfallsAmount = List.length model.waterfalls
+                            }
+                            wf
+                        )
+                )
+                model.waterfalls
+        , div [ class "shrink" ]
+            [ newTabBlock ]
+        ]
     ]
 
 
