@@ -280,12 +280,14 @@ prepareReportDownloadCmd model =
                     , filterFreq = emptySToNothing model.filterState.freq
                     , filterUnit = emptySToNothing model.filterState.unit
                     , sortBy = Nothing
-                    , networksOnly = model.reportGUROnly
-                    , activeCallsignsOnly = model.reportActiveCallsignsOnly
-                    , activeFreqsOnly = model.reportActiveFreqsOnly
-                    , includePelengsMap = model.reportIncludePelengsMap
-                    , includeSigintSigns = model.reportIncludeSigintSigns
-                    , includeConfirmation = model.reportIncludeConfirmation
+                    , settings =
+                        { networksOnly = model.reportGUROnly
+                        , activeCallsignsOnly = model.reportActiveCallsignsOnly
+                        , activeFreqsOnly = model.reportActiveFreqsOnly
+                        , includePelengsMap = model.reportIncludePelengsMap
+                        , includeSigintSigns = model.reportIncludeSigintSigns
+                        , includeConfirmation = model.reportIncludeConfirmation
+                        }
                     }
             in
             E.getNetworksReport ReportDownloadReturnedByApi payload

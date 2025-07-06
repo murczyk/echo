@@ -352,6 +352,7 @@ pub async fn main_server(
             .service(crate::sigint::freq::callsigns_for_filter)
             .service(crate::sigint::etalonka::report_freqs)
             .service(crate::sigint::etalonka::report_networks)
+            .service(crate::sigint::etalonka::report_networks_batch_id)
             .service(crate::sigint::source::list_sources)
             .service(crate::sigint::signal::create_signal)
             .service(crate::sigint::signal::list_signals)

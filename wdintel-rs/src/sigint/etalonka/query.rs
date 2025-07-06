@@ -1787,7 +1787,7 @@ pub async fn load_networks(
     db: &DatabaseConnection,
     groups: Vec<String>,
     req: &Json<EtalonkaJimForksReq>,
-) -> Result<HashMap<String, Vec<NetworkEtalonkaRes>>, AppError> {
+) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
     let mut networks = sigint_network::Entity::find()
         .join_as(
             JoinType::InnerJoin,
@@ -1898,12 +1898,90 @@ pub async fn load_networks(
 
     let networks = networks
         .clone()
-        .into_model::<NetworkEtalonkaRes>()
+        .into_model::<NetworkEtalonkaResult>()
         .all(db)
         .await
         .context(h!())?;
 
-    let mut res: HashMap<String, Vec<NetworkEtalonkaRes>> = HashMap::new();
+    let mut res: HashMap<String, Vec<NetworkEtalonkaResult>> = HashMap::new();
+    for network in networks {
+        res.entry(network.unit_name.clone())
+            .or_insert_with(Vec::new)
+            .push(network);
+    }
+
+    Ok(res)
+}
+
+pub async fn load_networks_by_id(
+    db: &DatabaseConnection,
+    req: &Json<EtalonkaNetworkBatchReq>,
+) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
+    let mut networks = sigint_network::Entity::find()
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkUnit.def(),
+            Alias::new("sigint_network_unit"),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+            Alias::new("sigint_unit"),
+        )
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .expr_as(
+            Expr::cust(r#"CONCAT('р/м ', "sigint_network"."name", ' ', "sigint_unit"."name")"#.to_string()),
+            "network_full_name",
+        )
+        .column(sigint_network::Column::Location)
+        .column(sigint_network::Column::Purpose)
+        //sklad
+        .expr_as(
+            Expr::cust(r#"(select string_agg(snf.freq, ', ')
+                            from sigint_network_freq snf
+                            where snf.network_id = "sigint_network"."id"
+                            and snf.active_to is null)"#.to_string()),
+            "freqs",
+        )
+        .column(sigint_network::Column::OperationMode)
+        .column(sigint_network::Column::OperationType)
+        .column(sigint_network::Column::OperationPeriod)
+        .column(sigint_network::Column::Comment)
+        .column_as(sigint_unit::Column::Name, "unit_name")
+        .column(sigint_network::Column::ActiveFrom)
+        .column(sigint_network::Column::ActiveTo)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Id.is_in(req.network_ids.clone()));
+
+    networks = if let Some(sort_by) = &req.sort_by {
+        sort_by
+            .iter()
+            .fold(networks, |networks, sort_by| match sort_by {
+                EtalonkaJimForksSortBy::NetworkNameAsc => {
+                    networks.order_by_asc(sigint_network::Column::Name)
+                }
+                EtalonkaJimForksSortBy::NetworkNameDesc => {
+                    networks.order_by_desc(sigint_network::Column::Name)
+                }
+            })
+    } else {
+        networks.order_by_asc(sigint_network::Column::Name)
+    };
+
+    // debug!(
+    //     "> sql networks by id: {}",
+    //     networks.clone().build(DbBackend::Postgres).to_string()
+    // );
+
+    let networks = networks
+        .clone()
+        .into_model::<NetworkEtalonkaResult>()
+        .all(db)
+        .await
+        .context(h!())?;
+
+    let mut res: HashMap<String, Vec<NetworkEtalonkaResult>> = HashMap::new();
     for network in networks {
         res.entry(network.unit_name.clone())
             .or_insert_with(Vec::new)

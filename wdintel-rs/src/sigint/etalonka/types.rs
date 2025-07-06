@@ -43,6 +43,13 @@ pub struct EtalonkaJimForksReq {
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
     pub sort_by: Option<Vec<EtalonkaJimForksSortBy>>,
+    pub settings: EtalonkaSettings,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct EtalonkaSettings {
     pub networks_only: bool,
     pub active_callsigns_only: bool,
     pub active_freqs_only: bool,
@@ -60,7 +67,7 @@ pub enum EtalonkaJimForksSortBy {
 }
 
 #[derive(Debug, FromQueryResult)]
-pub struct NetworkEtalonkaRes {
+pub struct NetworkEtalonkaResult {
     pub id: i64,
     pub network_full_name: String,
     pub location: Option<String>,
@@ -271,4 +278,13 @@ impl PartialOrd for KnownCallsignShortRes {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
+}
+
+#[derive(
+    Debug, Elm, ElmEncode, ElmDecode, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct EtalonkaNetworkBatchReq {
+    pub network_ids: Vec<i64>,
+    pub sort_by: Option<Vec<EtalonkaJimForksSortBy>>,
+    pub settings: EtalonkaSettings,
 }

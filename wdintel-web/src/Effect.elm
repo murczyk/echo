@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkPoints, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, toggleDarkMode, updateCallsignReporting, updateCallsignReportingBatch, updateNetwork, updateNetworkFreq, updateNetworkPosts
+    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, toggleDarkMode, updateCallsignReporting, updateCallsignReportingBatch, updateNetwork, updateNetworkFreq, updateNetworkPosts
     )
 
 {-|
@@ -135,6 +135,7 @@ type Effect msg
     | UpdateNetworkFreq (Result ApiError B.Network -> msg) B.UpdateNetworkFreqReq
     | UpdateCallsignReporting (Result ApiError Bool -> msg) B.UpdateCallsignReportingReq
     | UpdateCallsignReportingBatch (Result ApiError Bool -> msg) B.UpdateCallsignReportingBatchReq
+    | GetNetworkReportBatch (Result ApiError Bytes -> msg) B.EtalonkaNetworkBatchReq
 
 
 
@@ -566,6 +567,10 @@ updateCallsignReportingBatch toMsg payload =
     UpdateCallsignReportingBatch toMsg payload
 
 
+getNetworkReportBatch toMsg payload =
+    GetNetworkReportBatch toMsg payload
+
+
 
 -- INTERNALS
 
@@ -824,6 +829,9 @@ map fn effect =
 
         UpdateCallsignReportingBatch toMsg payload ->
             UpdateCallsignReportingBatch (fn << toMsg) payload
+
+        GetNetworkReportBatch toMsg payload ->
+            GetNetworkReportBatch (fn << toMsg) payload
 
 
 {-| Elm Land depends on this function to perform your effects.
@@ -1356,6 +1364,13 @@ toCmd options effect =
                 { url = "/api/sigint/callsign-reporting/update-batch"
                 , body = Http.jsonBody (B.updateCallsignReportingBatchReqEncoder payload)
                 , expect = leExpectJson toMsg Decode.bool
+                }
+
+        GetNetworkReportBatch toMsg payload ->
+            Http.post
+                { url = "/api/sigint/etalonka/report-networks-batch-id"
+                , body = Http.jsonBody (B.etalonkaNetworkBatchReqEncoder payload)
+                , expect = Http.expectBytesResponse toMsg (resolve Ok)
                 }
 
         FocusHtmlElement payload ->

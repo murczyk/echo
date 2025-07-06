@@ -862,7 +862,7 @@ contentBlock shared model user =
                                         selectItem
                                         editState.inpUnitSelState
                                         editState.inpUnitSelMenu
-                                        "жоден"
+                                        "підрозділ"
                                         options2
                             ]
                         , button
@@ -965,7 +965,7 @@ contentBlock shared model user =
                                         selectItem
                                         model.inpUnitSelState
                                         model.inpUnitSelMenu
-                                        "жоден"
+                                        "підрозділ"
                                         options2
                             ]
                         , button
