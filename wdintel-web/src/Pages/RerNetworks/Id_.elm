@@ -1431,7 +1431,10 @@ contentBlock user shared network model =
                                         "виберіть частоту"
                                         defaultOptions
                             ]
-                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation } |> Button.withOutlined True |> Button.view
+                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation } 
+                            |> Button.withOutlined True 
+                            |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
+                            |> Button.view
                         ]
                     ]
                 , div [ class "max-h-[200px] overflow-y-auto" ]
@@ -1502,7 +1505,10 @@ contentBlock user shared network model =
                 [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
                 , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
                     [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign } |> Button.withOutlined True |> Button.view
+                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign } 
+                        |> Button.withOutlined True 
+                        |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                        |> Button.view
                     ]
                 , div [ class "max-h-[200px] overflow-y-auto" ]
                     (List.map
