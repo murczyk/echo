@@ -957,7 +957,7 @@ pub async fn generate_networks_docx_report(
                 &groups,
                 &filter,
                 &all_known_callsigns,
-                settings.active_freqs_only,
+                settings.active_callsigns_only,
             )
             .await
             .context(h!())?;
