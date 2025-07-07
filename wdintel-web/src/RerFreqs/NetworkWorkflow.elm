@@ -290,6 +290,7 @@ viewCreateNewNetwork addState freq model shared =
             [ label [ class "mb-1" ] [ text "Характер роботи" ]
             , input
                 [ class "form-control"
+                , placeholder "введіть характер роботи"
                 , value (Maybe.withDefault "" addState.operationType)
                 , onInput <|
                     \v ->
@@ -300,9 +301,10 @@ viewCreateNewNetwork addState freq model shared =
             , span [ class "text-sm mt-1 text-[var(--neutral-600)]" ] [ text "поле для звіту еталонного опису радіомереж" ]
             ]
         , div [ class " col-span-6" ]
-            [ label [ class "mb-1" ] [ text "Режим роботи" ]
+            [ label [ class "mb-1" ] [ text "Режим роботи радіомережі" ]
             , input
                 [ class "form-control"
+                , placeholder "введіть режим роботи радіомережі"
                 , value (Maybe.withDefault "" addState.operationMode)
                 , onInput <|
                     \v ->
@@ -316,6 +318,7 @@ viewCreateNewNetwork addState freq model shared =
             [ label [ class "mb-1" ] [ text "Період функціонування" ]
             , input
                 [ class "form-control"
+                , placeholder "введіть період функціонування"
                 , value (Maybe.withDefault "" addState.operationPeriod)
                 , onInput <|
                     \v ->
@@ -785,6 +788,7 @@ viewEditingNetwork editState model shared =
             [ label [ class "mb-1" ] [ text "Характер роботи" ]
             , input
                 [ class "form-control"
+                , placeholder "введіть характер роботи"
                 , value (Maybe.withDefault "" editState.operationType)
                 , onInput <|
                     \v ->
@@ -798,6 +802,7 @@ viewEditingNetwork editState model shared =
             [ label [ class "mb-1" ] [ text "Режим роботи радіомережі" ]
             , input
                 [ class "form-control"
+                , placeholder "введіть режим роботи радіомережі"
                 , value (Maybe.withDefault "" editState.operationMode)
                 , onInput <|
                     \v ->
@@ -811,6 +816,7 @@ viewEditingNetwork editState model shared =
             [ label [ class "mb-1" ] [ text "Період функціонування" ]
             , input
                 [ class "form-control"
+                , placeholder "введіть період функціонування"
                 , value (Maybe.withDefault "" editState.operationPeriod)
                 , onInput <|
                     \v ->

@@ -1394,8 +1394,8 @@ update shared msg model =
                                 , location = ""
                                 , comment = ""
                                 , radioStation = Nothing
-                                , operationType = Just "дуплексний"
-                                , operationMode = Just "цілодобово, за потреби"
+                                , operationType = Just "ведення службового радіообміну"
+                                , operationMode = Just "дуплекс"
                                 , purpose = Just "для управління підлеглим особовим складом"
 
                                 --, kind =
@@ -1410,7 +1410,7 @@ update shared msg model =
                                           , activeTo = Nothing
                                           }
                                         ]
-                                , operationPeriod = Nothing
+                                , operationPeriod = Just "цілодобово"
                                 , activeTo = Nothing
                                 , activeFrom = Nothing
 
