@@ -4,6 +4,8 @@ import Api
 import Auth
 import Bindings as B
 import Components.Table as Table
+import Components.Table.Config as TableConfig
+import Components.Table.Column as TableColumn
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -282,9 +284,14 @@ update msg model =
 
                 groupsValidation =
                     let
-                        groups = validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                        groups =
+                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
                     in
-                    if List.isEmpty groups then Nothing else Just groups
+                    if List.isEmpty groups then
+                        Nothing
+
+                    else
+                        Just groups
             in
             ( { model | inpGroups = inpGroups2, groupsValidation = groupsValidation }
             , E.batch
@@ -310,9 +317,14 @@ update msg model =
 
                         groupsValidation =
                             let
-                                groups = validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
                             in
-                            if List.isEmpty groups then Nothing else Just groups
+                            if List.isEmpty groups then
+                                Nothing
+
+                            else
+                                Just groups
 
                         editOrganism2 =
                             { editOrganism | inpGroups = inpGroups2, groupsValidation = groupsValidation }
@@ -342,9 +354,14 @@ update msg model =
 
                 groupsValidation =
                     let
-                        groups = validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                        groups =
+                            validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
                     in
-                    if List.isEmpty groups then Nothing else Just groups
+                    if List.isEmpty groups then
+                        Nothing
+
+                    else
+                        Just groups
             in
             ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
             , E.batch
@@ -370,9 +387,14 @@ update msg model =
 
                         groupsValidation =
                             let
-                                groups = validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
                             in
-                            if List.isEmpty groups then Nothing else Just groups
+                            if List.isEmpty groups then
+                                Nothing
+
+                            else
+                                Just groups
 
                         editOrganism2 =
                             { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
@@ -433,18 +455,18 @@ update msg model =
                     case selectedParentId of
                         Nothing ->
                             model.inpGroups.selectedItems
-                        
+
                         Just pId ->
                             let
                                 parentOrganism =
                                     model.organisms |> ListX.find (\o -> o.id == pId)
-                                
+
                                 parentGroupsSet =
                                     parentOrganism
                                         |> Maybe.map .groups
                                         |> Maybe.withDefault []
                                         |> Set.fromList
-                                
+
                                 selectedGroupsSet =
                                     Set.fromList model.inpGroups.selectedItems
                             in
@@ -618,18 +640,18 @@ update msg model =
                                     case selectedParentId of
                                         Nothing ->
                                             editOrganism.inpGroups.selectedItems
-                                        
+
                                         Just pId ->
                                             let
                                                 parentOrganism =
                                                     model.organisms |> ListX.find (\o -> o.id == pId)
-                                                
+
                                                 parentGroupsSet =
                                                     parentOrganism
                                                         |> Maybe.map .groups
                                                         |> Maybe.withDefault []
                                                         |> Set.fromList
-                                                
+
                                                 selectedGroupsSet =
                                                     Set.fromList editOrganism.inpGroups.selectedItems
                                             in
@@ -702,33 +724,41 @@ validateGroupsForParent allOrganisms allGroups selectedGroups parentId =
     case parentId of
         Nothing ->
             []
-        
+
         Just pId ->
             let
                 parentOrganism =
                     allOrganisms
                         |> ListX.find (\o -> o.id == pId)
-                
+
                 parentGroups =
                     parentOrganism
                         |> Maybe.map .groups
                         |> Maybe.withDefault []
                         |> Set.fromList
-                
+
                 selectedGroupsSet =
                     Set.fromList selectedGroups
-                
+
                 unavailableGroupIds =
                     Set.diff selectedGroupsSet parentGroups
-                
+
                 unavailableGroupNames =
                     unavailableGroupIds
                         |> Set.toList
-                        |> List.filterMap (\groupId -> 
-                            allGroups
-                                |> ListX.find (\g -> g.masterKey == groupId)
-                                |> Maybe.map (\g -> if String.isEmpty g.name then "Без назви (id=" ++ String.left 6 g.masterKey ++ "...)" else g.name)
-                        )
+                        |> List.filterMap
+                            (\groupId ->
+                                allGroups
+                                    |> ListX.find (\g -> g.masterKey == groupId)
+                                    |> Maybe.map
+                                        (\g ->
+                                            if String.isEmpty g.name then
+                                                "Без назви (id=" ++ String.left 6 g.masterKey ++ "...)"
+
+                                            else
+                                                g.name
+                                        )
+                            )
             in
             unavailableGroupNames
 
@@ -746,14 +776,51 @@ subscriptions model =
     Sub.none
 
 
+
 -- TABLE CONFIGURATION
+
 
 organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Table.Config B.Organism Msg
 organismsTableConfig groups allOrganisms timeZone =
     let
-        defaultCustomizations = Table.defaultCustomizations
-        customizations = 
-            { defaultCustomizations | tableAttrs = [ class "admin-table" ] }
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span [ style "color" (if selected then "#555" else "#ccc") ] [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "#ccc" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "#555" ] 
+                                [ text (if isReversed then " ↑" else " ↓") ]
+
+                headerContent =
+                    div [ class "table-header-content" ] 
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations 
+            | tableAttrs = [ class "base-table" ]
+            , thead = customThead 
+            }
     in
     Table.customConfig
         { toId = \o -> String.fromInt o.id
@@ -765,19 +832,50 @@ organismsTableConfig groups allOrganisms timeZone =
             , rolesColumn |> Table.withColumnWidth "12%"
             , Table.customColumn
                 { name = "Додавати групи автоматично"
-                , viewData = \o -> if o.groupAutoLink then "✓" else "✗"
-                , sorter = Table.increasingOrDecreasingBy (\o -> if o.groupAutoLink then "1" else "0")
-                } |> Table.withColumnWidth "10%"
+                , viewData =
+                    \o ->
+                        if o.groupAutoLink then
+                            "✓"
+
+                        else
+                            "✗"
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            if o.groupAutoLink then
+                                "1"
+
+                            else
+                                "0"
+                        )
+                }
+                |> Table.withColumnWidth "10%"
             , Table.customColumn
                 { name = "Активна"
-                , viewData = \o -> if o.enabled then "✓" else "✗"
-                , sorter = Table.increasingOrDecreasingBy (\o -> if o.enabled then "1" else "0")
-                } |> Table.withColumnWidth "6%"
+                , viewData =
+                    \o ->
+                        if o.enabled then
+                            "✓"
+
+                        else
+                            "✗"
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            if o.enabled then
+                                "1"
+
+                            else
+                                "0"
+                        )
+                }
+                |> Table.withColumnWidth "6%"
             , Table.customColumn
                 { name = "Створено"
                 , viewData = \o -> Le.Time.renderDateF5FromMillis o.createdAt timeZone
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
-                } |> Table.withColumnWidth "12%"
+                }
+                |> Table.withColumnWidth "12%"
             , actionsColumn |> Table.withColumnWidth "8%"
             ]
         , customizations = customizations
@@ -788,17 +886,20 @@ parentOrganismColumn : List B.Organism -> Table.Column B.Organism Msg
 parentOrganismColumn allOrganisms =
     Table.customColumn
         { name = "Батьківський організм"
-        , viewData = \o ->
-            o.parentId
-                |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
-                |> Maybe.map .name
-                |> Maybe.withDefault ""
-        , sorter = Table.increasingOrDecreasingBy (\o ->
-            o.parentId
-                |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
-                |> Maybe.map .name
-                |> Maybe.withDefault ""
-            )
+        , viewData =
+            \o ->
+                o.parentId
+                    |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                    |> Maybe.map .name
+                    |> Maybe.withDefault ""
+        , sorter =
+            Table.increasingOrDecreasingBy
+                (\o ->
+                    o.parentId
+                        |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault ""
+                )
         }
 
 
@@ -806,17 +907,20 @@ groupsColumn : List B.SignalGroupFull -> Table.Column B.Organism Msg
 groupsColumn allGroups =
     Table.customColumn
         { name = "Групи"
-        , viewData = \o ->
-            o.groups
-                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
-                |> List.map groupName
-                |> String.join ", "
-        , sorter = Table.increasingOrDecreasingBy (\o ->
-            o.groups
-                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
-                |> List.map groupName
-                |> String.join ", "
-            )
+        , viewData =
+            \o ->
+                o.groups
+                    |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
+                    |> List.map groupName
+                    |> String.join ", "
+        , sorter =
+            Table.increasingOrDecreasingBy
+                (\o ->
+                    o.groups
+                        |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
+                        |> List.map groupName
+                        |> String.join ", "
+                )
         }
 
 
@@ -833,23 +937,21 @@ actionsColumn : Table.Column B.Organism Msg
 actionsColumn =
     Table.veryCustomColumn
         { name = ""
-        , viewData = \o ->
-            { attributes = []
-            , children =
-                [ button
-                    [ class "table-action-btn"
-                    , type_ "button"
-                    , onClick <| EditOrganism o.id
+        , viewData =
+            \o ->
+                { attributes = []
+                , children =
+                    [ button
+                        [ class "table-action-btn"
+                        , type_ "button"
+                        , onClick <| EditOrganism o.id
+                        ]
+                        [ i [ class "bi bi-pencil-square" ] []
+                        ]
                     ]
-                    [ i [ class "bi bi-pencil-square" ] []
-                    ]
-                ]
-            }
+                }
         , sorter = Table.unsortable
         }
-
-
-
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
@@ -933,6 +1035,7 @@ mainBlock isDark model =
                                 [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
                                 , strong [] [ text (String.join ", " groups) ]
                                 ]
+
                         Nothing ->
                             text ""
                     ]
@@ -962,7 +1065,8 @@ mainBlock isDark model =
                         , id "auto-add-groups"
                         ]
                         []
-                    , label [ class "form-check-label", for "auto-add-groups" ] [ text "Автоматично додавати басейни" ]
+                    , label [ class "form-check-label", for "auto-add-groups" ]
+                        [ text "Автоматично додавати групи" ]
                     ]
                 , div
                     [ class "text-center"
@@ -1034,6 +1138,7 @@ mainBlock isDark model =
                                 [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
                                 , strong [] [ text (String.join ", " groups) ]
                                 ]
+
                         Nothing ->
                             text ""
                     ]
@@ -1076,7 +1181,12 @@ mainBlock isDark model =
                 , td []
                     [ div [ class "d-flex justify-content-start align-items-center" ]
                         [ button
-                            [ class <| if Maybe.map List.isEmpty editState.groupsValidation == Just False then "btn btn-sm btn-outline-warning" else "btn btn-sm btn-outline-primary"
+                            [ class <|
+                                if Maybe.map List.isEmpty editState.groupsValidation == Just False then
+                                    "btn btn-sm btn-outline-warning"
+
+                                else
+                                    "btn btn-sm btn-outline-primary"
                             , type_ "button"
                             , onClick <| EditOrganismSave
                             ]
@@ -1084,6 +1194,7 @@ mainBlock isDark model =
                             , case editState.groupsValidation of
                                 Just groups ->
                                     text <| " (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+
                                 Nothing ->
                                     text ""
                             ]
@@ -1146,7 +1257,7 @@ mainBlock isDark model =
                 model
             ]
         , div [ class "table-responsive-modern" ]
-            [ Table.view 
+            [ Table.view
                 (organismsTableConfig model.groups model.organisms model.timeZone)
                 model.tableState
                 model.organisms
