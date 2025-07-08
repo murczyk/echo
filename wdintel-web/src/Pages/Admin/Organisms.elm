@@ -3,6 +3,7 @@ module Pages.Admin.Organisms exposing (FieldError, FormField, Model, Msg, Organi
 import Api
 import Auth
 import Bindings as B
+import Components.Table as Table
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -64,6 +65,7 @@ type alias Model =
     , toasts : Le.Block.Toast.Model
     , timeZone : Maybe Time.Zone
     , organisms : List B.Organism
+    , tableState : Table.State
     , inpName : String
     , autoAddGroups : Bool
     , inpRole :
@@ -153,6 +155,7 @@ init _ =
       , groups = []
       , editOrganism = Nothing
       , groupsValidation = Nothing
+      , tableState = Table.initialSort "Назва"
       }
     , E.sendCmd <|
         Cmd.batch
@@ -165,6 +168,7 @@ init _ =
 
 type Msg
     = ToastMsg Le.Block.Toast.Msg
+    | SetTableState Table.State
     | GotOrganisms (Result ApiError (List B.Organism))
     | AddRoleSelMsg (Select.Msg String)
     | EditRoleSelMsg (Select.Msg String)
@@ -200,6 +204,9 @@ update msg model =
             ( { model | toasts = im }
             , E.sendCmd <| Cmd.map ToastMsg icmds
             )
+
+        SetTableState newTableState ->
+            ( { model | tableState = newTableState }, E.none )
 
         GotOrganisms (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -739,6 +746,106 @@ subscriptions model =
     Sub.none
 
 
+-- TABLE CONFIGURATION
+
+organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Table.Config B.Organism Msg
+organismsTableConfig groups allOrganisms timeZone =
+    Table.config
+        { toId = \o -> String.fromInt o.id
+        , toMsg = SetTableState
+        , columns =
+            [ Table.stringColumn "Назва" .name
+            , parentOrganismColumn allOrganisms
+            , groupsColumn groups
+            , rolesColumn
+            , Table.customColumn
+                { name = "Додавати групи автоматично"
+                , viewData = \o -> if o.groupAutoLink then "✓" else "✗"
+                , sorter = Table.increasingOrDecreasingBy (\o -> if o.groupAutoLink then "1" else "0")
+                }
+            , Table.customColumn
+                { name = "Активна"
+                , viewData = \o -> if o.enabled then "✓" else "✗"
+                , sorter = Table.increasingOrDecreasingBy (\o -> if o.enabled then "1" else "0")
+                }
+            , Table.customColumn
+                { name = "Створено"
+                , viewData = \o -> Le.Time.renderDateF5FromMillis o.createdAt timeZone
+                , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
+                }
+            , actionsColumn
+            ]
+        }
+
+
+parentOrganismColumn : List B.Organism -> Table.Column B.Organism Msg
+parentOrganismColumn allOrganisms =
+    Table.customColumn
+        { name = "Батьківський організм"
+        , viewData = \o ->
+            o.parentId
+                |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                |> Maybe.map .name
+                |> Maybe.withDefault ""
+        , sorter = Table.increasingOrDecreasingBy (\o ->
+            o.parentId
+                |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                |> Maybe.map .name
+                |> Maybe.withDefault ""
+            )
+        }
+
+
+groupsColumn : List B.SignalGroupFull -> Table.Column B.Organism Msg
+groupsColumn allGroups =
+    Table.customColumn
+        { name = "Групи"
+        , viewData = \o ->
+            o.groups
+                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
+                |> List.map groupName
+                |> String.join ", "
+        , sorter = Table.increasingOrDecreasingBy (\o ->
+            o.groups
+                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
+                |> List.map groupName
+                |> String.join ", "
+            )
+        }
+
+
+rolesColumn : Table.Column B.Organism Msg
+rolesColumn =
+    Table.customColumn
+        { name = "Ролі"
+        , viewData = \o -> String.join ", " o.roles
+        , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
+        }
+
+
+actionsColumn : Table.Column B.Organism Msg
+actionsColumn =
+    Table.veryCustomColumn
+        { name = ""
+        , viewData = \o ->
+            { attributes = []
+            , children =
+                [ button
+                    [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
+                    , type_ "button"
+                    , onClick <| EditOrganism o.id
+                    ]
+                    [ i [ class "bi bi-pencil-square" ] []
+                    ]
+                ]
+            }
+        , sorter = Table.unsortable
+        }
+
+
+
+
+
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Адмін: організми"
@@ -1032,72 +1139,11 @@ mainBlock isDark model =
             [ addOrganismPanel
                 model
             ]
-        , table
-            [ class "table table-bordered table-sm"
-            , style "font-size" ".85rem"
-            , style "text-align" "center"
-            ]
-            [ thead [ style "position" "sticky", style "top" "0" ]
-                [ tr []
-                    [ th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Назва" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        , style "min-width" "150px"
-                        ]
-                        [ text "Батьківський організм" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        , style "min-width" "200px"
-                        ]
-                        [ text "Групи" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Ролі" ]
-                    , th
-                        [ scope "col"
-                        , style "max-width" "120px"
-                        ]
-                        [ text "Додавати групи автоматично" ]
-                    , th
-                        [ scope "col"
-                        , style "max-width" "120px"
-                        ]
-                        [ text "Активна" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Створено" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "" ]
-                    ]
-                ]
-            , tbody [] <|
-                List.map
-                    (\o ->
-                        case model.editOrganism of
-                            Just ( id, editOrganism ) ->
-                                if o.id == id then
-                                    renderEditableTr editOrganism o
-
-                                else
-                                    renderReadonlyTr model.timeZone o
-
-                            Nothing ->
-                                renderReadonlyTr model.timeZone o
-                    )
-                    model.organisms
+        , div [ class "admin-table" ]
+            [ Table.view 
+                (organismsTableConfig model.groups model.organisms model.timeZone)
+                model.tableState
+                model.organisms
             ]
         ]
     ]
