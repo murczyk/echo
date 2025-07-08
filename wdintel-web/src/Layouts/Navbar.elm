@@ -7,10 +7,12 @@ import Html exposing (..)
 import Html.Attributes exposing (class, classList)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
+import Le.Block.Toast as Toast
 import Le.Types exposing (ApiError)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Msg
 import Task
 import View exposing (View)
 
@@ -62,6 +64,7 @@ type Msg
     | Slept
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
+    | ToastMsg Toast.Msg
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
@@ -88,6 +91,9 @@ update route msg model =
 
         ToggleNavbarVisibility ->
             ( { model | isNavbarVisible = not model.isNavbarVisible }, E.triggerResize )
+
+        ToastMsg toastMsg ->
+            ( model, E.sendToastMsg toastMsg )
 
 
 subscriptions : Model -> Sub Msg
@@ -138,6 +144,7 @@ view user activeName shared route { toContentMsg, model, content } =
 
               else
                 div [] []
+            , Toast.overlay ToastMsg shared.toasts
             ]
             |> Html.map toContentMsg
         , div

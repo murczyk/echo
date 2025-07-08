@@ -102,7 +102,7 @@ viewToast toMsg count toastEi =
                     "Успіх"
     in
     div
-        [ class "toast fade-in show mb-4"
+        [ class "toast fade-in show"
         , classList
             [ ( "toast--warning", toastEi.el.level == Warning )
             , ( "toast--error", toastEi.el.level == Error )
@@ -110,6 +110,13 @@ viewToast toMsg count toastEi =
         , attribute "role" "alert"
         , attribute "aria-live" "assertive"
         , attribute "aria-atomic" "true"
+        , style "transform" "translateY(0)"
+        , style "opacity" "1"
+        , style "transition" "all 0.3s ease-in-out"
+        , style "animation" "slideInFromTop 0.3s ease-out"
+        , style "margin-bottom" "0"
+        , style "min-width" "280px"
+        , style "max-width" "400px"
         ]
         [ div [ class "toast-header" ]
             [ strong [ class "mr-auto" ] [ text headerLabel ]
@@ -163,9 +170,48 @@ overlay toMsg model =
         count =
             EL.length model.toasts
     in
-    div [ class "toasts" ]
-        [ div [ class "toasts__wrap" ]
-            (EL.toList (EL.map (viewToast toMsg count) toasts2))
+    div []
+        [ node "style" []
+            [ text """
+                @keyframes slideInFromTop {
+                    from {
+                        transform: translateY(-100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateY(0);
+                        opacity: 1;
+                    }
+                }
+                
+                @keyframes slideOutToTop {
+                    from {
+                        transform: translateY(0);
+                        opacity: 1;
+                    }
+                    to {
+                        transform: translateY(-100%);
+                        opacity: 0;
+                    }
+                }
+            """ ]
+        , div 
+            [ class "toasts"
+            , style "position" "fixed"
+            , style "top" "60px"
+            , style "right" "20px"
+            , style "z-index" "1000"
+            , style "pointer-events" "none"
+            ]
+            [ div 
+                [ class "toasts__wrap"
+                , style "pointer-events" "auto"
+                , style "display" "flex"
+                , style "flex-direction" "column"
+                , style "gap" "8px"
+                ]
+                (EL.toList (EL.map (viewToast toMsg count) toasts2))
+            ]
         ]
 
 

@@ -14,7 +14,6 @@ import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
-import Le.Block.Toast exposing (overlay)
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Le.Waterfall exposing (Msg(..), waterfallDivId)
@@ -36,7 +35,6 @@ import Views
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , navCollapsed : Bool
     , waterfalls : List ( String, Le.Waterfall.Model )
     , duplicates : Set Int
@@ -97,7 +95,6 @@ init route _ =
 
         model =
             { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
             , navCollapsed = False
             , waterfalls = waterfalls
             , duplicates = Set.empty
@@ -114,8 +111,7 @@ init route _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | WaterfallMsg String Le.Waterfall.Msg
+    = WaterfallMsg String Le.Waterfall.Msg
     | ResizeHappened
     | GenerateNewWaterfallId
     | AddWaterfall String
@@ -209,15 +205,6 @@ recalcDuplicates model =
 update : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )
 update shared user msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         CollapseNavToggle ->
             ( { model | navCollapsed = not model.navCollapsed }
             , E.sendCmd <| Task.perform (\_ -> ResizeHappened) Time.now
@@ -304,7 +291,7 @@ update shared user msg model =
                 )
 
         GotDatasourceList (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, E.showError "Somthing went wrong" )
 
         GotDatasourceList (Ok xs) ->
             let
