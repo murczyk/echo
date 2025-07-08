@@ -759,26 +759,26 @@ organismsTableConfig groups allOrganisms timeZone =
         { toId = \o -> String.fromInt o.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва" .name
-            , parentOrganismColumn allOrganisms
-            , groupsColumn groups
-            , rolesColumn
+            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
+            , parentOrganismColumn allOrganisms |> Table.withColumnWidth "14%"
+            , groupsColumn groups |> Table.withColumnWidth "22%"
+            , rolesColumn |> Table.withColumnWidth "12%"
             , Table.customColumn
                 { name = "Додавати групи автоматично"
                 , viewData = \o -> if o.groupAutoLink then "✓" else "✗"
                 , sorter = Table.increasingOrDecreasingBy (\o -> if o.groupAutoLink then "1" else "0")
-                }
+                } |> Table.withColumnWidth "10%"
             , Table.customColumn
                 { name = "Активна"
                 , viewData = \o -> if o.enabled then "✓" else "✗"
                 , sorter = Table.increasingOrDecreasingBy (\o -> if o.enabled then "1" else "0")
-                }
+                } |> Table.withColumnWidth "6%"
             , Table.customColumn
                 { name = "Створено"
                 , viewData = \o -> Le.Time.renderDateF5FromMillis o.createdAt timeZone
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
-                }
-            , actionsColumn
+                } |> Table.withColumnWidth "12%"
+            , actionsColumn |> Table.withColumnWidth "8%"
             ]
         , customizations = customizations
         }
@@ -962,7 +962,7 @@ mainBlock isDark model =
                         , id "auto-add-groups"
                         ]
                         []
-                    , label [ class "form-check-label", for "auto-add-groups" ] [ text "Автоматично додавати групи" ]
+                    , label [ class "form-check-label", for "auto-add-groups" ] [ text "Автоматично додавати басейни" ]
                     ]
                 , div
                     [ class "text-center"

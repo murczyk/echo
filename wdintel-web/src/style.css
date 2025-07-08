@@ -1757,6 +1757,7 @@ html[data-bs-theme="dark"] .radio-input:checked::before {
 	width: 100%;
 	border-collapse: separate;
 	border-spacing: 0;
+	table-layout: fixed;
 	background-color: var(--bs-body-bg);
 	border-radius: 12px;
 	overflow: hidden;
@@ -1790,7 +1791,7 @@ html[data-bs-theme="dark"] .compact-table {
 	position: sticky;
 	top: 0;
 	z-index: 10;
-	white-space: nowrap;
+	white-space: wrap;
 	user-select: none;
 	transition: all 0.2s ease;
 }

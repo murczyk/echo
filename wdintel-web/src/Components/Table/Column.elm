@@ -9,6 +9,7 @@ module Components.Table.Column exposing
     , veryCustomColumn
     , textDetails
     , unwrapColumn
+    , withColumnWidth
     )
 
 {-| This module handles column definitions for tables.
@@ -53,6 +54,7 @@ type alias ColumnData data msg =
     { name : String
     , viewData : data -> HtmlDetails msg
     , sorter : Sorter data
+    , width : Maybe String
     }
 
 
@@ -71,6 +73,7 @@ stringColumn name toStr =
         { name = name
         , viewData = textDetails << toStr
         , sorter = Sorter.increasingOrDecreasingBy toStr
+        , width = Nothing
         }
 
 
@@ -82,6 +85,7 @@ intColumn name toInt =
         { name = name
         , viewData = textDetails << String.fromInt << toInt
         , sorter = Sorter.increasingOrDecreasingBy toInt
+        , width = Nothing
         }
 
 
@@ -93,6 +97,7 @@ floatColumn name toFloat =
         { name = name
         , viewData = textDetails << String.fromFloat << toFloat
         , sorter = Sorter.increasingOrDecreasingBy toFloat
+        , width = Nothing
         }
 
 
@@ -136,7 +141,7 @@ customColumn :
     -> Column data msg
 customColumn { name, viewData, sorter } =
     Column <|
-        ColumnData name (textDetails << viewData) sorter
+        ColumnData name (textDetails << viewData) sorter Nothing
 
 
 {-| It is _possible_ that you want something crazier than `customColumn`. In
@@ -172,5 +177,11 @@ veryCustomColumn :
     , sorter : Sorter data
     }
     -> Column data msg
-veryCustomColumn =
-    Column 
+veryCustomColumn { name, viewData, sorter } =
+    Column <| ColumnData name viewData sorter Nothing
+
+{-| Add new function
+-}
+withColumnWidth : String -> Column data msg -> Column data msg
+withColumnWidth w (Column cd) =
+    Column { cd | width = Just w } 

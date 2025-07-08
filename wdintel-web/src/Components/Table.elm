@@ -1,6 +1,7 @@
 module Components.Table exposing
     ( view
     , config, stringColumn, intColumn, floatColumn
+    , withColumnWidth
     , State, initialSort
     , getSortState, sortBy
     , getSortedData
@@ -405,3 +406,8 @@ sort by best time by default, but also see the other order.
 -}
 increasingOrDecreasingBy : (data -> comparable) -> Sorter data
 increasingOrDecreasingBy = Sorter.increasingOrDecreasingBy
+
+
+{-| Set a fixed width for a column (e.g. "120px" or "10%"). -}
+withColumnWidth : String -> Column.Column data msg -> Column.Column data msg
+withColumnWidth = Column.withColumnWidth

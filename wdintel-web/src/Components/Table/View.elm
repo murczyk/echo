@@ -57,14 +57,28 @@ view ((Config.Config { toId, toMsg, columns, customizations }) as conf) state da
 
                 Just { attributes, children } ->
                     Html.tfoot attributes children :: tbody :: []
+
+        -- Generate <colgroup> with optional column widths
+        colGroup =
+            let
+                toCol colData =
+                    let
+                        attrs =
+                            case colData.width of
+                                Nothing -> []
+                                Just w -> [ Html.Attributes.style "width" w ]
+                    in
+                    Html.col attrs []
+            in
+            Html.colgroup [] (List.map toCol columns)
     in
     Html.table customizations.tableAttrs <|
         case customizations.caption of
             Nothing ->
-                thead :: withFoot
+                colGroup :: thead :: withFoot
 
             Just { attributes, children } ->
-                Html.caption attributes children :: thead :: withFoot
+                colGroup :: Html.caption attributes children :: thead :: withFoot
 
 
 {-| Convert column data to header information for rendering.
