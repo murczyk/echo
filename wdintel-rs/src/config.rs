@@ -49,7 +49,7 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
-pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 7;
+pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

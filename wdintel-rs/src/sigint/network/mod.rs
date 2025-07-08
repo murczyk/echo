@@ -32,7 +32,7 @@ const MERGE_NETWORKS_API_LOGIN: &str = "merge_networks_api";
 ///
 /// # API URL
 /// - POST: /api/sigint/network-list
-/// 
+///
 /// # Параметри
 ///
 /// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.

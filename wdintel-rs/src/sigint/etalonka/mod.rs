@@ -870,7 +870,7 @@ pub async fn generate_networks_docx_report(
     );
 
     let invisible_paragraph = Paragraph::new()
-        .add_run(Run::new().size(1)) 
+        .add_run(Run::new().size(1))
         .line_spacing(LineSpacing::new().before(0).after(0).line(0));
 
     // Unit	Twips Equivalent

@@ -349,11 +349,11 @@ pub async fn signal_group_info_batch(
 }
 
 /// Отримує список груп, які не прив'язані до жодного напрямку
-/// 
+///
 /// # Повертає
-/// 
-/// Список неприв'язаних до напрямків груп у форматі Vec<[`OrphanSignalGroupEntry`]>, 
-/// 
+///
+/// Список неприв'язаних до напрямків груп у форматі Vec<[`OrphanSignalGroupEntry`]>,
+///
 #[post("/api/rer-importer/orphan-signal-groups")]
 pub async fn orphan_signal_groups(
     user: actix_identity::Identity,
@@ -368,20 +368,16 @@ pub async fn orphan_signal_groups(
         .into_tuple::<String>()
         .all(&env.dbx)
         .await
-        .context(h!())?
-    ;
+        .context(h!())?;
 
     // Знайти всі signal_group, яких немає серед assigned_keys
     // Сортувати за часом створення (найновіші першими)
     let orphan_groups = signal_group::Entity::find()
-        .filter(
-                signal_group::Column::MasterKey.is_not_in(assigned_keys)
-        )
+        .filter(signal_group::Column::MasterKey.is_not_in(assigned_keys))
         .order_by_desc(signal_group::Column::CreatedAt)
         .all(&env.dbx)
         .await
-        .context(h!())?
-    ;
+        .context(h!())?;
 
     let data: Vec<OrphanSignalGroupEntry> = orphan_groups
         .into_iter()
@@ -406,8 +402,7 @@ pub async fn collect_groups(
         .filter(signal_group::Column::MasterKey.is_in(keys))
         .all(txn)
         .await
-        .context(h!())?
-    ;
+        .context(h!())?;
     let data: Vec<SignalGroupEntry> = signal_groups
         .iter()
         .filter_map(|g| {

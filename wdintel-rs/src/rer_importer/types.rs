@@ -358,7 +358,6 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
 }
 
-
 /// Запис групи, яка не прив'язана до жодного напрямку
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,

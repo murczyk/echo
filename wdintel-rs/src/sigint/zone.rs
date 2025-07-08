@@ -229,7 +229,7 @@ pub async fn zones_datasources_group_add(
         .and_then(|g| g.name);
 
     txn.commit().await?;
-    
+
     Ok(Json(ZoneDatasourceGroupAddRsp {
         zone_id: req.zone_id,
         datasource_id: req.datasource_id,
