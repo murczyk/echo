@@ -1982,21 +1982,18 @@ html[data-bs-theme="dark"] .status-badge--inactive {
 }
 
 /* Column padding based on width/content type */
-.base-table .col-narrow {
-	padding: 0.5rem 0.75rem;
-}
-
-.base-table .col-normal {
-	padding: 0.75rem 1rem;
-}
-
-.base-table .col-wide {
-	padding: 1rem 1.5rem;
-}
-
-/* Default padding for columns without specific class */
+/* Default padding (col-normal) for all cells */
 .base-table th,
 .base-table td {
 	padding: 0.75rem 1rem;
 	/* Default to normal padding */
+}
+
+.base-table .col-narrow {
+	padding: 0.5rem 0.75rem;
+	text-align: center;
+}
+
+.base-table .col-wide {
+	padding: 1rem 1.5rem;
 }

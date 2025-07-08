@@ -826,22 +826,14 @@ organismsTableConfig groups allOrganisms timeZone =
         { toId = \o -> String.fromInt o.id
         , toMsg = SetTableState
         , columns =
-            [ Table.veryCustomColumn
-                { name = "Назва"
-                , viewData = \o -> { attributes = [ class "col-normal" ], children = [ text o.name ] }
-                , sorter = Table.increasingOrDecreasingBy .name
-                } |> Table.withColumnWidth "14%"
-            , Table.veryCustomColumn
+            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
+            , Table.customColumn
                 { name = "Батьківський"
                 , viewData = \o -> 
-                    { attributes = [ class "col-normal" ]
-                    , children = 
-                        [ text (o.parentId
-                            |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
-                            |> Maybe.map .name
-                            |> Maybe.withDefault "")
-                        ]
-                    }
+                    o.parentId
+                        |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault ""
                 , sorter = Table.increasingOrDecreasingBy
                     (\o ->
                         o.parentId
@@ -869,9 +861,9 @@ organismsTableConfig groups allOrganisms timeZone =
                             |> String.join ", "
                     )
                 } |> Table.withColumnWidth "25%"
-            , Table.veryCustomColumn
+            , Table.customColumn
                 { name = "Ролі"
-                , viewData = \o -> { attributes = [ class "col-normal" ], children = [ text (String.join ", " o.roles) ] }
+                , viewData = \o -> String.join ", " o.roles
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
                 } |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
