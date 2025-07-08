@@ -2765,6 +2765,7 @@ deactivationReasonTypeEncoder enum =
 
 type alias Organism =
     { id : Int
+    , parentId : Maybe Int
     , name : String
     , createdAt : Int
     , groupAutoLink : Bool
@@ -2778,6 +2779,7 @@ organismEncoder : Organism -> Json.Encode.Value
 organismEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+        , ( "parent_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.parentId )
         , ( "name", Json.Encode.string struct.name )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "group_auto_link", Json.Encode.bool struct.groupAutoLink )
@@ -2824,6 +2826,7 @@ listOrganismsReqEncoder struct =
 
 type alias CreateOrganismReq =
     { name : String
+    , parentId : Maybe Int
     , roles : List String
     , groupAutoLink : Maybe Bool
     }
@@ -2833,6 +2836,7 @@ createOrganismReqEncoder : CreateOrganismReq -> Json.Encode.Value
 createOrganismReqEncoder struct =
     Json.Encode.object
         [ ( "name", Json.Encode.string struct.name )
+        , ( "parent_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.parentId )
         , ( "roles", Json.Encode.list Json.Encode.string struct.roles )
         , ( "group_auto_link", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.groupAutoLink )
         ]
@@ -2840,6 +2844,7 @@ createOrganismReqEncoder struct =
 
 type alias UpdateOrganismReq =
     { id : Int
+    , parentId : Maybe Int
     , name : Maybe String
     , roles : Maybe (List String)
     , groupAutoLink : Maybe Bool
@@ -2851,6 +2856,7 @@ updateOrganismReqEncoder : UpdateOrganismReq -> Json.Encode.Value
 updateOrganismReqEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
+        , ( "parent_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.parentId )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.name )
         , ( "roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.roles )
         , ( "group_auto_link", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.groupAutoLink )
@@ -6562,6 +6568,7 @@ organismDecoder : Json.Decode.Decoder Organism
 organismDecoder =
     Json.Decode.succeed Organism
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_auto_link" Json.Decode.bool))
@@ -6626,6 +6633,7 @@ createOrganismReqDecoder : Json.Decode.Decoder CreateOrganismReq
 createOrganismReqDecoder =
     Json.Decode.succeed CreateOrganismReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_auto_link" (Json.Decode.nullable Json.Decode.bool)))
 
@@ -6634,6 +6642,7 @@ updateOrganismReqDecoder : Json.Decode.Decoder UpdateOrganismReq
 updateOrganismReqDecoder =
     Json.Decode.succeed UpdateOrganismReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_auto_link" (Json.Decode.nullable Json.Decode.bool)))

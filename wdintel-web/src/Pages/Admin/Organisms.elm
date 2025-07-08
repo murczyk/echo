@@ -76,9 +76,15 @@ type alias Model =
         , items : List (Select.MenuItem String)
         , selectedItems : List String
         }
+    , inpParentOrganism :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItems : List String
+        }
     , fieldsErrors : List FieldError
     , groups : List B.SignalGroupFull
     , editOrganism : Maybe ( Int, OrganismEdit )
+    , groupsValidation : Maybe (List String)
     }
 
 
@@ -96,7 +102,13 @@ type alias OrganismEdit =
         , items : List (Select.MenuItem String)
         , selectedItems : List String
         }
+    , inpParentOrganism :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItems : List String
+        }
     , fieldsErrors : List FieldError
+    , groupsValidation : Maybe (List String)
     }
 
 
@@ -131,10 +143,16 @@ init _ =
             , items = roles |> List.map (\x -> Select.basicMenuItem { item = x, label = x })
             , selectedItems = []
             }
+      , inpParentOrganism =
+            { selectState = Select.initState (Select.selectIdentifier "sel-parent-add")
+            , items = []
+            , selectedItems = []
+            }
       , fieldsErrors = []
       , timeZone = Nothing
       , groups = []
       , editOrganism = Nothing
+      , groupsValidation = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -152,6 +170,8 @@ type Msg
     | EditRoleSelMsg (Select.Msg String)
     | AddGroupSelMsg (Select.Msg String)
     | EditGroupSelMsg (Select.Msg String)
+    | AddParentSelMsg (Select.Msg String)
+    | EditParentSelMsg (Select.Msg String)
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
     | ToggleAutoAddGroups
@@ -185,7 +205,17 @@ update msg model =
             Api.handleHttpError ToastMsg e model
 
         GotOrganisms (Ok res) ->
-            ( { model | organisms = res }, E.none )
+            let
+                organismsMenuItems =
+                    res |> List.map (\x -> Select.basicMenuItem { item = String.fromInt x.id, label = x.name })
+
+                inpParentOrganism =
+                    model.inpParentOrganism
+
+                inpParentOrganism2 =
+                    { inpParentOrganism | items = organismsMenuItems }
+            in
+            ( { model | organisms = res, inpParentOrganism = inpParentOrganism2 }, E.none )
 
         AddRoleSelMsg selMsg ->
             let
@@ -239,8 +269,17 @@ update msg model =
 
                 inpGroups2 =
                     { inpGroups | selectedItems = Le.Block.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
+
+                selectedParentId =
+                    model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                groupsValidation =
+                    let
+                        groups = validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                    in
+                    if List.isEmpty groups then Nothing else Just groups
             in
-            ( { model | inpGroups = inpGroups2 }
+            ( { model | inpGroups = inpGroups2, groupsValidation = groupsValidation }
             , E.batch
                 [ E.sendCmd <| Cmd.map AddGroupSelMsg iCmd
                 ]
@@ -259,12 +298,81 @@ update msg model =
                         inpGroups2 =
                             { inpGroups | selectedItems = Le.Block.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
 
+                        selectedParentId =
+                            editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                        groupsValidation =
+                            let
+                                groups = validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then Nothing else Just groups
+
                         editOrganism2 =
-                            { editOrganism | inpGroups = inpGroups2 }
+                            { editOrganism | inpGroups = inpGroups2, groupsValidation = groupsValidation }
                     in
                     ( { model | editOrganism = Just ( id, editOrganism2 ) }
                     , E.batch
                         [ E.sendCmd <| Cmd.map EditGroupSelMsg iCmd
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        AddParentSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.inpParentOrganism.selectState
+
+                inpParentOrganism =
+                    model.inpParentOrganism
+
+                inpParentOrganism2 =
+                    { inpParentOrganism | selectedItems = Le.Block.Select.multiUpdS mAction inpParentOrganism.selectedItems, selectState = iState }
+
+                selectedParentId =
+                    inpParentOrganism2.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                groupsValidation =
+                    let
+                        groups = validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                    in
+                    if List.isEmpty groups then Nothing else Just groups
+            in
+            ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+            , E.batch
+                [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
+                ]
+            )
+
+        EditParentSelMsg selMsg ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        ( mAction, iState, iCmd ) =
+                            Select.update selMsg editOrganism.inpParentOrganism.selectState
+
+                        inpParentOrganism =
+                            editOrganism.inpParentOrganism
+
+                        inpParentOrganism2 =
+                            { inpParentOrganism | selectedItems = Le.Block.Select.multiUpdS mAction inpParentOrganism.selectedItems, selectState = iState }
+
+                        selectedParentId =
+                            inpParentOrganism2.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                        groupsValidation =
+                            let
+                                groups = validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then Nothing else Just groups
+
+                        editOrganism2 =
+                            { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
+                    , E.batch
+                        [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd
                         ]
                     )
 
@@ -278,6 +386,7 @@ update msg model =
                     , E.sendCmd <|
                         Api.create_organism AddOrganismDone
                             { name = model.inpName
+                            , parentId = model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
                             , groupAutoLink = Just model.autoAddGroups
                             , roles = model.inpRole.selectedItems
                             }
@@ -294,16 +403,47 @@ update msg model =
                 inpRole =
                     updateSelectedItems model.inpRole []
 
+                inpParentOrganism =
+                    updateSelectedItems model.inpParentOrganism []
+
                 m2 =
                     { model
                         | inpName = ""
                         , inpRole = inpRole
+                        , inpParentOrganism = inpParentOrganism
                         , autoAddGroups = False
                         , organisms = organism :: model.organisms
                         , fieldsErrors = []
+                        , groupsValidation = Nothing
                     }
             in
-            ( m2, E.sendCmd <| Cmd.batch (List.map (\x -> Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }) model.inpGroups.selectedItems) )
+            let
+                selectedParentId =
+                    model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                -- Filter groups based on parent constraints
+                groupsToAdd =
+                    case selectedParentId of
+                        Nothing ->
+                            model.inpGroups.selectedItems
+                        
+                        Just pId ->
+                            let
+                                parentOrganism =
+                                    model.organisms |> ListX.find (\o -> o.id == pId)
+                                
+                                parentGroupsSet =
+                                    parentOrganism
+                                        |> Maybe.map .groups
+                                        |> Maybe.withDefault []
+                                        |> Set.fromList
+                                
+                                selectedGroupsSet =
+                                    Set.fromList model.inpGroups.selectedItems
+                            in
+                            Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+            in
+            ( m2, E.sendCmd <| Cmd.batch (List.map (\x -> Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }) groupsToAdd) )
 
         AddOrganismDone (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -390,7 +530,13 @@ update msg model =
                                         , items = model.groups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
                                         , selectedItems = o.groups
                                         }
+                                  , inpParentOrganism =
+                                        { selectState = Select.initState (Select.selectIdentifier "sel-parent-edit")
+                                        , items = model.organisms |> List.filter (\x -> x.id /= o.id) |> List.map (\x -> Select.basicMenuItem { item = String.fromInt x.id, label = x.name })
+                                        , selectedItems = o.parentId |> Maybe.map (String.fromInt >> List.singleton) |> Maybe.withDefault []
+                                        }
                                   , fieldsErrors = []
+                                  , groupsValidation = Nothing
                                   }
                                 )
                             )
@@ -457,8 +603,33 @@ update msg model =
                                         |> Maybe.withDefault []
                                         |> Set.fromList
 
+                                selectedParentId =
+                                    editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                                -- Groups that should be available considering parent constraints
+                                availableGroups =
+                                    case selectedParentId of
+                                        Nothing ->
+                                            editOrganism.inpGroups.selectedItems
+                                        
+                                        Just pId ->
+                                            let
+                                                parentOrganism =
+                                                    model.organisms |> ListX.find (\o -> o.id == pId)
+                                                
+                                                parentGroupsSet =
+                                                    parentOrganism
+                                                        |> Maybe.map .groups
+                                                        |> Maybe.withDefault []
+                                                        |> Set.fromList
+                                                
+                                                selectedGroupsSet =
+                                                    Set.fromList editOrganism.inpGroups.selectedItems
+                                            in
+                                            Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+
                                 editedSet =
-                                    Set.fromList editOrganism.inpGroups.selectedItems
+                                    Set.fromList availableGroups
 
                                 added =
                                     Set.toList (Set.diff editedSet originalSet)
@@ -471,6 +642,7 @@ update msg model =
                                 Cmd.batch
                                     (Api.update_organism EditOrganismDone
                                         { name = Just editOrganism.inpName
+                                        , parentId = editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
                                         , roles = Le.Utils.emptyToNothing editOrganism.inpRole.selectedItems
                                         , groupAutoLink = Just editOrganism.autoAddGroups
                                         , id = id
@@ -505,7 +677,7 @@ update msg model =
             ( { model | editOrganism = Nothing }, E.none )
 
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
+            ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
 
         EditOrganismDone (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -516,6 +688,42 @@ validator =
     Validate.all
         [ Validate.ifBlank .inpName ( Name, "Ім'я не може бути пустим" )
         ]
+
+
+validateGroupsForParent : List B.Organism -> List B.SignalGroupFull -> List String -> Maybe Int -> List String
+validateGroupsForParent allOrganisms allGroups selectedGroups parentId =
+    case parentId of
+        Nothing ->
+            []
+        
+        Just pId ->
+            let
+                parentOrganism =
+                    allOrganisms
+                        |> ListX.find (\o -> o.id == pId)
+                
+                parentGroups =
+                    parentOrganism
+                        |> Maybe.map .groups
+                        |> Maybe.withDefault []
+                        |> Set.fromList
+                
+                selectedGroupsSet =
+                    Set.fromList selectedGroups
+                
+                unavailableGroupIds =
+                    Set.diff selectedGroupsSet parentGroups
+                
+                unavailableGroupNames =
+                    unavailableGroupIds
+                        |> Set.toList
+                        |> List.filterMap (\groupId -> 
+                            allGroups
+                                |> ListX.find (\g -> g.masterKey == groupId)
+                                |> Maybe.map (\g -> if String.isEmpty g.name then "Без назви (id=" ++ String.left 6 g.masterKey ++ "...)" else g.name)
+                        )
+            in
+            unavailableGroupNames
 
 
 viewFormErrors : FormField -> List FieldError -> Html msg
@@ -578,6 +786,23 @@ mainBlock isDark model =
                         , style "font-size" ".8rem"
                         ]
                         [ div [ class "flex-grow-1" ]
+                            [ Html.map AddParentSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelect
+                                        (m.inpParentOrganism.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                        m.inpParentOrganism.selectState
+                                        m.inpParentOrganism.items
+                                        "батьківський організм"
+                                        (Le.Block.Select.defaultOptions isDark)
+                            ]
+                        ]
+                    ]
+                , div [ style "flex" "1" ]
+                    [ div
+                        [ class "d-flex justify-content-between align-items-center"
+                        , style "font-size" ".8rem"
+                        ]
+                        [ div [ class "flex-grow-1" ]
                             [ Html.map AddGroupSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
@@ -589,6 +814,14 @@ mainBlock isDark model =
                             ]
                         ]
                     , viewFormErrors Roles m.fieldsErrors
+                    , case m.groupsValidation of
+                        Just groups ->
+                            div [ class "alert alert-warning mt-2", style "font-size" ".75rem" ]
+                                [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                , strong [] [ text (String.join ", " groups) ]
+                                ]
+                        Nothing ->
+                            text ""
                     ]
                 , div [ style "flex" "1" ]
                     [ div
@@ -655,6 +888,23 @@ mainBlock isDark model =
                         , style "font-size" ".8rem"
                         ]
                         [ div [ class "flex-grow-1" ]
+                            [ Html.map EditParentSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelect
+                                        (editState.inpParentOrganism.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                        editState.inpParentOrganism.selectState
+                                        editState.inpParentOrganism.items
+                                        "батьківський організм"
+                                        (Le.Block.Select.defaultOptions isDark)
+                            ]
+                        ]
+                    ]
+                , td [ style "flex" "1" ]
+                    [ div
+                        [ class "d-flex justify-content-between align-items-center"
+                        , style "font-size" ".8rem"
+                        ]
+                        [ div [ class "flex-grow-1" ]
                             [ Html.map EditGroupSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
@@ -665,6 +915,14 @@ mainBlock isDark model =
                                         (Le.Block.Select.defaultOptions isDark)
                             ]
                         ]
+                    , case editState.groupsValidation of
+                        Just groups ->
+                            div [ class "alert alert-warning mt-2", style "font-size" ".75rem" ]
+                                [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                , strong [] [ text (String.join ", " groups) ]
+                                ]
+                        Nothing ->
+                            text ""
                     ]
                 , td [ style "flex" "1" ]
                     [ div
@@ -705,11 +963,16 @@ mainBlock isDark model =
                 , td []
                     [ div [ class "d-flex justify-content-start align-items-center" ]
                         [ button
-                            [ class "btn btn-sm btn-outline-primary"
+                            [ class <| if Maybe.map List.isEmpty editState.groupsValidation == Just False then "btn btn-sm btn-outline-warning" else "btn btn-sm btn-outline-primary"
                             , type_ "button"
                             , onClick <| EditOrganismSave
                             ]
                             [ i [ class "bi bi-check2" ] []
+                            , case editState.groupsValidation of
+                                Just groups ->
+                                    text <| " (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+                                Nothing ->
+                                    text ""
                             ]
                         , button
                             [ class "btn btn-sm btn-outline-danger ms-2"
@@ -725,6 +988,12 @@ mainBlock isDark model =
         renderReadonlyTr timeZone o =
             tr []
                 [ td [] [ text o.name ]
+                , td []
+                    [ o.parentId
+                        |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) model.organisms)
+                        |> Maybe.map (\parent -> text parent.name)
+                        |> Maybe.withDefault (text "")
+                    ]
                 , td []
                     (o.groups
                         |> List.filterMap (\o2 -> ListX.find (\x -> x.masterKey == o2) model.groups)
@@ -775,6 +1044,12 @@ mainBlock isDark model =
                         , class "nowrap"
                         ]
                         [ text "Назва" ]
+                    , th
+                        [ scope "col"
+                        , class "nowrap"
+                        , style "min-width" "150px"
+                        ]
+                        [ text "Батьківський організм" ]
                     , th
                         [ scope "col"
                         , class "nowrap"
