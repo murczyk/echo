@@ -18,6 +18,7 @@ type Msg
 type Level
     = Error
     | Warning
+    | Success
 
 
 type alias Toast =
@@ -92,10 +93,13 @@ viewToast toMsg count toastEi =
         headerLabel =
             case toastEi.el.level of
                 Warning ->
-                    "Warning"
+                    "Уважно"
 
                 Error ->
-                    "Error"
+                    "Помилка"
+
+                Success ->
+                    "Успіх"
     in
     div
         [ class "toast fade-in show mb-4"
@@ -176,11 +180,14 @@ viewLegacy toMsg model inner =
         ]
 
 
+
 -- BACKWARD COMPATIBILITY ---------------------------------------------------
+
+
 {-| Existing codebase still refers to `Le.Block.Toast.view` with the old
-wrapper signature.  We keep an alias so nothing breaks, but encourage moving
+wrapper signature. We keep an alias so nothing breaks, but encourage moving
 to `overlay` and eventually removing this.
 -}
-
 view : (Msg -> msg) -> Model -> Html msg -> Html msg
-view = viewLegacy
+view =
+    viewLegacy
