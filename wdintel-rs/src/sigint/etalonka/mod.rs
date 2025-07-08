@@ -1304,7 +1304,7 @@ fn build_callsigns_table(
                         width_unit * 30,
                         get_unique_field_as_string(
                             &callsign.known_callsigns,
-                            |item| item.position.clone(),
+                            |item| format!("{} {}", item.position.clone(), item.unit_name.clone()),
                         )
                         .as_str(),
                         None,
