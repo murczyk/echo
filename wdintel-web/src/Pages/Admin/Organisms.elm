@@ -3,6 +3,9 @@ module Pages.Admin.Organisms exposing (FieldError, FormField, Model, Msg, Organi
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
+import Components.Checkbox as Checkbox
+import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
@@ -184,6 +187,7 @@ type Msg
     | ToggleEditAutoAddGroups
     | ToggleEditEnabled
     | EditOrganism Int
+    | CloseEditSidebar
     | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetName String
     | SetEditName String
@@ -714,6 +718,9 @@ update msg model =
         EditOrganismCancel ->
             ( { model | editOrganism = Nothing }, E.none )
 
+        CloseEditSidebar ->
+            ( { model | editOrganism = Nothing }, E.none )
+
         EditOrganismDone (Ok o) ->
             ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
 
@@ -789,8 +796,8 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Table.Config B.Organism Msg
-organismsTableConfig groups allOrganisms timeZone =
+organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> Table.Config B.Organism Msg
+organismsTableConfig groups allOrganisms timeZone editingOrganismId =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -807,19 +814,19 @@ organismsTableConfig groups allOrganisms timeZone =
                             span
                                 [ style "color"
                                     (if selected then
-                                        "#555"
+                                        "var(--ochre-normal)"
 
                                      else
-                                        "#ccc"
+                                        "var(--color-text-muted)"
                                     )
                                 ]
                                 [ text " ↓" ]
 
                         TableConfig.Reversible Nothing ->
-                            span [ style "color" "#ccc" ] [ text " ↕" ]
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
 
                         TableConfig.Reversible (Just isReversed) ->
-                            span [ style "color" "#555" ]
+                            span [ style "color" "var(--ochre-normal)" ]
                                 [ text
                                     (if isReversed then
                                         " ↑"
@@ -841,10 +848,24 @@ organismsTableConfig groups allOrganisms timeZone =
         customThead headers =
             TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
 
+        customRowAttrs : B.Organism -> List (Html.Attribute Msg)
+        customRowAttrs organism =
+            case editingOrganismId of
+                Just editId ->
+                    if organism.id == editId then
+                        [ class "table-row-editing" ]
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
         customizations =
             { defaultCustomizations
                 | tableAttrs = [ class "base-table" ]
                 , thead = customThead
+                , rowAttrs = customRowAttrs
             }
     in
     Table.customConfig
@@ -1014,6 +1035,153 @@ organismsTableConfig groups allOrganisms timeZone =
         }
 
 
+editOrganismSidebarContent : Bool -> Model -> Int -> OrganismEdit -> List (Html Msg)
+editOrganismSidebarContent isDark model organismId editState =
+    let
+        organism =
+            model.organisms |> ListX.find (\o -> o.id == organismId)
+
+        groupsSelectedItems =
+            editState.inpGroups.selectedItems
+                |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) model.groups)
+                |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
+    in
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати організм" ]
+            , case organism of
+                Just o ->
+                    p [ class "text-sm text-muted-foreground" ] [ text ("ID: " ++ String.fromInt o.id) ]
+
+                Nothing ->
+                    text ""
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Назва організму"
+                        , value editState.inpName
+                        , onInput SetEditName
+                        ]
+                        []
+                    , viewFormErrors Name editState.fieldsErrors
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Батьківський організм" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditParentSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (editState.inpParentOrganism.selectedItems
+                                        |> List.map
+                                            (\idStr ->
+                                                idStr
+                                                    |> String.toInt
+                                                    |> Maybe.andThen (\id -> ListX.find (\o -> o.id == id) model.organisms)
+                                                    |> Maybe.map (\o -> Select.basicMenuItem { item = idStr, label = o.name })
+                                                    |> Maybe.withDefault (Select.basicMenuItem { item = idStr, label = idStr })
+                                            )
+                                    )
+                                    editState.inpParentOrganism.selectState
+                                    editState.inpParentOrganism.items
+                                    "батьківський організм"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditGroupSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    groupsSelectedItems
+                                    editState.inpGroups.selectState
+                                    editState.inpGroups.items
+                                    "групи"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    , case editState.groupsValidation of
+                        Just groups ->
+                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                    , strong [] [ text (String.join ", " groups) ]
+                                    ]
+                                ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditRoleSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                    editState.inpRole.selectState
+                                    editState.inpRole.items
+                                    "роль"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "grid grid-cols-2 gap-4" ]
+                    [ div [ class "flex items-center space-x-2" ]
+                        [ input
+                            [ class "rounded border-border"
+                            , type_ "checkbox"
+                            , id "edit-auto-add-groups"
+                            , checked editState.autoAddGroups
+                            , onClick ToggleEditAutoAddGroups
+                            ]
+                            []
+                        , label [ class "text-sm font-medium text-foreground", for "edit-auto-add-groups" ]
+                            [ text "Автододавання груп" ]
+                        ]
+                    , div [ class "flex items-center space-x-2" ]
+                        [ input
+                            [ class "rounded border-border"
+                            , type_ "checkbox"
+                            , id "edit-enabled"
+                            , checked editState.enabled
+                            , onClick ToggleEditEnabled
+                            ]
+                            []
+                        , label [ class "text-sm font-medium text-foreground", for "edit-enabled" ]
+                            [ text "Активна" ]
+                        ]
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex gap-3" ]
+                [ div [ class "flex-1" ]
+                    [ Button.new
+                        { label =
+                            case editState.groupsValidation of
+                                Just groups ->
+                                    "Зберегти (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+
+                                Nothing ->
+                                    "Зберегти"
+                        , onClick = EditOrganismSave
+                        }
+                        |> Button.view
+                    ]
+                , Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.withOutlined True
+                    |> Button.view
+                ]
+            ]
+        ]
+    ]
+
+
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Адмін: організми"
@@ -1023,9 +1191,37 @@ view dark shared user model =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ -- , Views.navBarAdmin dark "users"
-      Views.noHeaderAndContent ToastMsg model.toasts <|
-        div [] (mainBlock dark model)
+    let
+        sidebarOpen =
+            case model.editOrganism of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
+        sidebarContent =
+            case model.editOrganism of
+                Just ( organismId, editState ) ->
+                    editOrganismSidebarContent shared.isDarkMode model organismId editState
+
+                Nothing ->
+                    []
+    in
+    [ Views.noHeaderAndContent ToastMsg model.toasts <|
+        div
+            [ classList [ ( "overflow-hidden", sidebarOpen ) ]
+            , style "height"
+                (if sidebarOpen then
+                    "calc(100vh - 50px)"
+
+                 else
+                    "auto"
+                )
+            ]
+            [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
+            , div [] (mainBlock dark model)
+            ]
     ]
 
 
@@ -1041,12 +1237,11 @@ mainBlock isDark model =
                         |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
             in
             div
-                [ class "d-flex justify-content-start align-items-start"
-                , style "gap" "1%"
+                [ class "flex items-center gap-4"
                 ]
-                [ div [ style "flex" "1" ]
+                [ div [ class "flex-1" ]
                     [ input
-                        [ class "form-control"
+                        [ class "form-input w-full"
                         , type_ "text"
                         , placeholder "Назва"
                         , value m.inpName
@@ -1055,16 +1250,24 @@ mainBlock isDark model =
                         []
                     , viewFormErrors Name m.fieldsErrors
                     ]
-                , div [ style "flex" "1" ]
+                , div [ class "flex-1" ]
                     [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
+                        [ class "flex justify-between items-center text-sm"
                         ]
-                        [ div [ class "flex-grow-1" ]
+                        [ div [ class "flex-grow w-full" ]
                             [ Html.map AddParentSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
-                                        (m.inpParentOrganism.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                        (m.inpParentOrganism.selectedItems
+                                            |> List.map
+                                                (\idStr ->
+                                                    idStr
+                                                        |> String.toInt
+                                                        |> Maybe.andThen (\id -> ListX.find (\o -> o.id == id) model.organisms)
+                                                        |> Maybe.map (\o -> Select.basicMenuItem { item = idStr, label = o.name })
+                                                        |> Maybe.withDefault (Select.basicMenuItem { item = idStr, label = idStr })
+                                                )
+                                        )
                                         m.inpParentOrganism.selectState
                                         m.inpParentOrganism.items
                                         "батьківський організм"
@@ -1072,12 +1275,11 @@ mainBlock isDark model =
                             ]
                         ]
                     ]
-                , div [ style "flex" "1" ]
+                , div [ class "flex-1" ]
                     [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
+                        [ class "flex justify-between items-center text-sm"
                         ]
-                        [ div [ class "flex-grow-1" ]
+                        [ div [ class "flex-grow w-full" ]
                             [ Html.map AddGroupSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
@@ -1091,7 +1293,7 @@ mainBlock isDark model =
                     , viewFormErrors Roles m.fieldsErrors
                     , case m.groupsValidation of
                         Just groups ->
-                            div [ class "alert alert-warning mt-2", style "font-size" ".75rem" ]
+                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800 text-xs" ]
                                 [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
                                 , strong [] [ text (String.join ", " groups) ]
                                 ]
@@ -1099,12 +1301,11 @@ mainBlock isDark model =
                         Nothing ->
                             text ""
                     ]
-                , div [ style "flex" "1" ]
+                , div [ class "flex-1" ]
                     [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
+                        [ class "flex justify-between items-center text-sm"
                         ]
-                        [ div [ class "flex-grow-1" ]
+                        [ div [ class "flex-grow w-full" ]
                             [ Html.map AddRoleSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
@@ -1116,209 +1317,28 @@ mainBlock isDark model =
                             ]
                         ]
                     ]
-                , div [ class "form-check", style "flex" "1", style "align-self" "center" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , checked m.autoAddGroups
-                        , onClick ToggleAutoAddGroups
-                        , id "auto-add-groups"
-                        ]
-                        []
-                    , label [ class "form-check-label", for "auto-add-groups" ]
-                        [ text "Автододавання груп" ]
+                , div [ class "flex items-center justify-center flex-1" ]
+                    [ Checkbox.new { isChecked = m.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
+                        |> Checkbox.withContent [ text "Автододавання груп" ]
+                        |> Checkbox.view
                     ]
-                , div
-                    [ class "text-center"
-                    ]
-                    [ button
-                        [ class "btn btn-primary"
-                        , type_ "button"
-                        , onClick AddOrganism
-                        ]
-                        [ text "Додати" ]
-                    ]
-                ]
-
-        renderEditableTr editState o =
-            let
-                groupsSelectedItems =
-                    editState.inpGroups.selectedItems
-                        |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) model.groups)
-                        |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
-            in
-            tr []
-                [ td [ style "flex" "1" ]
-                    [ input
-                        [ class "form-control"
-                        , type_ "text"
-                        , placeholder "Назва"
-                        , value editState.inpName
-                        , onInput <| SetEditName
-                        ]
-                        []
-                    , viewFormErrors Name editState.fieldsErrors
-                    ]
-                , td [ style "flex" "1" ]
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditParentSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        (editState.inpParentOrganism.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                        editState.inpParentOrganism.selectState
-                                        editState.inpParentOrganism.items
-                                        "батьківський організм"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , td [ style "flex" "1" ]
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditGroupSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        groupsSelectedItems
-                                        editState.inpGroups.selectState
-                                        editState.inpGroups.items
-                                        "групи"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    , case editState.groupsValidation of
-                        Just groups ->
-                            div [ class "alert alert-warning mt-2", style "font-size" ".75rem" ]
-                                [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                , strong [] [ text (String.join ", " groups) ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , td [ style "flex" "1" ]
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditRoleSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                        editState.inpRole.selectState
-                                        editState.inpRole.items
-                                        "роль"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , checked editState.autoAddGroups
-                        , onClick ToggleEditAutoAddGroups
-                        ]
-                        []
-                    ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , checked editState.enabled
-                        , onClick ToggleEditEnabled
-                        ]
-                        []
-                    ]
-                , td [] [ text <| Le.Time.renderDateF5FromMillis o.createdAt model.timeZone ]
-                , td []
-                    [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ button
-                            [ class <|
-                                if Maybe.map List.isEmpty editState.groupsValidation == Just False then
-                                    "btn btn-sm btn-outline-warning"
-
-                                else
-                                    "btn btn-sm btn-outline-primary"
-                            , type_ "button"
-                            , onClick <| EditOrganismSave
-                            ]
-                            [ i [ class "bi bi-check2" ] []
-                            , case editState.groupsValidation of
-                                Just groups ->
-                                    text <| " (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
-
-                                Nothing ->
-                                    text ""
-                            ]
-                        , button
-                            [ class "btn btn-sm btn-outline-danger ms-2"
-                            , type_ "button"
-                            , onClick <| EditOrganismCancel
-                            ]
-                            [ i [ class "bi bi-x" ] []
-                            ]
-                        ]
-                    ]
-                ]
-
-        renderReadonlyTr timeZone o =
-            tr []
-                [ td [] [ text o.name ]
-                , td []
-                    [ o.parentId
-                        |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) model.organisms)
-                        |> Maybe.map (\parent -> text parent.name)
-                        |> Maybe.withDefault (text "")
-                    ]
-                , td []
-                    (o.groups
-                        |> List.filterMap (\o2 -> ListX.find (\x -> x.masterKey == o2) model.groups)
-                        |> List.map
-                            (\group ->
-                                span []
-                                    [ text <| groupName group
-                                    ]
-                            )
-                        |> List.intersperse (text ", ")
-                    )
-                , td [] (List.intersperse (text ", ") (List.map (\role -> span [] [ text <| role ]) o.roles))
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ i [ class "bi", classList [ ( "bi-check-lg", o.groupAutoLink ), ( "bi-x-lg", not o.groupAutoLink ) ] ] []
-                    ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ i [ class "bi", classList [ ( "bi-check-lg", o.enabled ), ( "bi-x-lg", not o.enabled ) ] ] [] ]
-                , td [] [ text <| Le.Time.renderDateF5FromMillis o.createdAt timeZone ]
-                , td []
-                    [ button
-                        [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
-                        , type_ "button"
-                        , onClick <| EditOrganism o.id
-                        ]
-                        [ i [ class "bi bi-pencil-square" ] []
-                        ]
+                , div [ class "flex justify-center" ]
+                    [ Button.new { label = "Додати", onClick = AddOrganism }
+                        |> Button.view
                     ]
                 ]
     in
     [ div []
-        [ h1 [ class "py-4" ] [ text "Організми" ]
+        [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Організми" ]
         , div
-            [ class "border mb-4 p-2"
-            , style "background-color" "var(--bs-tertiary-bg)"
+            [ class "border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)]"
             ]
             [ addOrganismPanel
                 model
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organisms model.timeZone)
+                (organismsTableConfig model.groups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism))
                 model.tableState
                 model.organisms
             ]
