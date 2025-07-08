@@ -4,8 +4,8 @@ import Api
 import Auth
 import Bindings as B
 import Components.Table as Table
-import Components.Table.Config as TableConfig
 import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -472,7 +472,16 @@ update msg model =
                             in
                             Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
             in
-            ( m2, E.sendCmd <| Cmd.batch (List.map (\x -> Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }) groupsToAdd) )
+            ( m2
+            , E.sendCmd <|
+                Cmd.batch
+                    (List.map
+                        (\x ->
+                            Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }
+                        )
+                        groupsToAdd
+                    )
+            )
 
         AddOrganismDone (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -795,17 +804,33 @@ organismsTableConfig groups allOrganisms timeZone =
                             text ""
 
                         TableConfig.Sortable selected ->
-                            span [ style "color" (if selected then "#555" else "#ccc") ] [ text " ↓" ]
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "#555"
+
+                                     else
+                                        "#ccc"
+                                    )
+                                ]
+                                [ text " ↓" ]
 
                         TableConfig.Reversible Nothing ->
                             span [ style "color" "#ccc" ] [ text " ↕" ]
 
                         TableConfig.Reversible (Just isReversed) ->
-                            span [ style "color" "#555" ] 
-                                [ text (if isReversed then " ↑" else " ↓") ]
+                            span [ style "color" "#555" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
 
                 headerContent =
-                    div [ class "table-header-content", title name ] 
+                    div [ class "table-header-content", title name ]
                         [ span [] [ text name ]
                         , sortIcon
                         ]
@@ -817,9 +842,9 @@ organismsTableConfig groups allOrganisms timeZone =
             TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
 
         customizations =
-            { defaultCustomizations 
-            | tableAttrs = [ class "base-table" ]
-            , thead = customThead 
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
             }
     in
     Table.customConfig
@@ -829,92 +854,161 @@ organismsTableConfig groups allOrganisms timeZone =
             [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
             , Table.customColumn
                 { name = "Батьківський"
-                , viewData = \o -> 
-                    o.parentId
-                        |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
-                        |> Maybe.map .name
-                        |> Maybe.withDefault ""
-                , sorter = Table.increasingOrDecreasingBy
-                    (\o ->
+                , viewData =
+                    \o ->
                         o.parentId
                             |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
                             |> Maybe.map .name
                             |> Maybe.withDefault ""
-                    )
-                } |> Table.withColumnWidth "14%"
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            o.parentId
+                                |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                                |> Maybe.map .name
+                                |> Maybe.withDefault ""
+                        )
+                }
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Групи"
-                , viewData = \o -> 
-                    { attributes = [ class "col-wide" ]
-                    , children = 
-                        [ div [ class "flex flex-wrap gap-1" ]
-                            (o.groups
-                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                                |> List.map (\group -> 
-                                    span 
-                                        [ class "badge badge--ochre-light"
-                                        , title (groupName group)
-                                        ] 
-                                        [ text (groupName group) ]
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-wide" ]
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (o.groups
+                                    |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                    |> List.sortBy (\group -> String.toLower (groupName group))
+                                    |> List.map
+                                        (\group ->
+                                            span
+                                                [ class "badge badge--ochre-light"
+                                                , title (groupName group)
+                                                ]
+                                                [ text (groupName group) ]
+                                        )
                                 )
-                            )
-                        ]
-                    }
-                , sorter = Table.increasingOrDecreasingBy
-                    (\o ->
-                        o.groups
-                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                            |> List.map groupName
-                            |> String.join ", "
-                    )
-                } |> Table.withColumnWidth "25%"
-            , Table.customColumn
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            o.groups
+                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                |> List.map groupName
+                                |> String.join ", "
+                        )
+                }
+                |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
                 { name = "Ролі"
-                , viewData = \o -> String.join ", " o.roles
+                , viewData =
+                    \o ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (o.roles
+                                    |> List.map
+                                        (\role ->
+                                            span
+                                                [ class "badge badge--neutral"
+                                                , title role
+                                                ]
+                                                [ text role ]
+                                        )
+                                )
+                            ]
+                        }
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
-                } |> Table.withColumnWidth "14%"
+                }
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Автододавання груп"
-                , viewData = \o -> 
-                    { attributes = [ class "col-narrow" ]
-                    , children = 
-                        [ i [ class (if o.groupAutoLink then "bi bi-check-circle-fill text-green-500" else "bi bi-x-circle-fill text-red-500") ] [] ]
-                    }
-                , sorter = Table.increasingOrDecreasingBy (\o -> if o.groupAutoLink then "1" else "0")
-                } |> Table.withColumnWidth "10%"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ i
+                                [ class
+                                    (if o.groupAutoLink then
+                                        "bi bi-check-circle-fill text-green-500"
+
+                                     else
+                                        "bi bi-x-circle-fill text-red-500"
+                                    )
+                                ]
+                                []
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            if o.groupAutoLink then
+                                "1"
+
+                            else
+                                "0"
+                        )
+                }
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
                 { name = "Активна"
-                , viewData = \o -> 
-                    { attributes = [ class "col-narrow" ]
-                    , children = 
-                        [ i [ class (if o.enabled then "bi bi-check-circle-fill text-green-500" else "bi bi-x-circle-fill text-red-500") ] [] ]
-                    }
-                , sorter = Table.increasingOrDecreasingBy (\o -> if o.enabled then "1" else "0")
-                } |> Table.withColumnWidth "6%"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ i
+                                [ class
+                                    (if o.enabled then
+                                        "bi bi-check-circle-fill text-green-500"
+
+                                     else
+                                        "bi bi-x-circle-fill text-red-500"
+                                    )
+                                ]
+                                []
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            if o.enabled then
+                                "1"
+
+                            else
+                                "0"
+                        )
+                }
+                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Створено"
-                , viewData = \o -> 
-                    { attributes = [ class "col-narrow" ]
-                    , children = [ text (Le.Time.renderDateF5FromMillis o.createdAt timeZone) ]
-                    }
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children = [ text (Le.Time.renderDateF5FromMillis o.createdAt timeZone) ]
+                        }
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
-                } |> Table.withColumnWidth "10%"
+                }
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
                 { name = ""
-                , viewData = \o ->
-                    { attributes = [ class "col-narrow" ]
-                    , children =
-                        [ button
-                            [ class "table-action-btn"
-                            , type_ "button"
-                            , onClick <| EditOrganism o.id
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ button
+                                [ class "table-action-btn"
+                                , type_ "button"
+                                , onClick <| EditOrganism o.id
+                                ]
+                                [ i [ class "bi bi-pencil-square" ] []
+                                ]
                             ]
-                            [ i [ class "bi bi-pencil-square" ] []
-                            ]
-                        ]
-                    }
+                        }
                 , sorter = Table.unsortable
-                } |> Table.withColumnWidth "5%"
+                }
+                |> Table.withColumnWidth "5%"
             ]
         , customizations = customizations
         }
@@ -931,7 +1025,7 @@ body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
     [ -- , Views.navBarAdmin dark "users"
       Views.noHeaderAndContent ToastMsg model.toasts <|
-        div [ class "mt-2" ] (mainBlock dark model)
+        div [] (mainBlock dark model)
     ]
 
 
