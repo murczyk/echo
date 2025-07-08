@@ -750,7 +750,12 @@ subscriptions model =
 
 organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Table.Config B.Organism Msg
 organismsTableConfig groups allOrganisms timeZone =
-    Table.config
+    let
+        defaultCustomizations = Table.defaultCustomizations
+        customizations = 
+            { defaultCustomizations | tableAttrs = [ class "admin-table" ] }
+    in
+    Table.customConfig
         { toId = \o -> String.fromInt o.id
         , toMsg = SetTableState
         , columns =
@@ -775,6 +780,7 @@ organismsTableConfig groups allOrganisms timeZone =
                 }
             , actionsColumn
             ]
+        , customizations = customizations
         }
 
 
@@ -831,7 +837,7 @@ actionsColumn =
             { attributes = []
             , children =
                 [ button
-                    [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
+                    [ class "table-action-btn"
                     , type_ "button"
                     , onClick <| EditOrganism o.id
                     ]
@@ -1139,7 +1145,7 @@ mainBlock isDark model =
             [ addOrganismPanel
                 model
             ]
-        , div [ class "admin-table" ]
+        , div [ class "table-responsive-modern" ]
             [ Table.view 
                 (organismsTableConfig model.groups model.organisms model.timeZone)
                 model.tableState

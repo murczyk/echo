@@ -1744,3 +1744,397 @@ html[data-bs-theme="dark"] .radio-input:checked::before {
 	background-color: #2563eb !important;
 	border-radius: 9999px !important;
 }
+
+/* =========================================================================
+   MODERN TABLE STYLES
+   ========================================================================= */
+
+/* Base table styles with modern design principles */
+.modern-table,
+.admin-table,
+.data-table,
+.compact-table {
+	width: 100%;
+	border-collapse: separate;
+	border-spacing: 0;
+	background-color: var(--bs-body-bg);
+	border-radius: 12px;
+	overflow: hidden;
+	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+	font-size: 0.875rem;
+	line-height: 1.5;
+}
+
+/* Dark mode shadow adjustment */
+html[data-bs-theme="dark"] .modern-table,
+html[data-bs-theme="dark"] .admin-table,
+html[data-bs-theme="dark"] .data-table,
+html[data-bs-theme="dark"] .compact-table {
+	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Table headers */
+.modern-table thead th,
+.admin-table thead th,
+.data-table thead th,
+.compact-table thead th {
+	background: var(--bs-gray-50);
+	color: var(--bs-gray-700);
+	font-weight: 600;
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 1rem 1.5rem;
+	text-align: left;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	white-space: nowrap;
+	user-select: none;
+	transition: all 0.2s ease;
+}
+
+/* Dark mode headers */
+html[data-bs-theme="dark"] .modern-table thead th,
+html[data-bs-theme="dark"] .admin-table thead th,
+html[data-bs-theme="dark"] .data-table thead th,
+html[data-bs-theme="dark"] .compact-table thead th {
+	background: var(--bs-gray-800);
+	color: var(--bs-gray-200);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Sortable column headers */
+.modern-table thead th[role="button"],
+.admin-table thead th[role="button"],
+.data-table thead th[role="button"],
+.compact-table thead th[role="button"] {
+	cursor: pointer;
+	position: relative;
+	padding-right: 2.5rem;
+}
+
+.modern-table thead th[role="button"]:hover,
+.admin-table thead th[role="button"]:hover,
+.data-table thead th[role="button"]:hover,
+.compact-table thead th[role="button"]:hover {
+	background: var(--bs-gray-100);
+	transform: translateY(-1px);
+}
+
+html[data-bs-theme="dark"] .modern-table thead th[role="button"]:hover,
+html[data-bs-theme="dark"] .admin-table thead th[role="button"]:hover,
+html[data-bs-theme="dark"] .data-table thead th[role="button"]:hover,
+html[data-bs-theme="dark"] .compact-table thead th[role="button"]:hover {
+	background: var(--bs-gray-700);
+}
+
+/* Sort indicators */
+.modern-table thead th[role="button"]::after,
+.admin-table thead th[role="button"]::after,
+.data-table thead th[role="button"]::after,
+.compact-table thead th[role="button"]::after {
+	content: "↕";
+	position: absolute;
+	right: 1rem;
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--bs-gray-400);
+	font-size: 0.75rem;
+	transition: color 0.2s ease;
+}
+
+.modern-table thead th[role="button"]:hover::after,
+.admin-table thead th[role="button"]:hover::after,
+.data-table thead th[role="button"]:hover::after,
+.compact-table thead th[role="button"]:hover::after {
+	color: var(--bs-gray-600);
+}
+
+html[data-bs-theme="dark"] .modern-table thead th[role="button"]:hover::after,
+html[data-bs-theme="dark"] .admin-table thead th[role="button"]:hover::after,
+html[data-bs-theme="dark"] .data-table thead th[role="button"]:hover::after,
+html[data-bs-theme="dark"] .compact-table thead th[role="button"]:hover::after {
+	color: var(--bs-gray-300);
+}
+
+/* Active sort indicators */
+.modern-table thead th[aria-sort="ascending"]::after,
+.admin-table thead th[aria-sort="ascending"]::after,
+.data-table thead th[aria-sort="ascending"]::after,
+.compact-table thead th[aria-sort="ascending"]::after {
+	content: "↑";
+	color: var(--action-color);
+}
+
+.modern-table thead th[aria-sort="descending"]::after,
+.admin-table thead th[aria-sort="descending"]::after,
+.data-table thead th[aria-sort="descending"]::after,
+.compact-table thead th[aria-sort="descending"]::after {
+	content: "↓";
+	color: var(--action-color);
+}
+
+/* Table body cells */
+.modern-table tbody td,
+.admin-table tbody td,
+.data-table tbody td,
+.compact-table tbody td {
+	padding: 1rem 1.5rem;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+	vertical-align: middle;
+	transition: background-color 0.15s ease;
+}
+
+/* Dark mode table body cells */
+html[data-bs-theme="dark"] .modern-table tbody td,
+html[data-bs-theme="dark"] .admin-table tbody td,
+html[data-bs-theme="dark"] .data-table tbody td,
+html[data-bs-theme="dark"] .compact-table tbody td {
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Table rows */
+.modern-table tbody tr,
+.admin-table tbody tr,
+.data-table tbody tr,
+.compact-table tbody tr {
+	transition: all 0.15s ease;
+}
+
+.modern-table tbody tr:hover,
+.admin-table tbody tr:hover,
+.data-table tbody tr:hover,
+.compact-table tbody tr:hover {
+	background-color: var(--bs-gray-50);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+html[data-bs-theme="dark"] .modern-table tbody tr:hover,
+html[data-bs-theme="dark"] .admin-table tbody tr:hover,
+html[data-bs-theme="dark"] .data-table tbody tr:hover,
+html[data-bs-theme="dark"] .compact-table tbody tr:hover {
+	background-color: var(--bs-gray-800);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Remove bottom border from last row */
+.modern-table tbody tr:last-child td,
+.admin-table tbody tr:last-child td,
+.data-table tbody tr:last-child td,
+.compact-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+/* Admin table - centered, good for admin interfaces */
+.admin-table {
+	text-align: center;
+}
+
+.admin-table thead th {
+	text-align: center;
+}
+
+.admin-table tbody td {
+	text-align: center;
+}
+
+/* Data table - left aligned, good for data display */
+.data-table {
+	text-align: left;
+}
+
+.data-table thead th {
+	text-align: left;
+}
+
+.data-table tbody td {
+	text-align: left;
+}
+
+/* Compact table - smaller padding for dense data */
+.compact-table thead th {
+	padding: 0.75rem 1rem;
+	font-size: 0.7rem;
+}
+
+.compact-table tbody td {
+	padding: 0.75rem 1rem;
+	font-size: 0.8rem;
+}
+
+/* Utility classes for table cells */
+.table-cell-center {
+	text-align: center !important;
+}
+
+.table-cell-left {
+	text-align: left !important;
+}
+
+.table-cell-right {
+	text-align: right !important;
+}
+
+.break-words {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.nowrap {
+	white-space: nowrap;
+}
+
+/* Action buttons in tables */
+.table-action-btn {
+	background: transparent;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 0.375rem 0.75rem;
+	font-size: 0.75rem;
+	font-weight: 500;
+	color: var(--action-color);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.table-action-btn:hover {
+	background-color: var(--action-color);
+	color: white;
+	border-color: var(--action-color);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.table-action-btn:active {
+	transform: translateY(0);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Status indicators */
+.status-badge {
+	padding: 0.25rem 0.75rem;
+	border-radius: 9999px;
+	font-size: 0.75rem;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.025em;
+}
+
+.status-badge--active {
+	background-color: #ecfdf5;
+	color: #065f46;
+}
+
+.status-badge--inactive {
+	background-color: #fef2f2;
+	color: #991b1b;
+}
+
+html[data-bs-theme="dark"] .status-badge--active {
+	background-color: #065f46;
+	color: #ecfdf5;
+}
+
+html[data-bs-theme="dark"] .status-badge--inactive {
+	background-color: #991b1b;
+	color: #fef2f2;
+}
+
+/* Loading state */
+.table-loading {
+	position: relative;
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.table-loading::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 24px;
+	height: 24px;
+	margin: -12px 0 0 -12px;
+	border: 2px solid var(--border-color);
+	border-top-color: var(--action-color);
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Responsive table wrapper */
+.table-responsive-modern {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+	border-radius: 12px;
+}
+
+.table-responsive-modern::-webkit-scrollbar {
+	height: 8px;
+}
+
+.table-responsive-modern::-webkit-scrollbar-track {
+	background: var(--bs-gray-100);
+	border-radius: 4px;
+}
+
+.table-responsive-modern::-webkit-scrollbar-thumb {
+	background: var(--bs-gray-300);
+	border-radius: 4px;
+}
+
+.table-responsive-modern::-webkit-scrollbar-thumb:hover {
+	background: var(--bs-gray-400);
+}
+
+html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-track {
+	background: var(--bs-gray-800);
+}
+
+html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-thumb {
+	background: var(--bs-gray-600);
+}
+
+html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-thumb:hover {
+	background: var(--bs-gray-500);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+
+	.modern-table thead th,
+	.admin-table thead th,
+	.data-table thead th,
+	.compact-table thead th {
+		padding: 0.75rem 1rem;
+		font-size: 0.7rem;
+	}
+
+	.modern-table tbody td,
+	.admin-table tbody td,
+	.data-table tbody td,
+	.compact-table tbody td {
+		padding: 0.75rem 1rem;
+		font-size: 0.8rem;
+	}
+
+	.compact-table thead th {
+		padding: 0.5rem 0.75rem;
+	}
+
+	.compact-table tbody td {
+		padding: 0.5rem 0.75rem;
+	}
+}
