@@ -25,18 +25,39 @@ pub async fn add_group_to_organism(
         .await?
         .ok_or(AppError::NotFound)?;
 
+    let mut parent_filter = if let Some(parent_id) = organism.parent_id {
+        load_organism_group_ids(&env.dbx, parent_id)
+            .await
+            .context(h!())
+            .ok()
+    } else {
+        None
+    };
+
     let group = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&req.group_name))
         .one(&env.dbx)
         .await?
         .ok_or(AppError::NotFound)?;
 
-    organism_group::ActiveModel {
-        organism_id: Set(organism.id),
-        signal_group_master_key: Set(group.master_key.clone()),
+    let skip_adding = if let Some(parent_filter) = parent_filter {
+        !parent_filter.contains(&group.master_key)
+    } else {
+        false
+    };
+
+    if !skip_adding {
+        organism_group::ActiveModel {
+            organism_id: Set(organism.id),
+            signal_group_master_key: Set(group.master_key.clone()),
+        }
+        .insert(&env.dbx)
+        .await?;
+    } else {
+        return Err(AppError::BL {
+            msg: "won't add, absent in parent".to_string(),
+        });
     }
-    .insert(&env.dbx)
-    .await?;
 
     Ok(Json(()))
 }
