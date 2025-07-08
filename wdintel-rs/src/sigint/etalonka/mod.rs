@@ -1281,30 +1281,37 @@ fn build_callsigns_table(
         (
             vec![
                 create_table_header_cell(
-                    width_unit * 18,
+                    width_unit * 11,
                     None,
                     table_header_style_id,
                     "Позивний",
                     false,
                 ),
                 create_table_header_cell(
-                    width_unit * 30,
+                    width_unit * 27,
                     None,
                     table_header_style_id,
                     "Приналежність",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 10,
+                    None,
+                    table_header_style_id,
+                    "Останній раз в етері",
                     false,
                 ),
             ],
             Box::new(move |callsign: &CallsignRes| {
                 vec![
                     create_table_data_cell(
-                        width_unit * 18,
+                        width_unit * 11,
                         &callsign.callsign.to_uppercase(),
                         None,
                         false,
                     ),
                     create_table_data_cell(
-                        width_unit * 30,
+                        width_unit * 27,
                         get_unique_field_as_string(
                             &callsign.known_callsigns,
                             |item| {
@@ -1317,6 +1324,12 @@ fn build_callsigns_table(
                         )
                         .as_str(),
                         None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 10,
+                        format_datetime_field(callsign.last_datetime).as_str(),
+                        get_color(callsign.is_old),
                         false,
                     ),
                 ]
