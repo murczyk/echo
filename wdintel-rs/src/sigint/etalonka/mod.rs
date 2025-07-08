@@ -933,7 +933,7 @@ pub async fn generate_networks_docx_report(
                 .add_run(Run::new().size(28).bold().add_text(unit_name)), // .align(JustificationType::Center),
         );
 
-        for (_index, network) in unit_networks.iter().enumerate() {
+        for (index, network) in unit_networks.iter().enumerate() {
             let filter = EtalonkaFilter {
                 since_date_inclusive_ms: Some(
                     network.active_from.and_utc().timestamp_millis(),
@@ -1224,12 +1224,15 @@ pub async fn generate_networks_docx_report(
                             .add_paragraph(Paragraph::new());
                     }
                 }
+            }
 
+            // Add empty paragraph after each network if this is not the last network
+            if index < unit_networks.len() - 1 {
                 doc = doc.add_paragraph(Paragraph::new());
             }
         }
 
-        // Add a page break after each network if this is NOT the last
+        // Add a page break after each unit if this is NOT the last
         if i < networks_data.len() - 1 {
             doc = doc.add_paragraph(Paragraph::new().page_break_before(true));
         }
@@ -1304,7 +1307,13 @@ fn build_callsigns_table(
                         width_unit * 30,
                         get_unique_field_as_string(
                             &callsign.known_callsigns,
-                            |item| format!("{} {}", item.position.clone(), item.unit_name.clone()),
+                            |item| {
+                                format!(
+                                    "{} {}",
+                                    item.position.clone(),
+                                    item.unit_name.clone()
+                                )
+                            },
                         )
                         .as_str(),
                         None,
