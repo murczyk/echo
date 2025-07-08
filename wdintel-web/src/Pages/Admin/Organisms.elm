@@ -826,131 +826,96 @@ organismsTableConfig groups allOrganisms timeZone =
         { toId = \o -> String.fromInt o.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
-            , parentOrganismColumn allOrganisms |> Table.withColumnWidth "14%"
-            , groupsColumn groups |> Table.withColumnWidth "22%"
-            , rolesColumn |> Table.withColumnWidth "12%"
-            , Table.customColumn
-                { name = "Додавати групи автоматично"
-                , viewData =
-                    \o ->
-                        if o.groupAutoLink then
-                            "✓"
-
-                        else
-                            "✗"
-                , sorter =
-                    Table.increasingOrDecreasingBy
-                        (\o ->
-                            if o.groupAutoLink then
-                                "1"
-
-                            else
-                                "0"
-                        )
-                }
-                |> Table.withColumnWidth "10%"
-            , Table.customColumn
+            [ Table.veryCustomColumn
+                { name = "Назва"
+                , viewData = \o -> { attributes = [ class "col-normal" ], children = [ text o.name ] }
+                , sorter = Table.increasingOrDecreasingBy .name
+                } |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Батьківський"
+                , viewData = \o -> 
+                    { attributes = [ class "col-normal" ]
+                    , children = 
+                        [ text (o.parentId
+                            |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                            |> Maybe.map .name
+                            |> Maybe.withDefault "")
+                        ]
+                    }
+                , sorter = Table.increasingOrDecreasingBy
+                    (\o ->
+                        o.parentId
+                            |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                            |> Maybe.map .name
+                            |> Maybe.withDefault ""
+                    )
+                } |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Групи"
+                , viewData = \o -> 
+                    { attributes = [ class "col-wide" ]
+                    , children = 
+                        [ text (o.groups
+                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                            |> List.map groupName
+                            |> String.join ", ")
+                        ]
+                    }
+                , sorter = Table.increasingOrDecreasingBy
+                    (\o ->
+                        o.groups
+                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                            |> List.map groupName
+                            |> String.join ", "
+                    )
+                } |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Ролі"
+                , viewData = \o -> { attributes = [ class "col-normal" ], children = [ text (String.join ", " o.roles) ] }
+                , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
+                } |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Автододавання груп"
+                , viewData = \o -> 
+                    { attributes = [ class "col-narrow" ]
+                    , children = [ text (if o.groupAutoLink then "✓" else "✗") ]
+                    }
+                , sorter = Table.increasingOrDecreasingBy (\o -> if o.groupAutoLink then "1" else "0")
+                } |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
                 { name = "Активна"
-                , viewData =
-                    \o ->
-                        if o.enabled then
-                            "✓"
-
-                        else
-                            "✗"
-                , sorter =
-                    Table.increasingOrDecreasingBy
-                        (\o ->
-                            if o.enabled then
-                                "1"
-
-                            else
-                                "0"
-                        )
-                }
-                |> Table.withColumnWidth "6%"
-            , Table.customColumn
+                , viewData = \o -> 
+                    { attributes = [ class "col-narrow" ]
+                    , children = [ text (if o.enabled then "✓" else "✗") ]
+                    }
+                , sorter = Table.increasingOrDecreasingBy (\o -> if o.enabled then "1" else "0")
+                } |> Table.withColumnWidth "6%"
+            , Table.veryCustomColumn
                 { name = "Створено"
-                , viewData = \o -> Le.Time.renderDateF5FromMillis o.createdAt timeZone
+                , viewData = \o -> 
+                    { attributes = [ class "col-narrow" ]
+                    , children = [ text (Le.Time.renderDateF5FromMillis o.createdAt timeZone) ]
+                    }
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
-                }
-                |> Table.withColumnWidth "12%"
-            , actionsColumn |> Table.withColumnWidth "8%"
+                } |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = ""
+                , viewData = \o ->
+                    { attributes = [ class "col-narrow" ]
+                    , children =
+                        [ button
+                            [ class "table-action-btn"
+                            , type_ "button"
+                            , onClick <| EditOrganism o.id
+                            ]
+                            [ i [ class "bi bi-pencil-square" ] []
+                            ]
+                        ]
+                    }
+                , sorter = Table.unsortable
+                } |> Table.withColumnWidth "5%"
             ]
         , customizations = customizations
-        }
-
-
-parentOrganismColumn : List B.Organism -> Table.Column B.Organism Msg
-parentOrganismColumn allOrganisms =
-    Table.customColumn
-        { name = "Батьківський організм"
-        , viewData =
-            \o ->
-                o.parentId
-                    |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
-                    |> Maybe.map .name
-                    |> Maybe.withDefault ""
-        , sorter =
-            Table.increasingOrDecreasingBy
-                (\o ->
-                    o.parentId
-                        |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
-                        |> Maybe.map .name
-                        |> Maybe.withDefault ""
-                )
-        }
-
-
-groupsColumn : List B.SignalGroupFull -> Table.Column B.Organism Msg
-groupsColumn allGroups =
-    Table.customColumn
-        { name = "Групи"
-        , viewData =
-            \o ->
-                o.groups
-                    |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
-                    |> List.map groupName
-                    |> String.join ", "
-        , sorter =
-            Table.increasingOrDecreasingBy
-                (\o ->
-                    o.groups
-                        |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) allGroups)
-                        |> List.map groupName
-                        |> String.join ", "
-                )
-        }
-
-
-rolesColumn : Table.Column B.Organism Msg
-rolesColumn =
-    Table.customColumn
-        { name = "Ролі"
-        , viewData = \o -> String.join ", " o.roles
-        , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
-        }
-
-
-actionsColumn : Table.Column B.Organism Msg
-actionsColumn =
-    Table.veryCustomColumn
-        { name = ""
-        , viewData =
-            \o ->
-                { attributes = []
-                , children =
-                    [ button
-                        [ class "table-action-btn"
-                        , type_ "button"
-                        , onClick <| EditOrganism o.id
-                        ]
-                        [ i [ class "bi bi-pencil-square" ] []
-                        ]
-                    ]
-                }
-        , sorter = Table.unsortable
         }
 
 
@@ -1066,7 +1031,7 @@ mainBlock isDark model =
                         ]
                         []
                     , label [ class "form-check-label", for "auto-add-groups" ]
-                        [ text "Автоматично додавати групи" ]
+                        [ text "Автододавання груп" ]
                     ]
                 , div
                     [ class "text-center"

@@ -1761,6 +1761,7 @@ html[data-bs-theme="dark"] .radio-input:checked::before {
 	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 	font-size: 0.875rem;
 	line-height: 1.5;
+	text-align: left;
 }
 
 /* Dark mode shadow adjustment */
@@ -1770,11 +1771,9 @@ html[data-bs-theme="dark"] .base-table {
 
 /* Table headers */
 .base-table thead th {
+	@apply text-xs font-semibold uppercase;
 	background: var(--bs-gray-50);
 	color: var(--bs-gray-700);
-	font-weight: 600;
-	font-size: 0.75rem;
-	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	padding: 1rem 1.5rem;
 	text-align: left;
@@ -1785,6 +1784,7 @@ html[data-bs-theme="dark"] .base-table {
 	white-space: wrap;
 	user-select: none;
 	transition: all 0.2s ease;
+	border-right: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 /* Dark mode headers */
@@ -1823,6 +1823,7 @@ html[data-bs-theme="dark"] .base-table thead th[onclick]:hover {
 	border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 	vertical-align: middle;
 	transition: background-color 0.15s ease;
+	border-right: 1px solid var(--border-color);
 }
 
 /* Dark mode table body cells */
@@ -1853,41 +1854,29 @@ html[data-bs-theme="dark"] .base-table tbody tr:hover {
 
 /* Admin table - centered, good for admin interfaces */
 .base-table {
-	text-align: center;
+	text-align: left;
 }
 
 .base-table thead th {
-	text-align: center;
-}
-
-.base-table .table-header-content {
-	justify-content: center;
+	text-align: left;
 }
 
 .base-table tbody td {
-	text-align: center;
+	text-align: left;
 }
 
-/* Utility classes for table cells */
-.table-cell-center {
-	text-align: center !important;
+.base-table .table-header-content {
+	justify-content: flex-start;
 }
 
-.table-cell-left {
-	text-align: left !important;
+.base-table th,
+.base-table td {
+	border-right: 1px solid var(--border-color);
 }
 
-.table-cell-right {
-	text-align: right !important;
-}
-
-.break-words {
-	overflow-wrap: anywhere;
-	word-break: break-word;
-}
-
-.nowrap {
-	white-space: nowrap;
+.base-table th:last-child,
+.base-table td:last-child {
+	border-right: none;
 }
 
 /* Action buttons in tables */
@@ -1977,42 +1966,6 @@ html[data-bs-theme="dark"] .status-badge--inactive {
 	}
 }
 
-/* Responsive table wrapper */
-.table-responsive-modern {
-	overflow-x: auto;
-	-webkit-overflow-scrolling: touch;
-	border-radius: 12px;
-}
-
-.table-responsive-modern::-webkit-scrollbar {
-	height: 8px;
-}
-
-.table-responsive-modern::-webkit-scrollbar-track {
-	background: var(--bs-gray-100);
-	border-radius: 4px;
-}
-
-.table-responsive-modern::-webkit-scrollbar-thumb {
-	background: var(--bs-gray-300);
-	border-radius: 4px;
-}
-
-.table-responsive-modern::-webkit-scrollbar-thumb:hover {
-	background: var(--bs-gray-400);
-}
-
-html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-track {
-	background: var(--bs-gray-800);
-}
-
-html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-thumb {
-	background: var(--bs-gray-600);
-}
-
-html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-thumb:hover {
-	background: var(--bs-gray-500);
-}
 
 /* Mobile responsiveness */
 @media (max-width: 768px) {
@@ -2026,4 +1979,24 @@ html[data-bs-theme="dark"] .table-responsive-modern::-webkit-scrollbar-thumb:hov
 		padding: 0.75rem 1rem;
 		font-size: 0.8rem;
 	}
+}
+
+/* Column padding based on width/content type */
+.base-table .col-narrow {
+	padding: 0.5rem 0.75rem;
+}
+
+.base-table .col-normal {
+	padding: 0.75rem 1rem;
+}
+
+.base-table .col-wide {
+	padding: 1rem 1.5rem;
+}
+
+/* Default padding for columns without specific class */
+.base-table th,
+.base-table td {
+	padding: 0.75rem 1rem;
+	/* Default to normal padding */
 }
