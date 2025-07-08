@@ -1765,21 +1765,23 @@ async fn get_map_image(
             buffer.extend_from_slice(&chunk);
         }
     } else {
-        debug!(
-            "geo-screenshot failed. Exit code: {:?}. Stdout: {}. Stderr: {}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let exit_code = output.status.code();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        if exit_code == Some(127) {
+            return Err(AppError::BL {
+                msg: "geo-screenshot executable not found (exit code 127). Please install geo-screenshot and ensure it is in your PATH.".to_string(),
+            });
+        }
 
         return Err(AppError::BL {
             msg: format!(
-                "Cannot create temp file for a map screenshot. Exit code: {:?}",
-                output.status.code()
+                "geo-screenshot failed. Exit code: {:?}. Stdout: {}. Stderr: {}",
+                exit_code, stdout, stderr
             ),
         });
     }
-
     Ok(buffer)
 }
 
