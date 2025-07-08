@@ -406,10 +406,13 @@ update vps msg model =
 
         InboxSubmitDone _ (Err e) ->
             let
-                ( m, cmd ) =
+                ( m, eff ) =
                     Api.handleHttpError ToastMsg e model
+
+                eff2 =
+                    E.showError "Повідомлення не збереглося"
             in
-            ( m, cmd, vps.message )
+            ( m, E.batch [ eff, eff2 ], vps.message )
 
         InboxSubmitDone _ (Ok ()) ->
             ( { model | edited = Nothing }
@@ -819,6 +822,7 @@ rightColumn ( messageId, message ) ps model =
                                         , style "overflow-wrap" "break-word"
                                         , style "word-break" "break-word"
                                         , style "min-width" "0"
+
                                         -- , class "text-nowrap"
                                         ]
                                         [ i [ class "bi bi-geo text-icons", title "Локація" ] []

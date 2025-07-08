@@ -410,8 +410,7 @@ newTabBlock =
 
 body : Bool -> Shared.Model -> User -> Model -> List (Html Msg)
 body isDarkMode shared user model =
-    [ Le.Block.Toast.overlay ToastMsg model.toasts
-    , div [ class "bg-background flex rer-duty flex-1" ] <|
+    [ div [ class "bg-background flex rer-duty flex-1" ] <|
         [ div
             [ class
                 ("grid-container grow-1 "

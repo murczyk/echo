@@ -21,3 +21,4 @@ type Msg
     | PostsReturnedByApi (Result ApiError (List B.Post))
     | TriggerResize
     | ToastMsg Le.Block.Toast.Msg
+    | ShowToast String

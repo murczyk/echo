@@ -223,6 +223,11 @@ update req msg model =
             , E.sendCmd <| Cmd.map ToastMsg toastCmd
             )
 
+        ShowToast error ->
+            ( model
+            , E.sendCmd <| Le.Block.Toast.addError ToastMsg error
+            )
+
 
 subscriptions : Route () -> Model -> Sub Msg
 subscriptions _ _ =
