@@ -805,7 +805,7 @@ organismsTableConfig groups allOrganisms timeZone =
                                 [ text (if isReversed then " ↑" else " ↓") ]
 
                 headerContent =
-                    div [ class "table-header-content" ] 
+                    div [ class "table-header-content", title name ] 
                         [ span [] [ text name ]
                         , sortIcon
                         ]
@@ -847,10 +847,17 @@ organismsTableConfig groups allOrganisms timeZone =
                 , viewData = \o -> 
                     { attributes = [ class "col-wide" ]
                     , children = 
-                        [ text (o.groups
-                            |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
-                            |> List.map groupName
-                            |> String.join ", ")
+                        [ div [ class "flex flex-wrap gap-1" ]
+                            (o.groups
+                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                |> List.map (\group -> 
+                                    span 
+                                        [ class "badge badge--ochre-light"
+                                        , title (groupName group)
+                                        ] 
+                                        [ text (groupName group) ]
+                                )
+                            )
                         ]
                     }
                 , sorter = Table.increasingOrDecreasingBy
@@ -870,7 +877,8 @@ organismsTableConfig groups allOrganisms timeZone =
                 { name = "Автододавання груп"
                 , viewData = \o -> 
                     { attributes = [ class "col-narrow" ]
-                    , children = [ text (if o.groupAutoLink then "✓" else "✗") ]
+                    , children = 
+                        [ i [ class (if o.groupAutoLink then "bi bi-check-circle-fill text-green-500" else "bi bi-x-circle-fill text-red-500") ] [] ]
                     }
                 , sorter = Table.increasingOrDecreasingBy (\o -> if o.groupAutoLink then "1" else "0")
                 } |> Table.withColumnWidth "10%"
@@ -878,7 +886,8 @@ organismsTableConfig groups allOrganisms timeZone =
                 { name = "Активна"
                 , viewData = \o -> 
                     { attributes = [ class "col-narrow" ]
-                    , children = [ text (if o.enabled then "✓" else "✗") ]
+                    , children = 
+                        [ i [ class (if o.enabled then "bi bi-check-circle-fill text-green-500" else "bi bi-x-circle-fill text-red-500") ] [] ]
                     }
                 , sorter = Table.increasingOrDecreasingBy (\o -> if o.enabled then "1" else "0")
                 } |> Table.withColumnWidth "6%"
