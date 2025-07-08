@@ -77,7 +77,7 @@ pub struct NetworkEtalonkaResult {
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
     pub comment: String,
-    pub unit_name: String,
+    pub unit_name: Option<String>,
     pub active_from: NaiveDateTime,
     pub active_to: Option<NaiveDateTime>,
 }
