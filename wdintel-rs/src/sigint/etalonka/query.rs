@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use crate::sigint::etalonka::types::*;
 
 const SCREENSHOT_DELAY_MILLIS: u64 = 2500;
+const DEFAULT_EMPTY_UNIT_NAME: &str = "в дорозвідці";
 
 #[derive(Iden)]
 pub enum SignalMessage {
@@ -910,13 +911,13 @@ pub async fn load_callsigns(
             )),
         )
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             SigintNetworkUnit::Table,
             Expr::col((SigintNetworkUnit::Table, SigintNetworkUnit::NetworkId))
                 .equals((SigintNetwork::Table, SigintNetwork::Id)),
         )
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             SigintUnit::Table,
             Expr::col((SigintUnit::Table, SigintUnit::Id))
                 .equals((SigintNetworkUnit::Table, SigintNetworkUnit::UnitId)),
@@ -939,8 +940,12 @@ pub async fn load_callsigns(
             Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
         .and_where(
-            Expr::col((SigintUnit::Table, SigintUnit::Deleted)).eq(false),
+            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted))
+                .eq(false)
+                .or(Expr::col((SigintNetwork::Table, SigintNetwork::Id))
+                    .is_null()),
         );
+
     if let Some(unit) = filter.filter_unit.clone() {
         base_subquery_callsigns.and_where(
             Expr::col((SigintUnit::Table, SigintUnit::Name)).eq(unit),
@@ -1907,9 +1912,13 @@ pub async fn load_networks(
 
     let mut res: HashMap<String, Vec<NetworkEtalonkaResult>> = HashMap::new();
     for network in networks {
-        res.entry(network.unit_name.clone())
-            .or_insert_with(Vec::new)
-            .push(network);
+        let key = network
+            .unit_name
+            .as_deref()
+            .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
+            .to_string();
+
+        res.entry(key).or_insert_with(Vec::new).push(network);
     }
 
     Ok(res)
@@ -1921,12 +1930,12 @@ pub async fn load_networks_by_id(
 ) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
     let mut networks = sigint_network::Entity::find()
         .join_as(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
             Alias::new("sigint_network_unit"),
         )
         .join_as(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
@@ -1985,9 +1994,13 @@ pub async fn load_networks_by_id(
 
     let mut res: HashMap<String, Vec<NetworkEtalonkaResult>> = HashMap::new();
     for network in networks {
-        res.entry(network.unit_name.clone())
-            .or_insert_with(Vec::new)
-            .push(network);
+        let key = network
+            .unit_name
+            .as_deref()
+            .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
+            .to_string();
+
+        res.entry(key).or_insert_with(Vec::new).push(network);
     }
 
     Ok(res)

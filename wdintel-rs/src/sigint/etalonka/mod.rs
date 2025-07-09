@@ -18,6 +18,7 @@ use crate::sigint::etalonka::types::*;
 use std::str::FromStr;
 
 const OLD_CALLSIGNS_COLOR: &str = "696969";
+const DEFAULT_TABLE_HEADER_COLOR: &str = "f2f2f2";
 const DEFAULT_PURPOSE: &str =
     "для управління підлеглим особовим складом підрозділу.";
 const DEFAULT_OPERATION_MODE: &str = "дуплекс";
@@ -274,63 +275,63 @@ pub async fn report_freqs(
                     vec![TableRow::new(vec![
                         create_table_header_cell(
                             width_unit * 1,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Частота",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "К-ть перехоплень",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Тип передачі",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "р/c",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 3,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Назва р/м",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Підтвердження приналежності р/м",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Призначення, х-р роботи",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Локація",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Вперше відмічена",
                             false,
@@ -424,42 +425,42 @@ pub async fn report_freqs(
                     vec![TableRow::new(vec![
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Позивний",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Посада",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 5,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Коментар",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Останній раз в етері",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 1,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Частоти",
                             false,
                         ),
                         create_table_header_cell(
                             width_unit * 2,
-                            Some("f2f2f2"),
+                            Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
                             "Радіомережі",
                             false,
@@ -636,28 +637,28 @@ pub async fn report_freqs(
                 vec![TableRow::new(vec![
                     create_table_header_cell(
                         width_unit * 2,
-                        Some("f2f2f2"),
+                        Some(DEFAULT_TABLE_HEADER_COLOR),
                         &table_header_style_id,
                         "Частоти",
                         false,
                     ),
                     create_table_header_cell(
                         width_unit * 1,
-                        Some("f2f2f2"),
+                        Some(DEFAULT_TABLE_HEADER_COLOR),
                         &table_header_style_id,
                         "К-ть перехоплень",
                         false,
                     ),
                     create_table_header_cell(
                         width_unit * 7,
-                        Some("f2f2f2"),
+                        Some(DEFAULT_TABLE_HEADER_COLOR),
                         &table_header_style_id,
                         "Позивні",
                         false,
                     ),
                     create_table_header_cell(
                         width_unit * 4,
-                        Some("f2f2f2"),
+                        Some(DEFAULT_TABLE_HEADER_COLOR),
                         &table_header_style_id,
                         "Локація",
                         false,
@@ -932,7 +933,7 @@ pub async fn generate_networks_docx_report(
                 .add_run(Run::new().size(28).bold().add_text(unit_name)), // .align(JustificationType::Center),
         );
 
-        for (_index, network) in unit_networks.iter().enumerate() {
+        for (index, network) in unit_networks.iter().enumerate() {
             let filter = EtalonkaFilter {
                 since_date_inclusive_ms: Some(
                     network.active_from.and_utc().timestamp_millis(),
@@ -1223,12 +1224,15 @@ pub async fn generate_networks_docx_report(
                             .add_paragraph(Paragraph::new());
                     }
                 }
+            }
 
+            // Add empty paragraph after each network if this is not the last network
+            if index < unit_networks.len() - 1 {
                 doc = doc.add_paragraph(Paragraph::new());
             }
         }
 
-        // Add a page break after each network if this is NOT the last
+        // Add a page break after each unit if this is NOT the last
         if i < networks_data.len() - 1 {
             doc = doc.add_paragraph(Paragraph::new().page_break_before(true));
         }
@@ -1277,36 +1281,55 @@ fn build_callsigns_table(
         (
             vec![
                 create_table_header_cell(
-                    width_unit * 18,
+                    width_unit * 11,
                     None,
                     table_header_style_id,
                     "Позивний",
                     false,
                 ),
                 create_table_header_cell(
-                    width_unit * 30,
+                    width_unit * 27,
                     None,
                     table_header_style_id,
                     "Приналежність",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 10,
+                    None,
+                    table_header_style_id,
+                    "Останній раз в етері",
                     false,
                 ),
             ],
             Box::new(move |callsign: &CallsignRes| {
                 vec![
                     create_table_data_cell(
-                        width_unit * 18,
+                        width_unit * 11,
                         &callsign.callsign.to_uppercase(),
                         None,
                         false,
                     ),
                     create_table_data_cell(
-                        width_unit * 30,
+                        width_unit * 27,
                         get_unique_field_as_string(
                             &callsign.known_callsigns,
-                            |item| item.position.clone(),
+                            |item| {
+                                format!(
+                                    "{} {}",
+                                    item.position.clone(),
+                                    item.unit_name.clone()
+                                )
+                            },
                         )
                         .as_str(),
                         None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 10,
+                        format_datetime_field(callsign.last_datetime).as_str(),
+                        get_color(callsign.is_old),
                         false,
                     ),
                 ]
@@ -1317,56 +1340,56 @@ fn build_callsigns_table(
             vec![
                 create_table_header_cell(
                     width_unit * 6,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Позивний",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 10,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Приналежність",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 10,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Коментар",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 1,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "К-ть перехоплень",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 3,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Частоти",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Останній раз в етері",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Дата прив'язки",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 5,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Джерело",
                     false,
@@ -1532,42 +1555,42 @@ fn build_freqs_table(
             vec![
                 create_table_header_cell(
                     width_unit * 4,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Частота",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 3,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Модуляція",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 2,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "К-ть перехоплень",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 25,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Позивні",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Останній раз в етері",
                     false,
                 ),
                 create_table_header_cell(
                     width_unit * 7,
-                    Some("f2f2f2"),
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "Дата прив'язки",
                     false,
