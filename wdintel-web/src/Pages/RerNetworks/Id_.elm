@@ -849,7 +849,7 @@ update shared msg model =
             let
                 m2 = { model | reportDownloadInProgress = False }
                 extension = "docx"
-                fname = "etalonka_network_" ++ 
+                fname = "etalonka_network_" ++
                     (case model.network of
                         Success network -> String.fromInt network.id
                         _ -> "unknown"
@@ -1899,7 +1899,7 @@ view user shared model =
         [ div []
             [ Le.Block.Toast.view ToastMsg model.toasts <|
                 div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
-                    [ div [ class "w-[75vw] mx-auto py-[16px]" ]
+                    [ div [ class "w-[85vw] mx-auto py-[16px]" ]
                         (case model.network of
                             Success network ->
                                 contentBlock user shared network model
