@@ -20,4 +20,4 @@ docs/echo-docs/target
 deploy/kibana/env-*
 deploy/vector/env-*
 deploy/vector/kibana/sink-hammer.yaml
-
+.cursor/

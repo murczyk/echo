@@ -532,7 +532,7 @@ update msg model =
                 Just ( id, editOrganism ) ->
                     let
                         editOrganism2 =
-                            { editOrganism | autoAddGroups = not model.autoAddGroups }
+                            { editOrganism | autoAddGroups = not editOrganism.autoAddGroups }
                     in
                     ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
 
@@ -1130,51 +1130,35 @@ editOrganismSidebarContent isDark model organismId editState =
                         ]
                     ]
                 , div [ class "grid grid-cols-2 gap-4" ]
-                    [ div [ class "flex items-center space-x-2" ]
-                        [ input
-                            [ class "rounded border-border"
-                            , type_ "checkbox"
-                            , id "edit-auto-add-groups"
-                            , checked editState.autoAddGroups
-                            , onClick ToggleEditAutoAddGroups
-                            ]
-                            []
-                        , label [ class "text-sm font-medium text-foreground", for "edit-auto-add-groups" ]
-                            [ text "Автододавання груп" ]
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new { isChecked = editState.autoAddGroups, onToggle = \_ -> ToggleEditAutoAddGroups }
+                            |> Checkbox.withContent [ text "Автододавання груп" ]
+                            |> Checkbox.view
                         ]
-                    , div [ class "flex items-center space-x-2" ]
-                        [ input
-                            [ class "rounded border-border"
-                            , type_ "checkbox"
-                            , id "edit-enabled"
-                            , checked editState.enabled
-                            , onClick ToggleEditEnabled
-                            ]
-                            []
-                        , label [ class "text-sm font-medium text-foreground", for "edit-enabled" ]
-                            [ text "Активна" ]
+                    , div [ class "flex items-center" ]
+                        [ Checkbox.new { isChecked = editState.enabled, onToggle = \_ -> ToggleEditEnabled }
+                            |> Checkbox.withContent [ text "Активна" ]
+                            |> Checkbox.view
                         ]
                     ]
                 ]
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
-            [ div [ class "flex gap-3" ]
-                [ div [ class "flex-1" ]
-                    [ Button.new
-                        { label =
-                            case editState.groupsValidation of
-                                Just groups ->
-                                    "Зберегти (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
-
-                                Nothing ->
-                                    "Зберегти"
-                        , onClick = EditOrganismSave
-                        }
-                        |> Button.view
-                    ]
-                , Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
                     |> Button.withStyleSecondary
                     |> Button.withOutlined True
+                    |> Button.view
+                , Button.new
+                    { label =
+                        case editState.groupsValidation of
+                            Just groups ->
+                                "Зберегти (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+
+                            Nothing ->
+                                "Зберегти"
+                    , onClick = EditOrganismSave
+                    }
                     |> Button.view
                 ]
             ]
@@ -1211,13 +1195,6 @@ body dark shared user model =
     [ Views.noHeaderAndContent ToastMsg model.toasts <|
         div
             [ classList [ ( "overflow-hidden", sidebarOpen ) ]
-            , style "height"
-                (if sidebarOpen then
-                    "calc(100vh - 50px)"
-
-                 else
-                    "auto"
-                )
             ]
             [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
             , div [] (mainBlock dark model)
