@@ -376,28 +376,28 @@ loadUnitStats =
 
 filterCallsignDebounceConfig : Debounce.Config Msg
 filterCallsignDebounceConfig =
-    { strategy = Debounce.later 50
+    { strategy = Debounce.later 300
     , transform = FilterCallsignDebounceMsg
     }
 
 
 filterPositionDebounceConfig : Debounce.Config Msg
 filterPositionDebounceConfig =
-    { strategy = Debounce.later 50
+    { strategy = Debounce.later 300
     , transform = FilterPositionDebounceMsg
     }
 
 
 filterCommentDebounceConfig : Debounce.Config Msg
 filterCommentDebounceConfig =
-    { strategy = Debounce.later 50
+    { strategy = Debounce.later 300
     , transform = FilterCommentDebounceMsg
     }
 
 
 filterUnitDebounceConfig : Debounce.Config Msg
 filterUnitDebounceConfig =
-    { strategy = Debounce.later 50
+    { strategy = Debounce.later 300
     , transform = FilterUnitDebounceMsg
     }
 
@@ -1473,6 +1473,13 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
+                            , button
+                                [ title "Оновити підрозділи"
+                                , class "icon-btn icon-btn-secondary"
+                                , onClick ReloadUnits
+                                , Attr.disabled (not hasEditorRole)
+                                ]
+                                [ i [ class "bi bi-arrow-repeat" ] [] ]
                             ]
                     ]
                 , div [ class "col-span-2" ]
@@ -1529,22 +1536,57 @@ contentBlock shared model user =
                     ]
                 ]
 
+        -- Check if any filters are active
+        hasActiveFilters =
+            (model.filterCallsign /= "")
+                || (model.filterPosition /= "")
+                || (model.filterComment /= "")
+                || (model.filterUnit /= "")
+
+        -- Count active filters
+        activeFilterCount =
+            [ model.filterCallsign /= ""
+            , model.filterPosition /= ""
+            , model.filterComment /= ""
+            , model.filterUnit /= ""
+            ]
+                |> List.filter identity
+                |> List.length
+
         filterPanel =
-            div [ class "flex flex-col gap-3 p-2 relative" ]
-                [ div [ class "absolute top-2 right-2" ]
-                    [ div [ class "d-flex align-items-center", style "cursor" "pointer", onClick ClearFilters, attribute "title" "Очистити фільтри" ]
-                        [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
-                        , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
+            div [ class "flex flex-col gap-3" ]
+                [ -- Title and Clear button row
+                  div [ class "d-flex justify-content-between align-items-center" ]
+                    [ div [ class "flex items-center gap-2" ]
+                        [ if model.loading then
+                            Le.Block.Spinner.loadingSpinner2Sm
+
+                          else
+                            i [ class "bi bi-filter text-lg" ] []
+                        , h5 [ class "fw-bold mb-0 text-gray-900 dark:text-gray-100" ] [ text "Фільтри" ]
+                        , if activeFilterCount > 0 then
+                            span 
+                                [ class "ml-1 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200" ]
+                                [ text (String.fromInt activeFilterCount) ]
+                          else
+                            text ""
+                        ]
+                    , div 
+                        [ class "d-flex align-items-center cursor-pointer text-secondary hover:text-gray-700"
+                        , onClick ClearFilters
+                        , attribute "title" 
+                            (if hasActiveFilters then
+                                "Скинути всі фільтри (" ++ String.fromInt activeFilterCount ++ ")"
+                             else
+                                "Немає активних фільтрів"
+                            )
+                        ]
+                        [ span [ class "me-1" ] [ text "Очистити" ]
+                        , i [ class "bi bi-x", style "font-size" "1.2rem" ] []
                         ]
                     ]
                 , div [ class "flex items-center gap-3" ]
-                    [ div [ class "flex items-center justify-center w-8" ]
-                        [ if not model.loading then
-                            i [ class "bi bi-filter text-lg" ] []
-                          else
-                            Le.Block.Spinner.loadingSpinner2Sm
-                        ]
-                    , div [ class "flex-grow" ]
+                    [ div [ class "flex-grow" ]
                         [ div [ class "flex flex-wrap gap-2 mb-2" ]
                             [ input
                                 [ class "form-input uppercase min-w-[180px]"
@@ -1579,7 +1621,7 @@ contentBlock shared model user =
                                 ]
                                 []
                             , button
-                                [ class "btn btn-sm btn-outline-secondary"
+                                [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
                                 , onClick ToggleSidebar
                                 , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
                                 ]

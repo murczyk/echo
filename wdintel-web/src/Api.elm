@@ -953,6 +953,23 @@ sigint_list_freqs toMsg req =
         }
 
 
+sigint_list_freqs_with_tracker :
+    (Result ApiError ListFreqsRsp -> msg)
+    -> String
+    -> ListFreqsReq
+    -> Cmd msg
+sigint_list_freqs_with_tracker toMsg tracker req =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/sigint/freqs"
+        , body = Http.jsonBody (listFreqsReqEncoder req)
+        , expect = leExpectJson toMsg listFreqsRspDecoder
+        , timeout = Nothing
+        , tracker = Just tracker
+        }
+
+
 sigint_list_sources :
     (Result ApiError ListSourcesRsp -> msg)
     -> ()
@@ -1239,6 +1256,23 @@ get_networks_list toMsg req =
         { url = "/api/sigint/network-list"
         , body = Http.jsonBody (listNetworksReqEncoder req)
         , expect = leExpectJson toMsg (Decode.list networkDecoder)
+        }
+
+
+get_networks_list_with_tracker :
+    (Result ApiError (List Network) -> msg)
+    -> String
+    -> ListNetworksReq
+    -> Cmd msg
+get_networks_list_with_tracker toMsg tracker req =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/sigint/network-list"
+        , body = Http.jsonBody (listNetworksReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list networkDecoder)
+        , timeout = Nothing
+        , tracker = Just tracker
         }
 
 

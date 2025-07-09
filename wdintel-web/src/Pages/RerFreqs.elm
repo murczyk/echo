@@ -13,6 +13,7 @@ import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
+import Http
 import Layouts
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.DateTime
@@ -64,6 +65,8 @@ init _ =
             , zone = Nothing
             , now = Nothing
             , loading = False
+            , currentRequestTracker = Nothing
+            , requestCounter = 0
             , newOnly = False
             , includeNonActive = False
             , freqs = []
@@ -204,7 +207,7 @@ loadUnits =
 
 filterStateDebounceConfig : Debounce.Config Msg
 filterStateDebounceConfig =
-    { strategy = Debounce.later 50
+    { strategy = Debounce.later 300
     , transform = FilterStateDebounceMsg
     }
 
@@ -224,6 +227,39 @@ loadFreqs model paginating =
     case ( model.from.datePosix, model.to.datePosix ) of
         ( Just dtFromPosix, Just dtToPosix ) ->
             Api.sigint_list_freqs (GotFreqs paginating)
+                { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
+                , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
+                , newOnly = model.newOnly
+                , includeNonActive = model.includeNonActive
+                , filterFreq = emptySToNothing model.filterState.freq
+                , sortBy = Just [ model.sortingOrder ]
+                , filterUnit = emptySToNothing model.filterState.unit
+                , filterCallsigns = emptyToNothing model.filterState.callsigns
+                , afterFreqNonincl =
+                    if paginating then
+                        model.freqs |> ListX.last |> Maybe.map .freq
+
+                    else
+                        Nothing
+                , filterGroupMasterKeys = Nothing
+                , filterSenderProfileIds = Nothing
+                , filterFurtherInvestigation =
+                    if model.showOnlyInvestigating then
+                        Just True
+
+                    else
+                        Nothing
+                }
+
+        _ ->
+            Cmd.none
+
+
+loadFreqsWithTracker : Model -> Bool -> String -> Cmd Msg
+loadFreqsWithTracker model paginating tracker =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            Api.sigint_list_freqs_with_tracker (GotFreqs paginating) tracker
                 { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
                 , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
                 , newOnly = model.newOnly
@@ -503,6 +539,7 @@ update shared msg model =
                     else
                         rsp.freqs
                 , loading = False
+                , currentRequestTracker = Nothing
                 , noMoreToLoad = not rsp.showLoadMore
               }
             , E.batch
@@ -1073,19 +1110,34 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
+                tracker = "freqs-" ++ String.fromInt (model.requestCounter + 1)
+                
+                cancelPrevious = 
+                    case model.currentRequestTracker of
+                        Just prevTracker -> Http.cancel prevTracker
+                        Nothing -> Cmd.none
+                        
                 ( debounce, debounceCmd ) =
                     Debounce.update
                         filterStateDebounceConfig
-                        (Debounce.takeLast (\_ -> loadFreqs model False))
+                        (Debounce.takeLast (\_ -> loadFreqsWithTracker model False tracker))
                         imsg
                         model.filterStateDebounce
+                        
+                model2 = 
+                    { model 
+                    | filterStateDebounce = debounce
+                    , loading = True
+                    , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
+                    , currentRequestTracker = Just tracker
+                    , requestCounter = model.requestCounter + 1
+                    }
             in
-            ( { model
-                | filterStateDebounce = debounce
-                , loading = True
-                , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
-              }
-            , E.sendCmd debounceCmd
+            ( model2
+            , E.batch 
+                [ E.sendCmd cancelPrevious
+                , E.sendCmd debounceCmd
+                ]
             )
 
         UnitStatsReturnedByApi (Err err) ->
@@ -1817,14 +1869,38 @@ update shared msg model =
 
         FilterUnitMsg unitName ->
             let
+                -- Toggle behavior: if clicking the same unit, clear it; otherwise set new unit
+                newUnitFilter =
+                    if model.filterState.unit == unitName then
+                        ""  -- Clear filter if same unit clicked
+                    else
+                        unitName  -- Set new unit if different
+
                 newFilterState =
                     { freq = model.filterState.freq
-                    , unit = unitName
+                    , unit = newUnitFilter
                     , callsigns = model.filterState.callsigns
                     }
 
                 m2 =
                     { model | filterState = newFilterState, showOnlyInvestigating = False, loading = True }
+            in
+            ( m2, E.sendCmd <| loadFreqs m2 False )
+
+        ClearAllFilters ->
+            let
+                clearedFilterState =
+                    { freq = ""
+                    , unit = ""
+                    , callsigns = []
+                    }
+
+                m2 =
+                    { model 
+                        | filterState = clearedFilterState
+                        , showOnlyInvestigating = False
+                        , loading = True
+                    }
             in
             ( m2, E.sendCmd <| loadFreqs m2 False )
 
@@ -1926,16 +2002,16 @@ unitsBlock shared model =
                 [ class
                     ("px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-border "
                         ++ (if model.showOnlyInvestigating then
-                                "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500"
+                                "bg-blue-100 dark:bg-blue-900/30"
 
                             else
                                 ""
                            )
                     )
-                , onClick <| ToggleShowOnlyInvestigating True
+                , onClick <| ToggleShowOnlyInvestigating (not model.showOnlyInvestigating)
                 ]
                 [ div [ class "flex items-center gap-2" ]
-                    [ span [ class "text-sm font-medium" ] [ text "В дорозвідці" ]
+                    [ span [ class "text-sm font-medium" ] [ text "В ДОРОЗВІДЦІ" ]
                     ]
                 ]
     in

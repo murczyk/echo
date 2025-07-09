@@ -260,7 +260,15 @@ update msg model =
             Api.handleHttpError ToastMsg err model
 
         AddUnitDone (Ok _) ->
-            ( model
+            ( { model
+                | inpCompany = ""
+                , inpBattalion = ""
+                , inpRegiment = ""
+                , inpDivision = ""
+                , inpArmy = ""
+                , inpComment = ""
+                , inpActive = True
+              }
             , loadUnits
             )
 

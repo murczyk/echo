@@ -27,6 +27,8 @@ type alias Model =
     , zone : Maybe Time.Zone
     , now : Maybe Time.Posix
     , loading : Bool
+    , currentRequestTracker : Maybe String
+    , requestCounter : Int
     , newOnly : Bool
     , includeNonActive : Bool
     , freqs : List B.Freq

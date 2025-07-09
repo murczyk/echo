@@ -97,3 +97,4 @@ type Msg
     | ToggleRegimentExpanded String String String
     | ToggleBattalionExpanded String String String String
     | FilterUnitMsg String
+    | ClearAllFilters
