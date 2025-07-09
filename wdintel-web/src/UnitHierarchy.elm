@@ -899,30 +899,30 @@ renderUnit config unitStats unit =
 
 armyIndicator : Html msg
 armyIndicator =
-    Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Армія" ]
+    Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Армія" ]
         [ Html.text "XXXX" ]
 
 
 divisionIndicator : Html msg
 divisionIndicator =
-    Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Дивізія" ]
+    Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Дивізія" ]
         [ Html.text "XX" ]
 
 
 regimentIndicator : Html msg
 regimentIndicator =
-    Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Полк" ]
+    Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Полк" ]
         [ Html.text "III" ]
 
 
 battalionIndicator : Html msg
 battalionIndicator =
-    Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Батальйон" ]
+    Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Батальйон" ]
         [ Html.text "II" ]
 
 
 companyIndicator : Html msg
 companyIndicator =
-    Html.span [ class "inline-block font-mono font-bold text-xs px-2 py-0.5 rounded mr-2 bg-red-100 text-red-800 border border-red-200", Attr.title "Рота" ]
+    Html.span [ class "badge badge--neutral font-mono font-bold mr-2", Attr.title "Рота" ]
         [ Html.text "II" ]
 

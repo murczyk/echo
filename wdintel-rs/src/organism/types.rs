@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct Organism {
     pub id: i64,
+    pub parent_id: Option<i64>,
     pub name: String,
     pub created_at: i64,
     pub group_auto_link: bool,
@@ -36,6 +37,7 @@ pub struct ListOrganismsReq {
 )]
 pub struct CreateOrganismReq {
     pub name: String,
+    pub parent_id: Option<i64>,
     pub roles: Vec<String>,
     pub group_auto_link: Option<bool>,
 }
@@ -45,6 +47,7 @@ pub struct CreateOrganismReq {
 )]
 pub struct UpdateOrganismReq {
     pub id: i64,
+    pub parent_id: Option<i64>,
     pub name: Option<String>,
     pub roles: Option<Vec<String>>,
     pub group_auto_link: Option<bool>,
