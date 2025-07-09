@@ -19,6 +19,7 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Keyed
 import Html.Styled as Styled
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
@@ -66,6 +67,8 @@ type alias Model =
     , masterUnits : Dict Int B.Unit
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
     , networks : RemoteData ApiError (List B.Network)
+    , currentRequestTracker : Maybe String
+    , requestCounter : Int
     , networksMergeStatus : NetworksMergeStatus
     , networksMergeInProgress : Bool
     , callsignsByNetwork : RemoteData ApiError E.CallsignsByNetwork
@@ -129,6 +132,8 @@ init _ =
             , to = Le.Block.DateTime.init ()
             , masterUnits = Dict.empty
             , networks = NotAsked
+            , currentRequestTracker = Nothing
+            , requestCounter = 0
             , networksMergeStatus = NotCalculatedSuggestionsYet
             , networksMergeInProgress = False
             , networksGroupsActivity = NotAsked
@@ -177,7 +182,7 @@ init _ =
 
 filterStateDebounceConfig : Debounce.Config Msg
 filterStateDebounceConfig =
-    { strategy = Debounce.later 50
+    { strategy = Debounce.later 300
     , transform = FilterStateDebounceMsg
     }
 
@@ -196,6 +201,7 @@ loadNetworks model shared =
                 , filterFurtherInvestigation =
                     if model.showOnlyInvestigating then
                         Just True
+
                     else
                         Nothing
                 }
@@ -203,6 +209,29 @@ loadNetworks model shared =
 
         _ ->
             ( model, E.none )
+
+
+loadNetworksWithTracker : Model -> Shared.Model -> String -> Cmd Msg
+loadNetworksWithTracker model shared tracker =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            Api.get_networks_list_with_tracker NetworksReturnedByApi
+                tracker
+                { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
+                , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                , filterFreq = emptySToNothing model.filterState.freq
+                , filterUnit = emptySToNothing model.filterState.unit
+                , sortBy = Nothing
+                , filterFurtherInvestigation =
+                    if model.showOnlyInvestigating then
+                        Just True
+
+                    else
+                        Nothing
+                }
+
+        _ ->
+            Cmd.none
 
 
 loadNetworksFixLater model shared =
@@ -217,6 +246,7 @@ loadNetworksFixLater model shared =
                 , filterFurtherInvestigation =
                     if model.showOnlyInvestigating then
                         Just True
+
                     else
                         Nothing
                 }
@@ -267,6 +297,7 @@ type Msg
     | ToggleBattalionExpanded String String String String
     | FilterUnitMsg String
     | ToggleSidebar
+    | ClearAllFilters
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -414,12 +445,13 @@ update shared msg model =
             loadNetworks m2 shared
 
         NetworksReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | networks = Failure err }
+            Api.handleHttpError ToastMsg err { model | networks = Failure err, currentRequestTracker = Nothing }
 
         NetworksReturnedByApi (Ok networks) ->
             ( { model
                 | networks =
                     Success networks
+                , currentRequestTracker = Nothing
                 , networksMergeStatus = CalculatedSuggestions (findSuggestedToMergeNetworks networks)
               }
             , case ( model.from.datePosix, model.to.datePosix ) of
@@ -562,17 +594,37 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
+                tracker =
+                    "networks-" ++ String.fromInt (model.requestCounter + 1)
+
+                cancelPrevious =
+                    case model.currentRequestTracker of
+                        Just prevTracker ->
+                            Http.cancel prevTracker
+
+                        Nothing ->
+                            Cmd.none
+
                 ( debounce, debounceCmd ) =
                     Debounce.update
                         filterStateDebounceConfig
-                        (Debounce.takeLast (\_ -> loadNetworksFixLater model shared))
+                        (Debounce.takeLast (\_ -> loadNetworksWithTracker model shared tracker))
                         imsg
                         model.filterStateDebounce
+
+                model2 =
+                    { model
+                        | filterStateDebounce = debounce
+                        , networks = Loading
+                        , currentRequestTracker = Just tracker
+                        , requestCounter = model.requestCounter + 1
+                    }
             in
-            ( { model
-                | filterStateDebounce = debounce
-              }
-            , E.sendCmd debounceCmd
+            ( model2
+            , E.batch
+                [ E.sendCmd cancelPrevious
+                , E.sendCmd debounceCmd
+                ]
             )
 
         DateTimeFromMsg imsg ->
@@ -714,8 +766,12 @@ update shared msg model =
                     , unit = ""
                     , callsigns = model.filterState.callsigns
                     }
-                m2 = { model | showOnlyInvestigating = val, filterState = newFilterState }
-                (m3, eff) = loadNetworks m2 shared
+
+                m2 =
+                    { model | showOnlyInvestigating = val, filterState = newFilterState }
+
+                ( m3, eff ) =
+                    loadNetworks m2 shared
             in
             ( m3, eff )
 
@@ -809,60 +865,112 @@ update shared msg model =
             )
 
         ToggleArmyExpanded army ->
-            ( { model | expandedArmies =
-                if Set.member army model.expandedArmies then
-                    Set.remove army model.expandedArmies
-                else
-                    Set.insert army model.expandedArmies
-              }, E.none )
+            ( { model
+                | expandedArmies =
+                    if Set.member army model.expandedArmies then
+                        Set.remove army model.expandedArmies
+
+                    else
+                        Set.insert army model.expandedArmies
+              }
+            , E.none
+            )
 
         ToggleDivisionExpanded army division ->
             let
-                key = army ++ ":" ++ division
+                key =
+                    army ++ ":" ++ division
             in
-            ( { model | expandedDivisions =
-                if Set.member key model.expandedDivisions then
-                    Set.remove key model.expandedDivisions
-                else
-                    Set.insert key model.expandedDivisions
-              }, E.none )
+            ( { model
+                | expandedDivisions =
+                    if Set.member key model.expandedDivisions then
+                        Set.remove key model.expandedDivisions
+
+                    else
+                        Set.insert key model.expandedDivisions
+              }
+            , E.none
+            )
 
         ToggleRegimentExpanded army division regiment ->
             let
-                key = army ++ ":" ++ division ++ ":" ++ regiment
+                key =
+                    army ++ ":" ++ division ++ ":" ++ regiment
             in
-            ( { model | expandedRegiments =
-                if Set.member key model.expandedRegiments then
-                    Set.remove key model.expandedRegiments
-                else
-                    Set.insert key model.expandedRegiments
-              }, E.none )
+            ( { model
+                | expandedRegiments =
+                    if Set.member key model.expandedRegiments then
+                        Set.remove key model.expandedRegiments
+
+                    else
+                        Set.insert key model.expandedRegiments
+              }
+            , E.none
+            )
 
         ToggleBattalionExpanded army division regiment battalion ->
             let
-                key = army ++ ":" ++ division ++ ":" ++ regiment ++ ":" ++ battalion
+                key =
+                    army ++ ":" ++ division ++ ":" ++ regiment ++ ":" ++ battalion
             in
-            ( { model | expandedBattalions =
-                if Set.member key model.expandedBattalions then
-                    Set.remove key model.expandedBattalions
-                else
-                    Set.insert key model.expandedBattalions
-              }, E.none )
+            ( { model
+                | expandedBattalions =
+                    if Set.member key model.expandedBattalions then
+                        Set.remove key model.expandedBattalions
+
+                    else
+                        Set.insert key model.expandedBattalions
+              }
+            , E.none
+            )
 
         FilterUnitMsg unitName ->
             let
+                -- Toggle behavior: if clicking the same unit, clear it; otherwise set new unit
+                newUnitFilter =
+                    if model.filterState.unit == unitName then
+                        ""
+                        -- Clear filter if same unit clicked
+
+                    else
+                        unitName
+
+                -- Set new unit if different
                 newFilterState =
                     { freq = model.filterState.freq
-                    , unit = unitName
+                    , unit = newUnitFilter
                     , callsigns = model.filterState.callsigns
                     }
-                m2 = { model | filterState = newFilterState, showOnlyInvestigating = False }
-                (m3, eff) = loadNetworks m2 shared
+
+                m2 =
+                    { model | filterState = newFilterState, showOnlyInvestigating = False }
+
+                ( m3, eff ) =
+                    loadNetworks m2 shared
             in
             ( m3, eff )
 
         ToggleSidebar ->
             ( { model | showSidebar = not model.showSidebar }, E.none )
+
+        ClearAllFilters ->
+            let
+                clearedFilterState =
+                    { freq = ""
+                    , unit = ""
+                    , callsigns = []
+                    }
+
+                m2 =
+                    { model
+                        | filterState = clearedFilterState
+                        , showOnlyInvestigating = False
+                    }
+
+                ( m3, eff ) =
+                    loadNetworks m2 shared
+            in
+            ( m3, eff )
 
 
 findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
@@ -1091,39 +1199,94 @@ filterPanel shared model =
     let
         filterState =
             model.filterState
+
+        -- Check if any filters are active
+        hasActiveFilters =
+            (filterState.freq /= "")
+                || (filterState.unit /= "")
+                || not (List.isEmpty filterState.callsigns)
+                || model.showOnlyInvestigating
+
+        -- Count active filters
+        activeFilterCount =
+            [ filterState.freq /= ""
+            , filterState.unit /= ""
+            , not (List.isEmpty filterState.callsigns)
+            , model.showOnlyInvestigating
+            ]
+                |> List.filter identity
+                |> List.length
     in
-    div
-        [ class "flex justify-start items-center"
-        ]
-        [ div [ class "me-2" ]
-            [ i [ class "bi bi-filter" ] []
+    div [ class "flex flex-col gap-3" ]
+        [ -- Title row with filter count and clear button
+          div [ class "flex justify-content-between align-items-center" ]
+            [ div [ class "flex items-center" ]
+                [ span [ class "text-lg font-medium text-gray-900 dark:text-gray-100" ] [ text "Фільтри" ]
+                , if activeFilterCount > 0 then
+                    span
+                        [ class "ml-1 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200" ]
+                        [ text (String.fromInt activeFilterCount) ]
+
+                  else
+                    text ""
+                ]
+            , div
+                [ class "d-flex align-items-center"
+                , style "cursor" "pointer"
+                , onClick ClearAllFilters
+                , attribute "title"
+                    (if hasActiveFilters then
+                        "Скинути всі фільтри (" ++ String.fromInt activeFilterCount ++ ")"
+
+                     else
+                        "Немає активних фільтрів"
+                    )
+                ]
+                [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
+                , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
+                ]
             ]
-        , input
-            [ class "form-control me-2"
-            , style "width" "200px"
-            , type_ "text"
-            , placeholder "частота"
-            , value model.filterState.freq
-            , onInput <| \v -> FilterStateMsg { filterState | freq = v }
-            ]
-            []
-        , input
-            [ class "form-control me-2"
-            , style "width" "200px"
-            , type_ "text"
-            , placeholder "підрозділ"
-            , value model.filterState.unit
-            , onInput <| \v -> FilterStateMsg { filterState | unit = v }
-            ]
-            []
+        , -- Filter inputs row
+          div [ class "flex gap-2 justify-start items-center" ]
+            [ div [ class "me-2" ]
+                [ if model.networks == Loading then
+                    Le.Block.Spinner.loadingSpinner2Sm
+
+                  else
+                    i [ class "bi bi-filter" ] []
+                ]
+            , input
+                [ class "form-input"
+                , style "width" "200px"
+                , type_ "text"
+                , placeholder "частота"
+                , value model.filterState.freq
+                , onInput <| \v -> FilterStateMsg { filterState | freq = v }
+                ]
+                []
+            , input
+                [ class "form-input"
+                , style "width" "200px"
+                , type_ "text"
+                , placeholder "підрозділ"
+                , value model.filterState.unit
+                , onInput <| \v -> FilterStateMsg { filterState | unit = v }
+                ]
+                []
             , button
-                [ class "btn btn-sm btn-outline-secondary"
+                [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
                 , onClick ToggleSidebar
-                , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
+                , attribute "title"
+                    (if model.showSidebar then
+                        "Сховати підрозділи"
+
+                     else
+                        "Показати підрозділи"
+                    )
                 ]
                 [ text "Підрозділи" ]
-        , span [ class "grow-1" ] []
-        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+            , span [ class "grow-1" ] []
+            ]
         , let
             dialogContent =
                 [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
@@ -1201,33 +1364,29 @@ contentBlock shared model =
 dateAndPanelsBlock : Bool -> Model -> Html Msg
 dateAndPanelsBlock _ model =
     div
-        [ class "d-inline-block ms-2"
+        [ class "flex justify-start items-center ms-2"
         ]
-        [ div [ class "d-flex justify-content-start align-items-center" ] <|
-            div
-                [ class "me-2"
-                , style "font-size" "1rem"
-                ]
-                [ text "з" ]
-                :: (Le.Block.DateTime.new
-                        { model = model.from
-                        , toMsg = DateTimeFromMsg
-                        }
-                        |> Le.Block.DateTime.view
-                   )
-                ++ [ div
-                        [ class "me-2"
-                        , style "font-size" "1rem"
-                        ]
-                        [ text "по" ]
-                   ]
-                ++ (Le.Block.DateTime.new
-                        { model = model.to
-                        , toMsg = DateTimeToMsg
-                        }
-                        |> Le.Block.DateTime.view
-                   )
-        ]
+        (List.concat
+            [ [ div
+                    [ class "me-2", style "font-size" "1rem" ]
+                    [ text "з" ]
+              ]
+            , Le.Block.DateTime.new
+                { model = model.from
+                , toMsg = DateTimeFromMsg
+                }
+                |> Le.Block.DateTime.view
+            , [ div
+                    [ class "me-2", style "font-size" "1rem" ]
+                    [ text "по" ]
+              ]
+            , Le.Block.DateTime.new
+                { model = model.to
+                , toMsg = DateTimeToMsg
+                }
+                |> Le.Block.DateTime.view
+            ]
+        )
 
 
 leftPanel : Shared.Model -> Model -> Html Msg
@@ -1260,7 +1419,12 @@ unitsBlock shared model =
             , isDivisionExpanded = \armyName divisionName -> Set.member (armyName ++ ":" ++ divisionName) model.expandedDivisions
             , isRegimentExpanded = \armyName divisionName regimentName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName) model.expandedRegiments
             , isBattalionExpanded = \armyName divisionName regimentName battalionName -> Set.member (armyName ++ ":" ++ divisionName ++ ":" ++ regimentName ++ ":" ++ battalionName) model.expandedBattalions
-            , selectedUnit = if model.showOnlyInvestigating then "" else model.filterState.unit
+            , selectedUnit =
+                if model.showOnlyInvestigating then
+                    ""
+
+                else
+                    model.filterState.unit
             , autoExpandArmies = False
             , autoExpandDivisions = True
             , autoExpandRegiments = True
@@ -1273,29 +1437,30 @@ unitsBlock shared model =
                     ("px-3 py-2 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-border "
                         ++ (if model.showOnlyInvestigating then
                                 "bg-blue-100 dark:bg-blue-900/30 border-l-2 border-blue-500"
+
                             else
                                 ""
                            )
                     )
-                , onClick <| ToggleShowOnlyInvestigating True
+                , onClick <| ToggleShowOnlyInvestigating (not model.showOnlyInvestigating)
                 ]
                 [ div [ class "flex items-center gap-2" ]
-                    [ span [ class "text-sm font-medium" ] [ text "В дорозвідці" ]
+                    [ span [ class "text-sm font-medium" ] [ text "В ДОРОЗВІДЦІ" ]
                     ]
                 ]
     in
     if model.loadingUnitStats then
         Le.Block.Spinner.loadingSpinner
+
     else
         div [ class "flex flex-col h-full" ]
-            [
-                div [ class "p-4 border-b border-border" ]
-                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
-                                [ Html.text "Підрозділи" ]
-                            , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
-                                [ Html.text "Оберіть підрозділ для фільтрації" ]
-                            ]
-             ,investigatingFilter
+            [ div [ class "p-4 border-b border-border" ]
+                [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
+                    [ Html.text "Підрозділи" ]
+                , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
+                    [ Html.text "Оберіть підрозділ для фільтрації" ]
+                ]
+            , investigatingFilter
             , div [ class "overflow-y-auto grow-1" ]
                 [ UnitHierarchy.view config model.units (RD.withDefault [] model.unitStats) ]
             ]
@@ -1306,47 +1471,50 @@ view dark shared user model =
     { title = "мережі"
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)"]
-                    [
-                        if model.showSidebar then
-                            leftPanel shared model
-                        else
-                            text ""
-                        ,div [ class "grow  px-[32px] py-[16px] overflow-auto"  ]
-                        [ h1 [ class "mb-[16px]!" ]
-                            [ text "мережі" ]
-                        , div [ class "d-flex justify-content-between align-items-center mb-[16px]!" ]
-                            [ div [ class "d-flex align-items-center me-auto" ]
-                                [ dateAndPanelsBlock dark model ]
+            div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)" ]
+                [ if model.showSidebar then
+                    leftPanel shared model
+
+                  else
+                    text ""
+                , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
+                    [ div [ class "flex justify-between mb-[16px] w-full" ]
+                        [ div [ class "flex gap-[16px]" ]
+                            [ h1 []
+                                [ text "мережі" ]
+                            , dateAndPanelsBlock dark model
                             ]
-                        , case model.networksMergeStatus of
-                            CalculatedSuggestions (x :: xs) ->
-                                div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                    [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                                    , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                        |> Button.withOutlined True
-                                        |> Button.view
-                                    ]
+                        , div []
+                            [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                            ]
+                        ]
+                    , case model.networksMergeStatus of
+                        CalculatedSuggestions (x :: xs) ->
+                            div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                                [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                                , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                    |> Button.withOutlined True
+                                    |> Button.view
+                                ]
+
+                        _ ->
+                            text ""
+                    , contentBlock shared model
+                    ]
+                , let
+                    isOpen =
+                        case model.networksMergeStatus of
+                            Merging _ _ _ ->
+                                True
 
                             _ ->
-                                text ""
-                        , contentBlock shared model
-                        ]
-                    , let
-                        isOpen =
-                            case model.networksMergeStatus of
-                                Merging _ _ _ ->
-                                    True
-
-                                _ ->
-                                    False
-                      in
-                      Sidebar.view
-                        isOpen
-                        NetworksMergeFinish
-                        (networksMergeSidebarContent model)
-                    ]
-
+                                False
+                  in
+                  Sidebar.view
+                    isOpen
+                    NetworksMergeFinish
+                    (networksMergeSidebarContent model)
+                ]
         ]
     }
 

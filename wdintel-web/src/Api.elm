@@ -1259,6 +1259,23 @@ get_networks_list toMsg req =
         }
 
 
+get_networks_list_with_tracker :
+    (Result ApiError (List Network) -> msg)
+    -> String
+    -> ListNetworksReq
+    -> Cmd msg
+get_networks_list_with_tracker toMsg tracker req =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/sigint/network-list"
+        , body = Http.jsonBody (listNetworksReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list networkDecoder)
+        , timeout = Nothing
+        , tracker = Just tracker
+        }
+
+
 get_posts toMsg req =
     Http.post
         { url = "/api/sigint/posts"

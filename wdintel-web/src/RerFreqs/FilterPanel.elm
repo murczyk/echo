@@ -31,7 +31,7 @@ view shared model =
         hasActiveFilters =
             (filterState.freq /= "")
                 || (filterState.unit /= "")
-                || (not (List.isEmpty filterState.callsigns))
+                || not (List.isEmpty filterState.callsigns)
                 || model.showOnlyInvestigating
 
         -- Count active filters
@@ -82,18 +82,20 @@ view shared model =
                     i [ class "bi bi-filter text-lg" ] []
                 , h5 [ class "fw-bold mb-0 text-gray-900 dark:text-gray-100" ] [ text "Фільтри" ]
                 , if activeFilterCount > 0 then
-                    span 
+                    span
                         [ class "ml-1 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200" ]
                         [ text (String.fromInt activeFilterCount) ]
+
                   else
                     text ""
                 ]
-            , div 
+            , div
                 [ class "d-flex align-items-center cursor-pointer text-secondary hover:text-gray-700"
                 , onClick ClearAllFilters
-                , attribute "title" 
+                , attribute "title"
                     (if hasActiveFilters then
                         "Скинути всі фільтри (" ++ String.fromInt activeFilterCount ++ ")"
+
                      else
                         "Немає активних фільтрів"
                     )
@@ -105,10 +107,7 @@ view shared model =
         , div [ class "flex flex-col gap-2" ]
             [ div [ class "flex justify-start items-center gap-2" ]
                 [ input
-                    [ classList 
-                        [ ("form-input w-48", True)
-                        , ("border-blue-500", filterState.freq /= "")
-                        ]
+                    [ class "form-input w-48"
                     , type_ "text"
                     , placeholder "частота"
                     , value model.filterState.freq
@@ -116,10 +115,7 @@ view shared model =
                     ]
                     []
                 , input
-                    [ classList 
-                        [ ("form-input w-48", True)
-                        , ("border-blue-500", filterState.unit /= "")
-                        ]
+                    [ class "form-input w-48"
                     , type_ "text"
                     , placeholder "підрозділ"
                     , value model.filterState.unit
