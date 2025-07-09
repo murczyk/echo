@@ -69,7 +69,7 @@ noHeaderAndContent :
     -> Html msg
 noHeaderAndContent toastMsg toasts content =
     Le.Block.Toast.view toastMsg toasts <|
-        div [ class "w-4/5 mx-auto pt-4" ]
+        div [ class "w-5/6 mx-auto pt-4" ]
             [ content
             ]
 

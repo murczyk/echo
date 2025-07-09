@@ -3,6 +3,12 @@ module Pages.Admin.Organisms exposing (FieldError, FormField, Model, Msg, Organi
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
+import Components.Checkbox as Checkbox
+import Components.Sidebar as Sidebar
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -64,6 +70,7 @@ type alias Model =
     , toasts : Le.Block.Toast.Model
     , timeZone : Maybe Time.Zone
     , organisms : List B.Organism
+    , tableState : Table.State
     , inpName : String
     , autoAddGroups : Bool
     , inpRole :
@@ -76,9 +83,15 @@ type alias Model =
         , items : List (Select.MenuItem String)
         , selectedItems : List String
         }
+    , inpParentOrganism :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItems : List String
+        }
     , fieldsErrors : List FieldError
     , groups : List B.SignalGroupFull
     , editOrganism : Maybe ( Int, OrganismEdit )
+    , groupsValidation : Maybe (List String)
     }
 
 
@@ -96,7 +109,13 @@ type alias OrganismEdit =
         , items : List (Select.MenuItem String)
         , selectedItems : List String
         }
+    , inpParentOrganism :
+        { selectState : Select.State
+        , items : List (Select.MenuItem String)
+        , selectedItems : List String
+        }
     , fieldsErrors : List FieldError
+    , groupsValidation : Maybe (List String)
     }
 
 
@@ -131,10 +150,17 @@ init _ =
             , items = roles |> List.map (\x -> Select.basicMenuItem { item = x, label = x })
             , selectedItems = []
             }
+      , inpParentOrganism =
+            { selectState = Select.initState (Select.selectIdentifier "sel-parent-add")
+            , items = []
+            , selectedItems = []
+            }
       , fieldsErrors = []
       , timeZone = Nothing
       , groups = []
       , editOrganism = Nothing
+      , groupsValidation = Nothing
+      , tableState = Table.initialSort "Назва"
       }
     , E.sendCmd <|
         Cmd.batch
@@ -147,17 +173,21 @@ init _ =
 
 type Msg
     = ToastMsg Le.Block.Toast.Msg
+    | SetTableState Table.State
     | GotOrganisms (Result ApiError (List B.Organism))
     | AddRoleSelMsg (Select.Msg String)
     | EditRoleSelMsg (Select.Msg String)
     | AddGroupSelMsg (Select.Msg String)
     | EditGroupSelMsg (Select.Msg String)
+    | AddParentSelMsg (Select.Msg String)
+    | EditParentSelMsg (Select.Msg String)
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
     | ToggleAutoAddGroups
     | ToggleEditAutoAddGroups
     | ToggleEditEnabled
     | EditOrganism Int
+    | CloseEditSidebar
     | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetName String
     | SetEditName String
@@ -181,11 +211,24 @@ update msg model =
             , E.sendCmd <| Cmd.map ToastMsg icmds
             )
 
+        SetTableState newTableState ->
+            ( { model | tableState = newTableState }, E.none )
+
         GotOrganisms (Err e) ->
             Api.handleHttpError ToastMsg e model
 
         GotOrganisms (Ok res) ->
-            ( { model | organisms = res }, E.none )
+            let
+                organismsMenuItems =
+                    res |> List.map (\x -> Select.basicMenuItem { item = String.fromInt x.id, label = x.name })
+
+                inpParentOrganism =
+                    model.inpParentOrganism
+
+                inpParentOrganism2 =
+                    { inpParentOrganism | items = organismsMenuItems }
+            in
+            ( { model | organisms = res, inpParentOrganism = inpParentOrganism2 }, E.none )
 
         AddRoleSelMsg selMsg ->
             let
@@ -239,8 +282,40 @@ update msg model =
 
                 inpGroups2 =
                     { inpGroups | selectedItems = Le.Block.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
+
+                selectedParentId =
+                    model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                -- Only validate on meaningful selection actions, not on hover/menu events
+                groupsValidation =
+                    case mAction of
+                        Just (Select.Select _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
+
+                        Just (Select.Deselect _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
+
+                        Just Select.Clear ->
+                            Nothing
+
+                        _ ->
+                            model.groupsValidation -- Keep existing validation state
             in
-            ( { model | inpGroups = inpGroups2 }
+            ( { model | inpGroups = inpGroups2, groupsValidation = groupsValidation }
             , E.batch
                 [ E.sendCmd <| Cmd.map AddGroupSelMsg iCmd
                 ]
@@ -259,12 +334,150 @@ update msg model =
                         inpGroups2 =
                             { inpGroups | selectedItems = Le.Block.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
 
+                        selectedParentId =
+                            editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                        -- Only validate on meaningful selection actions, not on hover/menu events
+                        groupsValidation =
+                            case mAction of
+                                Just (Select.Select _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
+
+                                Just (Select.Deselect _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
+
+                                Just Select.Clear ->
+                                    Nothing
+
+                                _ ->
+                                    editOrganism.groupsValidation -- Keep existing validation state
+
                         editOrganism2 =
-                            { editOrganism | inpGroups = inpGroups2 }
+                            { editOrganism | inpGroups = inpGroups2, groupsValidation = groupsValidation }
                     in
                     ( { model | editOrganism = Just ( id, editOrganism2 ) }
                     , E.batch
                         [ E.sendCmd <| Cmd.map EditGroupSelMsg iCmd
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        AddParentSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.inpParentOrganism.selectState
+
+                inpParentOrganism =
+                    model.inpParentOrganism
+
+                inpParentOrganism2 =
+                    { inpParentOrganism | selectedItems = Le.Block.Select.multiUpdS mAction inpParentOrganism.selectedItems, selectState = iState }
+
+                selectedParentId =
+                    inpParentOrganism2.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                -- Only validate on meaningful selection actions, not on hover/menu events
+                groupsValidation =
+                    case mAction of
+                        Just (Select.Select _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
+
+                        Just (Select.Deselect _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
+
+                        Just Select.Clear ->
+                            Nothing
+
+                        _ ->
+                            model.groupsValidation -- Keep existing validation state
+            in
+            ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+            , E.batch
+                [ E.sendCmd <| Cmd.map AddParentSelMsg iCmd
+                ]
+            )
+
+        EditParentSelMsg selMsg ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        ( mAction, iState, iCmd ) =
+                            Select.update selMsg editOrganism.inpParentOrganism.selectState
+
+                        inpParentOrganism =
+                            editOrganism.inpParentOrganism
+
+                        inpParentOrganism2 =
+                            { inpParentOrganism | selectedItems = Le.Block.Select.multiUpdS mAction inpParentOrganism.selectedItems, selectState = iState }
+
+                        selectedParentId =
+                            inpParentOrganism2.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                        -- Only validate on meaningful selection actions, not on hover/menu events
+                        groupsValidation =
+                            case mAction of
+                                Just (Select.Select _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
+
+                                Just (Select.Deselect _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
+
+                                Just Select.Clear ->
+                                    Nothing
+
+                                _ ->
+                                    editOrganism.groupsValidation -- Keep existing validation state
+
+                        editOrganism2 =
+                            { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
+                    , E.batch
+                        [ E.sendCmd <| Cmd.map EditParentSelMsg iCmd
                         ]
                     )
 
@@ -278,6 +491,7 @@ update msg model =
                     , E.sendCmd <|
                         Api.create_organism AddOrganismDone
                             { name = model.inpName
+                            , parentId = model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
                             , groupAutoLink = Just model.autoAddGroups
                             , roles = model.inpRole.selectedItems
                             }
@@ -294,16 +508,56 @@ update msg model =
                 inpRole =
                     updateSelectedItems model.inpRole []
 
+                inpParentOrganism =
+                    updateSelectedItems model.inpParentOrganism []
+
                 m2 =
                     { model
                         | inpName = ""
                         , inpRole = inpRole
+                        , inpParentOrganism = inpParentOrganism
                         , autoAddGroups = False
                         , organisms = organism :: model.organisms
                         , fieldsErrors = []
+                        , groupsValidation = Nothing
                     }
             in
-            ( m2, E.sendCmd <| Cmd.batch (List.map (\x -> Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }) model.inpGroups.selectedItems) )
+            let
+                selectedParentId =
+                    model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                -- Filter groups based on parent constraints
+                groupsToAdd =
+                    case selectedParentId of
+                        Nothing ->
+                            model.inpGroups.selectedItems
+
+                        Just pId ->
+                            let
+                                parentOrganism =
+                                    model.organisms |> ListX.find (\o -> o.id == pId)
+
+                                parentGroupsSet =
+                                    parentOrganism
+                                        |> Maybe.map .groups
+                                        |> Maybe.withDefault []
+                                        |> Set.fromList
+
+                                selectedGroupsSet =
+                                    Set.fromList model.inpGroups.selectedItems
+                            in
+                            Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+            in
+            ( m2
+            , E.sendCmd <|
+                Cmd.batch
+                    (List.map
+                        (\x ->
+                            Api.add_group_to_organism (AddGroupToOrganismDone organism.id x False) { organismId = organism.id, groupName = x }
+                        )
+                        groupsToAdd
+                    )
+            )
 
         AddOrganismDone (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -350,7 +604,7 @@ update msg model =
                 Just ( id, editOrganism ) ->
                     let
                         editOrganism2 =
-                            { editOrganism | autoAddGroups = not model.autoAddGroups }
+                            { editOrganism | autoAddGroups = not editOrganism.autoAddGroups }
                     in
                     ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
 
@@ -390,7 +644,13 @@ update msg model =
                                         , items = model.groups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
                                         , selectedItems = o.groups
                                         }
+                                  , inpParentOrganism =
+                                        { selectState = Select.initState (Select.selectIdentifier "sel-parent-edit")
+                                        , items = model.organisms |> List.filter (\x -> x.id /= o.id) |> List.map (\x -> Select.basicMenuItem { item = String.fromInt x.id, label = x.name })
+                                        , selectedItems = o.parentId |> Maybe.map (String.fromInt >> List.singleton) |> Maybe.withDefault []
+                                        }
                                   , fieldsErrors = []
+                                  , groupsValidation = Nothing
                                   }
                                 )
                             )
@@ -457,8 +717,33 @@ update msg model =
                                         |> Maybe.withDefault []
                                         |> Set.fromList
 
+                                selectedParentId =
+                                    editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
+
+                                -- Groups that should be available considering parent constraints
+                                availableGroups =
+                                    case selectedParentId of
+                                        Nothing ->
+                                            editOrganism.inpGroups.selectedItems
+
+                                        Just pId ->
+                                            let
+                                                parentOrganism =
+                                                    model.organisms |> ListX.find (\o -> o.id == pId)
+
+                                                parentGroupsSet =
+                                                    parentOrganism
+                                                        |> Maybe.map .groups
+                                                        |> Maybe.withDefault []
+                                                        |> Set.fromList
+
+                                                selectedGroupsSet =
+                                                    Set.fromList editOrganism.inpGroups.selectedItems
+                                            in
+                                            Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+
                                 editedSet =
-                                    Set.fromList editOrganism.inpGroups.selectedItems
+                                    Set.fromList availableGroups
 
                                 added =
                                     Set.toList (Set.diff editedSet originalSet)
@@ -471,6 +756,7 @@ update msg model =
                                 Cmd.batch
                                     (Api.update_organism EditOrganismDone
                                         { name = Just editOrganism.inpName
+                                        , parentId = editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
                                         , roles = Le.Utils.emptyToNothing editOrganism.inpRole.selectedItems
                                         , groupAutoLink = Just editOrganism.autoAddGroups
                                         , id = id
@@ -504,8 +790,11 @@ update msg model =
         EditOrganismCancel ->
             ( { model | editOrganism = Nothing }, E.none )
 
+        CloseEditSidebar ->
+            ( { model | editOrganism = Nothing }, E.none )
+
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
+            ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
 
         EditOrganismDone (Err e) ->
             Api.handleHttpError ToastMsg e model
@@ -516,6 +805,50 @@ validator =
     Validate.all
         [ Validate.ifBlank .inpName ( Name, "Ім'я не може бути пустим" )
         ]
+
+
+validateGroupsForParent : List B.Organism -> List B.SignalGroupFull -> List String -> Maybe Int -> List String
+validateGroupsForParent allOrganisms allGroups selectedGroups parentId =
+    case parentId of
+        Nothing ->
+            []
+
+        Just pId ->
+            let
+                parentOrganism =
+                    allOrganisms
+                        |> ListX.find (\o -> o.id == pId)
+
+                parentGroups =
+                    parentOrganism
+                        |> Maybe.map .groups
+                        |> Maybe.withDefault []
+                        |> Set.fromList
+
+                selectedGroupsSet =
+                    Set.fromList selectedGroups
+
+                unavailableGroupIds =
+                    Set.diff selectedGroupsSet parentGroups
+
+                unavailableGroupNames =
+                    unavailableGroupIds
+                        |> Set.toList
+                        |> List.filterMap
+                            (\groupId ->
+                                allGroups
+                                    |> ListX.find (\g -> g.masterKey == groupId)
+                                    |> Maybe.map
+                                        (\g ->
+                                            if String.isEmpty g.name then
+                                                "Без назви (id=" ++ String.left 6 g.masterKey ++ "...)"
+
+                                            else
+                                                g.name
+                                        )
+                            )
+            in
+            unavailableGroupNames
 
 
 viewFormErrors : FormField -> List FieldError -> Html msg
@@ -531,6 +864,380 @@ subscriptions model =
     Sub.none
 
 
+
+-- TABLE CONFIGURATION
+
+
+organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> Table.Config B.Organism Msg
+organismsTableConfig groups allOrganisms timeZone editingOrganismId =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customRowAttrs : B.Organism -> List (Html.Attribute Msg)
+        customRowAttrs organism =
+            case editingOrganismId of
+                Just editId ->
+                    if organism.id == editId then
+                        [ class "table-row-editing" ]
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+                , rowAttrs = customRowAttrs
+            }
+    in
+    Table.customConfig
+        { toId = \o -> String.fromInt o.id
+        , toMsg = SetTableState
+        , columns =
+            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "14%"
+            , Table.customColumn
+                { name = "Батьківський"
+                , viewData =
+                    \o ->
+                        o.parentId
+                            |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                            |> Maybe.map .name
+                            |> Maybe.withDefault ""
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            o.parentId
+                                |> Maybe.andThen (\parentId -> ListX.find (\x -> x.id == parentId) allOrganisms)
+                                |> Maybe.map .name
+                                |> Maybe.withDefault ""
+                        )
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Групи"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-wide" ]
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (o.groups
+                                    |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                    |> List.sortBy (\group -> String.toLower (groupName group))
+                                    |> List.map
+                                        (\group ->
+                                            span
+                                                [ class "badge badge--ochre-light"
+                                                , title (groupName group)
+                                                ]
+                                                [ text (groupName group) ]
+                                        )
+                                )
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            o.groups
+                                |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
+                                |> List.map groupName
+                                |> String.join ", "
+                        )
+                }
+                |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Ролі"
+                , viewData =
+                    \o ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (o.roles
+                                    |> List.map
+                                        (\role ->
+                                            span
+                                                [ class "badge badge--neutral"
+                                                , title role
+                                                ]
+                                                [ text role ]
+                                        )
+                                )
+                            ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Автододавання груп"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ i
+                                [ class
+                                    (if o.groupAutoLink then
+                                        "bi bi-check-circle-fill text-green-500"
+
+                                     else
+                                        "bi bi-x-circle-fill text-red-500"
+                                    )
+                                ]
+                                []
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            if o.groupAutoLink then
+                                "1"
+
+                            else
+                                "0"
+                        )
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Активна"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ i
+                                [ class
+                                    (if o.enabled then
+                                        "bi bi-check-circle-fill text-green-500"
+
+                                     else
+                                        "bi bi-x-circle-fill text-red-500"
+                                    )
+                                ]
+                                []
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            if o.enabled then
+                                "1"
+
+                            else
+                                "0"
+                        )
+                }
+                |> Table.withColumnWidth "6%"
+            , Table.veryCustomColumn
+                { name = "Створено"
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children = [ text (Le.Time.renderDateF5FromMillis o.createdAt timeZone) ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = ""
+                , viewData =
+                    \o ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ button
+                                [ class "table-action-btn"
+                                , type_ "button"
+                                , onClick <| EditOrganism o.id
+                                ]
+                                [ i [ class "bi bi-pencil-square" ] []
+                                ]
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "5%"
+            ]
+        , customizations = customizations
+        }
+
+
+editOrganismSidebarContent : Bool -> Model -> Int -> OrganismEdit -> List (Html Msg)
+editOrganismSidebarContent isDark model organismId editState =
+    let
+        organism =
+            model.organisms |> ListX.find (\o -> o.id == organismId)
+
+        groupsSelectedItems =
+            editState.inpGroups.selectedItems
+                |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) model.groups)
+                |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
+    in
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати організм" ]
+            , case organism of
+                Just o ->
+                    p [ class "text-sm text-muted-foreground" ] [ text ("ID: " ++ String.fromInt o.id) ]
+
+                Nothing ->
+                    text ""
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Назва організму"
+                        , value editState.inpName
+                        , onInput SetEditName
+                        ]
+                        []
+                    , viewFormErrors Name editState.fieldsErrors
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Батьківський організм" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditParentSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (editState.inpParentOrganism.selectedItems
+                                        |> List.map
+                                            (\idStr ->
+                                                idStr
+                                                    |> String.toInt
+                                                    |> Maybe.andThen (\id -> ListX.find (\o -> o.id == id) model.organisms)
+                                                    |> Maybe.map (\o -> Select.basicMenuItem { item = idStr, label = o.name })
+                                                    |> Maybe.withDefault (Select.basicMenuItem { item = idStr, label = idStr })
+                                            )
+                                    )
+                                    editState.inpParentOrganism.selectState
+                                    editState.inpParentOrganism.items
+                                    "батьківський організм"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditGroupSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    groupsSelectedItems
+                                    editState.inpGroups.selectState
+                                    editState.inpGroups.items
+                                    "групи"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    , case editState.groupsValidation of
+                        Just groups ->
+                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                    , strong [] [ text (String.join ", " groups) ]
+                                    ]
+                                ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditRoleSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                    editState.inpRole.selectState
+                                    editState.inpRole.items
+                                    "роль"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "grid grid-cols-2 gap-4" ]
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new { isChecked = editState.autoAddGroups, onToggle = \_ -> ToggleEditAutoAddGroups }
+                            |> Checkbox.withContent [ text "Автододавання груп" ]
+                            |> Checkbox.view
+                        ]
+                    , div [ class "flex items-center" ]
+                        [ Checkbox.new { isChecked = editState.enabled, onToggle = \_ -> ToggleEditEnabled }
+                            |> Checkbox.withContent [ text "Активна" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.withOutlined True
+                    |> Button.view
+                , Button.new
+                    { label =
+                        case editState.groupsValidation of
+                            Just groups ->
+                                "Зберегти (втратити " ++ String.fromInt (List.length groups) ++ " груп)"
+
+                            Nothing ->
+                                "Зберегти"
+                    , onClick = EditOrganismSave
+                    }
+                    |> Button.view
+                ]
+            ]
+        ]
+    ]
+
+
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Адмін: організми"
@@ -540,9 +1247,30 @@ view dark shared user model =
 
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
-    [ -- , Views.navBarAdmin dark "users"
-      Views.noHeaderAndContent ToastMsg model.toasts <|
-        div [ class "mt-2" ] (mainBlock dark model)
+    let
+        sidebarOpen =
+            case model.editOrganism of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
+        sidebarContent =
+            case model.editOrganism of
+                Just ( organismId, editState ) ->
+                    editOrganismSidebarContent shared.isDarkMode model organismId editState
+
+                Nothing ->
+                    []
+    in
+    [ Views.noHeaderAndContent ToastMsg model.toasts <|
+        div
+            [ classList [ ( "overflow-hidden", sidebarOpen ) ]
+            ]
+            [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
+            , div [] (mainBlock dark model)
+            ]
     ]
 
 
@@ -558,12 +1286,11 @@ mainBlock isDark model =
                         |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
             in
             div
-                [ class "d-flex justify-content-start align-items-start"
-                , style "gap" "1%"
+                [ class "flex items-center gap-4"
                 ]
-                [ div [ style "flex" "1" ]
+                [ div [ class "flex-1" ]
                     [ input
-                        [ class "form-control"
+                        [ class "form-input w-full"
                         , type_ "text"
                         , placeholder "Назва"
                         , value m.inpName
@@ -572,12 +1299,36 @@ mainBlock isDark model =
                         []
                     , viewFormErrors Name m.fieldsErrors
                     ]
-                , div [ style "flex" "1" ]
+                , div [ class "flex-1" ]
                     [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
+                        [ class "flex justify-between items-center text-sm"
                         ]
-                        [ div [ class "flex-grow-1" ]
+                        [ div [ class "flex-grow w-full" ]
+                            [ Html.map AddParentSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelect
+                                        (m.inpParentOrganism.selectedItems
+                                            |> List.map
+                                                (\idStr ->
+                                                    idStr
+                                                        |> String.toInt
+                                                        |> Maybe.andThen (\id -> ListX.find (\o -> o.id == id) model.organisms)
+                                                        |> Maybe.map (\o -> Select.basicMenuItem { item = idStr, label = o.name })
+                                                        |> Maybe.withDefault (Select.basicMenuItem { item = idStr, label = idStr })
+                                                )
+                                        )
+                                        m.inpParentOrganism.selectState
+                                        m.inpParentOrganism.items
+                                        "батьківський організм"
+                                        (Le.Block.Select.defaultOptions isDark)
+                            ]
+                        ]
+                    ]
+                , div [ class "flex-1 relative" ]
+                    [ div
+                        [ class "flex justify-between items-center text-sm"
+                        ]
+                        [ div [ class "flex-grow w-full" ]
                             [ Html.map AddGroupSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
@@ -589,13 +1340,21 @@ mainBlock isDark model =
                             ]
                         ]
                     , viewFormErrors Roles m.fieldsErrors
+                    , case m.groupsValidation of
+                        Just groups ->
+                            div [ class "absolute bottom-full -left-1/2 -right-1/2 z-40 mt-16 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800 text-xs shadow-lg" ]
+                                [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                , strong [] [ text (String.join ", " groups) ]
+                                ]
+
+                        Nothing ->
+                            text ""
                     ]
-                , div [ style "flex" "1" ]
+                , div [ class "flex-1" ]
                     [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
+                        [ class "flex justify-between items-center text-sm"
                         ]
-                        [ div [ class "flex-grow-1" ]
+                        [ div [ class "flex-grow w-full" ]
                             [ Html.map AddRoleSelMsg <|
                                 Styled.toUnstyled <|
                                     Le.Block.Select.renderSelect
@@ -607,222 +1366,30 @@ mainBlock isDark model =
                             ]
                         ]
                     ]
-                , div [ class "form-check", style "flex" "1", style "align-self" "center" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , checked m.autoAddGroups
-                        , onClick ToggleAutoAddGroups
-                        , id "auto-add-groups"
-                        ]
-                        []
-                    , label [ class "form-check-label", for "auto-add-groups" ] [ text "Автоматично додавати групи" ]
+                , div [ class "flex items-center justify-center flex-1" ]
+                    [ Checkbox.new { isChecked = m.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
+                        |> Checkbox.withContent [ text "Автододавання груп" ]
+                        |> Checkbox.view
                     ]
-                , div
-                    [ class "text-center"
-                    ]
-                    [ button
-                        [ class "btn btn-primary"
-                        , type_ "button"
-                        , onClick AddOrganism
-                        ]
-                        [ text "Додати" ]
-                    ]
-                ]
-
-        renderEditableTr editState o =
-            let
-                groupsSelectedItems =
-                    editState.inpGroups.selectedItems
-                        |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) model.groups)
-                        |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
-            in
-            tr []
-                [ td [ style "flex" "1" ]
-                    [ input
-                        [ class "form-control"
-                        , type_ "text"
-                        , placeholder "Назва"
-                        , value editState.inpName
-                        , onInput <| SetEditName
-                        ]
-                        []
-                    , viewFormErrors Name editState.fieldsErrors
-                    ]
-                , td [ style "flex" "1" ]
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditGroupSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        groupsSelectedItems
-                                        editState.inpGroups.selectState
-                                        editState.inpGroups.items
-                                        "групи"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , td [ style "flex" "1" ]
-                    [ div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ div [ class "flex-grow-1" ]
-                            [ Html.map EditRoleSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                        editState.inpRole.selectState
-                                        editState.inpRole.items
-                                        "роль"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , checked editState.autoAddGroups
-                        , onClick ToggleEditAutoAddGroups
-                        ]
-                        []
-                    ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ input
-                        [ class "form-check-input"
-                        , type_ "checkbox"
-                        , checked editState.enabled
-                        , onClick ToggleEditEnabled
-                        ]
-                        []
-                    ]
-                , td [] [ text <| Le.Time.renderDateF5FromMillis o.createdAt model.timeZone ]
-                , td []
-                    [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ button
-                            [ class "btn btn-sm btn-outline-primary"
-                            , type_ "button"
-                            , onClick <| EditOrganismSave
-                            ]
-                            [ i [ class "bi bi-check2" ] []
-                            ]
-                        , button
-                            [ class "btn btn-sm btn-outline-danger ms-2"
-                            , type_ "button"
-                            , onClick <| EditOrganismCancel
-                            ]
-                            [ i [ class "bi bi-x" ] []
-                            ]
-                        ]
-                    ]
-                ]
-
-        renderReadonlyTr timeZone o =
-            tr []
-                [ td [] [ text o.name ]
-                , td []
-                    (o.groups
-                        |> List.filterMap (\o2 -> ListX.find (\x -> x.masterKey == o2) model.groups)
-                        |> List.map
-                            (\group ->
-                                span []
-                                    [ text <| groupName group
-                                    ]
-                            )
-                        |> List.intersperse (text ", ")
-                    )
-                , td [] (List.intersperse (text ", ") (List.map (\role -> span [] [ text <| role ]) o.roles))
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ i [ class "bi", classList [ ( "bi-check-lg", o.groupAutoLink ), ( "bi-x-lg", not o.groupAutoLink ) ] ] []
-                    ]
-                , td [ style "text-align" "center", style "vertical-align" "middle" ]
-                    [ i [ class "bi", classList [ ( "bi-check-lg", o.enabled ), ( "bi-x-lg", not o.enabled ) ] ] [] ]
-                , td [] [ text <| Le.Time.renderDateF5FromMillis o.createdAt timeZone ]
-                , td []
-                    [ button
-                        [ class "btn btn-outline-primary btn-sm me-2 py-0 px-1"
-                        , type_ "button"
-                        , onClick <| EditOrganism o.id
-                        ]
-                        [ i [ class "bi bi-pencil-square" ] []
-                        ]
+                , div [ class "flex justify-center" ]
+                    [ Button.new { label = "Додати", onClick = AddOrganism }
+                        |> Button.view
                     ]
                 ]
     in
     [ div []
-        [ h1 [ class "py-4" ] [ text "Організми" ]
+        [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Організми" ]
         , div
-            [ class "border mb-4 p-2"
-            , style "background-color" "var(--bs-tertiary-bg)"
+            [ class "border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)]"
             ]
             [ addOrganismPanel
                 model
             ]
-        , table
-            [ class "table table-bordered table-sm"
-            , style "font-size" ".85rem"
-            , style "text-align" "center"
-            ]
-            [ thead [ style "position" "sticky", style "top" "0" ]
-                [ tr []
-                    [ th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Назва" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        , style "min-width" "200px"
-                        ]
-                        [ text "Групи" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Ролі" ]
-                    , th
-                        [ scope "col"
-                        , style "max-width" "120px"
-                        ]
-                        [ text "Додавати групи автоматично" ]
-                    , th
-                        [ scope "col"
-                        , style "max-width" "120px"
-                        ]
-                        [ text "Активна" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "Створено" ]
-                    , th
-                        [ scope "col"
-                        , class "nowrap"
-                        ]
-                        [ text "" ]
-                    ]
-                ]
-            , tbody [] <|
-                List.map
-                    (\o ->
-                        case model.editOrganism of
-                            Just ( id, editOrganism ) ->
-                                if o.id == id then
-                                    renderEditableTr editOrganism o
-
-                                else
-                                    renderReadonlyTr model.timeZone o
-
-                            Nothing ->
-                                renderReadonlyTr model.timeZone o
-                    )
-                    model.organisms
+        , div [ class "table-responsive-modern" ]
+            [ Table.view
+                (organismsTableConfig model.groups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism))
+                model.tableState
+                model.organisms
             ]
         ]
     ]

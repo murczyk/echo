@@ -98,6 +98,7 @@ mod m20250611_044845_idx_sigint_network_callsign_callsign_id;
 mod m20250611_045218_idx_sigint_callsign_callsign_deleted;
 mod m20250612_065458_sigint_network_callsign_id_to_text;
 mod m20250617_111140_update_login_table;
+mod m20250628_175425_add_organism_hierarchy;
 mod m20250702_115302_add_noautologout_role;
 
 pub struct Migrator;
@@ -205,6 +206,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250617_111140_update_login_table::Migration),
             Box::new(m20250702_115302_add_noautologout_role::Migration),
             Box::new(m20250421_130108_add_secret_chats::Migration),
+            Box::new(m20250628_175425_add_organism_hierarchy::Migration),
         ]
     }
 }
