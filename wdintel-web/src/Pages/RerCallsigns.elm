@@ -1473,6 +1473,13 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
+                            , button
+                                [ title "Оновити підрозділи"
+                                , class "icon-btn icon-btn-secondary"
+                                , onClick ReloadUnits
+                                , Attr.disabled (not hasEditorRole)
+                                ]
+                                [ i [ class "bi bi-arrow-repeat" ] [] ]
                             ]
                     ]
                 , div [ class "col-span-2" ]
