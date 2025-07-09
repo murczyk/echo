@@ -325,3 +325,8 @@ server {
 ```
 
 4. restart nginx
+
+
+### Other init steps
+1. deploy docs using `just server=${new-server-name} deploy-docs`
+2. init database with an initial backup: `just server=${new-server-name} init-new-db`

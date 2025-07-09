@@ -593,7 +593,7 @@ docs-deb: docs
 
 builder-build-docs:
     #!/bin/bash
-    if [[ "{{ builder }}" == "tgt-art" ]]; then
+    if [[ "{{ builder }}" == "echo-gpu" ]]; then
       ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs && zola build)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs/echo-docs && PATH=$HOME/.local/bin:$PATH /home/ubuntu/.cargo/bin/cargo deb)'
@@ -801,3 +801,15 @@ deploy-rustdocs:
     rsync -aqz "$OUT_ZIP" "{{ server }}:~/echo-docs/"
     ssh {{ server }} -- "cd echo-docs && unzip -q ./${ZIP_FILENAME} && sudo cp -r ./${NGINX_CONF} /etc/nginx/sites-enabled/ && sudo cp -R ./wdintel-rs/target/doc /usr/share/echo-docs"
     ssh {{ server }} -- 'sudo chown -R root:root /usr/share/echo-docs && sudo systemctl restart nginx'
+
+init-new-db:
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    scp ./deploy/wd-2024-06-21-13-00-59.pgrestore {{ server }}:~/Downloads
+    ssh -t {{ target }} "sudo mv ~/Downloads/wd-2024-06-21-13-00-59.pgrestore /tmp/wd_init.pgrestore"
+    ssh -t {{ target }} "sudo -u postgres psql -c 'drop database wd with (FORCE)'"
+    ssh -t {{ target }} "sudo -u postgres psql -c 'create database wd'"
+    ssh -t {{ target }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
