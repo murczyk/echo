@@ -286,16 +286,34 @@ update msg model =
                 selectedParentId =
                     model.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
 
+                -- Only validate on meaningful selection actions, not on hover/menu events
                 groupsValidation =
-                    let
-                        groups =
-                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
-                    in
-                    if List.isEmpty groups then
-                        Nothing
+                    case mAction of
+                        Just (Select.Select _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
 
-                    else
-                        Just groups
+                        Just (Select.Deselect _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
+
+                        Just Select.Clear ->
+                            Nothing
+
+                        _ ->
+                            model.groupsValidation -- Keep existing validation state
             in
             ( { model | inpGroups = inpGroups2, groupsValidation = groupsValidation }
             , E.batch
@@ -319,16 +337,34 @@ update msg model =
                         selectedParentId =
                             editOrganism.inpParentOrganism.selectedItems |> List.head |> Maybe.andThen String.toInt
 
+                        -- Only validate on meaningful selection actions, not on hover/menu events
                         groupsValidation =
-                            let
-                                groups =
-                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
-                            in
-                            if List.isEmpty groups then
-                                Nothing
+                            case mAction of
+                                Just (Select.Select _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
 
-                            else
-                                Just groups
+                                Just (Select.Deselect _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
+
+                                Just Select.Clear ->
+                                    Nothing
+
+                                _ ->
+                                    editOrganism.groupsValidation -- Keep existing validation state
 
                         editOrganism2 =
                             { editOrganism | inpGroups = inpGroups2, groupsValidation = groupsValidation }
@@ -356,16 +392,34 @@ update msg model =
                 selectedParentId =
                     inpParentOrganism2.selectedItems |> List.head |> Maybe.andThen String.toInt
 
+                -- Only validate on meaningful selection actions, not on hover/menu events
                 groupsValidation =
-                    let
-                        groups =
-                            validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
-                    in
-                    if List.isEmpty groups then
-                        Nothing
+                    case mAction of
+                        Just (Select.Select _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
 
-                    else
-                        Just groups
+                        Just (Select.Deselect _) ->
+                            let
+                                groups =
+                                    validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                            in
+                            if List.isEmpty groups then
+                                Nothing
+                            else
+                                Just groups
+
+                        Just Select.Clear ->
+                            Nothing
+
+                        _ ->
+                            model.groupsValidation -- Keep existing validation state
             in
             ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
             , E.batch
@@ -389,16 +443,34 @@ update msg model =
                         selectedParentId =
                             inpParentOrganism2.selectedItems |> List.head |> Maybe.andThen String.toInt
 
+                        -- Only validate on meaningful selection actions, not on hover/menu events
                         groupsValidation =
-                            let
-                                groups =
-                                    validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
-                            in
-                            if List.isEmpty groups then
-                                Nothing
+                            case mAction of
+                                Just (Select.Select _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
 
-                            else
-                                Just groups
+                                Just (Select.Deselect _) ->
+                                    let
+                                        groups =
+                                            validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                    in
+                                    if List.isEmpty groups then
+                                        Nothing
+                                    else
+                                        Just groups
+
+                                Just Select.Clear ->
+                                    Nothing
+
+                                _ ->
+                                    editOrganism.groupsValidation -- Keep existing validation state
 
                         editOrganism2 =
                             { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
@@ -1252,7 +1324,7 @@ mainBlock isDark model =
                             ]
                         ]
                     ]
-                , div [ class "flex-1" ]
+                , div [ class "flex-1 relative" ]
                     [ div
                         [ class "flex justify-between items-center text-sm"
                         ]
@@ -1270,7 +1342,7 @@ mainBlock isDark model =
                     , viewFormErrors Roles m.fieldsErrors
                     , case m.groupsValidation of
                         Just groups ->
-                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800 text-xs" ]
+                            div [ class "absolute bottom-full -left-1/2 -right-1/2 z-40 mt-16 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800 text-xs shadow-lg" ]
                                 [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
                                 , strong [] [ text (String.join ", " groups) ]
                                 ]
