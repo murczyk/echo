@@ -666,6 +666,7 @@ pub async fn load_callsigns(
             let division: Option<String> =
                 row.try_get("", "division").ok().flatten();
             let army: Option<String> = row.try_get("", "army").ok().flatten();
+
             // Collect all matching known_callsigns based on the same Regiment
             let matched_known_callsigns = known_callsigns
                 .iter()
@@ -709,34 +710,38 @@ pub async fn load_callsigns(
                     })
                     .collect();
 
-            let freqs_list = row
-                .try_get::<String>("", "freqs")
-                .ok()
-                .unwrap_or_default()
-                .split(", ")
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
+            // let freqs_list = row
+            //     .try_get::<String>("", "freqs")
+            //     .ok()
+            //     .unwrap_or_default()
+            //     .split(", ")
+            //     .map(|s| s.to_string())
+            //     .collect::<Vec<String>>();
 
-            let network_names_list = row
-                .try_get::<String>("", "network_names")
-                .ok()
-                .unwrap_or_default()
-                .split(", ")
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
+            // let network_names_list = row
+            //     .try_get::<String>("", "network_names")
+            //     .ok()
+            //     .unwrap_or_default()
+            //     .split(", ")
+            //     .map(|s| s.to_string())
+            //     .collect::<Vec<String>>();
 
             CallsignRes {
                 callsign: callsign.clone(),
                 known_callsigns: (!short_known_callsigns.is_empty())
                     .then(|| short_known_callsigns),
-                message_count: row.try_get("", "message_count").unwrap_or(0),
-                last_datetime: row
-                    .try_get::<NaiveDateTime>("", "last_datetime")
-                    .ok()
-                    .map(|ndt| ndt.and_utc().timestamp_millis()),
-                freqs: (!freqs_list.is_empty()).then(|| freqs_list),
-                network_names: (!network_names_list.is_empty())
-                    .then(|| network_names_list),
+                // message_count: row.try_get("", "message_count").unwrap_or(0),
+                // last_datetime: row
+                //     .try_get::<NaiveDateTime>("", "last_datetime")
+                //     .ok()
+                //     .map(|ndt| ndt.and_utc().timestamp_millis()),
+                // freqs: (!freqs_list.is_empty()).then(|| freqs_list),
+                // network_names: (!network_names_list.is_empty())
+                //     .then(|| network_names_list),
+                message_count: 0,
+                last_datetime: None,
+                freqs: None,
+                network_names: None,
                 is_old: false,
             }
         })
@@ -915,31 +920,31 @@ async fn build_callsigns_full_query(
     let main_query: sea_query::SelectStatement = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("null"), Alias::new("position"))
-        .expr_as(Expr::cust("null"), Alias::new("comment"))
-        .expr_as(
-            Expr::cust(
-                "(SELECT datetime FROM callsigns c WHERE c.callsign = unique_callsigns.callsign ORDER BY datetime DESC LIMIT 1)"
-            ),
-            Alias::new("last_datetime"),
-        )
-        .expr_as(
-            Expr::cust(
-                "(SELECT string_agg(t.freq, ', ') FROM (SELECT DISTINCT c.freq FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
-            ),
-            Alias::new("freqs"),
-        )
-        .expr_as(
-            Expr::cust(
-                "(SELECT string_agg(t.network_name, ', ') FROM (SELECT DISTINCT c.network_name FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
-            ),
-            Alias::new("network_names"),
-        )
-        .expr_as(
-            Expr::cust(
-                "(SELECT COUNT(*) FROM callsigns c WHERE c.callsign = unique_callsigns.callsign)"
-            ),
-            Alias::new("message_count"),
-        )
+        // .expr_as(Expr::cust("null"), Alias::new("comment"))
+        // .expr_as(
+        //     Expr::cust(
+        //         "(SELECT datetime FROM callsigns c WHERE c.callsign = unique_callsigns.callsign ORDER BY datetime DESC LIMIT 1)"
+        //     ),
+        //     Alias::new("last_datetime"),
+        // )
+        // .expr_as(
+        //     Expr::cust(
+        //         "(SELECT string_agg(t.freq, ', ') FROM (SELECT DISTINCT c.freq FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
+        //     ),
+        //     Alias::new("freqs"),
+        // )
+        // .expr_as(
+        //     Expr::cust(
+        //         "(SELECT string_agg(t.network_name, ', ') FROM (SELECT DISTINCT c.network_name FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
+        //     ),
+        //     Alias::new("network_names"),
+        // )
+        // .expr_as(
+        //     Expr::cust(
+        //         "(SELECT COUNT(*) FROM callsigns c WHERE c.callsign = unique_callsigns.callsign)"
+        //     ),
+        //     Alias::new("message_count"),
+        // )
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
         .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
