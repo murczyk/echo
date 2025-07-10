@@ -3,6 +3,7 @@ module Pages.RerNetworks.Create exposing (Model, Msg, page)
 import Auth
 import Bindings as B
 import Components.Button as Button
+import Components.Sidebar as Sidebar
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -99,6 +100,12 @@ type alias Model =
     , addConfirmationInp : String
     , addSignsInp : String
     , creatingNetwork : Bool
+    -- Frequency creation sidebar
+    , freqSidebarOpen : Bool
+    , freqCreateState : B.AddNetworkFreq
+    , freqKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
+    , freqModulationSelect : Le.Block.Select.SelectTypeSingle Int
+    , modulations : RemoteData ApiError (List B.ModulationRec)
     }
 
 
@@ -149,6 +156,35 @@ init route shared () =
       , addConfirmationInp = ""
       , addSignsInp = ""
       , creatingNetwork = False
+      -- Frequency creation sidebar
+      , freqSidebarOpen = False
+      , freqCreateState =
+            { freq = ""
+            , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
+            , modulationId = Nothing
+            , description = Nothing
+            , activeFrom = Nothing
+            , activeTo = Nothing
+            }
+      , freqKindSelect =
+            { state = Select.initState (Select.selectIdentifier "freq-create-kind-state")
+            , items =
+                NetworksUtils.networkKinds
+                    |> List.map
+                        (\kind ->
+                            Select.basicMenuItem
+                                { item = kind
+                                , label = NetworksUtils.networkKindToLabel kind
+                                }
+                        )
+            , selected = NetworksUtils.VHF
+            }
+      , freqModulationSelect =
+            { state = Select.initState (Select.selectIdentifier "freq-create-modulation-state")
+            , items = []
+            , selected = Nothing
+            }
+      , modulations = NotAsked
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -157,6 +193,7 @@ init route shared () =
             , beforeUnitId = Nothing
             }
         , E.loadPostsFromShared { sortBy = Nothing }
+        , E.getModulations ModulationsReturnedByApi
         ]
     )
 
@@ -178,6 +215,14 @@ type Msg
     | CancelClicked
     | CreateClicked
     | NetworkCreated (Result ApiError B.Network)
+    -- Frequency sidebar messages
+    | OpenFreqSidebar
+    | CloseFreqSidebar
+    | UpdateFreqField (B.AddNetworkFreq -> B.AddNetworkFreq)
+    | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
+    | FreqModulationSelectMsg (Select.Msg Int)
+    | AddFreqToNetwork
+    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -356,6 +401,110 @@ update shared msg model =
             , E.sendCmd <| Le.Block.Toast.addError ToastMsg "Помилка при створенні мережі"
             )
 
+        -- Frequency sidebar messages
+        OpenFreqSidebar ->
+            ( { model | freqSidebarOpen = True }, E.none )
+
+        CloseFreqSidebar ->
+            ( { model | freqSidebarOpen = False }, E.none )
+
+        UpdateFreqField updateFunc ->
+            ( { model | freqCreateState = updateFunc model.freqCreateState }, E.none )
+
+        FreqKindSelectMsg selectMsg ->
+            let
+                ( mAct, newState, selectCmd ) =
+                    Select.update selectMsg model.freqKindSelect.state
+
+                updatedKind =
+                    Le.Block.Select.singleUpdWithDefault mAct model.freqKindSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.freqKindSelect.items
+                    , selected = updatedKind
+                    }
+
+                oldFreqState = model.freqCreateState
+                newFreqState = { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
+            in
+            ( { model | freqKindSelect = newSelect, freqCreateState = newFreqState }
+            , E.sendCmd <| Cmd.map FreqKindSelectMsg selectCmd
+            )
+
+        FreqModulationSelectMsg selectMsg ->
+            let
+                ( mAct, newState, selectCmd ) =
+                    Select.update selectMsg model.freqModulationSelect.state
+
+                updatedModulation =
+                    Le.Block.Select.singleUpd mAct model.freqModulationSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.freqModulationSelect.items
+                    , selected = updatedModulation
+                    }
+
+                oldFreqState = model.freqCreateState
+                newFreqState = { oldFreqState | modulationId = updatedModulation }
+            in
+            ( { model | freqModulationSelect = newSelect, freqCreateState = newFreqState }
+            , E.sendCmd <| Cmd.map FreqModulationSelectMsg selectCmd
+            )
+
+        AddFreqToNetwork ->
+            let
+                oldNetworkState = model.createNetworkState
+                newFreqs = model.freqCreateState :: oldNetworkState.freqs
+                newNetworkState = { oldNetworkState | freqs = newFreqs }
+
+                -- Reset frequency form
+                resetFreqState =
+                    { freq = ""
+                    , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
+                    , modulationId = Nothing
+                    , description = Nothing
+                    , activeFrom = Nothing
+                    , activeTo = Nothing
+                    }
+            in
+            ( { model 
+                | createNetworkState = newNetworkState
+                , freqCreateState = resetFreqState
+                , freqSidebarOpen = False
+              }
+            , E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Частоту додано до мережі"
+            )
+
+        ModulationsReturnedByApi (Ok modulations) ->
+            let
+                items =
+                    modulations
+                        |> List.map
+                            (\modulation ->
+                                Select.basicMenuItem
+                                    { item = modulation.id
+                                    , label = modulation.name
+                                    }
+                            )
+
+                newSelect =
+                    { state = model.freqModulationSelect.state
+                    , items = items
+                    , selected = model.freqModulationSelect.selected
+                    }
+            in
+            ( { model 
+                | modulations = RD.Success modulations
+                , freqModulationSelect = newSelect
+              }
+            , E.none
+            )
+
+        ModulationsReturnedByApi (Err error) ->
+            ( { model | modulations = RD.Failure error }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -376,10 +525,11 @@ view user shared model =
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-screen" ]
-                [ div [ class "w-[85vw] mx-auto py-[16px]" ]
+                [ Sidebar.view model.freqSidebarOpen CloseFreqSidebar (viewFreqSidebar shared model)
+                , div [ class "w-[85vw] mx-auto py-[16px]" ]
                     [ viewHeader model
                     , viewMainLayout shared model
-                    , viewFrequenciesSection
+                    , viewFrequenciesSection model
                     ]
                 ]
         ]
@@ -663,22 +813,143 @@ viewSignalsBlock =
         ]
 
 
-viewFrequenciesSection : Html Msg
-viewFrequenciesSection =
+viewFrequenciesSection : Model -> Html Msg
+viewFrequenciesSection model =
     section [ class "grid grid-cols-12 gap-[30px] mt-[30px]" ]
         [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ div [ class "mb-[8px] flex justify-between items-center" ]
                 [ h4 [] [ text "Частоти" ]
-                , Button.new { label = "Додати частоту", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
+                , Button.new { label = "Додати частоту", onClick = OpenFreqSidebar } |> Button.withStyleSecondary |> Button.view
                 ]
-            , div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
-                [ div [ class "text-center" ]
-                    [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
-                    , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
+            , div [] (fieldError "freqs" model.formErrors)
+            , if List.isEmpty model.createNetworkState.freqs then
+                div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
+                    [ div [ class "text-center" ]
+                        [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
+                        , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
+                        ]
                     ]
+              else
+                div [ class "space-y-2" ]
+                    (List.indexedMap viewFrequencyRow model.createNetworkState.freqs)
+            ]
+        ]
+
+
+viewFrequencyRow : Int -> B.AddNetworkFreq -> Html Msg
+viewFrequencyRow index freq =
+    div [ class "border border-border rounded p-3 bg-card" ]
+        [ div [ class "flex justify-between items-start" ]
+            [ div [ class "flex-1" ]
+                [ div [ class "flex gap-4 mb-2" ]
+                    [ div [ class "font-semibold" ] [ text freq.freq ]
+                    , div [ class "text-sm text-muted-foreground" ] [ text freq.kind ]
+                    ]
+                , case freq.modulationId of
+                    Just _ -> div [ class "text-sm text-muted-foreground" ] [ text "Модуляція: Так" ]
+                    Nothing -> text ""
+                ]
+            , button
+                [ class "text-destructive hover:text-destructive/80"
+                , onClick (UpdateNetworkState (\state -> 
+                    { state | freqs = 
+                        List.take index state.freqs ++ List.drop (index + 1) state.freqs 
+                    }))
+                , title "Видалити частоту"
+                ]
+                [ i [ class "bi bi-trash" ] [] ]
+            ]
+        ]
+
+
+viewFreqSidebar : Shared.Model -> Model -> List (Html Msg)
+viewFreqSidebar shared model =
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати частоту" ]
+            , p [ class "text-sm text-muted-foreground" ] [ text "Заповніть інформацію про нову частоту" ]
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6 space-y-4" ]
+            [ div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота*" ]
+                , input
+                    [ type_ "text"
+                    , class "w-full p-2 border border-border rounded"
+                    , placeholder "наприклад, 146.500"
+                    , value model.freqCreateState.freq
+                    , onInput (\newFreq -> UpdateFreqField (\state -> { state | freq = newFreq }))
+                    ]
+                    []
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип частоти*" ]
+                , let
+                    selectedItem =
+                        Select.basicMenuItem
+                            { item = model.freqKindSelect.selected
+                            , label = NetworksUtils.networkKindToLabel model.freqKindSelect.selected
+                            }
+
+                    defaultOptions =
+                        Le.Block.Select.defaultOptions shared.isDarkMode
+                  in
+                  Html.map FreqKindSelectMsg <|
+                    Styled.toUnstyled <|
+                        Le.Block.Select.renderSelectSingle
+                            (Just selectedItem)
+                            model.freqKindSelect.state
+                            model.freqKindSelect.items
+                            "Виберіть тип"
+                            defaultOptions
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
+                , case model.modulations of
+                    RD.Success modulations ->
+                        let
+                            selectedItem =
+                                Maybe.map
+                                    (\item ->
+                                        Select.basicMenuItem
+                                            { item = item
+                                            , label =
+                                                modulations
+                                                    |> List.filter (\mod -> mod.id == item)
+                                                    |> List.head
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault ""
+                                            }
+                                    )
+                                    model.freqModulationSelect.selected
+
+                            defaultOptions =
+                                Le.Block.Select.defaultOptions shared.isDarkMode
+                        in
+                        Html.map FreqModulationSelectMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    selectedItem
+                                    model.freqModulationSelect.state
+                                    model.freqModulationSelect.items
+                                    "Не вибрано"
+                                    defaultOptions
+                    _ ->
+                        div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseFreqSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.withOutlined True
+                    |> Button.view
+                , Button.new { label = "Додати", onClick = AddFreqToNetwork }
+                    |> Button.withDisabled (String.trim model.freqCreateState.freq == "")
+                    |> Button.view
                 ]
             ]
         ]
+    ]
 
 
 -- Helper function to create the main info block for creation
