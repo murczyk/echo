@@ -35,6 +35,7 @@ validateCreateNetworkReq req =
     Dict.empty
         |> validateRequiredString "name" req.name
         |> validateRequiredString "location" req.location
+        |> validateRequiredFreqs "freqs" req.freqs
 
 
 validateRequiredString : String -> String -> Dict String String -> Dict String String
@@ -54,6 +55,14 @@ validateRequiredMaybe fieldName maybeValue errors =
 
         Just _ ->
             errors
+
+
+validateRequiredFreqs : String -> List a -> Dict String String -> Dict String String
+validateRequiredFreqs fieldName freqsList errors =
+    if List.isEmpty freqsList then
+        Dict.insert fieldName "Додайте хоча б одну частоту до мережі" errors
+    else
+        errors
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -98,7 +107,7 @@ init route shared () =
     ( { formErrors = Dict.empty
       , toasts = Le.Block.Toast.init
       , createNetworkState =
-            { freqs = Nothing
+            { freqs = []
             , unitIds = Nothing
             , name = "управління"
             , location = ""
