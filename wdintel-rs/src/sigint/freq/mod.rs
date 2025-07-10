@@ -3,8 +3,8 @@ use crate::error::AppError;
 use crate::location::utils::to_location_list;
 use crate::types::*;
 use crate::utils::*;
-use actix_web::post;
 use actix_web::web::Json;
+use actix_web::{post, HttpResponse};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
 use log::*;
@@ -1313,6 +1313,75 @@ fn validate_callsigns(callsigns: &Vec<String>) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// АПІ ендпоінт перевіряє, чи була присутня частота в базі даних за період починаючи з `since_date_inclusive_ms`.
+///
+/// # API URL
+/// - POST: /api/sigint/freq/freq-exists
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<FreqExistsReq>`] - де [`FreqExistsReq`] Тіло запиту, що містить параметри для пошуку частоти.
+///
+/// # Тіло запиту
+///
+/// Запит використовує структуру [`FreqExistsReq`], яка має наступні поля:
+///
+///
+/// * `freq`: `String` - Частота, присутність якої перевіряєтсья.
+/// * `since_date_inclusive_ms`: `i64` - Пошук частоти за датою, починаючи з вказаної (включно, в мілісекундах).
+///
+/// # Повертає
+///
+/// У випадку успішного виконання, функція повертає HttpResponse з кодом 200 OK.
+/// Якщо частота не знайдена, повертається помилка 404 Not Found.
+///
+/// # Помилки
+///
+/// Функція повертає [`AppError`] у випадку виникнення помилок, таких як:
+/// * Помилка 404 Not Found, якщо частота не знайдена в базі даних.
+/// * Помилки під час взаємодії з базою даних.
+/// * Недостатньо прав доступу у користувача для виконання цієї операції.
+///
+/// # Дозволи
+///
+/// Для доступу до цього ендпоінту користувач повинен мати одну з наступних ролей: "Rer".
+#[post("/api/sigint/freq/freq-exists")]
+pub async fn freq_exists(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<FreqExistsReq>,
+) -> Result<HttpResponse, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let login = user.id()?;
+
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+
+    let freq_exists = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Freq.eq(req.freq.clone()))
+        .limit(1)
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .is_some();
+
+    if !freq_exists {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[cfg(test)]
