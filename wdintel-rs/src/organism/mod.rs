@@ -25,7 +25,7 @@ pub async fn add_group_to_organism(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let mut parent_filter = if let Some(parent_id) = organism.parent_id {
+    let parent_filter = if let Some(parent_id) = organism.parent_id {
         load_organism_group_ids(&env.dbx, parent_id)
             .await
             .context(h!())

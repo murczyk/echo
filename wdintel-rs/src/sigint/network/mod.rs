@@ -96,7 +96,6 @@ pub async fn network_list(
         .column(sigint_network::Column::Id)
         .column(sigint_network::Column::Name)
         .column(sigint_network::Column::Location)
-        .column(sigint_network::Column::Comment)
         .column(sigint_network::Column::RadioStation)
         .column(sigint_network::Column::CreatedAt)
         .column(sigint_network::Column::Purpose)
@@ -215,7 +214,6 @@ pub async fn network_list(
             unit_ids,
             name: network.name,
             location: network.location,
-            comment: network.comment,
             radio_station: network.radio_station,
             created_at: network.created_at.and_utc().timestamp_millis(),
             purpose: network.purpose,
@@ -364,7 +362,6 @@ async fn render_networks(
             unit_ids,
             name: network.name,
             location: network.location,
-            comment: network.comment,
             radio_station: network.radio_station,
             created_at: network.created_at.and_utc().timestamp_millis(),
             purpose: network.purpose,
@@ -463,7 +460,6 @@ pub async fn create_network(
         location: Set(req.location.clone()),
         deleted: Set(false),
         created_at: NotSet,
-        comment: Set(req.comment.clone()),
         updated_by: Set(Some(user_login.clone())),
         updated_at: NotSet,
         radio_station: Set(req.radio_station.clone()),
@@ -598,7 +594,6 @@ pub async fn create_network(
         unit_ids: req.unit_ids.clone(),
         name: network.name,
         location: network.location,
-        comment: network.comment,
         radio_station: network.radio_station,
         created_at: network.created_at.and_utc().timestamp_millis(),
         purpose: network.purpose,
@@ -648,7 +643,6 @@ pub async fn update_network(
     let mut network_model = network.into_active_model();
     network_model.name = Set(req.name.clone());
     network_model.location = Set(req.location.clone());
-    network_model.comment = Set(req.comment.clone());
     network_model.radio_station = Set(req.radio_station.clone());
     network_model.purpose = Set(req.purpose.clone());
     network_model.operation_mode = Set(req.operation_mode.clone());
@@ -708,7 +702,6 @@ pub async fn update_network(
         unit_ids,
         name: network.name,
         location: network.location,
-        comment: network.comment,
         radio_station: network.radio_station,
         created_at: network.created_at.and_utc().timestamp_millis(),
         purpose: network.purpose,
@@ -1097,7 +1090,6 @@ pub async fn update_freq_networks(
                 let mut network = network.into_active_model();
                 network.name = Set(req_network.name.clone());
                 network.location = Set(req_network.location.clone());
-                network.comment = Set(req_network.comment.clone());
                 network.radio_station = Set(req_network.radio_station.clone());
                 network.deleted = Set(false);
                 network.updated_by = Set(Some(user.id()?.to_string()));
@@ -1119,7 +1111,6 @@ pub async fn update_freq_networks(
             let network = sigint_network::ActiveModel {
                 name: Set(req_network.name.clone()),
                 location: Set(req_network.location.clone()),
-                comment: Set(req_network.comment.clone()),
                 radio_station: Set(req_network.radio_station.clone()),
                 updated_by: Set(Some(user.id()?.to_string())),
                 updated_at: NotSet,
@@ -1877,7 +1868,6 @@ pub async fn merge_network(
         unit_ids,
         name: network.name,
         location: network.location,
-        comment: network.comment,
         radio_station: network.radio_station,
         created_at: network.created_at.and_utc().timestamp_millis(),
         purpose: network.purpose,
@@ -2708,10 +2698,6 @@ pub async fn merge_two_networks(
         Some(network_to.location.clone()),
         Some(network_from.location.clone()),
     );
-    let new_comment = concat_unique(
-        Some(network_to.comment.clone()),
-        Some(network_from.comment.clone()),
-    );
     let new_radio_station = concat_unique(
         network_to.radio_station.clone(),
         network_from.radio_station.clone(),
@@ -2728,7 +2714,6 @@ pub async fn merge_two_networks(
 
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());
-    network_to_model.comment = Set(new_comment.unwrap_or_default());
     network_to_model.radio_station = Set(new_radio_station);
     network_to_model.updated_at = Set(Utc::now().naive_utc());
     network_to_model.updated_by = Set(Some(login.clone()));
