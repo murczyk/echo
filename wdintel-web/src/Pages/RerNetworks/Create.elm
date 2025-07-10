@@ -12,6 +12,7 @@ import Html.Styled as Styled
 import Layouts
 import Le.Block.Select
 import Le.Block.Toast
+import Le.Components exposing (fieldError, isInvalidCls)
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
@@ -24,6 +25,35 @@ import Shared
 import Time
 import Time.Extra
 import View exposing (View)
+
+
+-- VALIDATION
+
+
+validateCreateNetworkReq : B.CreateNetworkReq -> Dict String String
+validateCreateNetworkReq req =
+    Dict.empty
+        |> validateRequiredString "name" req.name
+        |> validateRequiredString "location" req.location
+
+
+validateRequiredString : String -> String -> Dict String String -> Dict String String
+validateRequiredString fieldName value errors =
+    if String.trim value == "" then
+        Dict.insert fieldName "Це поле обов'язкове" errors
+
+    else
+        errors
+
+
+validateRequiredMaybe : String -> Maybe a -> Dict String String -> Dict String String
+validateRequiredMaybe fieldName maybeValue errors =
+    case maybeValue of
+        Nothing ->
+            Dict.insert fieldName "Це поле обов'язкове" errors
+
+        Just _ ->
+            errors
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -59,6 +89,7 @@ type alias Model =
     , units : RemoteData ApiError (List B.Unit)
     , addConfirmationInp : String
     , addSignsInp : String
+    , creatingNetwork : Bool
     }
 
 
@@ -108,6 +139,7 @@ init route shared () =
       , units = NotAsked
       , addConfirmationInp = ""
       , addSignsInp = ""
+      , creatingNetwork = False
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -136,6 +168,7 @@ type Msg
     | DescriptionAddClickedByUser B.NetworkDescrType
     | CancelClicked
     | CreateClicked
+    | NetworkCreated (Result ApiError B.Network)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -291,7 +324,28 @@ update shared msg model =
             ( model, E.none )
 
         CreateClicked ->
-            ( model, E.none )
+            let
+                validationErrors = validateCreateNetworkReq model.createNetworkState
+            in
+            if Dict.isEmpty validationErrors then
+                ( { model | creatingNetwork = True, formErrors = Dict.empty }
+                , E.createNetwork NetworkCreated model.createNetworkState
+                )
+            else
+                ( { model | formErrors = validationErrors }, E.none )
+
+        NetworkCreated (Ok network) ->
+            ( { model | creatingNetwork = False }
+            , E.batch
+                [ E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Мережу успішно створено"
+                , E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                ]
+            )
+
+        NetworkCreated (Err error) ->
+            ( { model | creatingNetwork = False }
+            , E.sendCmd <| Le.Block.Toast.addError ToastMsg "Помилка при створенні мережі"
+            )
 
 
 
@@ -309,266 +363,313 @@ subscriptions model =
 
 view : Auth.User -> Shared.Model -> Model -> View Msg
 view user shared model =
-    { title = "Створення мережі"
+    { title = "Створення нової мережі"
     , body =
         [ Le.Block.Toast.view ToastMsg model.toasts <|
             div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-screen" ]
                 [ div [ class "w-[85vw] mx-auto py-[16px]" ]
-                    [ -- Header
-                      div [ class "flex justify-between items-center mb-[16px]" ]
-                        [ h2 [] [ text "Створення нової мережі" ]
-                        , div [ class "flex gap-[8px]" ]
-                            [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
-                            , Button.new { label = "Зберегти", onClick = CreateClicked } |> Button.view
-                            ]
-                        ]
-                    
-                    -- Main Layout Grid
-                    , div [ class "grid grid-cols-12 gap-[30px]" ]
-                        [ -- Left Side - Missing Fields Block + Main Info Block
-                          div [ class "col-span-7 flex flex-col gap-[30px]" ]
-                            [ -- Missing Fields Block (moved from top)
-                              div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-                                [ h5 [ class "mb-4" ] [ text "Поля відсутні в стандартній формі" ]
-                                , div [ class "grid grid-cols-2 gap-4" ]
-                                    [ div []
-                                        [ label [ class "mb-1" ] [ text "Назва:*" ]
-                                        , input 
-                                            [ class "form__field"
-                                            , type_ "text"
-                                            , value model.createNetworkState.name
-                                            , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
-                                            ] 
-                                            []
-                                        ]
-                                    , div []
-                                        [ label [ class "mb-1" ] [ text "Підрозділ (необов'язково)" ]
-                                        , let
-                                            selectedItem =
-                                                Maybe.map
-                                                    (\unitId ->
-                                                        Select.basicMenuItem
-                                                            { item = unitId
-                                                            , label = 
-                                                                case RD.withDefault [] model.units of
-                                                                    units -> 
-                                                                        List.filter (\u -> u.id == unitId) units
-                                                                            |> List.head
-                                                                            |> Maybe.map .name
-                                                                            |> Maybe.withDefault (String.fromInt unitId)
-                                                            }
-                                                    )
-                                                    model.unitSelect.selected
-
-                                            defaultOptions =
-                                                Le.Block.Select.defaultOptions shared.isDarkMode
-                                          in
-                                          Html.map UnitSelectMsg <|
-                                            Styled.toUnstyled <|
-                                                Le.Block.Select.renderSelectSingle
-                                                    selectedItem
-                                                    model.unitSelect.state
-                                                    model.unitSelect.items
-                                                    "Виберіть підрозділ"
-                                                    defaultOptions
-                                        ]
-
-                                    , div []
-                                        [ label [ class "mb-1" ] [ text "Радіостанція" ]
-                                        , input 
-                                            [ class "form__field"
-                                            , value (Maybe.withDefault "" model.createNetworkState.radioStation)
-                                            , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
-                                            ] 
-                                            []
-                                        ]
-                                    , div []
-                                        [ label [ class "mb-1" ] [ text "Активна з:" ]
-                                        , input
-                                            [ type_ "date"
-                                            , class "form-control"
-                                            , case model.createNetworkState.activeFrom of
-                                                Just millis ->
-                                                    value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-                                                Nothing ->
-                                                    value ""
-                                            , onInput <|
-                                                UpdateNetworkState
-                                                    << (\v state ->
-                                                            { state
-                                                                | activeFrom =
-                                                                    case Le.Time.parseDateParts v of
-                                                                        Err _ ->
-                                                                            state.activeFrom
-                                                                        Ok parts ->
-                                                                            Time.Extra.partsToPosix shared.timeZone parts
-                                                                                |> Time.posixToMillis
-                                                                                |> Just
-                                                            }
-                                                       )
-                                            ]
-                                            []
-                                        ]
-                                    , div []
-                                        [ label [ class "mb-1" ] [ text "Активна по:" ]
-                                        , input
-                                            [ type_ "date"
-                                            , class "form-control"
-                                            , case model.createNetworkState.activeTo of
-                                                Just millis ->
-                                                    value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-                                                Nothing ->
-                                                    value ""
-                                            , onInput <|
-                                                UpdateNetworkState
-                                                    << (\v state ->
-                                                            { state
-                                                                | activeTo =
-                                                                    case Le.Time.parseDateParts v of
-                                                                        Err _ ->
-                                                                            state.activeTo
-                                                                        Ok parts ->
-                                                                            Time.Extra.partsToPosix shared.timeZone parts
-                                                                                |> Time.posixToMillis
-                                                                                |> Just
-                                                            }
-                                                       )
-                                            ]
-                                            []
-                                        ]
-
-                                    , div []
-                                        [ label [ class "mb-1" ] [ text "Пости:" ]
-                                        , let
-                                            selectedItems =
-                                                model.postsSelect.selected
-                                                    |> List.map
-                                                        (\postId ->
-                                                            Select.basicMenuItem
-                                                                { item = postId
-                                                                , label = 
-                                                                    case shared.posts of
-                                                                        RD.Success posts ->
-                                                                            Dict.get postId posts
-                                                                                |> Maybe.map .name
-                                                                                |> Maybe.withDefault (String.fromInt postId)
-                                                                        _ ->
-                                                                            String.fromInt postId
-                                                                }
-                                                        )
-
-                                            defaultOptions =
-                                                Le.Block.Select.defaultOptions shared.isDarkMode
-                                          in
-                                          Html.map PostsSelectMsg <|
-                                            Styled.toUnstyled <|
-                                                Le.Block.Select.renderSelect
-                                                    selectedItems
-                                                    model.postsSelect.state
-                                                    model.postsSelect.items
-                                                    "Виберіть пости"
-                                                    defaultOptions
-                                        ]
-                                    ]
-                                ]
-                            -- Main Info Block (Згідно форми)
-                            , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-                                (createMainInfoBlock model.createNetworkState shared model)
-                            ]
-                        
-                        -- Right Side - Confirmation & Signs blocks
-                        , div [ class "col-span-5 bg-w dark:bg-[#1C1C21] p-[16px]" ]
-                            [ div [ class "mb-[16px]" ]
-                                [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
-                                , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                                    [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-                                    , div [ class "flex justify-between w-full" ]
-                                        [ div [ class "w-[200px] flex items-center gap-2" ]
-                                            [ div [ class "relative" ]
-                                                [ select [ class "form-control opacity-50", disabled True ]
-                                                    [ option [] [ text "Виберіть частоту" ]
-                                                    ]
-                                                , div [ class "absolute -top-2 -right-2" ]
-                                                    [ span 
-                                                        [ class "text-gray-400 cursor-help"
-                                                        , title "Додайте хоча б одну частоту до мережі"
-                                                        ]
-                                                        [ i [ class "bi bi-question-circle" ] [] ]
-                                                    ]
-                                                ]
-                                            ]
-                                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
-                                            |> Button.withOutlined True
-                                            |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
-                                            |> Button.view
-                                        ]
-                                    ]
-                                , div [ class "max-h-[200px] overflow-y-auto" ]
-                                    (List.map
-                                        (\description ->
-                                            div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
-                                                [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
-                                                    [ span [] [ text "Для мережі" ]
-                                                    ]
-                                                , div []
-                                                    [ text description.description ]
-                                                ]
-                                        )
-                                        (List.filter (\desc -> desc.descrType == B.Confirmation) model.createNetworkState.descriptions)
-                                    )
-                                ]
-                            , div []
-                                [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
-                                , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                                    [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-                                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
-                                        |> Button.withOutlined True
-                                        |> Button.withDisabled (String.isEmpty model.addSignsInp)
-                                        |> Button.view
-                                    ]
-                                , div [ class "max-h-[200px] overflow-y-auto" ]
-                                    (List.map
-                                        (\description ->
-                                            div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
-                                                [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
-                                                    [ span [] [ text "Для мережі" ]
-                                                    ]
-                                                , div []
-                                                    [ text description.description ]
-                                                ]
-                                        )
-                                        (List.filter (\desc -> desc.descrType == B.Sign) model.createNetworkState.descriptions)
-                                    )
-                                ]
-                            , section [ class "mt-[8px]" ]
-                                [ h5 [] [ text "Сигнали" ]
-                                , div [ class "h-[100px] overflow-y-auto" ]
-                                    [ div [ class "text-center text-gray-500 p-4" ]
-                                        [ text "Сигнали будуть доступні після створення мережі" ]
-                                    ]
-                                ]
-                            ]
-                        ]
-
-                    -- Frequencies Table (Empty with Add Button)
-                    , section [ class "grid grid-cols-12 gap-[30px] mt-[30px]" ]
-                        [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
-                            [ div [ class "mb-[8px] flex justify-between items-center" ]
-                                [ h4 [] [ text "Частоти" ]
-                                , Button.new { label = "Додати частоту", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
-                                ]
-                            , div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
-                                [ div [ class "text-center" ]
-                                    [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
-                                    , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
-                                    ]
-                                ]
-                            ]
-                        ]
+                    [ viewHeader model
+                    , viewMainLayout shared model
+                    , viewFrequenciesSection
                     ]
                 ]
         ]
-    } 
+    }
+
+
+viewHeader : Model -> Html Msg
+viewHeader model =
+    div [ class "flex justify-between items-center mb-[16px]" ]
+        [ h2 [] [ text "Створення нової мережі" ]
+        , div [ class "flex gap-[8px]" ]
+            [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
+            , Button.new { label = "Зберегти", onClick = CreateClicked } 
+                |> Button.withDisabled model.creatingNetwork
+                |> Button.view
+            ]
+        ]
+
+
+viewMainLayout : Shared.Model -> Model -> Html Msg
+viewMainLayout shared model =
+    div [ class "grid grid-cols-12 gap-[30px]" ]
+        [ viewLeftColumn shared model
+        , viewRightColumn model
+        ]
+
+
+viewLeftColumn : Shared.Model -> Model -> Html Msg
+viewLeftColumn shared model =
+    div [ class "col-span-7 flex flex-col gap-[30px]" ]
+        [ viewMissingFieldsBlock shared model
+        , viewMainInfoBlock shared model
+        ]
+
+
+viewRightColumn : Model -> Html Msg
+viewRightColumn model =
+    div [ class "col-span-5 bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        [ viewConfirmationBlock model
+        , viewSignsBlock model
+        , viewSignalsBlock
+        ]
+
+
+viewMissingFieldsBlock : Shared.Model -> Model -> Html Msg  
+viewMissingFieldsBlock shared model =
+    div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        [ h5 [ class "mb-4" ] [ text "Поля відсутні в стандартній формі" ]
+        , div [ class "space-y-4" ]
+            [ div [ class "grid grid-cols-2 gap-4" ]
+                [ div []
+                    ([ label [ class "mb-1" ] [ text "Назва:*" ]
+                    , input 
+                        [ class "form__field"
+                        , type_ "text"
+                        , value model.createNetworkState.name
+                        , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
+                        , isInvalidCls "name" model.formErrors
+                        ] 
+                        []
+                    ] ++ fieldError "name" model.formErrors)
+                , div []
+                    [ label [ class "mb-1" ] [ text "Підрозділ (необов'язково)" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\unitId ->
+                                    Select.basicMenuItem
+                                        { item = unitId
+                                        , label = 
+                                            case RD.withDefault [] model.units of
+                                                units -> 
+                                                    List.filter (\u -> u.id == unitId) units
+                                                        |> List.head
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault (String.fromInt unitId)
+                                        }
+                                )
+                                model.unitSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map UnitSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.unitSelect.state
+                                model.unitSelect.items
+                                "Виберіть підрозділ"
+                                defaultOptions
+                    ]
+                ]
+            , div [ class "grid grid-cols-2 gap-4" ]
+                [ div []
+                    [ label [ class "mb-1" ] [ text "Радіостанція" ]
+                    , input 
+                        [ class "form__field"
+                        , value (Maybe.withDefault "" model.createNetworkState.radioStation)
+                        , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
+                        ] 
+                        []
+                    ]
+                , div []
+                    [ label [ class "mb-1" ] [ text "Активна з:" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control"
+                        , case model.createNetworkState.activeFrom of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateNetworkState
+                                << (\v state ->
+                                        { state
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeFrom
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                ]
+            , div [ class "grid grid-cols-2 gap-4" ]
+                [ div []
+                    [ label [ class "mb-1" ] [ text "Активна по:" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control"
+                        , case model.createNetworkState.activeTo of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateNetworkState
+                                << (\v state ->
+                                        { state
+                                            | activeTo =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeTo
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "mb-1" ] [ text "Пости:" ]
+                    , let
+                        selectedItems =
+                            model.postsSelect.selected
+                                |> List.map
+                                    (\postId ->
+                                        Select.basicMenuItem
+                                            { item = postId
+                                            , label = 
+                                                case shared.posts of
+                                                    RD.Success posts ->
+                                                        Dict.get postId posts
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault (String.fromInt postId)
+                                                    _ ->
+                                                        String.fromInt postId
+                                            }
+                                    )
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map PostsSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.postsSelect.state
+                                model.postsSelect.items
+                                "Виберіть пости"
+                                defaultOptions
+                    ]
+                ]
+            ]
+        ]
+
+
+viewMainInfoBlock : Shared.Model -> Model -> Html Msg
+viewMainInfoBlock shared model =
+    div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        (createMainInfoBlock model.createNetworkState shared model)
+
+
+viewConfirmationBlock : Model -> Html Msg
+viewConfirmationBlock model =
+    div [ class "mb-[16px]" ]
+        [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
+        , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+            [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
+            , div [ class "flex justify-between w-full" ]
+                [ div [ class "w-[200px] flex items-center gap-2" ]
+                    [ div [ class "relative" ]
+                        [ select [ class "form-control opacity-50", disabled True ]
+                            [ option [] [ text "Виберіть частоту" ]
+                            ]
+                        , div [ class "absolute -top-2 -right-2" ]
+                            [ span 
+                                [ class "text-gray-400 cursor-help"
+                                , title "Додайте хоча б одну частоту до мережі"
+                                ]
+                                [ i [ class "bi bi-question-circle" ] [] ]
+                            ]
+                        ]
+                    ]
+                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
+                    |> Button.withOutlined True
+                    |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
+                    |> Button.view
+                ]
+            ]
+        , div [ class "max-h-[200px] overflow-y-auto" ]
+            (List.map
+                (\description ->
+                    div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                        [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
+                            [ span [] [ text "Для мережі" ]
+                            ]
+                        , div []
+                            [ text description.description ]
+                        ]
+                )
+                (List.filter (\desc -> desc.descrType == B.Confirmation) model.createNetworkState.descriptions)
+            )
+        ]
+
+
+viewSignsBlock : Model -> Html Msg
+viewSignsBlock model =
+    div []
+        [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
+        , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+            [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
+            , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
+                |> Button.withOutlined True
+                |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                |> Button.view
+            ]
+        , div [ class "max-h-[200px] overflow-y-auto" ]
+            (List.map
+                (\description ->
+                    div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                        [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
+                            [ span [] [ text "Для мережі" ]
+                            ]
+                        , div []
+                            [ text description.description ]
+                        ]
+                )
+                (List.filter (\desc -> desc.descrType == B.Sign) model.createNetworkState.descriptions)
+            )
+        ]
+
+
+viewSignalsBlock : Html Msg
+viewSignalsBlock =
+    section [ class "mt-[8px]" ]
+        [ h5 [] [ text "Сигнали" ]
+        , div [ class "h-[100px] overflow-y-auto" ]
+            [ div [ class "text-center text-gray-500 p-4" ]
+                [ text "Сигнали будуть доступні після створення мережі" ]
+            ]
+        ]
+
+
+viewFrequenciesSection : Html Msg
+viewFrequenciesSection =
+    section [ class "grid grid-cols-12 gap-[30px] mt-[30px]" ]
+        [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+            [ div [ class "mb-[8px] flex justify-between items-center" ]
+                [ h4 [] [ text "Частоти" ]
+                , Button.new { label = "Додати частоту", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
+                ]
+            , div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
+                [ div [ class "text-center" ]
+                    [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
+                    , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
+                    ]
+                ]
+            ]
+        ]
 
 
 -- Helper function to create the main info block for creation
@@ -582,13 +683,16 @@ createMainInfoBlock createReq shared model =
         [ class "network-list-container" ]
         [ div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Район функціонування/розгортання:" ]
-            , input
-                [ value createReq.location
-                , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
-                , class "form__field"
-                , placeholder "введіть район функціонування/розгортання"
-                ]
-                []
+            , div [ class "flex-1" ]
+                ([ input
+                    [ value createReq.location
+                    , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
+                    , class "form__field"
+                    , placeholder "введіть район функціонування/розгортання"
+                    , isInvalidCls "location" model.formErrors
+                    ]
+                    []
+                ] ++ fieldError "location" model.formErrors)
             ]
         , div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium  basis-[33%]" ] [ text "Призначення:" ]
