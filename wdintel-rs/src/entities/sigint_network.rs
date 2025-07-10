@@ -13,8 +13,6 @@ pub struct Model {
     pub location: String,
     pub deleted: bool,
     pub created_at: DateTime,
-    #[sea_orm(column_type = "Text")]
-    pub comment: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,
     pub updated_at: DateTime,

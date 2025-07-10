@@ -312,13 +312,6 @@ pub async fn report_freqs(
                             width_unit * 2,
                             Some(DEFAULT_TABLE_HEADER_COLOR),
                             &table_header_style_id,
-                            "Підтвердження приналежності р/м",
-                            false,
-                        ),
-                        create_table_header_cell(
-                            width_unit * 2,
-                            Some(DEFAULT_TABLE_HEADER_COLOR),
-                            &table_header_style_id,
                             "Призначення, х-р роботи",
                             false,
                         ),
@@ -378,12 +371,6 @@ pub async fn report_freqs(
                             create_table_data_cell(
                                 width_unit * 2,
                                 &freq.confirmation.unwrap_or_default(),
-                                None,
-                                false,
-                            ),
-                            create_table_data_cell(
-                                width_unit * 2,
-                                &freq.comment.unwrap_or_default(),
                                 None,
                                 false,
                             ),
@@ -1178,7 +1165,7 @@ pub async fn generate_networks_docx_report(
                 doc = add_field(
                     doc,
                     "12. Обгрунтування  прив'язки: ",
-                    &network.comment,
+                    &String::default(),
                 );
 
                 // then add network description with Confitmation type

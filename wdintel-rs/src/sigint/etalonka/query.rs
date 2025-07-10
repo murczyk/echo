@@ -116,7 +116,6 @@ pub async fn load_freqs_per_unit(
         .column_as(sigint_network::Column::Name, "name_updated")
         .column_as(signal_message::Column::Id.count(), "message_count")
         .column(sigint_network_freq::Column::Kind)
-        .column(sigint_network::Column::Comment)
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::RadioStation)
         .column_as(sigint_unit::Column::Name, "unit")
@@ -247,17 +246,6 @@ pub async fn load_freqs_per_unit(
                         );
                     }
 
-                    if let Some(comment) =
-                        item.comment.clone().filter(|c| !c.trim().is_empty())
-                    {
-                        freq_stats.comment = match freq_stats.comment.clone() {
-                            Some(existing) if !existing.trim().is_empty() => {
-                                Some(format!("{}, {}", existing, comment))
-                            }
-                            _ => Some(comment),
-                        };
-                    }
-
                     if let Some(confirmation) = item
                         .confirmation
                         .clone()
@@ -309,7 +297,6 @@ pub async fn load_freqs_per_unit(
                         freq: item.freq.clone(),
                         kind: item.kind.clone(),
                         kind_updated: Some(substitute_kind(item.kind.clone())),
-                        comment: item.comment.clone(),
                         location: item.location.clone(),
                         radio_station: item.radio_station.clone(),
                         confirmation: item.radio_station.clone(),
@@ -1825,7 +1812,6 @@ pub async fn load_networks(
         .column(sigint_network::Column::OperationMode)
         .column(sigint_network::Column::OperationType)
         .column(sigint_network::Column::OperationPeriod)
-        .column(sigint_network::Column::Comment)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)
@@ -1958,7 +1944,6 @@ pub async fn load_networks_by_id(
         .column(sigint_network::Column::OperationMode)
         .column(sigint_network::Column::OperationType)
         .column(sigint_network::Column::OperationPeriod)
-        .column(sigint_network::Column::Comment)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
         .column(sigint_network::Column::ActiveTo)

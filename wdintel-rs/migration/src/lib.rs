@@ -100,6 +100,7 @@ mod m20250612_065458_sigint_network_callsign_id_to_text;
 mod m20250617_111140_update_login_table;
 mod m20250628_175425_add_organism_hierarchy;
 mod m20250702_115302_add_noautologout_role;
+mod m20250710_094800_remove_comment_from_network;
 
 pub struct Migrator;
 
@@ -189,6 +190,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250417_150320_fix_merge_login_migration::Migration),
             Box::new(m20250418_095050_add_active_from_to_for_network::Migration),
             Box::new(m20250418_103016_add_logging_for_networks::Migration),
+            Box::new(m20250421_130108_add_secret_chats::Migration),
             Box::new(m20250424_191053_add_modulation_to_network::Migration),
             Box::new(m20250430_090456_add_sigint_post::Migration),
             Box::new(m20250502_124932_network_description::Migration),
@@ -200,13 +202,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20250530_211149_add_sigint_settlement::Migration),
             Box::new(m20250602_112459_add_freq_activity_history::Migration),
             Box::new(m20250604_053059_add_sigint_network_activity_history::Migration),
-            Box::new(m20250612_065458_sigint_network_callsign_id_to_text::Migration),
             Box::new(m20250611_044845_idx_sigint_network_callsign_callsign_id::Migration),
             Box::new(m20250611_045218_idx_sigint_callsign_callsign_deleted::Migration),
+            Box::new(m20250612_065458_sigint_network_callsign_id_to_text::Migration),
             Box::new(m20250617_111140_update_login_table::Migration),
-            Box::new(m20250702_115302_add_noautologout_role::Migration),
-            Box::new(m20250421_130108_add_secret_chats::Migration),
             Box::new(m20250628_175425_add_organism_hierarchy::Migration),
+            Box::new(m20250702_115302_add_noautologout_role::Migration),
+            Box::new(m20250710_094800_remove_comment_from_network::Migration),
         ]
     }
 }
