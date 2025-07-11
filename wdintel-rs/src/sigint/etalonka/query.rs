@@ -1,6 +1,5 @@
 use crate::entities::*;
 use crate::error::AppError;
-use crate::location::utils::to_location_list;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
@@ -16,7 +15,7 @@ use sea_query::{
 };
 use serde::Serialize;
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use tempfile::Builder;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
@@ -100,270 +99,13 @@ pub enum Modulation {
     Name,
 }
 
-pub async fn load_freqs_per_unit(
-    db: &DatabaseConnection,
-    groups: Vec<String>,
-    req: &Json<EtalonkaReq>,
-) -> Result<HashMap<String, Vec<FreqStatsRes>>, AppError> {
-    let mut q = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .select_only()
-        .column(sigint_network_freq::Column::Freq)
-        .column_as(sigint_network::Column::Name, "name")
-        .column_as(sigint_network::Column::Name, "name_updated")
-        .column_as(signal_message::Column::Id.count(), "message_count")
-        .column(sigint_network_freq::Column::Kind)
-        .column(sigint_network::Column::Location)
-        .column(sigint_network::Column::RadioStation)
-        .column_as(sigint_unit::Column::Name, "unit")
-        .column_as(sigint_inbox_item::Column::Datetime.min(), "first_time")
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-        )
-        .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(signal_message::Column::Deleted.eq(false));
-
-    if !req.full_etalonka_report {
-        q = q
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_from_millis(
-                req.list_freq_req.since_date_inclusive_ms,
-            )?))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_from_millis(
-                req.list_freq_req.till_date_noninclusive_ms,
-            )?))
-            .apply_if(req.list_freq_req.filter_freq.clone(), |q, ff| {
-                q.filter(
-                    sigint_network_freq::Column::Freq.like(format!("%{}%", ff)),
-                )
-            })
-            .apply_if(req.list_freq_req.filter_unit.clone(), |q, fu| {
-                q.filter(Expr::cust_with_exprs(
-                    "lower($1 collate \"ru-x-icu\") ilike $2",
-                    vec![
-                        Expr::col((
-                            sigint_unit::Entity,
-                            sigint_unit::Column::Name,
-                        ))
-                        .into(),
-                        Expr::val(format!("%{}%", fu.to_lowercase())).into(),
-                    ],
-                ))
-            })
-    };
-
-    q = q
-        .group_by(sigint_network_freq::Column::Freq)
-        .group_by(sigint_network::Column::Id)
-        .group_by(sigint_unit::Column::Id)
-        .group_by(sigint_network_freq::Column::Kind)
-        .order_by_asc(sigint_network_freq::Column::Freq);
-
-    trace!(
-        "> sql: {}",
-        q.clone().build(DbBackend::Postgres).to_string()
-    );
-
-    let freq_stats = q
-        .clone()
-        .into_model::<FreqStatsRes>()
-        .all(db)
-        .await
-        .context(h!())?;
-
-    let freq_updated = match req.adjacent_freqs_distance {
-        Some(djacent_freqs_distance) => {
-            let delta = djacent_freqs_distance.as_f64();
-            let mut freq_stats_updated = freq_stats;
-            update_freq_network_name(&mut freq_stats_updated, delta);
-            freq_stats_updated
-        }
-        None => freq_stats,
-    };
-
-    let res = freq_updated
-        .into_iter()
-        .fold(HashMap::new(), |mut acc, item| {
-            // Closure to handle substitution for `kind`
-            let substitute_kind = |kind: Option<String>| {
-                let kind_value = kind.unwrap_or_default();
-                if kind_value == "УКХ" {
-                    "NFM".to_string()
-                } else {
-                    kind_value
-                }
-            };
-
-            let key = if let Some(unit) = item.unit.clone() {
-                unit.to_string()
-            } else {
-                "Н/В".to_string()
-            };
-
-            let key_clone = key.clone();
-
-            acc.entry(key)
-                .or_insert_with(Vec::new)
-                .iter_mut()
-                .find(|freq_stats: &&mut FreqStatsRes| {
-                    freq_stats.name == item.name
-                })
-                .map(|freq_stats| {
-                    // Update existing FreqStats
-                    freq_stats.freq =
-                        format!("{}, {}", freq_stats.freq, item.freq);
-
-                    if let Some(location) = item.location.clone() {
-                        let mut locations: HashSet<String> = freq_stats
-                            .location
-                            .as_deref()
-                            .unwrap_or("")
-                            .split(", ")
-                            .map(|s| s.to_string())
-                            .collect();
-                        locations.insert(location);
-                        freq_stats.location = Some(
-                            locations
-                                .into_iter()
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                        );
-                    }
-
-                    if let Some(confirmation) = item
-                        .confirmation
-                        .clone()
-                        .filter(|c| !c.trim().is_empty())
-                    {
-                        freq_stats.confirmation = match freq_stats
-                            .confirmation
-                            .clone()
-                        {
-                            Some(existing) if !existing.trim().is_empty() => {
-                                Some(format!("{}, {}", existing, confirmation))
-                            }
-                            _ => Some(confirmation),
-                        };
-                    }
-
-                    if let Some(radio_station) = item.radio_station.clone() {
-                        let mut radio_stations: HashSet<String> = freq_stats
-                            .radio_station
-                            .as_deref()
-                            .unwrap_or("")
-                            .split(", ")
-                            .map(|s| s.to_string())
-                            .collect();
-                        radio_stations.insert(radio_station);
-                        freq_stats.radio_station = Some(
-                            radio_stations
-                                .into_iter()
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                        );
-                    }
-
-                    freq_stats.message_count += item.message_count;
-
-                    if let Some(first_time) = item.first_time {
-                        freq_stats.first_time =
-                            Some(match freq_stats.first_time {
-                                Some(existing) => existing.min(first_time),
-                                None => first_time,
-                            });
-                    }
-                })
-                .unwrap_or_else(|| {
-                    // Insert new FreqStats
-                    acc.get_mut(&key_clone).unwrap().push(FreqStatsRes {
-                        name: item.name.clone(),
-                        unit: item.unit.clone(),
-                        freq: item.freq.clone(),
-                        kind: item.kind.clone(),
-                        kind_updated: Some(substitute_kind(item.kind.clone())),
-                        location: item.location.clone(),
-                        radio_station: item.radio_station.clone(),
-                        confirmation: item.radio_station.clone(),
-                        first_time: item.first_time,
-                        message_count: item.message_count,
-                    });
-                });
-
-            acc
-        });
-
-    Ok(res)
-}
-
-/// Update empty network `name_updated` field for adjacent frequencies
-fn update_freq_network_name(freqs: &mut Vec<FreqStatsRes>, delta: f64) {
-    // Sort records by frequency as strings to make sure they are in order
-    freqs.sort_by(|a, b| a.freq.cmp(&b.freq));
-
-    let len = freqs.len();
-    let mut start = 0; // Window start index
-
-    while start < len {
-        let freq_start = freqs[start].freq.parse::<f64>().unwrap_or(0.0);
-        let mut end = start;
-
-        // 2. Expand window while the difference is within delta
-        while end + 1 < len {
-            let freq_next = freqs[end + 1].freq.parse::<f64>().unwrap_or(0.0);
-            if (freq_next - freq_start) > delta {
-                break;
-            }
-            end += 1;
-        }
-
-        // 3. Find the first non-empty `name_updated` inside this window
-        if let Some(valid_name) = (start..=end).find_map(|i| {
-            if !freqs[i].name.is_empty() {
-                Some(freqs[i].name.clone())
-            } else {
-                None
-            }
-        }) {
-            // 4. Assign valid `name_updated` to empty fields within the window
-            for i in start..=end {
-                if freqs[i].name.is_empty() {
-                    freqs[i].name = valid_name.clone();
-                }
-            }
-        }
-
-        // 5. Move `start` to the next unprocessed record (end + 1)
-        start = end + 1;
-    }
-}
-
 pub async fn load_freqs(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
     active_freqs_only: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
-    trace!(
-        "> load freqs for unit: {:?}, network: {:?}",
-        filter.filter_unit,
-        filter.network_id
-    );
+    trace!("> load freqs for network: {:?}", filter.network_id);
 
     let mut inactive_freqs = Vec::new();
     // Get active frequencies
@@ -372,18 +114,16 @@ pub async fn load_freqs(
 
     // Get inactive frequencies if needed
     if !active_freqs_only {
-        if let Some(network_id) = filter.network_id {
-            let active_freqs_short: Vec<String> = network_active_freqs
-                .iter()
-                .map(|f| f.freq.clone())
-                .collect();
+        let active_freqs_short: Vec<String> = network_active_freqs
+            .iter()
+            .map(|f| f.freq.clone())
+            .collect();
 
-            inactive_freqs =
-                query_inactive_freqs(db, network_id, &active_freqs_short)
-                    .await
-                    .context(h!())?;
-            network_active_freqs.extend(inactive_freqs.clone());
-        }
+        inactive_freqs =
+            query_inactive_freqs(db, filter.network_id, &active_freqs_short)
+                .await
+                .context(h!())?;
+        network_active_freqs.extend(inactive_freqs.clone());
     }
 
     let mut network_freqs = network_active_freqs.clone();
@@ -488,46 +228,10 @@ async fn query_active_freqs(
     )
     .and_where(
         Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
+    )
+    .and_where(
+        Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(filter.network_id),
     );
-
-    let needs_unit_join =
-        filter.filter_unit.as_ref().map_or(false, |s| !s.is_empty())
-            || filter.filter_further_investigation.unwrap_or(false);
-
-    if needs_unit_join {
-        q.join(
-            JoinType::LeftJoin,
-            SigintNetworkUnit::Table,
-            Expr::col((SigintNetworkUnit::Table, SigintNetworkUnit::NetworkId))
-                .equals((SigintNetwork::Table, SigintNetwork::Id)),
-        )
-        .join(
-            JoinType::LeftJoin,
-            SigintUnit::Table,
-            Expr::col((SigintUnit::Table, SigintUnit::Id))
-                .equals((SigintNetworkUnit::Table, SigintNetworkUnit::UnitId)),
-        );
-    }
-
-    if let Some(unit) = filter.filter_unit.clone() {
-        q.and_where(
-            Expr::col((SigintUnit::Table, SigintUnit::Deleted)).eq(false),
-        )
-        .and_where(Expr::col((SigintUnit::Table, SigintUnit::Name)).eq(unit));
-    }
-
-    if filter.filter_further_investigation.unwrap_or(false) {
-        q.and_where(
-            Expr::col((SigintNetworkUnit::Table, SigintNetworkUnit::UnitId))
-                .is_null(),
-        );
-    }
-
-    if let Some(network_id) = filter.network_id {
-        q.and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
-        );
-    }
 
     if let Some(date_since) = filter.since_date_inclusive_ms {
         q.and_where(
@@ -541,14 +245,6 @@ async fn query_active_freqs(
                 .lt(dt_from_millis(date_till)?),
         );
     }
-    if !filter.full_etalonka_report {
-        if let Some(ff) = &filter.filter_freq {
-            q.and_where(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                    .like(format!("%{}%", ff)),
-            );
-        }
-    };
 
     let network_messages_cte = CommonTableExpression::new()
         .query(q)
@@ -807,23 +503,12 @@ pub async fn load_callsigns(
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
     known_callsigns: &Vec<KnownCallsignRes>,
-    active_callsigns_only: bool,
+    _active_callsigns_only: bool,
 ) -> Result<Vec<CallsignRes>, AppError> {
-    trace!(
-        "> load_callsigns for unit: {:?}, network: {:?}",
-        filter.filter_unit,
-        filter.network_id
-    );
+    trace!("> load_callsigns for network: {:?}", filter.network_id);
 
-    let mut date_since = filter.since_date_inclusive_ms;
-    let mut date_till = filter.till_date_noninclusive_ms;
-
-    if filter.full_etalonka_report {
-        // for full etalonka report take date interval of 20 days from now
-        let twenty_days_millis = 20 * 24 * 60 * 60 * 1000;
-        date_till = Some(get_unix_timestamp_ms());
-        date_since = date_till.map(|till| till - twenty_days_millis);
-    };
+    let date_since = filter.since_date_inclusive_ms;
+    let date_till = filter.till_date_noninclusive_ms;
 
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
@@ -931,18 +616,11 @@ pub async fn load_callsigns(
                 .eq(false)
                 .or(Expr::col((SigintNetwork::Table, SigintNetwork::Id))
                     .is_null()),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintUnit::Id))
+                .eq(filter.network_id),
         );
-
-    if let Some(unit) = filter.filter_unit.clone() {
-        base_subquery_callsigns.and_where(
-            Expr::col((SigintUnit::Table, SigintUnit::Name)).eq(unit),
-        );
-    }
-    if let Some(network_id) = filter.network_id {
-        base_subquery_callsigns.and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
-        );
-    }
 
     // debug!(
     //     "> base_subquery_callsigns: {}",
@@ -962,14 +640,6 @@ pub async fn load_callsigns(
                 .lt(dt_from_millis(date_till)?),
         );
     }
-    if !filter.full_etalonka_report {
-        if let Some(ff) = filter.filter_freq.clone() {
-            subquery_callsigns.and_where(
-                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                    .like(format!("%{}%", ff)),
-            );
-        }
-    };
 
     let active_callsigns_query =
         build_callsigns_full_query(subquery_callsigns.clone())
@@ -1075,140 +745,140 @@ pub async fn load_callsigns(
     res = filter_callsigns(res);
 
     // **Step 2: Add missing records from known_callsigns**
-    if !active_callsigns_only {
-        if let Some(unit) = filter.filter_unit.clone() {
-            let existing_callsigns: HashSet<String> =
-                res.iter().map(|r| r.callsign.clone()).collect();
+    // if !active_callsigns_only {
+    //     if let Some(unit) = filter.filter_unit.clone() {
+    //         let existing_callsigns: HashSet<String> =
+    //             res.iter().map(|r| r.callsign.clone()).collect();
 
-            let mut additional_callsigns: Vec<CallsignRes> = known_callsigns
-                .iter()
-                .filter(|kc| {
-                    kc.unit_name == unit
-                        && !existing_callsigns.contains(&kc.callsign)
-                })
-                .map(|kc| CallsignRes {
-                    callsign: kc.callsign.clone(),
-                    known_callsigns: Some(vec![KnownCallsignShortRes {
-                        callsign: kc.callsign.clone(),
-                        position: kc.position.clone(),
-                        comment: kc.comment.clone(),
-                        unit_id: kc.unit_id.clone(),
-                        unit_name: kc.unit_name.clone(),
-                        source_name: kc.source_name.clone(),
-                        created_at: kc.created_at.and_utc().timestamp_millis(),
-                    }]),
-                    message_count: 0,
-                    last_datetime: None,
-                    freqs: None,
-                    network_names: None,
-                    is_old: false,
-                })
-                .collect();
+    //         let mut additional_callsigns: Vec<CallsignRes> = known_callsigns
+    //             .iter()
+    //             .filter(|kc| {
+    //                 kc.unit_name == unit
+    //                     && !existing_callsigns.contains(&kc.callsign)
+    //             })
+    //             .map(|kc| CallsignRes {
+    //                 callsign: kc.callsign.clone(),
+    //                 known_callsigns: Some(vec![KnownCallsignShortRes {
+    //                     callsign: kc.callsign.clone(),
+    //                     position: kc.position.clone(),
+    //                     comment: kc.comment.clone(),
+    //                     unit_id: kc.unit_id.clone(),
+    //                     unit_name: kc.unit_name.clone(),
+    //                     source_name: kc.source_name.clone(),
+    //                     created_at: kc.created_at.and_utc().timestamp_millis(),
+    //                 }]),
+    //                 message_count: 0,
+    //                 last_datetime: None,
+    //                 freqs: None,
+    //                 network_names: None,
+    //                 is_old: false,
+    //             })
+    //             .collect();
 
-            // find old (for 60 days) communications for additional callsigns
-            let sixty_days_millis = 60 * 24 * 60 * 60 * 1000;
+    //         // find old (for 60 days) communications for additional callsigns
+    //         let sixty_days_millis = 60 * 24 * 60 * 60 * 1000;
 
-            let old_date_range = date_till.map(|till_date| {
-                let since_date = till_date - sixty_days_millis;
-                (since_date, till_date)
-            });
+    //         let old_date_range = date_till.map(|till_date| {
+    //             let since_date = till_date - sixty_days_millis;
+    //             (since_date, till_date)
+    //         });
 
-            let mut subquery_old_additional_callsigns = base_subquery_callsigns;
+    //         let mut subquery_old_additional_callsigns = base_subquery_callsigns;
 
-            if let Some((since_date, till_date)) = old_date_range {
-                let from_expr = dt_from_millis(since_date)?;
-                let to_expr = dt_from_millis(till_date)?;
+    //         if let Some((since_date, till_date)) = old_date_range {
+    //             let from_expr = dt_from_millis(since_date)?;
+    //             let to_expr = dt_from_millis(till_date)?;
 
-                subquery_old_additional_callsigns
-                    .and_where(
-                        Expr::col((
-                            SigintInboxItem::Table,
-                            SigintInboxItem::Datetime,
-                        ))
-                        .gte(from_expr),
-                    )
-                    .and_where(
-                        Expr::col((
-                            SigintInboxItem::Table,
-                            SigintInboxItem::Datetime,
-                        ))
-                        .lt(to_expr),
-                    );
-            }
+    //             subquery_old_additional_callsigns
+    //                 .and_where(
+    //                     Expr::col((
+    //                         SigintInboxItem::Table,
+    //                         SigintInboxItem::Datetime,
+    //                     ))
+    //                     .gte(from_expr),
+    //                 )
+    //                 .and_where(
+    //                     Expr::col((
+    //                         SigintInboxItem::Table,
+    //                         SigintInboxItem::Datetime,
+    //                     ))
+    //                     .lt(to_expr),
+    //                 );
+    //         }
 
-            subquery_old_additional_callsigns.and_where(
-                Expr::expr(SimpleExpr::Custom("c.callsign".to_string())).is_in(
-                    additional_callsigns
-                        .iter()
-                        .map(|c| c.callsign.clone())
-                        .collect::<Vec<String>>(),
-                ),
-            );
+    //         subquery_old_additional_callsigns.and_where(
+    //             Expr::expr(SimpleExpr::Custom("c.callsign".to_string())).is_in(
+    //                 additional_callsigns
+    //                     .iter()
+    //                     .map(|c| c.callsign.clone())
+    //                     .collect::<Vec<String>>(),
+    //             ),
+    //         );
 
-            let additional_callsigns_old_communications_query =
-                build_callsigns_full_query(
-                    subquery_old_additional_callsigns.clone(),
-                )
-                .await
-                .context(h!())?;
+    //         let additional_callsigns_old_communications_query =
+    //             build_callsigns_full_query(
+    //                 subquery_old_additional_callsigns.clone(),
+    //             )
+    //             .await
+    //             .context(h!())?;
 
-            // let q = additional_callsigns_old_communications_query
-            //     .to_string(PostgresQueryBuilder);
-            // debug!("> old additional callsigns sql: {}", q);
+    //         // let q = additional_callsigns_old_communications_query
+    //         //     .to_string(PostgresQueryBuilder);
+    //         // debug!("> old additional callsigns sql: {}", q);
 
-            let additional_callsigns_old_communications: HashMap<
-                String,
-                (Option<i64>, Option<String>, Option<String>),
-            > = db
-                .query_all(Statement::from_string(
-                    DatabaseBackend::Postgres,
-                    additional_callsigns_old_communications_query
-                        .to_string(PostgresQueryBuilder),
-                ))
-                .await
-                .context(h!())?
-                .into_iter()
-                .map(|row| {
-                    let callsign: String =
-                        row.try_get("", "callsign").unwrap_or_default();
-                    let last_datetime: Option<i64> = row
-                        .try_get::<NaiveDateTime>("", "last_datetime")
-                        .ok()
-                        .map(|ndt| ndt.and_utc().timestamp_millis());
-                    let freqs: Option<String> = row.try_get("", "freqs").ok();
-                    let network_names: Option<String> =
-                        row.try_get("", "network_names").ok();
+    //         let additional_callsigns_old_communications: HashMap<
+    //             String,
+    //             (Option<i64>, Option<String>, Option<String>),
+    //         > = db
+    //             .query_all(Statement::from_string(
+    //                 DatabaseBackend::Postgres,
+    //                 additional_callsigns_old_communications_query
+    //                     .to_string(PostgresQueryBuilder),
+    //             ))
+    //             .await
+    //             .context(h!())?
+    //             .into_iter()
+    //             .map(|row| {
+    //                 let callsign: String =
+    //                     row.try_get("", "callsign").unwrap_or_default();
+    //                 let last_datetime: Option<i64> = row
+    //                     .try_get::<NaiveDateTime>("", "last_datetime")
+    //                     .ok()
+    //                     .map(|ndt| ndt.and_utc().timestamp_millis());
+    //                 let freqs: Option<String> = row.try_get("", "freqs").ok();
+    //                 let network_names: Option<String> =
+    //                     row.try_get("", "network_names").ok();
 
-                    (callsign, (last_datetime, freqs, network_names))
-                })
-                .collect();
+    //                 (callsign, (last_datetime, freqs, network_names))
+    //             })
+    //             .collect();
 
-            for c1 in &mut additional_callsigns {
-                if let Some((last_datetime, freqs, network_names)) =
-                    additional_callsigns_old_communications.get(&c1.callsign)
-                {
-                    let freqs_list = freqs
-                        .as_deref()
-                        .map(|s| s.split(", ").map(|s| s.to_string()).collect())
-                        .unwrap_or_else(Vec::new);
+    //         for c1 in &mut additional_callsigns {
+    //             if let Some((last_datetime, freqs, network_names)) =
+    //                 additional_callsigns_old_communications.get(&c1.callsign)
+    //             {
+    //                 let freqs_list = freqs
+    //                     .as_deref()
+    //                     .map(|s| s.split(", ").map(|s| s.to_string()).collect())
+    //                     .unwrap_or_else(Vec::new);
 
-                    let network_names_list = network_names
-                        .as_deref()
-                        .map(|s| s.split(", ").map(|s| s.to_string()).collect())
-                        .unwrap_or_else(Vec::new);
+    //                 let network_names_list = network_names
+    //                     .as_deref()
+    //                     .map(|s| s.split(", ").map(|s| s.to_string()).collect())
+    //                     .unwrap_or_else(Vec::new);
 
-                    c1.last_datetime = last_datetime.clone();
-                    c1.freqs = (!freqs_list.is_empty()).then(|| freqs_list);
-                    c1.network_names = (!network_names_list.is_empty())
-                        .then(|| network_names_list);
-                    c1.is_old = true;
-                }
-            }
+    //                 c1.last_datetime = last_datetime.clone();
+    //                 c1.freqs = (!freqs_list.is_empty()).then(|| freqs_list);
+    //                 c1.network_names = (!network_names_list.is_empty())
+    //                     .then(|| network_names_list);
+    //                 c1.is_old = true;
+    //             }
+    //         }
 
-            // Append missing known callsigns to result
-            res.extend(additional_callsigns);
-        }
-    }
+    //         // Append missing known callsigns to result
+    //         res.extend(additional_callsigns);
+    //     }
+    // }
 
     res.sort_by(|a, b| match (&a.known_callsigns, &b.known_callsigns) {
         (Some(_), None) => Ordering::Less,
@@ -1418,154 +1088,13 @@ fn filter_callsigns(callsigns: Vec<CallsignRes>) -> Vec<CallsignRes> {
     result
 }
 
-pub async fn load_unregistred_networks(
-    db: &DatabaseConnection,
-    groups: &Vec<String>,
-    req: &Json<EtalonkaReq>,
-) -> Result<Vec<UnregistredNetworksRes>, AppError> {
-    let sub_query = Query::select()
-        .expr_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
-            Alias::new("callsign"),
-        )
-        .to_owned();
-
-    let mut q = Query::select();
-    q.expr_as(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
-        Alias::new("freq"),
-    )
-    .expr_as(
-        Expr::cust("COUNT(DISTINCT signal_message.id)"),
-        Alias::new("message_count"),
-    )
-    .expr_as(
-        Expr::cust("STRING_AGG(DISTINCT c.callsign, ', ')"),
-        Alias::new("callsigns"),
-    )
-    .expr_as(
-        Expr::cust("STRING_AGG(DISTINCT sigint_inbox_item.location_v2, '')"),
-        Alias::new("locations"),
-    );
-    q.from(SignalMessage::Table)
-        .join(
-            JoinType::InnerJoin,
-            SigintInboxItem::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::Id))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-        )
-        .join(
-            JoinType::LeftJoin,
-            SigintNetworkFreq::Table,
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Freq)),
-        )
-        .join(
-            JoinType::LeftJoin,
-            SigintNetwork::Table,
-            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).equals((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::NetworkId,
-            )),
-        )
-        .join_lateral(
-            JoinType::InnerJoin,
-            sub_query,
-            Alias::new("c"),
-            Expr::cust("true"),
-        );
-
-    let mut date_sinse = req.list_freq_req.since_date_inclusive_ms;
-    let mut date_till = req.list_freq_req.till_date_noninclusive_ms;
-    if req.full_etalonka_report {
-        // for full etalonka report took date interval in 20 days from now
-        let twenty_days_millis = 20 * 24 * 60 * 60 * 1000;
-        date_till = get_unix_timestamp_ms();
-        date_sinse = date_till - twenty_days_millis;
-    };
-
-    q.and_where(
-        Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
-            .is_in(groups),
-    )
-    .and_where(
-        Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
-    )
-    .and_where(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-            .gte(dt_from_millis(date_sinse)?),
-    )
-    .and_where(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-            .lt(dt_from_millis(date_till)?),
-    )
-    .and_where(Expr::col((SigintNetwork::Table, SigintNetwork::Id)).is_null())
-    .and_where(
-        Expr::cust("coalesce(sigint_network.deleted, false) = false"), // Custom filter for deleted column
-    )
-    .and_where(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-            .is_not_null(),
-    )
-    .add_group_by([
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into()
-    ])
-    .order_by_expr(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
-        Order::Asc,
-    );
-
-    // debug!(
-    //     "> unregistred networks sql: {}",
-    //     q.to_string(PostgresQueryBuilder)
-    // );
-
-    let res: Vec<UnregistredNetworksRes> = db
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            q.to_string(PostgresQueryBuilder),
-        ))
-        .await
-        .context(h!())?
-        .iter()
-        .map(|row| {
-            let mut locations = BTreeSet::new();
-            if let Some(location_v2) =
-                row.try_get("", "locations").unwrap_or(None)
-            {
-                locations.extend(to_location_list(&location_v2));
-            }
-            UnregistredNetworksRes {
-                freq: row.try_get("", "freq").unwrap_or_default(),
-                message_count: row
-                    .try_get("", "message_count")
-                    .unwrap_or_default(),
-                callsigns: row.try_get("", "callsigns").unwrap_or_default(),
-                locations: Some(
-                    locations.into_iter().collect::<Vec<String>>().join(", "),
-                ),
-            }
-        })
-        .collect();
-
-    Ok(res)
-}
-
 pub async fn load_pelengs_map(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
 ) -> Result<Option<Vec<u8>>, AppError> {
-    let mut date_since = filter.since_date_inclusive_ms;
-    let mut date_till = filter.till_date_noninclusive_ms;
-    if filter.full_etalonka_report {
-        // for full etalonka report took date interval in 20 days from now
-        let twenty_days_millis = 20 * 24 * 60 * 60 * 1000;
-        date_till = Some(get_unix_timestamp_ms());
-        date_since = date_till.map(|till| till - twenty_days_millis);
-    };
+    let date_since = filter.since_date_inclusive_ms;
+    let date_till = filter.till_date_noninclusive_ms;
 
     let mut query = signal_message::Entity::find()
         .join(
@@ -1603,45 +1132,8 @@ pub async fn load_pelengs_map(
         .filter(sigint_inbox_item::Column::Coords.is_not_null())
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_peleng::Column::Deleted.eq(false));
-
-    let needs_unit_join =
-        filter.filter_unit.as_ref().map_or(false, |s| !s.is_empty())
-            || filter.filter_further_investigation.unwrap_or(false);
-
-    if needs_unit_join {
-        query = query
-            .join(
-                JoinType::LeftJoin,
-                sigint_network::Relation::SigintNetworkUnit.def(),
-            )
-            .join(
-                JoinType::LeftJoin,
-                sigint_network_unit::Relation::SigintUnit.def(),
-            )
-    }
-
-    if let Some(unit) = filter.filter_unit.clone() {
-        query = query
-            .filter(sigint_unit::Column::Deleted.eq(false))
-            .filter(sigint_unit::Column::Name.eq(unit));
-    }
-
-    if filter.filter_further_investigation.unwrap_or(false) {
-        query = query.filter(sigint_network_unit::Column::Id.is_null())
-    };
-
-    if let Some(network_id) = filter.network_id {
-        query = query.filter(sigint_network::Column::Id.eq(network_id));
-    }
-
-    if !filter.full_etalonka_report {
-        if let Some(ff) = filter.filter_freq.clone() {
-            query = query.filter(
-                sigint_inbox_item::Column::Freq.like(format!("%{}%", ff)),
-            );
-        }
-    };
+        .filter(sigint_peleng::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Id.eq(filter.network_id));
 
     if let Some(date_since) = date_since {
         query = query.filter(
@@ -1991,58 +1483,6 @@ pub async fn load_networks_by_id(
     Ok(res)
 }
 
-pub async fn get_network_active_freqs(
-    db: &DatabaseConnection,
-    groups: &Vec<String>,
-    filter: &EtalonkaFilter,
-) -> Result<Vec<String>, AppError> {
-    let mut freqs = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
-        )
-        .distinct()
-        .select_only()
-        .column(sigint_network_freq::Column::Freq)
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null());
-
-    if let Some(network_id) = filter.network_id {
-        freqs =
-            freqs.filter(sigint_network_freq::Column::NetworkId.eq(network_id));
-    }
-
-    if let Some(freq) = &filter.filter_freq {
-        freqs = freqs.filter(sigint_network_freq::Column::Freq.eq(freq));
-    }
-    if let Some(since_date_inclusive_ms) = filter.since_date_inclusive_ms {
-        freqs = freqs.filter(
-            sigint_inbox_item::Column::Datetime
-                .gte(dt_from_millis(since_date_inclusive_ms)?),
-        );
-    }
-    if let Some(till_date_inclusive_ms) = filter.till_date_noninclusive_ms {
-        freqs = freqs.filter(
-            sigint_inbox_item::Column::Datetime
-                .lte(dt_from_millis(till_date_inclusive_ms)?),
-        );
-    }
-
-    // debug!(
-    //     "> sql active freqs: {}",
-    //     freqs.clone().build(DbBackend::Postgres).to_string()
-    // );
-
-    let freqs = freqs.into_tuple::<String>().all(db).await.context(h!())?;
-
-    Ok(freqs)
-}
-
 pub async fn get_network_callsings_reporting(
     db: &DatabaseConnection,
     network_id: i64,
@@ -2063,54 +1503,4 @@ pub async fn get_network_callsings_reporting(
         .collect::<BTreeMap<_, _>>();
 
     Ok(callsigns_reporting)
-}
-
-fn get_unix_timestamp_ms() -> i64 {
-    let now = Utc::now();
-    now.timestamp_millis()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_update_freq_network_name_01() {
-        let mut freqs = vec![
-            FreqStatsRes {
-                freq: "456.1203".to_string(),
-                name: "УКХ М1".to_string(),
-                ..Default::default()
-            },
-            FreqStatsRes {
-                freq: "146.5500".to_string(),
-                name: "УКХ М2".to_string(),
-                ..Default::default()
-            },
-            FreqStatsRes {
-                freq: "456.1290".to_string(),
-                name: "УКХ М12".to_string(),
-                ..Default::default()
-            },
-            FreqStatsRes {
-                freq: "140.5500".to_string(),
-                name: "УКХ М3".to_string(),
-                ..Default::default()
-            },
-            FreqStatsRes {
-                freq: "456.1245".to_string(),
-                name: "".to_string(),
-                ..Default::default()
-            },
-        ];
-
-        let delta = 0.005;
-        update_freq_network_name(&mut freqs, delta);
-
-        assert_eq!(freqs[0].name, "УКХ М3");
-        assert_eq!(freqs[1].name, "УКХ М2");
-        assert_eq!(freqs[2].name, "УКХ М1");
-        assert_eq!(freqs[3].name, "УКХ М1");
-        assert_eq!(freqs[4].name, "УКХ М12");
-    }
 }

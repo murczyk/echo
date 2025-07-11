@@ -1919,10 +1919,7 @@ pub async fn network_callsigns_list(
                     Utc::now().naive_utc().and_utc().timestamp_millis()
                 }),
         ),
-        filter_freq: None,
-        filter_unit: None,
-        network_id: Some(req.network_id.clone()),
-        full_etalonka_report: false,
+        network_id: req.network_id,
         filter_further_investigation: None,
     };
 
@@ -2007,10 +2004,7 @@ pub async fn network_freqs_list(
                     Utc::now().naive_utc().and_utc().timestamp_millis()
                 }),
         ),
-        filter_freq: None,
-        filter_unit: None,
-        network_id: Some(req.network_id.clone()),
-        full_etalonka_report: false,
+        network_id: req.network_id,
         filter_further_investigation: None,
     };
 

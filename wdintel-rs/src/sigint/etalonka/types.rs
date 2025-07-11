@@ -1,38 +1,9 @@
-use crate::sigint::freq::types::*;
 use crate::sigint::signal::types::Signal;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-
-pub const SHORT_RANGE_VALUE: f64 = 0.005;
-pub const LONG_RANGE_VALUE: f64 = 0.0075;
-
-#[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    PartialEq,
-)]
-pub enum AdjacentFreqDistance {
-    ShortRange,
-    LongRange,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct EtalonkaReq {
-    pub list_freq_req: ListFreqsReq,
-    pub full_etalonka_report: bool,
-    pub adjacent_freqs_distance: Option<AdjacentFreqDistance>,
-}
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -222,12 +193,9 @@ pub struct PelengsQueryRes {
 pub struct EtalonkaFilter {
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_noninclusive_ms: Option<i64>,
-    pub filter_freq: Option<String>,
-    pub filter_unit: Option<String>,
     /// filter_further_investigation - to filter freqs that does not have any unit assigned to them yet
     pub filter_further_investigation: Option<bool>,
-    pub network_id: Option<i64>,
-    pub full_etalonka_report: bool,
+    pub network_id: i64,
 }
 
 #[derive(
@@ -252,15 +220,6 @@ impl Default for FreqStatsRes {
             confirmation: None,
             first_time: None,
             message_count: 0,
-        }
-    }
-}
-
-impl AdjacentFreqDistance {
-    pub fn as_f64(self) -> f64 {
-        match self {
-            AdjacentFreqDistance::ShortRange => SHORT_RANGE_VALUE,
-            AdjacentFreqDistance::LongRange => LONG_RANGE_VALUE,
         }
     }
 }
