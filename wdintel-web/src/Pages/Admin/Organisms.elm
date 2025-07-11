@@ -1217,10 +1217,9 @@ editOrganismSidebarContent isDark model organismId editState =
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
             [ div [ class "flex justify-end gap-3" ]
-                [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
-                    |> Button.withStyleSecondary
-                    |> Button.withOutlined True
-                    |> Button.view
+                                  [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                      |> Button.withStyleSecondary
+                      |> Button.view
                 , Button.new
                     { label =
                         case editState.groupsValidation of

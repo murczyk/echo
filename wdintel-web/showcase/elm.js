@@ -4771,10 +4771,10 @@ var $dtwrks$elm_book$ElmBook$Custom$customBook = F2(
 			{chapterOptions: $dtwrks$elm_book$ElmBook$Internal$Chapter$defaultOptions, componentOptions: $dtwrks$elm_book$ElmBook$Internal$ComponentOptions$defaultOptions, statefulOptions: $dtwrks$elm_book$ElmBook$Internal$StatefulOptions$defaultOptions, themeOptions: $dtwrks$elm_book$ElmBook$Internal$ThemeOptions$defaultTheme, title: title, toHtml: toHtml});
 	});
 var $dtwrks$elm_book$ElmBook$book = $dtwrks$elm_book$ElmBook$Custom$customBook($elm$core$Basics$identity);
-var $elm$core$Basics$True = {$: 'True'};
 var $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterBuilder = function (a) {
 	return {$: 'ChapterBuilder', a: a};
 };
+var $elm$core$Basics$True = {$: 'True'};
 var $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterOptions = function (a) {
 	return {$: 'ChapterOptions', a: a};
 };
@@ -4835,6 +4835,14 @@ var $dtwrks$elm_book$ElmBook$Chapter$chapter = function (title) {
 			title: title,
 			url: '/' + $dtwrks$elm_book$ElmBook$Internal$Helpers$toSlug(title)
 		});
+};
+var $author$project$Chapters$Button$content = '\n# Button Component\n\nA flexible button component with multiple styles and configurations.\n\n## Primary Buttons\nAll states of primary buttons: normal, disabled, with icon, with icon disabled.\n\n<component with-label="primary" />\n\n## Secondary Buttons\nAll states of secondary buttons: normal, disabled, with icon, with icon disabled.\n\n<component with-label="secondary" />\n\n## API Reference\n\n### Basic Usage\n```elm\n-- Primary button (default styling)\nButton.new { label = "Click me", onClick = MyMsg }\n    |> Button.view\n```\n\n### Available Modifiers\n- `withPrimary` - Apply primary styling (optional, since it\'s the default)\n- `withSecondary` - Apply secondary styling\n- `withDisabled True/False` - Enable/disable the button\n- `withIcon [Html msg]` - Add icon elements to the left of the label\n\n### Button Variants\n- **Primary** - Solid blue background with white text (default)\n- **Secondary** - White background with blue border and blue text\n\n### Button States\nEach button variant supports these states:\n- **Normal** - Default interactive state\n- **Disabled** - Non-interactive state with reduced opacity\n- **With Icon** - Includes icon on the left\n- **With Icon Disabled** - Icon version in disabled state\n\n### Design Specifications\n- **Primary Normal:** Solid `#2c6c91` background with white text\n- **Primary Hover:** Darker `#245a7a` background\n- **Primary Active:** Darkest `#1e4c66` background  \n- **Primary Disabled:** Gray background with reduced opacity\n- **Secondary Normal:** White background with `#2c6c91` border and text\n- **Secondary Hover:** Light `#f8fafc` background with same border\n- **Secondary Active:** Slightly darker `#f1f5f9` background\n- **Secondary Disabled:** Gray background and border with reduced opacity\n\n### Examples\n```elm\n-- Primary button (default - no modifier needed)\nButton.new { label = "Save", onClick = SaveMsg }\n    |> Button.view\n\n-- Secondary button (outlined style)\nButton.new { label = "Cancel", onClick = CancelMsg }\n    |> Button.withSecondary\n    |> Button.view\n\n-- Primary with icon (no withPrimary needed)\nButton.new { label = "Submit", onClick = SubmitMsg }\n    |> Button.withIcon [ someIcon ]\n    |> Button.withDisabled True\n    |> Button.view\n\n-- Explicit primary (optional)\nButton.new { label = "Explicit", onClick = ExplicitMsg }\n    |> Button.withPrimary\n    |> Button.view\n```\n';
+var $dtwrks$elm_book$ElmBook$Internal$Msg$LogAction = F2(
+	function (a, b) {
+		return {$: 'LogAction', a: a, b: b};
+	});
+var $dtwrks$elm_book$ElmBook$Actions$logAction = function (action) {
+	return A2($dtwrks$elm_book$ElmBook$Internal$Msg$LogAction, '', action);
 };
 var $elm$core$Result$Err = function (a) {
 	return {$: 'Err', a: a};
@@ -5226,16 +5234,266 @@ var $elm$html$Html$Attributes$stringProperty = F2(
 	});
 var $elm$html$Html$Attributes$class = $elm$html$Html$Attributes$stringProperty('className');
 var $elm$html$Html$div = _VirtualDom_node('div');
+var $author$project$Components$Button$Active = {$: 'Active'};
 var $author$project$Components$Button$Primary = {$: 'Primary'};
 var $author$project$Components$Button$Settings = function (a) {
 	return {$: 'Settings', a: a};
 };
 var $author$project$Components$Button$new = function (props) {
 	return $author$project$Components$Button$Settings(
-		{iconLeft: _List_Nil, isDisabled: false, isOutlined: false, label: props.label, onClick: props.onClick, style: $author$project$Components$Button$Primary});
+		{iconLeft: _List_Nil, label: props.label, onClick: props.onClick, state: $author$project$Components$Button$Active, variant: $author$project$Components$Button$Primary});
 };
-var $author$project$Components$Button$Secondary = {$: 'Secondary'};
+var $author$project$Components$Button$Disabled = {$: 'Disabled'};
+var $author$project$Components$Button$baseClasses = 'px-4 py-2 rounded font-medium text-xs  flex gap-[4px] items-center justify-center transition-colors duration-200';
 var $elm$html$Html$button = _VirtualDom_node('button');
+var $elm$json$Json$Encode$bool = _Json_wrap;
+var $elm$html$Html$Attributes$boolProperty = F2(
+	function (key, bool) {
+		return A2(
+			_VirtualDom_property,
+			key,
+			$elm$json$Json$Encode$bool(bool));
+	});
+var $elm$html$Html$Attributes$disabled = $elm$html$Html$Attributes$boolProperty('disabled');
+var $elm$virtual_dom$VirtualDom$Normal = function (a) {
+	return {$: 'Normal', a: a};
+};
+var $elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
+var $elm$html$Html$Events$on = F2(
+	function (event, decoder) {
+		return A2(
+			$elm$virtual_dom$VirtualDom$on,
+			event,
+			$elm$virtual_dom$VirtualDom$Normal(decoder));
+	});
+var $elm$html$Html$Events$onClick = function (msg) {
+	return A2(
+		$elm$html$Html$Events$on,
+		'click',
+		$elm$json$Json$Decode$succeed(msg));
+};
+var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
+var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
+var $author$project$Components$Button$variantClasses = F2(
+	function (variant, state) {
+		var _v0 = _Utils_Tuple2(variant, state);
+		if (_v0.a.$ === 'Primary') {
+			if (_v0.b.$ === 'Active') {
+				var _v1 = _v0.a;
+				var _v2 = _v0.b;
+				return 'bg-[#2c6c91] text-white hover:bg-[#245a7a] focus:bg-[#245a7a] focus:outline-none focus:ring-2 focus:ring-[#2c6c91] focus:ring-offset-2 active:bg-[#1e4c66]';
+			} else {
+				var _v3 = _v0.a;
+				var _v4 = _v0.b;
+				return 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60';
+			}
+		} else {
+			if (_v0.b.$ === 'Active') {
+				var _v5 = _v0.a;
+				var _v6 = _v0.b;
+				return 'bg-white text-[#2c6c91] border border-[#2c6c91] hover:bg-[#f8fafc] focus:bg-[#f8fafc] focus:outline-none focus:ring-2 focus:ring-[#2c6c91] focus:ring-offset-2 active:bg-[#f1f5f9]';
+			} else {
+				var _v7 = _v0.a;
+				var _v8 = _v0.b;
+				return 'bg-gray-50 text-gray-400 border border-gray-300 cursor-not-allowed opacity-60';
+			}
+		}
+	});
+var $author$project$Components$Button$view = function (_v0) {
+	var settings = _v0.a;
+	var isDisabled = _Utils_eq(settings.state, $author$project$Components$Button$Disabled);
+	var allClasses = $author$project$Components$Button$baseClasses + (' ' + A2($author$project$Components$Button$variantClasses, settings.variant, settings.state));
+	return A2(
+		$elm$html$Html$button,
+		_List_fromArray(
+			[
+				$elm$html$Html$Events$onClick(settings.onClick),
+				$elm$html$Html$Attributes$class(allClasses),
+				$elm$html$Html$Attributes$disabled(isDisabled)
+			]),
+		_List_fromArray(
+			[
+				A2($elm$html$Html$div, _List_Nil, settings.iconLeft),
+				$elm$html$Html$text(settings.label)
+			]));
+};
+var $author$project$Components$Button$withDisabled = F2(
+	function (isDisabled, _v0) {
+		var settings = _v0.a;
+		var newState = isDisabled ? $author$project$Components$Button$Disabled : $author$project$Components$Button$Active;
+		return $author$project$Components$Button$Settings(
+			_Utils_update(
+				settings,
+				{state: newState}));
+	});
+var $author$project$Chapters$Button$primaryButton = function (props) {
+	return $author$project$Components$Button$view(
+		A2(
+			$author$project$Components$Button$withDisabled,
+			props.disabled,
+			$author$project$Components$Button$new(
+				{label: props.label, onClick: props.onClick})));
+};
+var $author$project$Components$Button$withIcon = F2(
+	function (iconBlock, _v0) {
+		var settings = _v0.a;
+		return $author$project$Components$Button$Settings(
+			_Utils_update(
+				settings,
+				{iconLeft: iconBlock}));
+	});
+var $author$project$Chapters$Button$primaryButtonWithIcon = function (props) {
+	return $author$project$Components$Button$view(
+		A2(
+			$author$project$Components$Button$withDisabled,
+			props.disabled,
+			A2(
+				$author$project$Components$Button$withIcon,
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('w-4 h-4 bg-current')
+							]),
+						_List_Nil)
+					]),
+				$author$project$Components$Button$new(
+					{label: props.label, onClick: props.onClick}))));
+};
+var $author$project$Chapters$Button$primaryButtonRow = function (toMsg) {
+	return A2(
+		$elm$html$Html$div,
+		_List_fromArray(
+			[
+				$elm$html$Html$Attributes$class('flex gap-4 items-center flex-wrap')
+			]),
+		_List_fromArray(
+			[
+				$author$project$Chapters$Button$primaryButton(
+				{
+					disabled: false,
+					label: 'Додати',
+					onClick: toMsg('Primary clicked!')
+				}),
+				$author$project$Chapters$Button$primaryButton(
+				{
+					disabled: true,
+					label: 'Додати',
+					onClick: toMsg('Primary clicked!')
+				}),
+				$author$project$Chapters$Button$primaryButtonWithIcon(
+				{
+					disabled: false,
+					label: 'Додати',
+					onClick: toMsg('Primary Icon clicked!')
+				}),
+				$author$project$Chapters$Button$primaryButtonWithIcon(
+				{
+					disabled: true,
+					label: 'Додати',
+					onClick: toMsg('Primary Icon clicked!')
+				})
+			]));
+};
+var $dtwrks$elm_book$ElmBook$Internal$Chapter$Chapter = function (a) {
+	return {$: 'Chapter', a: a};
+};
+var $dtwrks$elm_book$ElmBook$Chapter$render = F2(
+	function (body, _v0) {
+		var builder = _v0.a;
+		return $dtwrks$elm_book$ElmBook$Internal$Chapter$Chapter(
+			_Utils_update(
+				builder,
+				{
+					body: _Utils_ap(builder.body, body)
+				}));
+	});
+var $author$project$Components$Button$Secondary = {$: 'Secondary'};
+var $author$project$Components$Button$withSecondary = function (_v0) {
+	var settings = _v0.a;
+	return $author$project$Components$Button$Settings(
+		_Utils_update(
+			settings,
+			{variant: $author$project$Components$Button$Secondary}));
+};
+var $author$project$Chapters$Button$secondaryButton = function (props) {
+	return $author$project$Components$Button$view(
+		A2(
+			$author$project$Components$Button$withDisabled,
+			props.disabled,
+			$author$project$Components$Button$withSecondary(
+				$author$project$Components$Button$new(
+					{label: props.label, onClick: props.onClick}))));
+};
+var $author$project$Chapters$Button$secondaryButtonWithIcon = function (props) {
+	return $author$project$Components$Button$view(
+		A2(
+			$author$project$Components$Button$withDisabled,
+			props.disabled,
+			A2(
+				$author$project$Components$Button$withIcon,
+				_List_fromArray(
+					[
+						A2(
+						$elm$html$Html$div,
+						_List_fromArray(
+							[
+								$elm$html$Html$Attributes$class('w-4 h-4 bg-current')
+							]),
+						_List_Nil)
+					]),
+				$author$project$Components$Button$withSecondary(
+					$author$project$Components$Button$new(
+						{label: props.label, onClick: props.onClick})))));
+};
+var $author$project$Chapters$Button$secondaryButtonRow = function (toMsg) {
+	return A2(
+		$elm$html$Html$div,
+		_List_fromArray(
+			[
+				$elm$html$Html$Attributes$class('flex gap-4 items-center flex-wrap')
+			]),
+		_List_fromArray(
+			[
+				$author$project$Chapters$Button$secondaryButton(
+				{
+					disabled: false,
+					label: 'Secondary',
+					onClick: toMsg('Secondary clicked!')
+				}),
+				$author$project$Chapters$Button$secondaryButton(
+				{
+					disabled: true,
+					label: 'Secondary',
+					onClick: toMsg('Secondary clicked!')
+				}),
+				$author$project$Chapters$Button$secondaryButtonWithIcon(
+				{
+					disabled: false,
+					label: 'Secondary',
+					onClick: toMsg('Secondary Icon clicked!')
+				}),
+				$author$project$Chapters$Button$secondaryButtonWithIcon(
+				{
+					disabled: true,
+					label: 'Secondary',
+					onClick: toMsg('Secondary Icon clicked!')
+				})
+			]));
+};
+var $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterComponentViewStateless = function (a) {
+	return {$: 'ChapterComponentViewStateless', a: a};
+};
+var $dtwrks$elm_book$ElmBook$Chapter$fromTuple = function (_v0) {
+	var label = _v0.a;
+	var view_ = _v0.b;
+	return {
+		label: label,
+		view: $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterComponentViewStateless(view_)
+	};
+};
 var $elm$core$List$foldrHelper = F4(
 	function (fn, acc, ctr, ls) {
 		if (!ls.b) {
@@ -5291,17 +5549,6 @@ var $elm$core$List$foldr = F3(
 	function (fn, acc, ls) {
 		return A4($elm$core$List$foldrHelper, fn, acc, 0, ls);
 	});
-var $elm$core$List$filter = F2(
-	function (isGood, list) {
-		return A3(
-			$elm$core$List$foldr,
-			F2(
-				function (x, xs) {
-					return isGood(x) ? A2($elm$core$List$cons, x, xs) : xs;
-				}),
-			_List_Nil,
-			list);
-	});
 var $elm$core$List$map = F2(
 	function (f, xs) {
 		return A3(
@@ -5316,288 +5563,33 @@ var $elm$core$List$map = F2(
 			_List_Nil,
 			xs);
 	});
-var $elm$core$Tuple$second = function (_v0) {
-	var y = _v0.b;
-	return y;
-};
-var $elm$html$Html$Attributes$classList = function (classes) {
-	return $elm$html$Html$Attributes$class(
-		A2(
-			$elm$core$String$join,
-			' ',
-			A2(
-				$elm$core$List$map,
-				$elm$core$Tuple$first,
-				A2($elm$core$List$filter, $elm$core$Tuple$second, classes))));
-};
-var $elm$json$Json$Encode$bool = _Json_wrap;
-var $elm$html$Html$Attributes$boolProperty = F2(
-	function (key, bool) {
-		return A2(
-			_VirtualDom_property,
-			key,
-			$elm$json$Json$Encode$bool(bool));
-	});
-var $elm$html$Html$Attributes$disabled = $elm$html$Html$Attributes$boolProperty('disabled');
-var $elm$virtual_dom$VirtualDom$Normal = function (a) {
-	return {$: 'Normal', a: a};
-};
-var $elm$virtual_dom$VirtualDom$on = _VirtualDom_on;
-var $elm$html$Html$Events$on = F2(
-	function (event, decoder) {
-		return A2(
-			$elm$virtual_dom$VirtualDom$on,
-			event,
-			$elm$virtual_dom$VirtualDom$Normal(decoder));
-	});
-var $elm$html$Html$Events$onClick = function (msg) {
-	return A2(
-		$elm$html$Html$Events$on,
-		'click',
-		$elm$json$Json$Decode$succeed(msg));
-};
-var $elm$virtual_dom$VirtualDom$text = _VirtualDom_text;
-var $elm$html$Html$text = $elm$virtual_dom$VirtualDom$text;
-var $author$project$Components$Button$view = function (_v0) {
-	var settings = _v0.a;
-	return A2(
-		$elm$html$Html$button,
-		_List_fromArray(
-			[
-				$elm$html$Html$Events$onClick(settings.onClick),
-				$elm$html$Html$Attributes$class('border-1 rounded-[6px]! leading-[120%]! font-medium px-[16px] py-[8px] flex gap-[4px] items-center cursor-pointer disabled:bg-[var(--neutral-400)] disabled:cursor-default disabled:border-[var(--neutral-400)]'),
-				$elm$html$Html$Attributes$classList(
-				_List_fromArray(
-					[
-						_Utils_Tuple2(
-						'bg-w dark:bg-background border-action text-action ',
-						_Utils_eq(settings.style, $author$project$Components$Button$Primary) && settings.isOutlined),
-						_Utils_Tuple2(
-						'bg-action border-action text-button-text',
-						_Utils_eq(settings.style, $author$project$Components$Button$Primary) && (!settings.isOutlined)),
-						_Utils_Tuple2(
-						'bg-transparent',
-						_Utils_eq(settings.style, $author$project$Components$Button$Secondary))
-					])),
-				$elm$html$Html$Attributes$disabled(settings.isDisabled)
-			]),
-		_List_fromArray(
-			[
-				A2($elm$html$Html$div, _List_Nil, settings.iconLeft),
-				$elm$html$Html$text(settings.label)
-			]));
-};
-var $author$project$Components$Button$withDisabled = F2(
-	function (isDisabled, _v0) {
-		var settings = _v0.a;
-		return $author$project$Components$Button$Settings(
-			_Utils_update(
-				settings,
-				{isDisabled: isDisabled}));
-	});
-var $author$project$Components$Button$withIcon = F2(
-	function (iconBlock, _v0) {
-		var settings = _v0.a;
-		return $author$project$Components$Button$Settings(
-			_Utils_update(
-				settings,
-				{iconLeft: iconBlock}));
-	});
-var $author$project$Chapters$Button$iconButton = function (props) {
-	return $author$project$Components$Button$view(
-		A2(
-			$author$project$Components$Button$withDisabled,
-			props.disabled,
-			A2(
-				$author$project$Components$Button$withIcon,
-				_List_fromArray(
-					[
-						A2(
-						$elm$html$Html$div,
-						_List_fromArray(
-							[
-								$elm$html$Html$Attributes$class('w-4 h-4 bg-current')
-							]),
-						_List_Nil)
-					]),
-				$author$project$Components$Button$new(
-					{label: props.label, onClick: props.onClick}))));
-};
-var $dtwrks$elm_book$ElmBook$Internal$Msg$LogAction = F2(
-	function (a, b) {
-		return {$: 'LogAction', a: a, b: b};
-	});
-var $dtwrks$elm_book$ElmBook$Actions$logAction = function (action) {
-	return A2($dtwrks$elm_book$ElmBook$Internal$Msg$LogAction, '', action);
-};
-var $author$project$Components$Button$withOutlined = F2(
-	function (isOutlined, _v0) {
-		var settings = _v0.a;
-		return $author$project$Components$Button$Settings(
-			_Utils_update(
-				settings,
-				{isOutlined: isOutlined}));
-	});
-var $author$project$Chapters$Button$outlinedButton = function (props) {
-	return $author$project$Components$Button$view(
-		A2(
-			$author$project$Components$Button$withDisabled,
-			props.disabled,
-			A2(
-				$author$project$Components$Button$withOutlined,
-				true,
-				$author$project$Components$Button$new(
-					{label: props.label, onClick: props.onClick}))));
-};
-var $author$project$Chapters$Button$primaryButton = function (props) {
-	return $author$project$Components$Button$view(
-		A2(
-			$author$project$Components$Button$withDisabled,
-			props.disabled,
-			$author$project$Components$Button$new(
-				{label: props.label, onClick: props.onClick})));
-};
-var $dtwrks$elm_book$ElmBook$Internal$Chapter$Chapter = function (a) {
-	return {$: 'Chapter', a: a};
-};
-var $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterComponentViewStateless = function (a) {
-	return {$: 'ChapterComponentViewStateless', a: a};
-};
-var $dtwrks$elm_book$ElmBook$Chapter$fromTuple = function (_v0) {
-	var label = _v0.a;
-	var view_ = _v0.b;
-	return {
-		label: label,
-		view: $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterComponentViewStateless(view_)
-	};
-};
-var $dtwrks$elm_book$ElmBook$Chapter$renderComponentList = F2(
+var $dtwrks$elm_book$ElmBook$Chapter$withComponentList = F2(
 	function (componentList, _v0) {
 		var builder = _v0.a;
-		return $dtwrks$elm_book$ElmBook$Internal$Chapter$Chapter(
+		return $dtwrks$elm_book$ElmBook$Internal$Chapter$ChapterBuilder(
 			_Utils_update(
 				builder,
 				{
-					body: builder.body + '<component-list />',
 					componentList: _Utils_ap(
 						A2($elm$core$List$map, $dtwrks$elm_book$ElmBook$Chapter$fromTuple, componentList),
 						builder.componentList)
 				}));
 	});
-var $author$project$Components$Button$withStyleSecondary = function (_v0) {
-	var settings = _v0.a;
-	return $author$project$Components$Button$Settings(
-		_Utils_update(
-			settings,
-			{style: $author$project$Components$Button$Secondary}));
-};
-var $author$project$Chapters$Button$secondaryButton = function (props) {
-	return $author$project$Components$Button$view(
-		A2(
-			$author$project$Components$Button$withDisabled,
-			props.disabled,
-			$author$project$Components$Button$withStyleSecondary(
-				$author$project$Components$Button$new(
-					{label: props.label, onClick: props.onClick}))));
-};
-var $author$project$Chapters$Button$secondaryOutlinedButton = function (props) {
-	return $author$project$Components$Button$view(
-		A2(
-			$author$project$Components$Button$withDisabled,
-			props.disabled,
-			A2(
-				$author$project$Components$Button$withOutlined,
-				true,
-				$author$project$Components$Button$withStyleSecondary(
-					$author$project$Components$Button$new(
-						{label: props.label, onClick: props.onClick})))));
-};
-var $author$project$Chapters$Button$firstChapter = function () {
-	var buttonProps = {
-		disabled: false,
-		label: 'Primary Button',
-		onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Primary Button clicked!')
-	};
-	return A2(
-		$dtwrks$elm_book$ElmBook$Chapter$renderComponentList,
+var $author$project$Chapters$Button$firstChapter = A2(
+	$dtwrks$elm_book$ElmBook$Chapter$render,
+	$author$project$Chapters$Button$content,
+	A2(
+		$dtwrks$elm_book$ElmBook$Chapter$withComponentList,
 		_List_fromArray(
 			[
 				_Utils_Tuple2(
-				'Primary Button',
-				$author$project$Chapters$Button$primaryButton(buttonProps)),
+				'primary',
+				$author$project$Chapters$Button$primaryButtonRow($dtwrks$elm_book$ElmBook$Actions$logAction)),
 				_Utils_Tuple2(
-				'Primary Button Disabled',
-				$author$project$Chapters$Button$primaryButton(
-					_Utils_update(
-						buttonProps,
-						{disabled: true}))),
-				_Utils_Tuple2(
-				'Secondary Button',
-				$author$project$Chapters$Button$secondaryButton(
-					{
-						disabled: false,
-						label: 'Secondary Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Secondary Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Secondary Button Disabled',
-				$author$project$Chapters$Button$secondaryButton(
-					{
-						disabled: true,
-						label: 'Secondary Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Secondary Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Outlined Button',
-				$author$project$Chapters$Button$outlinedButton(
-					{
-						disabled: false,
-						label: 'Outlined Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Outlined Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Outlined Button Disabled',
-				$author$project$Chapters$Button$outlinedButton(
-					{
-						disabled: true,
-						label: 'Outlined Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Outlined Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Icon Button',
-				$author$project$Chapters$Button$iconButton(
-					{
-						disabled: false,
-						label: 'Icon Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Icon Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Icon Button Disabled',
-				$author$project$Chapters$Button$iconButton(
-					{
-						disabled: true,
-						label: 'Icon Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Icon Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Secondary Outlined Button',
-				$author$project$Chapters$Button$secondaryOutlinedButton(
-					{
-						disabled: false,
-						label: 'Secondary Outlined Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Secondary Outlined Button clicked!')
-					})),
-				_Utils_Tuple2(
-				'Secondary Outlined Button Disabled',
-				$author$project$Chapters$Button$secondaryOutlinedButton(
-					{
-						disabled: true,
-						label: 'Secondary Outlined Button',
-						onClick: $dtwrks$elm_book$ElmBook$Actions$logAction('Secondary Outlined Button clicked!')
-					}))
+				'secondary',
+				$author$project$Chapters$Button$secondaryButtonRow($dtwrks$elm_book$ElmBook$Actions$logAction))
 			]),
-		$dtwrks$elm_book$ElmBook$Chapter$chapter('Button Component'));
-}();
+		$dtwrks$elm_book$ElmBook$Chapter$chapter('Button Component')));
 var $dtwrks$elm_book$ElmBook$Internal$Msg$OnUrlChange = function (a) {
 	return {$: 'OnUrlChange', a: a};
 };
@@ -7197,6 +7189,17 @@ var $dtwrks$elm_book$ElmBook$Internal$Application$componentView = F3(
 					state_));
 		}
 	});
+var $elm$core$List$filter = F2(
+	function (isGood, list) {
+		return A3(
+			$elm$core$List$foldr,
+			F2(
+				function (x, xs) {
+					return isGood(x) ? A2($elm$core$List$cons, x, xs) : xs;
+				}),
+			_List_Nil,
+			list);
+	});
 var $elm$core$List$head = function (list) {
 	if (list.b) {
 		var x = list.a;
@@ -7423,6 +7426,20 @@ var $elm$core$Result$andThen = F2(
 		}
 	});
 var $dtwrks$elm_book$ElmBook$Internal$ComponentOptions$Inline = {$: 'Inline'};
+var $elm$core$Tuple$second = function (_v0) {
+	var y = _v0.b;
+	return y;
+};
+var $elm$html$Html$Attributes$classList = function (classes) {
+	return $elm$html$Html$Attributes$class(
+		A2(
+			$elm$core$String$join,
+			' ',
+			A2(
+				$elm$core$List$map,
+				$elm$core$Tuple$first,
+				A2($elm$core$List$filter, $elm$core$Tuple$second, classes))));
+};
 var $elm$html$Html$a = _VirtualDom_node('a');
 var $elm$html$Html$Attributes$align = $elm$html$Html$Attributes$stringProperty('align');
 var $elm$html$Html$Attributes$alt = $elm$html$Html$Attributes$stringProperty('alt');

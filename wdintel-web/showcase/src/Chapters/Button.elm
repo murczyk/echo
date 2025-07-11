@@ -2,70 +2,75 @@ module Chapters.Button exposing (firstChapter)
 
 import Components.Button as Button
 import ElmBook.Chapter exposing (..)
-import Html exposing (..)
+import Html exposing (div, Html)
 import Html.Attributes exposing (..)
 import ElmBook.Actions exposing (logAction)
 
 
 firstChapter : Chapter x
 firstChapter =
-    let 
-        buttonProps = { label = "Primary Button", disabled = False, onClick = logAction "Primary Button clicked!" }
-    in
     chapter "Button Component"
-        |> renderComponentList [
-            ( "Primary Button", primaryButton buttonProps ),
-            ( "Primary Button Disabled", primaryButton { buttonProps | disabled = True } ),
-            ( "Secondary Button", secondaryButton { label = "Secondary Button", disabled = False, onClick = logAction "Secondary Button clicked!" } ),
-            ( "Secondary Button Disabled", secondaryButton { label = "Secondary Button", disabled = True, onClick = logAction "Secondary Button clicked!" } ),
-            ( "Outlined Button", outlinedButton { label = "Outlined Button", disabled = False, onClick = logAction "Outlined Button clicked!" } ),
-            ( "Outlined Button Disabled", outlinedButton { label = "Outlined Button", disabled = True, onClick = logAction "Outlined Button clicked!" } ),
-            ( "Icon Button", iconButton { label = "Icon Button", disabled = False, onClick = logAction "Icon Button clicked!" } ),
-            ( "Icon Button Disabled", iconButton { label = "Icon Button", disabled = True, onClick = logAction "Icon Button clicked!" } ),
-            ( "Secondary Outlined Button", secondaryOutlinedButton { label = "Secondary Outlined Button", disabled = False, onClick = logAction "Secondary Outlined Button clicked!" } ),
-            ( "Secondary Outlined Button Disabled", secondaryOutlinedButton { label = "Secondary Outlined Button", disabled = True, onClick = logAction "Secondary Outlined Button clicked!" } )
+        |> withComponentList [
+            ( "primary", primaryButtonRow logAction ),
+            ( "secondary", secondaryButtonRow logAction )
+        ]
+            |> render content 
+
+
+-- Primary Button Row - all variants together
+primaryButtonRow : (String -> msg) -> Html msg
+primaryButtonRow toMsg =
+        div [ class "flex gap-4 items-center flex-wrap" ]
+            [primaryButton { label = "Додати", disabled = False, onClick = toMsg "Primary clicked!" }
+            , primaryButton { label = "Додати", disabled = True, onClick = toMsg "Primary clicked!" }
+            , primaryButtonWithIcon { label = "Додати", disabled = False, onClick = toMsg "Primary Icon clicked!" }
+            , primaryButtonWithIcon { label = "Додати", disabled = True, onClick = toMsg "Primary Icon clicked!" }
+            ]
+
+
+-- Secondary Button Row - all variants together
+secondaryButtonRow : (String -> msg) -> Html msg
+secondaryButtonRow toMsg =
+    div [ class "flex gap-4 items-center flex-wrap" ]
+        [ secondaryButton { label = "Secondary", disabled = False, onClick = toMsg "Secondary clicked!" }
+        , secondaryButton { label = "Secondary", disabled = True, onClick = toMsg "Secondary clicked!" }
+        , secondaryButtonWithIcon { label = "Secondary", disabled = False, onClick = toMsg "Secondary Icon clicked!" }
+        , secondaryButtonWithIcon { label = "Secondary", disabled = True, onClick = toMsg "Secondary Icon clicked!" }
         ]
 
 
--- Example buttons demonstrating different configurations
+-- Primary Button variants
 primaryButton : {label: String, disabled: Bool, onClick: msg} -> Html msg
-primaryButton props  =
-        Button.new { label = props.label, onClick = props.onClick }
-            |> Button.withDisabled props.disabled
-            |> Button.view
+primaryButton props =
+    Button.new { label = props.label, onClick = props.onClick }
+        |> Button.withDisabled props.disabled
+        |> Button.view
 
 
+primaryButtonWithIcon : {label: String, disabled: Bool, onClick: msg} -> Html msg
+primaryButtonWithIcon props =
+    Button.new { label = props.label, onClick = props.onClick }
+        |> Button.withIcon [ div [ class "w-4 h-4 bg-current" ] [] ]
+        |> Button.withDisabled props.disabled
+        |> Button.view
+
+
+-- Secondary Button variants
 secondaryButton : {label: String, disabled: Bool, onClick: msg} -> Html msg
 secondaryButton props =
-        Button.new { label = props.label, onClick = props.onClick }
-            |> Button.withStyleSecondary
-            |> Button.withDisabled props.disabled
-            |> Button.view
+    Button.new { label = props.label, onClick = props.onClick }
+        |> Button.withSecondary
+        |> Button.withDisabled props.disabled
+        |> Button.view
 
 
-outlinedButton : {label: String, disabled: Bool, onClick: msg} -> Html msg
-outlinedButton props =
-        Button.new { label = props.label, onClick = props.onClick }
-            |> Button.withOutlined True
-            |> Button.withDisabled props.disabled
-            |> Button.view
-
-
-iconButton : {label: String, disabled: Bool, onClick: msg} -> Html msg
-iconButton props =
-        Button.new { label = props.label, onClick = props.onClick }
-            |> Button.withIcon [ div [ class "w-4 h-4 bg-current" ] [] ]
-            |> Button.withDisabled props.disabled
-            |> Button.view
-
-
-secondaryOutlinedButton : {label: String, disabled: Bool, onClick: msg} -> Html msg
-secondaryOutlinedButton props =
-        Button.new { label = props.label, onClick = props.onClick }
-            |> Button.withStyleSecondary
-            |> Button.withOutlined True
-            |> Button.withDisabled props.disabled
-            |> Button.view
+secondaryButtonWithIcon : {label: String, disabled: Bool, onClick: msg} -> Html msg
+secondaryButtonWithIcon props =
+    Button.new { label = props.label, onClick = props.onClick }
+        |> Button.withSecondary
+        |> Button.withIcon [ div [ class "w-4 h-4 bg-current" ] [] ]
+        |> Button.withDisabled props.disabled
+        |> Button.view
 
 
 content : String
@@ -75,65 +80,72 @@ content =
 
 A flexible button component with multiple styles and configurations.
 
-## Primary Button
-The default button style with filled background.
+## Primary Buttons
+All states of primary buttons: normal, disabled, with icon, with icon disabled.
 
-<component />
+<component with-label="primary" />
 
-## Secondary Button
-Alternative styling for secondary actions.
+## Secondary Buttons
+All states of secondary buttons: normal, disabled, with icon, with icon disabled.
 
-<component />
-
-## Outlined Button
-Button with transparent background and border.
-
-<component />
-
-## Disabled Button
-Non-interactive button state.
-
-<component />
-
-## Button with Icon
-Button that includes an icon alongside the label.
-
-<component />
-
-## Secondary Outlined Button
-Combination of secondary style with outlined appearance.
-
-<component />
+<component with-label="secondary" />
 
 ## API Reference
 
 ### Basic Usage
 ```elm
+-- Primary button (default styling)
 Button.new { label = "Click me", onClick = MyMsg }
     |> Button.view
 ```
 
 ### Available Modifiers
-- `withStyleSecondary` - Apply secondary styling
-- `withOutlined True/False` - Toggle outlined appearance
+- `withPrimary` - Apply primary styling (optional, since it's the default)
+- `withSecondary` - Apply secondary styling
 - `withDisabled True/False` - Enable/disable the button
 - `withIcon [Html msg]` - Add icon elements to the left of the label
 
+### Button Variants
+- **Primary** - Solid blue background with white text (default)
+- **Secondary** - White background with blue border and blue text
+
+### Button States
+Each button variant supports these states:
+- **Normal** - Default interactive state
+- **Disabled** - Non-interactive state with reduced opacity
+- **With Icon** - Includes icon on the left
+- **With Icon Disabled** - Icon version in disabled state
+
+### Design Specifications
+- **Primary Normal:** Solid `#2c6c91` background with white text
+- **Primary Hover:** Darker `#245a7a` background
+- **Primary Active:** Darkest `#1e4c66` background  
+- **Primary Disabled:** Gray background with reduced opacity
+- **Secondary Normal:** White background with `#2c6c91` border and text
+- **Secondary Hover:** Light `#f8fafc` background with same border
+- **Secondary Active:** Slightly darker `#f1f5f9` background
+- **Secondary Disabled:** Gray background and border with reduced opacity
+
 ### Examples
 ```elm
--- Primary button (default)
+-- Primary button (default - no modifier needed)
 Button.new { label = "Save", onClick = SaveMsg }
     |> Button.view
 
--- Secondary outlined button
+-- Secondary button (outlined style)
 Button.new { label = "Cancel", onClick = CancelMsg }
-    |> Button.withStyleSecondary
-    |> Button.withOutlined True
+    |> Button.withSecondary
     |> Button.view
 
--- Disabled button
+-- Primary with icon (no withPrimary needed)
 Button.new { label = "Submit", onClick = SubmitMsg }
-    |> Button.withDisabled model.isProcessing
+    |> Button.withIcon [ someIcon ]
+    |> Button.withDisabled True
+    |> Button.view
+
+-- Explicit primary (optional)
+Button.new { label = "Explicit", onClick = ExplicitMsg }
+    |> Button.withPrimary
     |> Button.view
 ```
 """

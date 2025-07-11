@@ -28,6 +28,7 @@ import Time.Extra
 import View exposing (View)
 
 
+
 -- VALIDATION
 
 
@@ -62,6 +63,7 @@ validateRequiredFreqs : String -> List a -> Dict String String -> Dict String St
 validateRequiredFreqs fieldName freqsList errors =
     if List.isEmpty freqsList then
         Dict.insert fieldName "Додайте хоча б одну частоту до мережі" errors
+
     else
         errors
 
@@ -100,6 +102,7 @@ type alias Model =
     , addConfirmationInp : String
     , addSignsInp : String
     , creatingNetwork : Bool
+
     -- Frequency creation sidebar
     , freqSidebarOpen : Bool
     , freqCreateState : B.AddNetworkFreq
@@ -118,7 +121,6 @@ init route shared () =
             , unitIds = Nothing
             , name = "управління"
             , location = ""
-            , comment = ""
             , radioStation = Nothing
             , purpose = Just "для управління підлеглим особовим складом"
             , operationMode = Just "дуплекс"
@@ -156,6 +158,7 @@ init route shared () =
       , addConfirmationInp = ""
       , addSignsInp = ""
       , creatingNetwork = False
+
       -- Frequency creation sidebar
       , freqSidebarOpen = False
       , freqCreateState =
@@ -215,7 +218,7 @@ type Msg
     | CancelClicked
     | CreateClicked
     | NetworkCreated (Result ApiError B.Network)
-    -- Frequency sidebar messages
+      -- Frequency sidebar messages
     | OpenFreqSidebar
     | CloseFreqSidebar
     | UpdateFreqField (B.AddNetworkFreq -> B.AddNetworkFreq)
@@ -272,8 +275,11 @@ update shared msg model =
                     , selected = updatedUnit
                     }
 
-                oldNetworkState = model.createNetworkState
-                newNetworkState = { oldNetworkState | unitIds = Maybe.map List.singleton updatedUnit }
+                oldNetworkState =
+                    model.createNetworkState
+
+                newNetworkState =
+                    { oldNetworkState | unitIds = Maybe.map List.singleton updatedUnit }
             in
             ( { model | unitSelect = newSelect, createNetworkState = newNetworkState }
             , E.sendCmd <| Cmd.map UnitSelectMsg selectCmd
@@ -296,8 +302,10 @@ update shared msg model =
                         ( [], RD.Success posts ) ->
                             if List.length (Dict.toList posts) > 0 then
                                 List.map (\post -> Select.basicMenuItem { item = post.id, label = post.name }) (Dict.values posts)
+
                             else
                                 postsSelect.items
+
                         _ ->
                             postsSelect.items
 
@@ -307,8 +315,11 @@ update shared msg model =
                     , selected = updatedPosts
                     }
 
-                oldNetworkState = model.createNetworkState
-                newNetworkState = { oldNetworkState | postIds = updatedPosts }
+                oldNetworkState =
+                    model.createNetworkState
+
+                newNetworkState =
+                    { oldNetworkState | postIds = updatedPosts }
             in
             ( { model | postsSelect = newSelect, createNetworkState = newNetworkState }
             , E.sendCmd <| Cmd.map PostsSelectMsg selectCmd
@@ -332,7 +343,7 @@ update shared msg model =
                     , selected = model.unitSelect.selected
                     }
             in
-            ( { model 
+            ( { model
                 | units = RD.Success response.units
                 , unitSelect = newSelect
               }
@@ -356,19 +367,26 @@ update shared msg model =
                             { descrType = B.Confirmation
                             , description = model.addConfirmationInp
                             }
+
                         B.Sign ->
                             { descrType = B.Sign
                             , description = model.addSignsInp
                             }
 
-                oldState = model.createNetworkState
-                newDescriptions = description :: oldState.descriptions
-                newState = { oldState | descriptions = newDescriptions }
+                oldState =
+                    model.createNetworkState
+
+                newDescriptions =
+                    description :: oldState.descriptions
+
+                newState =
+                    { oldState | descriptions = newDescriptions }
 
                 clearedModel =
                     case descType of
                         B.Confirmation ->
                             { model | addConfirmationInp = "", createNetworkState = newState }
+
                         B.Sign ->
                             { model | addSignsInp = "", createNetworkState = newState }
             in
@@ -379,12 +397,14 @@ update shared msg model =
 
         CreateClicked ->
             let
-                validationErrors = validateCreateNetworkReq model.createNetworkState
+                validationErrors =
+                    validateCreateNetworkReq model.createNetworkState
             in
             if Dict.isEmpty validationErrors then
                 ( { model | creatingNetwork = True, formErrors = Dict.empty }
                 , E.createNetwork NetworkCreated model.createNetworkState
                 )
+
             else
                 ( { model | formErrors = validationErrors }, E.none )
 
@@ -425,8 +445,11 @@ update shared msg model =
                     , selected = updatedKind
                     }
 
-                oldFreqState = model.freqCreateState
-                newFreqState = { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
+                oldFreqState =
+                    model.freqCreateState
+
+                newFreqState =
+                    { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
             in
             ( { model | freqKindSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqKindSelectMsg selectCmd
@@ -446,8 +469,11 @@ update shared msg model =
                     , selected = updatedModulation
                     }
 
-                oldFreqState = model.freqCreateState
-                newFreqState = { oldFreqState | modulationId = updatedModulation }
+                oldFreqState =
+                    model.freqCreateState
+
+                newFreqState =
+                    { oldFreqState | modulationId = updatedModulation }
             in
             ( { model | freqModulationSelect = newSelect, freqCreateState = newFreqState }
             , E.sendCmd <| Cmd.map FreqModulationSelectMsg selectCmd
@@ -455,9 +481,14 @@ update shared msg model =
 
         AddFreqToNetwork ->
             let
-                oldNetworkState = model.createNetworkState
-                newFreqs = model.freqCreateState :: oldNetworkState.freqs
-                newNetworkState = { oldNetworkState | freqs = newFreqs }
+                oldNetworkState =
+                    model.createNetworkState
+
+                newFreqs =
+                    model.freqCreateState :: oldNetworkState.freqs
+
+                newNetworkState =
+                    { oldNetworkState | freqs = newFreqs }
 
                 -- Reset frequency form
                 resetFreqState =
@@ -469,7 +500,7 @@ update shared msg model =
                     , activeTo = Nothing
                     }
             in
-            ( { model 
+            ( { model
                 | createNetworkState = newNetworkState
                 , freqCreateState = resetFreqState
                 , freqSidebarOpen = False
@@ -495,7 +526,7 @@ update shared msg model =
                     , selected = model.freqModulationSelect.selected
                     }
             in
-            ( { model 
+            ( { model
                 | modulations = RD.Success modulations
                 , freqModulationSelect = newSelect
               }
@@ -542,7 +573,7 @@ viewHeader model =
         [ h2 [] [ text "Створення нової мережі" ]
         , div [ class "flex gap-[8px]" ]
             [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
-            , Button.new { label = "Зберегти", onClick = CreateClicked } 
+            , Button.new { label = "Зберегти", onClick = CreateClicked }
                 |> Button.withDisabled model.creatingNetwork
                 |> Button.view
             ]
@@ -574,7 +605,7 @@ viewRightColumn model =
         ]
 
 
-viewMissingFieldsBlock : Shared.Model -> Model -> Html Msg  
+viewMissingFieldsBlock : Shared.Model -> Model -> Html Msg
 viewMissingFieldsBlock shared model =
     div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
         [ h5 [ class "mb-4" ] [ text "Поля відсутні в стандартній формі" ]
@@ -582,15 +613,17 @@ viewMissingFieldsBlock shared model =
             [ div [ class "grid grid-cols-2 gap-4" ]
                 [ div []
                     ([ label [ class "mb-1" ] [ text "Назва:*" ]
-                    , input 
+                     , input
                         [ class "form__field"
                         , type_ "text"
                         , value model.createNetworkState.name
                         , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
                         , isInvalidCls "name" model.formErrors
-                        ] 
+                        ]
                         []
-                    ] ++ fieldError "name" model.formErrors)
+                     ]
+                        ++ fieldError "name" model.formErrors
+                    )
                 , div []
                     [ label [ class "mb-1" ] [ text "Підрозділ (необов'язково)" ]
                     , let
@@ -599,9 +632,9 @@ viewMissingFieldsBlock shared model =
                                 (\unitId ->
                                     Select.basicMenuItem
                                         { item = unitId
-                                        , label = 
+                                        , label =
                                             case RD.withDefault [] model.units of
-                                                units -> 
+                                                units ->
                                                     List.filter (\u -> u.id == unitId) units
                                                         |> List.head
                                                         |> Maybe.map .name
@@ -626,11 +659,11 @@ viewMissingFieldsBlock shared model =
             , div [ class "grid grid-cols-2 gap-4" ]
                 [ div []
                     [ label [ class "mb-1" ] [ text "Радіостанція" ]
-                    , input 
+                    , input
                         [ class "form__field"
                         , value (Maybe.withDefault "" model.createNetworkState.radioStation)
                         , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
-                        ] 
+                        ]
                         []
                     ]
                 , div []
@@ -641,6 +674,7 @@ viewMissingFieldsBlock shared model =
                         , case model.createNetworkState.activeFrom of
                             Just millis ->
                                 value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
                             Nothing ->
                                 value ""
                         , onInput <|
@@ -651,6 +685,7 @@ viewMissingFieldsBlock shared model =
                                                 case Le.Time.parseDateParts v of
                                                     Err _ ->
                                                         state.activeFrom
+
                                                     Ok parts ->
                                                         Time.Extra.partsToPosix shared.timeZone parts
                                                             |> Time.posixToMillis
@@ -670,6 +705,7 @@ viewMissingFieldsBlock shared model =
                         , case model.createNetworkState.activeTo of
                             Just millis ->
                                 value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
                             Nothing ->
                                 value ""
                         , onInput <|
@@ -680,6 +716,7 @@ viewMissingFieldsBlock shared model =
                                                 case Le.Time.parseDateParts v of
                                                     Err _ ->
                                                         state.activeTo
+
                                                     Ok parts ->
                                                         Time.Extra.partsToPosix shared.timeZone parts
                                                             |> Time.posixToMillis
@@ -698,12 +735,13 @@ viewMissingFieldsBlock shared model =
                                     (\postId ->
                                         Select.basicMenuItem
                                             { item = postId
-                                            , label = 
+                                            , label =
                                                 case shared.posts of
                                                     RD.Success posts ->
                                                         Dict.get postId posts
                                                             |> Maybe.map .name
                                                             |> Maybe.withDefault (String.fromInt postId)
+
                                                     _ ->
                                                         String.fromInt postId
                                             }
@@ -745,7 +783,7 @@ viewConfirmationBlock model =
                             [ option [] [ text "Виберіть частоту" ]
                             ]
                         , div [ class "absolute -top-2 -right-2" ]
-                            [ span 
+                            [ span
                                 [ class "text-gray-400 cursor-help"
                                 , title "Додайте хоча б одну частоту до мережі"
                                 ]
@@ -754,7 +792,7 @@ viewConfirmationBlock model =
                         ]
                     ]
                 , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
-                    |> Button.withOutlined True
+                    |> Button.withStyleSecondary
                     |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
                     |> Button.view
                 ]
@@ -782,7 +820,7 @@ viewSignsBlock model =
         , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
             [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
             , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
-                |> Button.withOutlined True
+                |> Button.withStyleSecondary
                 |> Button.withDisabled (String.isEmpty model.addSignsInp)
                 |> Button.view
             ]
@@ -829,6 +867,7 @@ viewFrequenciesSection model =
                         , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
                         ]
                     ]
+
               else
                 div [ class "space-y-2" ]
                     (List.indexedMap viewFrequencyRow model.createNetworkState.freqs)
@@ -846,15 +885,23 @@ viewFrequencyRow index freq =
                     , div [ class "text-sm text-muted-foreground" ] [ text freq.kind ]
                     ]
                 , case freq.modulationId of
-                    Just _ -> div [ class "text-sm text-muted-foreground" ] [ text "Модуляція: Так" ]
-                    Nothing -> text ""
+                    Just _ ->
+                        div [ class "text-sm text-muted-foreground" ] [ text "Модуляція: Так" ]
+
+                    Nothing ->
+                        text ""
                 ]
             , button
                 [ class "text-destructive hover:text-destructive/80"
-                , onClick (UpdateNetworkState (\state -> 
-                    { state | freqs = 
-                        List.take index state.freqs ++ List.drop (index + 1) state.freqs 
-                    }))
+                , onClick
+                    (UpdateNetworkState
+                        (\state ->
+                            { state
+                                | freqs =
+                                    List.take index state.freqs ++ List.drop (index + 1) state.freqs
+                            }
+                        )
+                    )
                 , title "Видалити частоту"
                 ]
                 [ i [ class "bi bi-trash" ] [] ]
@@ -933,6 +980,7 @@ viewFreqSidebar shared model =
                                     model.freqModulationSelect.items
                                     "Не вибрано"
                                     defaultOptions
+
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
                 ]
@@ -941,7 +989,6 @@ viewFreqSidebar shared model =
             [ div [ class "flex justify-end gap-3" ]
                 [ Button.new { label = "Скасувати", onClick = CloseFreqSidebar }
                     |> Button.withStyleSecondary
-                    |> Button.withOutlined True
                     |> Button.view
                 , Button.new { label = "Додати", onClick = AddFreqToNetwork }
                     |> Button.withDisabled (String.trim model.freqCreateState.freq == "")
@@ -952,7 +999,10 @@ viewFreqSidebar shared model =
     ]
 
 
+
 -- Helper function to create the main info block for creation
+
+
 createMainInfoBlock : B.CreateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
 createMainInfoBlock createReq shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
@@ -972,7 +1022,9 @@ createMainInfoBlock createReq shared model =
                     , isInvalidCls "location" model.formErrors
                     ]
                     []
-                ] ++ fieldError "location" model.formErrors)
+                 ]
+                    ++ fieldError "location" model.formErrors
+                )
             ]
         , div [ class "border-t-1 border-border py-[8px] flex" ]
             [ span [ class "text-[13px] font-medium  basis-[33%]" ] [ text "Призначення:" ]
@@ -1015,4 +1067,5 @@ createMainInfoBlock createReq shared model =
                 []
             ]
         ]
-    ] 
+    ]
+
