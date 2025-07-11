@@ -1489,7 +1489,7 @@ view dark shared user model =
                             ]
                         , div [ class "flex gap-[16px]" ]
                             [ --Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
-                            , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                              Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
                             ]
                         ]
                     , case model.networksMergeStatus of
