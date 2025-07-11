@@ -505,6 +505,8 @@ pub async fn load_callsigns(
     known_callsigns: &Vec<KnownCallsignRes>,
     _active_callsigns_only: bool,
 ) -> Result<Vec<CallsignRes>, AppError> {
+    let start = std::time::Instant::now();
+
     trace!("> load_callsigns for network: {:?}", filter.network_id);
 
     let date_since = filter.since_date_inclusive_ms;
@@ -612,9 +614,9 @@ pub async fn load_callsigns(
             Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted))
+            Expr::col((SigintUnit::Table, SigintUnit::Deleted))
                 .eq(false)
-                .or(Expr::col((SigintNetwork::Table, SigintNetwork::Id))
+                .or(Expr::col((SigintUnit::Table, SigintUnit::Id))
                     .is_null()),
         )
         .and_where(
@@ -891,6 +893,12 @@ pub async fn load_callsigns(
         _ => a.callsign.cmp(&b.callsign),
     });
 
+    let duration = start.elapsed();
+    debug!(
+        "[load_callsigns] Execution time: {:.2?} (unit: {:?}, network: {:?})",
+        duration, filter.filter_unit, filter.network_id
+    );    
+
     Ok(res)
 }
 
@@ -920,31 +928,31 @@ async fn build_callsigns_full_query(
     let main_query: sea_query::SelectStatement = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("null"), Alias::new("position"))
-        // .expr_as(Expr::cust("null"), Alias::new("comment"))
-        // .expr_as(
-        //     Expr::cust(
-        //         "(SELECT datetime FROM callsigns c WHERE c.callsign = unique_callsigns.callsign ORDER BY datetime DESC LIMIT 1)"
-        //     ),
-        //     Alias::new("last_datetime"),
-        // )
-        // .expr_as(
-        //     Expr::cust(
-        //         "(SELECT string_agg(t.freq, ', ') FROM (SELECT DISTINCT c.freq FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
-        //     ),
-        //     Alias::new("freqs"),
-        // )
-        // .expr_as(
-        //     Expr::cust(
-        //         "(SELECT string_agg(t.network_name, ', ') FROM (SELECT DISTINCT c.network_name FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
-        //     ),
-        //     Alias::new("network_names"),
-        // )
-        // .expr_as(
-        //     Expr::cust(
-        //         "(SELECT COUNT(*) FROM callsigns c WHERE c.callsign = unique_callsigns.callsign)"
-        //     ),
-        //     Alias::new("message_count"),
-        // )
+        .expr_as(Expr::cust("null"), Alias::new("comment"))
+        .expr_as(
+            Expr::cust(
+                "(SELECT datetime FROM callsigns c WHERE c.callsign = unique_callsigns.callsign ORDER BY datetime DESC LIMIT 1)"
+            ),
+            Alias::new("last_datetime"),
+        )
+        .expr_as(
+            Expr::cust(
+                "(SELECT string_agg(t.freq, ', ') FROM (SELECT DISTINCT c.freq FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
+            ),
+            Alias::new("freqs"),
+        )
+        .expr_as(
+            Expr::cust(
+                "(SELECT string_agg(t.network_name, ', ') FROM (SELECT DISTINCT c.network_name FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
+            ),
+            Alias::new("network_names"),
+        )
+        .expr_as(
+            Expr::cust(
+                "(SELECT COUNT(*) FROM callsigns c WHERE c.callsign = unique_callsigns.callsign)"
+            ),
+            Alias::new("message_count"),
+        )
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
         .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
