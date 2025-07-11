@@ -895,8 +895,8 @@ pub async fn load_callsigns(
 
     let duration = start.elapsed();
     debug!(
-        "[load_callsigns] Execution time: {:.2?} (unit: {:?}, network: {:?})",
-        duration, filter.filter_unit, filter.network_id
+        "[load_callsigns] Execution time: {:.2?} (network: {:?})",
+        duration, filter.network_id
     );    
 
     Ok(res)
