@@ -6,6 +6,7 @@ import Html exposing (..)
 import Html.Attributes exposing (class)
 import Le.Utils as Utils
 
+
 unitName : Dict Int B.Unit -> Int -> String
 unitName masterUnits unitId =
     case Dict.get unitId masterUnits of
@@ -41,12 +42,6 @@ boldMasterUnit masterUnits network =
             , text <|
                 if network.location /= "" then
                     " (" ++ String.toUpper network.location ++ ")"
-
-                else
-                    ""
-            , text <|
-                if network.comment /= "" then
-                    " (коментар: " ++ network.comment ++ ")"
 
                 else
                     ""

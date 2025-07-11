@@ -3,11 +3,13 @@ module Pages.RerNetworks.Id_ exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Bytes exposing (Bytes)
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
+import File.Download as Download
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -34,8 +36,6 @@ import Shared
 import Time
 import Time.Extra
 import View exposing (View)
-import Bytes exposing (Bytes)
-import File.Download as Download
 
 
 page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
@@ -346,7 +346,6 @@ update shared msg model =
                                 { id = network.id
                                 , name = network.name
                                 , location = network.location
-                                , comment = network.comment
                                 , radioStation = network.radioStation
                                 , purpose = network.purpose
                                 , operationMode = network.operationMode
@@ -841,7 +840,8 @@ update shared msg model =
 
         ReportDownloadReturnedByApi (Err e) ->
             let
-                m2 = { model | reportDownloadInProgress = False }
+                m2 =
+                    { model | reportDownloadInProgress = False }
             in
             Api.handleHttpError ToastMsg e m2
 
@@ -1431,8 +1431,8 @@ contentBlock user shared network model =
                                         "виберіть частоту"
                                         defaultOptions
                             ]
-                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation } 
-                            |> Button.withOutlined True 
+                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation }
+                            |> Button.withStyleSecondary
                             |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
                             |> Button.view
                         ]
@@ -1505,8 +1505,8 @@ contentBlock user shared network model =
                 [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
                 , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
                     [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign } 
-                        |> Button.withOutlined True 
+                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
+                        |> Button.withStyleSecondary
                         |> Button.withDisabled (String.isEmpty model.addSignsInp)
                         |> Button.view
                     ]

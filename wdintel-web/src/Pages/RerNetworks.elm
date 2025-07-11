@@ -382,7 +382,6 @@ generatePreview x =
     in
     { networkTo
         | location = concatUnique networkTo.location networkFrom.location
-        , comment = concatUnique networkTo.comment networkFrom.comment
 
         --, confirmation = concatUniqueMaybe networkTo.confirmation networkFrom.confirmation
         , radioStation = concatUniqueMaybe networkTo.radioStation networkFrom.radioStation
@@ -1493,7 +1492,7 @@ view dark shared user model =
                             div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
                                 [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
                                 , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                    |> Button.withOutlined True
+                                    |> Button.withStyleSecondary
                                     |> Button.view
                                 ]
 
@@ -1587,10 +1586,6 @@ networksMergeSidebarContent model =
                         , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
                             [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Частоти:" ]
                             , span [] [ preview.freqs |> List.map .freq |> String.join ", " |> text ]
-                            ]
-                        , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
-                            [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Коментар" ]
-                            , span [] [ text preview.comment ]
                             ]
                         , li [ class "flex gap-[4px] py-[8px]" ]
                             [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Радіостанція:" ]

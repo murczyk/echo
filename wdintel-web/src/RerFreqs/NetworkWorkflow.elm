@@ -245,18 +245,6 @@ viewCreateNewNetwork addState freq model shared =
                 ]
                 []
             ]
-        , div [ class "col-span-12" ]
-            [ label [ class "mb-1" ] [ text "Коментар" ]
-            , input
-                [ class "form-control"
-                , value <| addState.comment
-                , onInput <|
-                    \v ->
-                        NetworkAddMsg
-                            { addState | comment = v }
-                ]
-                []
-            ]
         ]
     , section
         [ class "grid grid-cols-12  gap-y-2 gap-x-4 my-[16px]" ]
@@ -729,18 +717,6 @@ viewEditingNetwork editState model shared =
                     \v ->
                         NetworkEditMsg
                             { editState | location = v }
-                ]
-                []
-            ]
-        , div [ class "col-span-2" ]
-            [ label [ class "mb-1" ] [ text "Коментар" ]
-            , input
-                [ class "form-control"
-                , value <| editState.comment
-                , onInput <|
-                    \v ->
-                        NetworkEditMsg
-                            { editState | comment = v }
                 ]
                 []
             ]

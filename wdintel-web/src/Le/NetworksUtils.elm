@@ -12,8 +12,11 @@ renderNetworkNameWithoutType network masterUnits =
     let
         hasNoUnits =
             case network.unitIds of
-                Nothing -> True
-                Just ids -> List.isEmpty ids
+                Nothing ->
+                    True
+
+                Just ids ->
+                    List.isEmpty ids
     in
     div []
         [ div []
@@ -25,12 +28,13 @@ renderNetworkNameWithoutType network masterUnits =
                     (List.map (Unit.unitName masterUnits)
                         (Maybe.withDefault [] network.unitIds)
                     )
-             ] ++
-             (if hasNoUnits then
-                [ span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ] ]
-              else
-                []
-             )
+             ]
+                ++ (if hasNoUnits then
+                        [ span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ] ]
+
+                    else
+                        []
+                   )
             )
         ]
 
@@ -51,12 +55,6 @@ renderNetwork network masterUnits =
             , text <|
                 if network.location /= "" then
                     " (" ++ String.toUpper network.location ++ ")"
-
-                else
-                    ""
-            , text <|
-                if network.comment /= "" then
-                    " (коментар: " ++ network.comment ++ ")"
 
                 else
                     ""

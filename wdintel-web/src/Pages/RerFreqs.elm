@@ -259,7 +259,8 @@ loadFreqsWithTracker : Model -> Bool -> String -> Cmd Msg
 loadFreqsWithTracker model paginating tracker =
     case ( model.from.datePosix, model.to.datePosix ) of
         ( Just dtFromPosix, Just dtToPosix ) ->
-            Api.sigint_list_freqs_with_tracker (GotFreqs paginating) tracker
+            Api.sigint_list_freqs_with_tracker (GotFreqs paginating)
+                tracker
                 { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
                 , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
                 , newOnly = model.newOnly
@@ -822,7 +823,7 @@ update shared msg model =
                             }
 
                         f2 =
-                            case addNetworkState.freqs |> Maybe.andThen List.head of
+                            case List.head addNetworkState.freqs of
                                 Just freqObj ->
                                     Just [ { freqObj | modulationId = updatedNetworkModulation } ]
 
@@ -947,7 +948,7 @@ update shared msg model =
                             }
 
                         f2 =
-                            case addNetworkState.freqs |> Maybe.andThen List.head of
+                            case List.head addNetworkState.freqs of
                                 Just freqObj ->
                                     Just [ { freqObj | kind = NetworksUtils.networkKindToString updatedNetworkKind } ]
 
@@ -1110,27 +1111,31 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
-                tracker = "freqs-" ++ String.fromInt (model.requestCounter + 1)
-                
-                cancelPrevious = 
+                tracker =
+                    "freqs-" ++ String.fromInt (model.requestCounter + 1)
+
+                cancelPrevious =
                     case model.currentRequestTracker of
-                        Just prevTracker -> Http.cancel prevTracker
-                        Nothing -> Cmd.none
-                        
+                        Just prevTracker ->
+                            Http.cancel prevTracker
+
+                        Nothing ->
+                            Cmd.none
+
                 ( debounce, debounceCmd ) =
                     Debounce.update
                         filterStateDebounceConfig
                         (Debounce.takeLast (\_ -> loadFreqsWithTracker model False tracker))
                         imsg
                         model.filterStateDebounce
-                        
-                model2 = 
-                    { model 
-                    | filterStateDebounce = debounce
-                    , loading = True
-                    , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
-                    , currentRequestTracker = Just tracker
-                    , requestCounter = model.requestCounter + 1
+
+                model2 =
+                    { model
+                        | filterStateDebounce = debounce
+                        , loading = True
+                        , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
+                        , currentRequestTracker = Just tracker
+                        , requestCounter = model.requestCounter + 1
                     }
             in
             ( model2
@@ -1444,7 +1449,6 @@ update shared msg model =
                             CreateNewNetwork freq
                                 { name = "управління"
                                 , location = ""
-                                , comment = ""
                                 , radioStation = Nothing
                                 , operationType = Just "ведення службового радіообміну"
                                 , operationMode = Just "дуплекс"
@@ -1453,15 +1457,14 @@ update shared msg model =
                                 --, kind =
                                 , unitIds = Maybe.map (\unitId -> [ unitId ]) model.networkDialogUnitSelect.selected
                                 , freqs =
-                                    Just
-                                        [ { freq = freq
-                                          , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
-                                          , modulationId = model.addModulationSelect.selected
-                                          , description = Nothing
-                                          , activeFrom = Nothing
-                                          , activeTo = Nothing
-                                          }
-                                        ]
+                                    [ { freq = freq
+                                      , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
+                                      , modulationId = model.addModulationSelect.selected
+                                      , description = Nothing
+                                      , activeFrom = Nothing
+                                      , activeTo = Nothing
+                                      }
+                                    ]
                                 , operationPeriod = Just "цілодобово"
                                 , activeTo = Nothing
                                 , activeFrom = Nothing
@@ -1509,7 +1512,6 @@ update shared msg model =
                                         { id = network.id
                                         , name = network.name
                                         , location = network.location
-                                        , comment = network.comment
                                         , radioStation = network.radioStation
                                         , operationType = network.operationType
                                         , operationMode = network.operationMode
@@ -1872,10 +1874,13 @@ update shared msg model =
                 -- Toggle behavior: if clicking the same unit, clear it; otherwise set new unit
                 newUnitFilter =
                     if model.filterState.unit == unitName then
-                        ""  -- Clear filter if same unit clicked
-                    else
-                        unitName  -- Set new unit if different
+                        ""
+                        -- Clear filter if same unit clicked
 
+                    else
+                        unitName
+
+                -- Set new unit if different
                 newFilterState =
                     { freq = model.filterState.freq
                     , unit = newUnitFilter
