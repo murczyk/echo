@@ -57,7 +57,7 @@ pub struct UpdateFreqNetworksReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateNetworkReq {
-    pub freqs: Option<Vec<AddNetworkFreq>>,
+    pub freqs: Vec<AddNetworkFreq>,
     pub unit_ids: Option<Vec<i64>>,
     pub name: String,
     pub location: String,

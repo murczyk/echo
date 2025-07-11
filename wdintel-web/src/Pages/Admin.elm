@@ -1544,7 +1544,7 @@ body dark shared user model =
                             , div [ class "mt-3 flex justify-end gap-2" ]
                                 [ Button.view
                                     (Button.new { label = "Скасувати", onClick = CloseUserSelector }
-                                        |> Button.withOutlined True
+                                        |> Button.withStyleSecondary
                                     )
                                 , Button.view
                                     (Button.new { label = "Зберегти", onClick = UserSelectorSave })
@@ -1570,7 +1570,7 @@ body dark shared user model =
                             , div [ class "flex justify-end gap-3" ]
                                 [ Button.view
                                     (Button.new { label = "Скасувати", onClick = CancelRemoveGroup }
-                                        |> Button.withOutlined True
+                                        |> Button.withStyleSecondary
                                     )
                                 , Button.view
                                     (Button.new { label = "Видалити", onClick = ConfirmRemoveGroup })

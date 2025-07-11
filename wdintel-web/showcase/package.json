@@ -1,0 +1,22 @@
+{
+  "name": "showcase",
+  "version": "1.0.0",
+  "main": "elm.js",
+  "scripts": {
+    "build:css": "postcss ../src/style.css -o style.css",
+    "watch:css": "chokidar '../src/style.css' -c 'npm run build:css'",
+    "dev": "npm run build:css && npm run watch:css",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "autoprefixer": "^10.4.20",
+    "chokidar-cli": "^3.0.0",
+    "postcss": "^8.5.1",
+    "postcss-cli": "^11.0.0"
+  }
+}

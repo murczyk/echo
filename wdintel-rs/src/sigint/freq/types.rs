@@ -249,3 +249,11 @@ pub struct CallsignsForFreqRsp {
 pub struct FreqCallsign {
     pub callsign: String,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FreqExistsReq {
+    pub freq: String,
+    pub since_date_inclusive_ms: i64,
+}

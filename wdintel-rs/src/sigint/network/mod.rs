@@ -447,6 +447,13 @@ pub async fn create_network(
 
     let txn = env.dbx.begin().await.context(h!())?;
 
+    if req.freqs.is_empty() {
+        return Err(AppError::Form(BTreeMap::from_iter([(
+            "freqs".to_string(),
+            "Мережа має містити як мінімум одну частоту".to_string(),
+        )])));
+    }
+
     let active_from = req
         .active_from
         .map(|dt| dt_from_millis(dt))
@@ -495,7 +502,7 @@ pub async fn create_network(
     .await
     .context(h!())?;
 
-    for frequency in req.freqs.clone().unwrap_or(vec![]) {
+    for frequency in req.freqs.clone() {
         let active_from = frequency
             .active_from
             .map(|dt| dt_from_millis(dt))

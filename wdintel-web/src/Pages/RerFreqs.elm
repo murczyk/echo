@@ -823,12 +823,12 @@ update shared msg model =
                             }
 
                         f2 =
-                            case List.head addNetworkState.freqs of
+                            case List.head addNetworkState.freqs   of
                                 Just freqObj ->
-                                    Just [ { freqObj | modulationId = updatedNetworkModulation } ]
+                                    [ { freqObj | modulationId = updatedNetworkModulation } ]
 
                                 Nothing ->
-                                    Nothing
+                                    []
 
                         ns2 =
                             { addNetworkState | freqs = f2 }
@@ -948,12 +948,12 @@ update shared msg model =
                             }
 
                         f2 =
-                            case List.head addNetworkState.freqs of
+                            case List.head addNetworkState.freqs   of
                                 Just freqObj ->
-                                    Just [ { freqObj | kind = NetworksUtils.networkKindToString updatedNetworkKind } ]
+                                    [ { freqObj | kind = NetworksUtils.networkKindToString updatedNetworkKind } ]
 
                                 Nothing ->
-                                    Nothing
+                                    []
 
                         ns2 =
                             { addNetworkState | freqs = f2 }
@@ -1111,16 +1111,12 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
-                tracker =
-                    "freqs-" ++ String.fromInt (model.requestCounter + 1)
+                tracker = "freqs-" ++ String.fromInt (model.requestCounter + 1)
 
                 cancelPrevious =
                     case model.currentRequestTracker of
-                        Just prevTracker ->
-                            Http.cancel prevTracker
-
-                        Nothing ->
-                            Cmd.none
+                        Just prevTracker -> Http.cancel prevTracker
+                        Nothing -> Cmd.none
 
                 ( debounce, debounceCmd ) =
                     Debounce.update
@@ -1131,15 +1127,15 @@ update shared msg model =
 
                 model2 =
                     { model
-                        | filterStateDebounce = debounce
-                        , loading = True
-                        , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
-                        , currentRequestTracker = Just tracker
-                        , requestCounter = model.requestCounter + 1
+                    | filterStateDebounce = debounce
+                    , loading = True
+                    , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
+                    , currentRequestTracker = Just tracker
+                    , requestCounter = model.requestCounter + 1
                     }
             in
             ( model2
-            , E.batch 
+            , E.batch
                 [ E.sendCmd cancelPrevious
                 , E.sendCmd debounceCmd
                 ]
@@ -1384,10 +1380,10 @@ update shared msg model =
                                     in
                                     { oldFreq | description = Just desc }
                                 )
-                                (Maybe.withDefault [] state.freqs)
+                                state.freqs
                     in
                     ( model
-                    , E.createNetwork (NetworkCreated freq) { state | freqs = Just freqs }
+                    , E.createNetwork (NetworkCreated freq) { state | freqs = freqs }
                     )
 
                 _ ->
@@ -1457,14 +1453,14 @@ update shared msg model =
                                 --, kind =
                                 , unitIds = Maybe.map (\unitId -> [ unitId ]) model.networkDialogUnitSelect.selected
                                 , freqs =
-                                    [ { freq = freq
-                                      , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
-                                      , modulationId = model.addModulationSelect.selected
-                                      , description = Nothing
-                                      , activeFrom = Nothing
-                                      , activeTo = Nothing
-                                      }
-                                    ]
+                                        [ { freq = freq
+                                          , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
+                                          , modulationId = model.addModulationSelect.selected
+                                          , description = Nothing
+                                          , activeFrom = Nothing
+                                          , activeTo = Nothing
+                                          }
+                                        ]
                                 , operationPeriod = Just "цілодобово"
                                 , activeTo = Nothing
                                 , activeFrom = Nothing
@@ -1901,7 +1897,7 @@ update shared msg model =
                     }
 
                 m2 =
-                    { model 
+                    { model
                         | filterState = clearedFilterState
                         , showOnlyInvestigating = False
                         , loading = True

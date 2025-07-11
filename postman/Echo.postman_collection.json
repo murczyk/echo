@@ -390,6 +390,37 @@
 			"response": []
 		},
 		{
+			"name": "sigint/network-callsigns-list",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"network_id\":2838}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/network-callsigns-list",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"network-callsigns-list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/freqs",
 			"request": {
 				"auth": {
@@ -415,6 +446,38 @@
 						"api",
 						"sigint",
 						"freqs"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "sigint/freq/freq-exists",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\"since_date_inclusive_ms\":1750063071917,\n\"freq\":\"155.1250\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/freq/freq-exists",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"freq",
+						"freq-exists"
 					]
 				}
 			},

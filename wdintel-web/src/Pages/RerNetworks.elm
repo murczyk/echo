@@ -298,6 +298,7 @@ type Msg
     | FilterUnitMsg String
     | ToggleSidebar
     | ClearAllFilters
+    | CreateNewNetworkClicked
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -971,6 +972,9 @@ update shared msg model =
             in
             ( m3, eff )
 
+        CreateNewNetworkClicked ->
+            ( model, E.pushRoutePath Route.Path.RerNetworks_Create )
+
 
 findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
 findSuggestedToMergeNetworks networks_ =
@@ -1483,8 +1487,9 @@ view dark shared user model =
                                 [ text "мережі" ]
                             , dateAndPanelsBlock dark model
                             ]
-                        , div []
-                            [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                        , div [ class "flex gap-[16px]" ]
+                            [ --Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
+                              Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
                             ]
                         ]
                     , case model.networksMergeStatus of
