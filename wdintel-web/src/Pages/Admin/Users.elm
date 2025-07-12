@@ -130,6 +130,7 @@ type alias Model =
         , items : List (Select.MenuItem String)
         , selectedItems : List String
         }
+    , filterLoginInput : String
     , tableState : Table.State
     }
 
@@ -208,6 +209,7 @@ init =
             }
       , tableState = Table.initialSort "Логін"
       , sidebarOpen = False
+      , filterLoginInput = ""
       }
     , E.sendCmd <|
         Cmd.batch
@@ -247,6 +249,7 @@ type Msg
     | FilterOrganismSelMsg (Select.Msg Int)
     | FilterStatusSelMsg (Select.Msg Status)
     | FilterRoleSelMsg (Select.Msg String)
+    | SetFilterLogin String
     | SetTableState Table.State
     | CloseEditSidebar
 
@@ -790,6 +793,9 @@ update msg model =
                 ]
             )
 
+        SetFilterLogin value ->
+            ( { model | filterLoginInput = value }, E.none )
+
         SetTableState newState ->
             ( { model | tableState = newState }, E.none )
 
@@ -884,6 +890,69 @@ subscriptions model =
 
 
 -- Dynamic filter helper functions
+
+
+getFilteredDataForLoginFilter : Model -> List B.Login
+getFilteredDataForLoginFilter model =
+    model.logins
+        |> List.filter
+            (\login ->
+                let
+                    matchesLogin =
+                        if String.isEmpty model.filterLoginInput then
+                            True
+
+                        else
+                            String.contains
+                                (String.toLower model.filterLoginInput)
+                                (String.toLower login.login)
+
+                    matchesOrganism =
+                        case model.filterOrganismSelect.selectedItems of
+                            [] ->
+                                True
+
+                            organismIds ->
+                                case login.organismId of
+                                    Just orgId ->
+                                        List.member orgId organismIds
+
+                                    Nothing ->
+                                        False
+
+                    matchesStatus =
+                        case model.filterStatusSelect.selectedItem of
+                            Nothing ->
+                                True
+
+                            Just Active ->
+                                not login.deleted
+
+                            Just Deleted ->
+                                login.deleted
+
+                            Just DeletedByAdmin ->
+                                login.deleted && login.deactivationReason == Just B.Admin
+
+                            Just DeletedByInactivity ->
+                                login.deleted && login.deactivationReason == Just B.Inactive
+
+                            Just DeletedByOrganism ->
+                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
+
+                            Just Unknown ->
+                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
+
+                    matchesRole =
+                        case model.filterRoleSelect.selectedItems of
+                            [] ->
+                                True
+
+                            selectedRoles ->
+                                List.any (\role -> List.member role selectedRoles) login.roles
+                in
+                matchesLogin && matchesOrganism && matchesStatus && matchesRole
+            )
 
 
 getFilteredDataForOrganismFilter : Model -> List B.Login
@@ -1306,56 +1375,7 @@ mainContent shared model =
                 ]
 
             rows =
-                model.logins
-                    |> List.filter
-                        (\login ->
-                            let
-                                matchesStatus =
-                                    case model.filterStatusSelect.selectedItem of
-                                        Nothing ->
-                                            True
-
-                                        Just Active ->
-                                            not login.deleted
-
-                                        Just Deleted ->
-                                            login.deleted
-
-                                        Just DeletedByAdmin ->
-                                            login.deleted && login.deactivationReason == Just B.Admin
-
-                                        Just DeletedByInactivity ->
-                                            login.deleted && login.deactivationReason == Just B.Inactive
-
-                                        Just DeletedByOrganism ->
-                                            login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
-
-                                        Just Unknown ->
-                                            login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
-
-                                matchesOrganism =
-                                    case model.filterOrganismSelect.selectedItems of
-                                        [] ->
-                                            True
-
-                                        organismIds ->
-                                            case login.organismId of
-                                                Just orgId ->
-                                                    List.member orgId organismIds
-
-                                                Nothing ->
-                                                    False
-
-                                matchesRole =
-                                    case model.filterRoleSelect.selectedItems of
-                                        [] ->
-                                            True
-
-                                        selectedRoles ->
-                                            List.any (\role -> List.member role selectedRoles) login.roles
-                            in
-                            matchesStatus && matchesOrganism && matchesRole
-                        )
+                getFilteredDataForLoginFilter model
 
             viewFilterBlock : Html Msg
             viewFilterBlock =
@@ -1474,6 +1494,21 @@ mainContent shared model =
                                         (Le.Block.Select.defaultOptions shared.isDarkMode)
                             ]
                         ]
+                    , div [ class "grid grid-cols-12 gap-4 mt-4" ]
+                        [ div [ class "col-span-4" ]
+                            [ label [ class "block text-sm font-medium mb-1" ] [ text "Логін" ]
+                            , div [ class "flex-1" ]
+                                [ input
+                                    [ class "form-input w-full"
+                                    , type_ "text"
+                                    , placeholder "Пошук за логіном..."
+                                    , value model.filterLoginInput
+                                    , onInput SetFilterLogin
+                                    ]
+                                    []
+                                ]
+                            ]
+                        ]
                     ]
           in
           div []
@@ -1540,24 +1575,26 @@ editLoginSidebarContent shared model loginId editState =
                 , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Пароль" ]
                     , div [ class "flex items-center gap-2" ]
-                                                    [ input
-                                [ class "flex-1 px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                                , type_ "password"
-                                , placeholder 
-                                    (if editState.doChangePassword then
-                                        "Введіть новий пароль"
-                                     else
-                                        "••••••••••••••"
-                                    )
-                                , value (Maybe.withDefault "" editState.inpPassword)
-                                , onInput SetEditPassword
-                                , disabled (not editState.doChangePassword)
-                                ]
-                                []
+                        [ input
+                            [ class "flex-1 px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                            , type_ "password"
+                            , placeholder
+                                (if editState.doChangePassword then
+                                    "Введіть новий пароль"
+
+                                 else
+                                    "••••••••••••••"
+                                )
+                            , value (Maybe.withDefault "" editState.inpPassword)
+                            , onInput SetEditPassword
+                            , disabled (not editState.doChangePassword)
+                            ]
+                            []
                         , if editState.doChangePassword then
                             Button.new { label = "Скасувати", onClick = ToggleEditPassword }
                                 |> Button.withStyleSecondary
                                 |> Button.view
+
                           else
                             Button.new { label = "Редагувати", onClick = ToggleEditPassword }
                                 |> Button.withStyleSecondary
@@ -1592,7 +1629,7 @@ editLoginSidebarContent shared model loginId editState =
                         ]
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Зона" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Напрямок" ]
                     , div [ class "w-full" ]
                         [ Html.map EditZoneSelMsg <|
                             Styled.toUnstyled <|
@@ -1727,7 +1764,7 @@ usersTableConfig shared model =
                 }
                 |> Table.withColumnWidth "15%"
             , Table.customColumn
-                { name = "Зона"
+                { name = "Напрямок"
                 , viewData = \login -> Maybe.withDefault "-" login.sigintZoneName
                 , sorter = Table.increasingOrDecreasingBy (\login -> Maybe.withDefault "-" login.sigintZoneName)
                 }
