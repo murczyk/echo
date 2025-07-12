@@ -12,7 +12,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.Console
 import Le.Types exposing (ApiError)
 import Page exposing (Page)
@@ -45,7 +45,6 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , consoleCSV : Le.Console.Model
     , consoleKMZ : Le.Console.Model
     }
@@ -54,7 +53,6 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , consoleCSV = Le.Console.init
       , consoleKMZ = Le.Console.init
       }
@@ -63,8 +61,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | UploadCSVFileToConvert
+    = UploadCSVFileToConvert
     | UploadCSVFileToConvertSelected File
     | UploadCSVFileToConvertDone File (Result ApiError Int)
     | UploadKMZFileToConvert
@@ -77,15 +74,6 @@ type Msg
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         UploadCSVFileToConvert ->
             ( model
             , E.sendCmd <|
@@ -105,7 +93,7 @@ update msg model =
             )
 
         UploadCSVFileToConvertDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "CSV Import Error" e )
 
         UploadCSVFileToConvertDone _ (Ok taskId) ->
             ( model
@@ -131,7 +119,7 @@ update msg model =
             )
 
         UploadKMZFileToConvertDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "KMZ Import Error" e )
 
         UploadKMZFileToConvertDone _ (Ok taskId) ->
             ( model
@@ -164,8 +152,8 @@ subscriptions model =
 
 contentBlock : Model -> Html Msg
 contentBlock model =
-    div []
-        [ p []
+    div [class "mt-2"]
+        [ h3 []
             [ text "Приймає CSV-файл експортований з Комінтіфай або Дельти, що містить виключно координати. Приклад вмісту файлу що приймається:" ]
         , pre []
             [ text """type,name,time,y,x,comment
@@ -204,12 +192,11 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Імпорт Дельта/Комінтіфай CSV/KMZ"
     , body =
-        [ Views.headerAndContent "Імпорт Дельта/Комінтіфай CSV/KMZ" ToastMsg model.toasts <|
-            div [ class "page-rer-delta-import-csv" ] <|
-                [ div [ class "row" ]
-                    [ div [ class "col-sm-12" ]
-                        [ contentBlock model ]
-                    ]
+        [ div [ class "w-4/5 mx-auto bd-gutter" ]
+            [ div [ class "row" ]
+                [ div [ class "col-sm-12" ]
+                    [ contentBlock model ]
                 ]
+            ]
         ]
     }

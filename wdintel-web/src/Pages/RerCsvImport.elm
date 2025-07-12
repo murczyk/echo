@@ -12,7 +12,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.Console
 import Le.Types exposing (ApiError)
 import Page exposing (Page)
@@ -45,7 +45,6 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , console : Le.Console.Model
     }
 
@@ -53,7 +52,6 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , console = Le.Console.init
       }
     , E.none
@@ -61,8 +59,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | UploadFileToConvert
+    = UploadFileToConvert
     | UploadFileToConvertSelected File
     | UploadFileToConvertDone File (Result ApiError Int)
     | ConsoleMsg (Le.Console.Msg Msg)
@@ -71,15 +68,6 @@ type Msg
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         UploadFileToConvert ->
             ( model
             , E.sendCmd <|
@@ -99,7 +87,7 @@ update msg model =
             )
 
         UploadFileToConvertDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "CSV Import Error" e )
 
         UploadFileToConvertDone _ (Ok taskId) ->
             ( model
@@ -123,8 +111,8 @@ subscriptions model =
 
 contentBlock : Model -> Html Msg
 contentBlock model =
-    div []
-        [ p []
+    div [class "mt-2"]
+        [ h3 []
             [ text "Приймає CSV-файл з єдиною колонкою, що містить перехоплення виду:" ]
         , div [ class "flex justify-center items-center" ]
             [ pre
@@ -161,12 +149,11 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Імпорт csv"
     , body =
-        [ Views.headerAndContent "Імпорт csv" ToastMsg model.toasts <|
-            div [ class "page-rer-import-csv" ] <|
-                [ div [ class "row" ]
-                    [ div [ class "col-sm-12" ]
-                        [ contentBlock model ]
-                    ]
+        [ div [ class "w-4/5 mx-auto bd-gutter" ]
+            [ div [ class "row" ]
+                [ div [ class "col-sm-12" ]
+                    [ contentBlock model ]
                 ]
+            ]
         ]
     }
