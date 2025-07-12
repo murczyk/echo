@@ -21,7 +21,7 @@ import Le.Auth
 import Le.Block.DateTime
 import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.RemoteData exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError)
@@ -60,9 +60,7 @@ toLayout user model =
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , zone : Maybe Time.Zone
+    { zone : Maybe Time.Zone
     , units : List B.Unit
     , callsigns : List B.Callsign
     , callsignsWithUnitsFromInbox : RemoteData ApiError (List ( String, List String ))
@@ -117,9 +115,7 @@ init req _ =
 
         m2 : Model
         m2 =
-            { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
-            , zone = Nothing
+            { zone = Nothing
             , units = []
             , callsigns = []
             , callsignsWithUnitsFromInbox = NotAsked
@@ -168,8 +164,7 @@ init req _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
+    = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
     | GotUnits (Result ApiError B.ListUnitsRsp)
     | GotCallsigns (Result ApiError B.ListCallsignsRsp)
     | GotCallsignsWithUnitsFromInbox (Result ApiError B.GetCallsignsWithUnitsFromInboxRsp)
@@ -405,21 +400,10 @@ filterUnitDebounceConfig =
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
 update req msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         InitGotZone (Err e) ->
             ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError
+                ("Error getting timezone: " ++ renderZoneError e)
             )
 
         InitGotZone (Ok ( _, zone )) ->
@@ -448,7 +432,9 @@ update req msg model =
             )
 
         GotUnits (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            )
 
         GotUnits (Ok rsp) ->
             case Dict.get "unitId" req.query |> Maybe.andThen String.toInt of
@@ -476,7 +462,9 @@ update req msg model =
                     )
 
         GotCallsigns (Err err) ->
-            Api.handleHttpError ToastMsg err { model | loading = False, loadingMore = False }
+            ( { model | loading = False, loadingMore = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
+            )
 
         GotCallsigns (Ok rsp) ->
             let
@@ -497,7 +485,9 @@ update req msg model =
             ( m2, loadCallsignsWithUnitsFromInbox m2 )
 
         GotCallsignsWithUnitsFromInbox (Err err) ->
-            Api.handleHttpError ToastMsg err { model | callsignsWithUnitsFromInbox = Failure err }
+            ( { model | callsignsWithUnitsFromInbox = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних з підрозділами" err
+            )
 
         GotCallsignsWithUnitsFromInbox (Ok rsp) ->
             ( { model
@@ -654,7 +644,9 @@ update req msg model =
                             )
 
         AddCallsignDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення позивного" err
+            )
 
         AddCallsignDone (Ok _) ->
             ( { model
@@ -731,7 +723,9 @@ update req msg model =
                             )
 
         EditCallsignDone _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення позивного" err
+            )
 
         EditCallsignDone id (Ok _) ->
             ( { model
@@ -763,7 +757,9 @@ update req msg model =
             ( { model | deleteCallsignConfirmation = Nothing, deleteDialogOpen = False }, E.none )
 
         DeleteCallsignDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного" err
+            )
 
         DeleteCallsignDone (Ok _) ->
             ( { model | loading = True }
@@ -779,7 +775,9 @@ update req msg model =
             )
 
         GotSources (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел" err
+            )
 
         GotSources (Ok rsp) ->
             ( { model
@@ -916,9 +914,9 @@ update req msg model =
             )
 
         GotUnitStats (Err err) ->
-            Api.handleHttpError ToastMsg
-                err
-                { model | loadingUnitStats = False }
+            ( { model | loadingUnitStats = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            )
 
         GotUnitStats (Ok rsp) ->
             ( { model | unitStats = rsp.units, loadingUnitStats = False }
@@ -1461,6 +1459,7 @@ contentBlock shared model user =
                                 [ let
                                     options =
                                         Le.Block.Select.defaultOptions shared.isDarkMode
+
                                     options2 =
                                         { options | disabled = not hasEditorRole }
                                   in
@@ -1502,9 +1501,13 @@ contentBlock shared model user =
                                             )
                                             "жоден"
                                             (Le.Block.Select.defaultOptions shared.isDarkMode
-                                                |> (\opts -> { opts | disabled =
-                                                    not hasEditorRole
-                                                    , clearable = False})
+                                                |> (\opts ->
+                                                        { opts
+                                                            | disabled =
+                                                                not hasEditorRole
+                                                            , clearable = False
+                                                        }
+                                                   )
                                             )
                                 ]
                             , button
@@ -1531,6 +1534,7 @@ contentBlock shared model user =
                             , value addState.inpRadioFreq
                             ]
                             []
+
                       else
                         text ""
                     ]
@@ -1565,18 +1569,20 @@ contentBlock shared model user =
                             i [ class "bi bi-filter text-lg" ] []
                         , h5 [ class "fw-bold mb-0 text-gray-900 dark:text-gray-100" ] [ text "Фільтри" ]
                         , if activeFilterCount > 0 then
-                            span 
+                            span
                                 [ class "ml-1 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200" ]
                                 [ text (String.fromInt activeFilterCount) ]
+
                           else
                             text ""
                         ]
-                    , div 
+                    , div
                         [ class "d-flex align-items-center cursor-pointer text-secondary hover:text-gray-700"
                         , onClick ClearFilters
-                        , attribute "title" 
+                        , attribute "title"
                             (if hasActiveFilters then
                                 "Скинути всі фільтри (" ++ String.fromInt activeFilterCount ++ ")"
+
                              else
                                 "Немає активних фільтрів"
                             )
@@ -1623,7 +1629,13 @@ contentBlock shared model user =
                             , button
                                 [ class "px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700"
                                 , onClick ToggleSidebar
-                                , attribute "title" (if model.showSidebar then "Сховати підрозділи" else "Показати підрозділи")
+                                , attribute "title"
+                                    (if model.showSidebar then
+                                        "Сховати підрозділи"
+
+                                     else
+                                        "Показати підрозділи"
+                                    )
                                 ]
                                 [ text "Підрозділи" ]
                             ]
@@ -1669,6 +1681,7 @@ contentBlock shared model user =
                                         { model =
                                             if not model.isIgnoringDateFilter then
                                                 model.from
+
                                             else
                                                 Le.Block.DateTime.init ()
                                         , toMsg = DateTimeFromMsg
@@ -1682,6 +1695,7 @@ contentBlock shared model user =
                                         { model =
                                             if not model.isIgnoringDateFilter then
                                                 model.to
+
                                             else
                                                 Le.Block.DateTime.init ()
                                         , toMsg = DateTimeToMsg
@@ -1738,8 +1752,10 @@ contentBlock shared model user =
                                             (case model.sortingOrder of
                                                 Default ->
                                                     "bi bi-sort-alpha-down"
+
                                                 AscAlphabetically ->
                                                     "bi bi-sort-alpha-up"
+
                                                 DescAlphabetically ->
                                                     "bi bi-sort-alpha-down"
                                             )
@@ -1855,14 +1871,14 @@ unitsBlock shared model =
         Le.Block.Spinner.loadingSpinner
 
     else
-        section [] [
-                div [ class "p-4 border-b border-border" ]
-                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
-                                [ Html.text "Підрозділи" ]
-                            , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
-                                [ Html.text "Оберіть підрозділ для фільтрації" ]
-                            ]
-            ,UnitHierarchy.view config model.units model.unitStats
+        section []
+            [ div [ class "p-4 border-b border-border" ]
+                [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2" ]
+                    [ Html.text "Підрозділи" ]
+                , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
+                    [ Html.text "Оберіть підрозділ для фільтрації" ]
+                ]
+            , UnitHierarchy.view config model.units model.unitStats
             ]
 
 
@@ -1870,46 +1886,54 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "позивні"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "flex justify-start items-start h-[calc(100vh-50px)]" ]
-                [ if model.showSidebar then
-                    div
-                        [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
+        [ div [ class "flex justify-start items-start h-[calc(100vh-50px)]" ]
+            [ if model.showSidebar then
+                div
+                    [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
+                    ]
+                    [ button
+                        [ class "absolute top-2 right-2 z-10 btn btn-sm btn-outline-secondary"
+                        , onClick ToggleSidebar
+                        , attribute "title" "Сховати підрозділи"
                         ]
-                        [ button
-                            [ class "absolute top-2 right-2 z-10 btn btn-sm btn-outline-secondary"
-                            , onClick ToggleSidebar
-                            , attribute "title" "Сховати підрозділи"
-                            ]
-                            [ i [ class "bi bi-chevron-left" ] [] ]
-                        , unitsBlock shared model
+                        [ i [ class "bi bi-chevron-left" ] [] ]
+                    , unitsBlock shared model
+                    ]
+
+              else
+                text ""
+            , div
+                [ class
+                    (if model.showSidebar then
+                        "grow h-full overflow-auto"
+
+                     else
+                        "grow h-full overflow-auto mx-auto max-w-[98vw]"
+                    )
+                ]
+                [ h1 [ class "py-2 ps-4" ]
+                    [ span [ class "me-2" ] [ text "позивні" ]
+                    , button
+                        [ type_ "button"
+                        , class "inline-block btn btn-outline-secondary me-2"
+                        , onClick Refresh
+                        , attribute "data-tooltip" "оновити"
+                        , attribute "data-position" "bottom"
                         ]
-                  else
-                    text ""
-                , div
-                    [ class (if model.showSidebar then "grow h-full overflow-auto" else "grow h-full overflow-auto mx-auto max-w-[98vw]") ]
-                    [ h1 [ class "py-2 ps-4" ]
-                        [ span [ class "me-2" ] [ text "позивні" ]
-                        , button
-                            [ type_ "button"
-                            , class "inline-block btn btn-outline-secondary me-2"
-                            , onClick Refresh
-                            , attribute "data-tooltip" "оновити"
-                            , attribute "data-position" "bottom"
-                            ]
-                            (if model.loading then
-                                [ Le.Block.Spinner.loadingSpinner2Sm ]
-                             else
-                                [ i [ class "bi bi-arrow-repeat" ] [] ]
-                            )
-                        ]
-                    , div [] <|
-                        [ div []
-                            [ div [ class "mx-2" ]
-                                [ contentBlock shared model user ]
-                            ]
+                        (if model.loading then
+                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                         else
+                            [ i [ class "bi bi-arrow-repeat" ] [] ]
+                        )
+                    ]
+                , div [] <|
+                    [ div []
+                        [ div [ class "mx-2" ]
+                            [ contentBlock shared model user ]
                         ]
                     ]
                 ]
+            ]
         ]
     }
