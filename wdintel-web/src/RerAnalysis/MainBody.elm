@@ -676,7 +676,7 @@ filtersAndMainContent user model shared route =
                             Encode.list Encode.string model.unitsSelected
                     in
                     div
-                        (class "h-100 position-relative"
+                        (class "h-full relative"
                             :: (if not model.unfoldMapBlock then
                                     [ class "h-0" ]
 

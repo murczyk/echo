@@ -1,0 +1,69 @@
+/* Toggle Styles */
+/* Description: Toggle switch components for on/off states */
+
+/* Toggle Container */
+.toggle {
+    cursor: pointer;
+    display: inline-block;
+}
+
+/* Toggle Switch - The visual switch element */
+.toggle-switch {
+    display: inline-block;
+    background: #ccc;
+    border-radius: 16px;
+    width: 58px;
+    height: 32px;
+    position: relative;
+    vertical-align: middle;
+    transition: background 0.25s;
+}
+
+/* Toggle Switch Pseudo-elements */
+.toggle-switch:before,
+.toggle-switch:after {
+    content: "";
+}
+
+/* Toggle Switch Knob */
+.toggle-switch:before {
+    display: block;
+    background: linear-gradient(to bottom, #fff 0%, #eee 100%);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+    width: 24px;
+    height: 24px;
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    transition: left 0.25s;
+}
+
+/* Hover effect on toggle switch */
+.toggle:hover .toggle-switch:before {
+    background: linear-gradient(to bottom, #fff 0%, #fff 100%);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+/* Checked state - green background */
+.toggle-checkbox:checked+.toggle-switch {
+    background: #56c080;
+}
+
+/* Checked state - move knob to right */
+.toggle-checkbox:checked+.toggle-switch:before {
+    left: 30px;
+}
+
+/* Hidden checkbox input */
+.toggle-checkbox {
+    position: absolute;
+    visibility: hidden;
+}
+
+/* Toggle Label */
+.toggle-label {
+    margin-left: 5px;
+    position: relative;
+    top: 2px;
+}
