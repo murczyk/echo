@@ -9,7 +9,7 @@ import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (..)
+import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
 import Http
@@ -106,6 +106,7 @@ type alias Model =
     , freqInpDebounce : Debounce String
     , requestCounter : Int
     , currentRequestTracker : Maybe String
+    , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
     }
 
 
@@ -188,6 +189,7 @@ init route shared () =
       , freqInpDebounce = Debounce.init
       , requestCounter = 0
       , currentRequestTracker = Nothing
+      , freqGroupsActivityForNetworkAdd = NotAsked
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -236,6 +238,7 @@ type Msg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqInpDebounceMsg Debounce.Msg
     | CheckIfFreqExistDone (Result ApiError ())
+    | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -251,7 +254,33 @@ update shared msg model =
             )
 
         UpdateNetworkState updateFunc ->
-            ( { model | createNetworkState = updateFunc model.createNetworkState }, E.none )
+            let
+                oldActiveFrom = model.createNetworkState.activeFrom
+                newState = updateFunc model.createNetworkState
+                newActiveFrom = newState.activeFrom
+                
+                -- Check if activeFrom changed and we have a frequency to get activity for
+                shouldLoadActivity = 
+                    oldActiveFrom /= newActiveFrom 
+                    && MaybeX.isJust newActiveFrom
+                    && not (List.isEmpty newState.freqs)
+                
+                activityCmd = 
+                    if shouldLoadActivity then
+                        let
+                            freq = List.head newState.freqs |> Maybe.map .freq |> Maybe.withDefault ""
+                        in
+                        E.getFreqActivityDaily FreqGroupsActivityReturnedByApi
+                            { freq = freq
+                            , sinceDateInclusiveMs = Time.posixToMillis (Le.Time.xDaysAgo 30 (Time.millisToPosix shared.now))
+                            , tillDateInclusiveMs = Nothing
+                            }
+                    else
+                        E.none
+            in
+            ( { model | createNetworkState = newState }
+            , activityCmd
+            )
 
         KindSelectMsg selectMsg ->
             let
@@ -509,13 +538,34 @@ update shared msg model =
                     , activeFrom = Nothing
                     , activeTo = Nothing
                     }
+                
+                -- Check if we should load activity data
+                shouldLoadActivity = 
+                    MaybeX.isJust newNetworkState.activeFrom
+                    && not (List.isEmpty newFreqs)
+                
+                activityCmd = 
+                    if shouldLoadActivity then
+                        let
+                            freq = List.head newFreqs |> Maybe.map .freq |> Maybe.withDefault ""
+                        in
+                        E.getFreqActivityDaily FreqGroupsActivityReturnedByApi
+                            { freq = freq
+                            , sinceDateInclusiveMs = Time.posixToMillis (Le.Time.xDaysAgo 30 (Time.millisToPosix shared.now))
+                            , tillDateInclusiveMs = Nothing
+                            }
+                    else
+                        E.none
             in
             ( { model
                 | createNetworkState = newNetworkState
                 , freqCreateState = resetFreqState
                 , freqSidebarOpen = False
               }
-            , E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Частоту додано до мережі"
+            , E.batch
+                [ E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Частоту додано до мережі"
+                , activityCmd
+                ]
             )
 
         ModulationsReturnedByApi (Ok modulations) ->
@@ -617,6 +667,12 @@ update shared msg model =
         CheckIfFreqExistDone (Ok _) ->
             ( model, E.none )
 
+        FreqGroupsActivityReturnedByApi (Ok r) ->
+            ( { model | freqGroupsActivityForNetworkAdd = Success r }, E.none )
+
+        FreqGroupsActivityReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
+
 
 checkIfFreqExist : String -> Int -> String -> Cmd Msg
 checkIfFreqExist freq sinceDate tracker =
@@ -684,6 +740,7 @@ viewLeftColumn shared model =
     div [ class "col-span-7 flex flex-col gap-[30px]" ]
         [ viewMissingFieldsBlock shared model
         , viewMainInfoBlock shared model
+        , viewActivityBlock shared model
         ]
 
 
@@ -758,66 +815,6 @@ viewMissingFieldsBlock shared model =
                         []
                     ]
                 , div []
-                    [ label [ class "mb-1" ] [ text "Активна з:" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control"
-                        , case model.createNetworkState.activeFrom of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateNetworkState
-                                << (\v state ->
-                                        { state
-                                            | activeFrom =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeFrom
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                ]
-            , div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    [ label [ class "mb-1" ] [ text "Активна по:" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control"
-                        , case model.createNetworkState.activeTo of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateNetworkState
-                                << (\v state ->
-                                        { state
-                                            | activeTo =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeTo
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                , div []
                     [ label [ class "mb-1" ] [ text "Пости:" ]
                     , let
                         selectedItems =
@@ -850,6 +847,91 @@ viewMissingFieldsBlock shared model =
                                 "Виберіть пости"
                                 defaultOptions
                     ]
+                ]
+            ]
+        ]
+
+
+viewActivityBlock : Shared.Model -> Model -> Html Msg
+viewActivityBlock shared model =
+    div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        [ h5 [ class "mb-4" ] [ text "Активність мережі" ]
+        , div [ class "space-y-4" ]
+            [ div [ class "mb-4" ]
+                [ span [ class "opacity-70 text-sm" ] [ text "Виберіть дату початку функціонування мережі на основі графіку активності частоти за місяць" ]
+                ]
+            , div [ class "grid grid-cols-12 gap-[8px]" ]
+                [ div [ class "col-span-4" ]
+                    [ label [ class "mb-1" ] [ text "Активна з:" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control w-[150px]!"
+                        , required True
+                        , case model.createNetworkState.activeFrom of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateNetworkState
+                                << (\v state ->
+                                        { state
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div [ class "col-span-4" ]
+                    [ label [ class "mb-1" ] [ text "Активна по:" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control w-[150px]!"
+                        , case model.createNetworkState.activeTo of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateNetworkState
+                                << (\v state ->
+                                        { state
+                                            | activeTo =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeTo
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div [ class "col-span-4" ]
+                    [ text "" ]
+                ]
+            , div [ class "h-[300px]" ]
+                [ let
+                    groupsMessageCountByDayJson =
+                        B.freqDailyActivityCountEncoder (RD.withDefault { dataPerDate = Dict.empty } model.freqGroupsActivityForNetworkAdd)
+                  in
+                  Html.node "bar-chart-2"
+                    [ Attr.property "data" <| groupsMessageCountByDayJson
+                    ]
+                    []
                 ]
             ]
         ]
