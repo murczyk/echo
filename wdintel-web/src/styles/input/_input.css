@@ -1,0 +1,127 @@
+/* Input Styles */
+/* Description: Form input components with variants */
+
+/* Form Field - Underlined input style */
+.form__field {
+    width: 300px;
+    border: 0;
+    border-bottom: 2px solid var(--border-color);
+    outline: 0;
+    background: transparent;
+    transition: border-color 0.2s;
+}
+
+.form__field:focus {
+    border-color: var(--ochre-normal);
+}
+
+/* Reset input validation styles */
+.form__field {
+
+    &:required,
+    &:invalid {
+        box-shadow: none;
+    }
+}
+
+/* Textarea Field - Multi-line text input */
+.textarea__field {
+    width: 100%;
+    border: 0;
+    border: 1px solid var(--border-color);
+    outline: 0;
+    background: transparent;
+    transition: border-color 0.2s;
+    border-radius: 6px;
+    padding: 4px;
+    height: 70px;
+}
+
+.textarea__field:focus {
+    border-color: var(--ochre-normal);
+}
+
+/* Form Input - Standard text input */
+.form-input {
+    @apply rounded border px-3 py-2 text-sm transition-colors;
+    border-color: var(--color-border);
+    background-color: transparent;
+    color: var(--color-text);
+}
+
+.form-input:focus {
+    @apply outline-none;
+    border-color: var(--color-border-selected);
+}
+
+.form-input:disabled {
+    @apply cursor-not-allowed opacity-50;
+    background-color: var(--color-background);
+}
+
+.form-input::placeholder {
+    color: var(--color-text);
+    opacity: 0.5;
+}
+
+/* Dark mode adjustments */
+html[data-bs-theme="dark"] .form-input {
+    background-color: transparent;
+    border-color: var(--color-border);
+}
+
+html[data-bs-theme="dark"] .form-input:disabled {
+    background-color: var(--color-background);
+}
+
+/* Radio Group Styles */
+.radio-group {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.radio-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.radio-input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.2s;
+    outline: none;
+    margin: 0;
+    vertical-align: middle;
+}
+
+.radio-input:checked {
+    border-color: var(--ochre-normal);
+}
+
+.radio-input:checked::before {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 10px;
+    background: var(--ochre-normal);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+html[data-bs-theme="dark"] .radio-input:checked::before {
+    background: var(--ochre-normal);
+}

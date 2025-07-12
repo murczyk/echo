@@ -1,0 +1,156 @@
+/* Badge Styles */
+/* Description: Badge components with color variants and states */
+
+/* Base Badge - Reusable badge system */
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: 9999px;
+    /* fully rounded */
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+}
+
+/* Ochre light variant - for general purpose badges like organism groups */
+.badge--ochre-light {
+    background-color: var(--ochre-light);
+    color: var(--ochre-dark);
+    border-color: var(--ochre-light-active);
+}
+
+html[data-bs-theme="dark"] .badge--ochre-light {
+    background-color: var(--ochre-dark);
+    color: var(--ochre-light);
+    border-color: var(--ochre-normal);
+}
+
+/* Gray-blue variant - for unit hierarchy badges (less prominent than red) */
+.badge--neutral {
+    background-color: #f1f5f9;
+    color: #475569;
+    border-color: #cbd5e1;
+}
+
+html[data-bs-theme="dark"] .badge--neutral {
+    background-color: #475569;
+    color: #f1f5f9;
+    border-color: #64748b;
+}
+
+/* Red variant - for unit hierarchy badges */
+.badge--red {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+}
+
+html[data-bs-theme="dark"] .badge--red {
+    background-color: #991b1b;
+    color: #fef2f2;
+    border-color: #dc2626;
+}
+
+/* Blue variant - keeping existing functionality */
+.badge--blue {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border-color: #93c5fd;
+}
+
+html[data-bs-theme="dark"] .badge--blue {
+    background-color: #1e40af;
+    color: #dbeafe;
+    border-color: #3b82f6;
+}
+
+/* Gray variant - for neutral badges */
+.badge--gray {
+    background-color: #f3f4f6;
+    color: #374151;
+    border-color: #d1d5db;
+}
+
+html[data-bs-theme="dark"] .badge--gray {
+    background-color: #374151;
+    color: #f3f4f6;
+    border-color: #6b7280;
+}
+
+/* Badge No Unit - Special badge for unit-less values */
+.badge-no-unit {
+    background-color: var(--ochre-light);
+    color: var(--ochre-dark);
+    border: 1px solid var(--ochre-light-active);
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 9999px;
+    padding: 0.25rem 0.5rem;
+    margin-left: 4px;
+    vertical-align: middle;
+    display: inline-block;
+    transition: all 0.15s ease;
+}
+
+html[data-bs-theme="dark"] .badge-no-unit {
+    background-color: var(--ochre-dark);
+    color: var(--ochre-light);
+    border-color: var(--ochre-normal);
+}
+
+/* Badge Selected - Interactive badge state */
+.badge-selected {
+    cursor: pointer;
+}
+
+/* Highlighted Token Badges - For text analysis */
+.badge-highlighed-token {
+    background-color: #fd884f;
+    color: #fff;
+    font-size: 90%;
+    padding: 0.15em 0.3em;
+    font-weight: 700;
+    border-radius: 0.25rem;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.badge-highlighed-token--ner {
+    background-color: rgba(23, 162, 184);
+}
+
+.badge-highlighed-token--callsign {
+    background-color: #fd884f;
+}
+
+.badge-highlighed-token--sm {
+    font-size: 0.8rem;
+}
+
+.badge-highlighed-token--neutral {
+    background-color: #fff;
+    color: #000;
+}
+
+.badge-highlighed-token--dep-parent {
+    background-color: #a2b870;
+    color: #000;
+}
+
+.badge-highlighed-token--dep-child {
+    background-color: #dcf3f5;
+    color: #000;
+}
+
+.badge-highlighed-nearby-font {
+    font-size: 1rem;
+}
+
+.badge-highlighed-nearby-font--white {
+    color: #fff;
+    font-weight: 700;
+}
