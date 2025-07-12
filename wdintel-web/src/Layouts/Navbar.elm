@@ -148,7 +148,7 @@ view user activeName shared route { toContentMsg, model, content } =
             ]
             |> Html.map toContentMsg
         , div
-            [ class "transition-all duration-300 ease-in-out flex"
+            [ class "transition-all duration-300 ease-in-out"
             , class
                 (if model.isNavbarVisible then
                     "pt-[50px] min-h-[calc(100vh-50px)]"

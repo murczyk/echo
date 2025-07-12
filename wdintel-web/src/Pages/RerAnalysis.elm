@@ -2864,17 +2864,12 @@ subscriptions _ =
     Sub.none
 
 
-body : Shared.Model -> B.User -> Route () -> Model -> List (Html Msg)
-body shared user route model =
-    [ div []
-        [ -- , Views.navBarRer dark mServerInfo "analysis"
-          RerAnalysis.MainBody.filtersAndMainContent user model shared route
-        ]
-    ]
-
-
 view : Shared.Model -> B.User -> Route () -> Model -> View Msg
 view shared user route model =
     { title = "РЕР-аналіз"
-    , body = body shared user route model
+    , body =
+        [ div [ class "w-full" ]
+            [ RerAnalysis.MainBody.filtersAndMainContent user model shared route
+            ]
+        ]
     }
