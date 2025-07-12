@@ -147,7 +147,7 @@ navBar user shared activeName props =
                       ]
                          ++ (if props.isRerDuty then
                                  [ div
-                                     [ class "pointer"
+                                     [ class "pointer text-white"
                                      , onClick props.onNavbarVisibilityChange
                                      ]
                                      [ i [ class "bi bi-arrows-fullscreen" ] []
