@@ -337,7 +337,6 @@ init id_ ms =
     , E.batch
         [ initCmd id_
         , initCmdOnce
-        , E.showError "Все пучком"
         ]
     )
 
