@@ -1,5 +1,6 @@
-module Le.ErrorHandling exposing (ErrorDetails, getErrorTypeMessage, getErrorDetails, getHttpStatusString, formatErrorWithCustomTitle, formatErrorForShowError)
+module Le.ErrorHandling exposing (ErrorDetails, getErrorTypeMessage, getErrorDetails, getHttpStatusString, formatErrorWithCustomTitle, formatErrorForShowError, formatErrorForShowErrorWithDetails)
 
+import Effect as E
 import Http
 import Le.Types
 
@@ -124,3 +125,13 @@ formatErrorForShowError customTitle error =
         errorDetails = formatErrorWithCustomTitle customTitle error
     in
     errorDetails.title ++ ": " ++ errorDetails.content
+
+
+{-| Creates an Effect that shows error toast with separate title and content using E.showErrorWithDetails
+-}
+formatErrorForShowErrorWithDetails : String -> Le.Types.ApiError -> E.Effect msg
+formatErrorForShowErrorWithDetails customTitle error =
+    let
+        errorDetails = formatErrorWithCustomTitle customTitle error
+    in
+    E.showErrorWithDetails errorDetails.title errorDetails.content

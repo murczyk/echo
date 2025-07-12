@@ -390,7 +390,7 @@ update vps msg model =
             )
 
         InboxSubmitDone _ (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Повідомлення не збереглося" e), vps.message )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Повідомлення не збереглося" e, vps.message )
 
         InboxSubmitDone _ (Ok ()) ->
             ( { model | edited = Nothing }

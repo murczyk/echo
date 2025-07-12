@@ -22,3 +22,4 @@ type Msg
     | TriggerResize
     | ToastMsg Le.Block.Toast.Msg
     | ShowToast String
+    | ShowToastWithDetails String String

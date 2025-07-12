@@ -34,6 +34,7 @@ import Le.Block.Toast
 import Le.Block.Tooltip as Tooltip
 import Le.Callsign
 import Le.Config
+import Le.ErrorHandling
 import Le.RerMessage exposing (model0)
 import Le.Time
 import Le.Types exposing (..)
@@ -43,7 +44,6 @@ import Le.Waterfall.Message
 import Le.Waterfall.Messages as Messages
 import Le.Waterfall.Types exposing (..)
 import Le.Waterfall.Utils as WUtils
-import Le.ErrorHandling
 import List.Extra as ListX
 import Maybe
 import Maybe.Extra as MaybeX
@@ -60,7 +60,6 @@ import TimeZone
 
 type Msg
     = NoOp
-    | ToastMsg Le.Block.Toast.Msg
       -- TIME
     | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
     | TickTimeTick Posix
@@ -149,9 +148,7 @@ type LoadingEarlierStatus
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , id : String
+    { id : String
     , height : Int
     , lastScroll : Maybe Posix
     , lastBottomCheck : Maybe Posix
@@ -229,9 +226,7 @@ init :
     -> Maybe B.RerDutyQueryStateWf
     -> ( Model, Effect Msg )
 init id_ ms =
-    ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
-      , id = id_
+    ( { id = id_
       , height = 200
       , lastScroll = Nothing
       , lastBottomCheck = Nothing
@@ -765,7 +760,7 @@ updateFilters msg model =
             ( m3, E.getCurrentTime LoadInitialStatsNow )
 
         SavedFiltersGot (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження збережених фільтрів" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження збережених фільтрів" e )
 
         SavedFiltersGot (Ok filters) ->
             let
@@ -812,7 +807,7 @@ updateFilters msg model =
             )
 
         SaveFilterDone (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка збереження фільтру" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження фільтру" e )
 
         SaveFilterDone (Ok filters) ->
             let
@@ -964,7 +959,7 @@ updateFilters msg model =
             ( { model | deleteFilterConfirmationId = Nothing }, E.none )
 
         DeleteFilterDone (Err err) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка видалення фільтру" err) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення фільтру" err )
 
         DeleteFilterDone (Ok _) ->
             let
@@ -1185,18 +1180,9 @@ update shared user msg model =
         NoOp ->
             ( model, E.none )
 
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         InitGotZone (Err e) ->
             ( model
-            , E.sendCmd <| Le.Block.Toast.addError ToastMsg ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError ("Error getting timezone: " ++ renderZoneError e)
             )
 
         InitGotZone (Ok ( _, zone )) ->
@@ -1371,7 +1357,7 @@ update shared user msg model =
 
         GotInitialInbox _ (Err e) ->
             ( { model | loadingInboxMessages = False }
-            , E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження повідомлень" e)
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
             )
 
         GotInitialInbox reload (Ok { inboxItems }) ->
@@ -1418,7 +1404,7 @@ update shared user msg model =
 
         GotInboxEarlier (Err e) ->
             ( { model | loadingInboxMessages = False, loadingEarlier = NotLoading }
-            , E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження старіших повідомлень" e)
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження старіших повідомлень" e
             )
 
         GotInboxEarlier (Ok { inboxItems }) ->
@@ -1466,7 +1452,7 @@ update shared user msg model =
             )
 
         GotProfileInfos (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження профілів" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження профілів" e )
 
         GotProfileInfos (Ok profiles) ->
             let
@@ -1487,7 +1473,7 @@ update shared user msg model =
             ( m4, E.none )
 
         GotGroupInfos (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження груп" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e )
 
         GotGroupInfos (Ok groups) ->
             let
@@ -1668,7 +1654,7 @@ update shared user msg model =
 
         GotInboxMessagesDigest (Err e) ->
             ( { model | loadingInboxDigest = False }
-            , E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження статусу повідомлень" e)
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статусу повідомлень" e
             )
 
         InboxLoopSleptBeforeLoadNewer ->
@@ -1804,7 +1790,7 @@ update shared user msg model =
             ( model, E.none )
 
         GotBookmarks (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження закладок" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e )
 
         GotBookmarks (Ok bookmarks) ->
             ( { model | bookmarks = Set.fromList (List.map .messageId bookmarks) }
@@ -1812,7 +1798,7 @@ update shared user msg model =
             )
 
         GotImportants (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження важливих повідомлень" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e )
 
         GotImportants (Ok importants) ->
             ( { model | importants = Set.fromList (List.map .messageId importants) }
@@ -1931,7 +1917,7 @@ update shared user msg model =
                 ( model, E.none )
 
         InitGotLatestSenders (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження відправників" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження відправників" e )
 
         InitGotLatestSenders (Ok profiles) ->
             let
@@ -1954,7 +1940,7 @@ update shared user msg model =
             )
 
         GotGroupKeys (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження ключів груп" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження ключів груп" e )
 
         GotGroupKeys (Ok vs) ->
             ( { model | groups = vs }
@@ -1987,7 +1973,7 @@ update shared user msg model =
             )
 
         GotTags (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження тегів" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e )
 
         GotTags (Ok vs) ->
             ( { model | tags = vs }
@@ -2027,10 +2013,10 @@ update shared user msg model =
             )
 
         GotLatestFrequencies (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження частот" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e )
 
         GotPosts (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження постів" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження постів" e )
 
         GotPosts (Ok rsp) ->
             let
@@ -2052,7 +2038,7 @@ update shared user msg model =
             ( model, E.sendCmd <| Api.sigint_latest_frequencies GotLatestFrequencies )
 
         GotCallsignsInfo (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження інформації про позивні" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e )
 
         GotCallsignsInfo (Ok callsigns) ->
             let
@@ -2072,7 +2058,7 @@ update shared user msg model =
             ( m2, E.none )
 
         GotSignals (Err err) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження сигналів" err) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err )
 
         GotSignals (Ok rsp) ->
             ( { model | signals = rsp.signals }
@@ -2080,7 +2066,7 @@ update shared user msg model =
             )
 
         GotNetworks (Err err) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження мереж" err) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err )
 
         GotNetworks (Ok networks) ->
             let
@@ -2103,7 +2089,7 @@ update shared user msg model =
             )
 
         GotUnits (Err err) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка завантаження підрозділів" err) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err )
 
         GotUnits (Ok rsp) ->
             ( { model
@@ -2215,13 +2201,13 @@ update shared user msg model =
             )
 
         BookmarkAddDone _ (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка додавання закладки" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання закладки" e )
 
         BookmarkAddDone id (Ok ()) ->
             ( { model | bookmarks = Set.insert id model.bookmarks }, E.none )
 
         BookmarkRemoveDone _ (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка видалення закладки" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення закладки" e )
 
         BookmarkRemoveDone id (Ok ()) ->
             ( { model | bookmarks = Set.remove id model.bookmarks }, E.none )
@@ -2240,13 +2226,13 @@ update shared user msg model =
             )
 
         ImportantAddDone _ (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка додавання важливого повідомлення" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання важливого повідомлення" e )
 
         ImportantAddDone id (Ok ()) ->
             ( { model | importants = Set.insert id model.importants }, E.none )
 
         ImportantRemoveDone _ (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка видалення важливого повідомлення" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення важливого повідомлення" e )
 
         ImportantRemoveDone id (Ok ()) ->
             ( { model | importants = Set.remove id model.importants }, E.none )
@@ -2269,7 +2255,7 @@ update shared user msg model =
                     ( model, E.none )
 
         DeleteMessageDone _ (Err e) ->
-            ( model, E.showError (Le.ErrorHandling.formatErrorForShowError "Помилка видалення повідомлення" e) )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення повідомлення" e )
 
         DeleteMessageDone id (Ok ()) ->
             ( { model | messages = model.messages |> Messages.filterMessages (\( id_, _ ) -> id_ /= id), deleteMessageConfirmationId = Nothing }, E.none )
