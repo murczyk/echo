@@ -15,8 +15,8 @@ import Html.Keyed
 import Html.Styled as Styled exposing (fromUnstyled)
 import Layouts
 import Le.Block.Select
-import Le.Block.Toast
 import Le.Components exposing (..)
+import Le.ErrorHandling
 import Le.Time
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
@@ -86,7 +86,6 @@ statusToLabel status =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , timeZone : Maybe Time.Zone
     , logins : List B.Login
     , inpLogin : String
@@ -162,7 +161,6 @@ roles =
 init : ( Model, Effect Msg )
 init =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , timeZone = Nothing
       , logins = []
       , zones = []
@@ -214,8 +212,7 @@ init =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | GotLogins (Result ApiError B.ListLoginsRsp)
+    = GotLogins (Result ApiError B.ListLoginsRsp)
     | GotZoneList (Result ApiError (List ( Int, B.SigintZone )))
     | GotOrganisms (Result ApiError (List B.Organism))
     | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
@@ -258,15 +255,6 @@ type alias FieldError =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         GotLogins (Ok res) ->
             let
                 -- Calculate role counts for the new logins
@@ -316,10 +304,10 @@ update msg model =
             ( { model | logins = res.users, filterRoleSelect = filterRoleSelect2 }, E.none )
 
         GotLogins (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Users" err )
 
         GotZoneList (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Zones" e )
 
         GotZoneList (Ok vs) ->
             let
@@ -337,7 +325,7 @@ update msg model =
             ( { model | zones = vs, inpZone = inpZone2 }, E.none )
 
         GotOrganisms (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Organisms" e )
 
         GotOrganisms (Ok res) ->
             let
@@ -361,12 +349,7 @@ update msg model =
             ( { model | organisms = res, inpOrganism = inpOrganism2, filterOrganismSelect = filterOrganismSelect2 }, E.none )
 
         GotTimeZone (Err e) ->
-            ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
-            )
+            ( model, E.showError "Timezone Error" )
 
         GotTimeZone (Ok ( _, zone )) ->
             ( { model | timeZone = Just zone }
@@ -468,7 +451,7 @@ update msg model =
             ( m2, E.none )
 
         AddLoginDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Create User" e )
 
         AddZoneSelMsg selMsg ->
             let
@@ -709,7 +692,7 @@ update msg model =
             ( m2, E.none )
 
         EditLoginDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Update User" e )
 
         ToggleEditPassword ->
             case model.editLogin of
@@ -1008,493 +991,492 @@ view : Auth.User -> Shared.Model -> Model -> View Msg
 view user shared model =
     { title = "Користувачі"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "w-[80%] mx-auto px-4 py-8 rer-networks" ]
-                [ h1 [ class "text-2xl font-bold mb-6" ] [ text "Користувачі" ]
-                , let
-                    featureDelta =
-                        case shared.serverInfo of
-                            Just info ->
-                                info.featureDelta
+        [ div [ class "w-[80%] mx-auto px-4 py-8 rer-networks" ]
+            [ h1 [ class "text-2xl font-bold mb-6" ] [ text "Користувачі" ]
+            , let
+                featureDelta =
+                    case shared.serverInfo of
+                        Just info ->
+                            info.featureDelta
 
-                            Nothing ->
-                                False
+                        Nothing ->
+                            False
 
-                    addLoginPanel : Model -> Html Msg
-                    addLoginPanel addState =
-                        let
-                            organismSelectedItem =
-                                addState.inpOrganism.selectedItem
-                                    |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) addState.organisms)
-                                    |> Maybe.map
-                                        (\item ->
-                                            Select.basicMenuItem { item = item.id, label = item.name }
-                                        )
+                addLoginPanel : Model -> Html Msg
+                addLoginPanel addState =
+                    let
+                        organismSelectedItem =
+                            addState.inpOrganism.selectedItem
+                                |> Maybe.andThen (\itemId -> ListX.find (\x -> x.id == itemId) addState.organisms)
+                                |> Maybe.map
+                                    (\item ->
+                                        Select.basicMenuItem { item = item.id, label = item.name }
+                                    )
 
-                            zoneSelectedItem =
-                                addState.inpZone.selectedItem
-                                    |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) addState.zones)
-                                    |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
-                        in
-                        div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
-                            [ if featureDelta then
-                                div [ class "mr-2" ]
-                                    [ Checkbox.new { isChecked = addState.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
-                                        |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
-                                        |> Checkbox.view
-                                    ]
+                        zoneSelectedItem =
+                            addState.inpZone.selectedItem
+                                |> Maybe.andThen (\itemId -> ListX.find (\( id, _ ) -> id == itemId) addState.zones)
+                                |> Maybe.map (\( id, item ) -> Select.basicMenuItem { item = id, label = item.name })
+                    in
+                    div [ class "border mb-4 p-2", style "background-color" "var(--bs-tertiary-bg)" ]
+                        [ if featureDelta then
+                            div [ class "mr-2" ]
+                                [ Checkbox.new { isChecked = addState.addDeltaLogin, onToggle = \_ -> ToggleAddDeltaLogin }
+                                    |> Checkbox.withContent [ span [] [ text "Delta логін" ] ]
+                                    |> Checkbox.view
+                                ]
 
-                              else
-                                text ""
-                            , div [ class "flex justify-start items-start gap-[1%]" ]
-                                [ div [ class "flex-1" ]
-                                    [ input
-                                        [ class "border border-gray-300 rounded px-3 py-2 w-full"
-                                        , type_ "text"
-                                        , placeholder "Логін"
-                                        , onInput <| SetLogin
-                                        , value addState.inpLogin
-                                        ]
-                                        []
-                                    , viewFormErrors Login addState.fieldsErrors
+                          else
+                            text ""
+                        , div [ class "flex justify-start items-start gap-[1%]" ]
+                            [ div [ class "flex-1" ]
+                                [ input
+                                    [ class "border border-gray-300 rounded px-3 py-2 w-full"
+                                    , type_ "text"
+                                    , placeholder "Логін"
+                                    , onInput <| SetLogin
+                                    , value addState.inpLogin
                                     ]
-                                , div [ class "flex-1" ]
-                                    [ input
-                                        [ class "border border-gray-300 rounded px-3 py-2 w-full"
-                                        , type_ "text"
-                                        , placeholder "Пароль"
-                                        , onInput <| SetPassword
-                                        , value addState.inpPassword
-                                        , disabled addState.addDeltaLogin
-                                        ]
-                                        []
-                                    , viewFormErrors Password addState.fieldsErrors
+                                    []
+                                , viewFormErrors Login addState.fieldsErrors
+                                ]
+                            , div [ class "flex-1" ]
+                                [ input
+                                    [ class "border border-gray-300 rounded px-3 py-2 w-full"
+                                    , type_ "text"
+                                    , placeholder "Пароль"
+                                    , onInput <| SetPassword
+                                    , value addState.inpPassword
+                                    , disabled addState.addDeltaLogin
                                     ]
-                                , div [ class "flex-1" ]
-                                    [ div [ class "flex justify-between items-center text-[0.8rem]" ]
-                                        [ div [ class "flex-grow-1" ]
-                                            [ Html.map AddRoleSelMsg <|
-                                                Styled.toUnstyled <|
-                                                    Le.Block.Select.renderSelect
-                                                        (addState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                                        addState.inpRole.selectState
-                                                        addState.inpRole.items
-                                                        "роль"
-                                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
-                                            ]
-                                        ]
-                                    , viewFormErrors Roles addState.fieldsErrors
-                                    ]
-                                , div [ class "flex-1" ]
-                                    [ div [ class "flex justify-between items-center text-[0.8rem]" ]
-                                        [ div [ class "flex-grow-1" ]
-                                            [ Html.map AddZoneSelMsg <|
-                                                Styled.toUnstyled <|
-                                                    Le.Block.Select.renderSelectSingle
-                                                        zoneSelectedItem
-                                                        addState.inpZone.selectState
-                                                        addState.inpZone.items
-                                                        "зона"
-                                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
-                                            ]
-                                        ]
-                                    , viewFormErrors Zone addState.fieldsErrors
-                                    ]
-                                , div [ class "flex justify-between items-center text-[0.8rem] flex-1" ]
+                                    []
+                                , viewFormErrors Password addState.fieldsErrors
+                                ]
+                            , div [ class "flex-1" ]
+                                [ div [ class "flex justify-between items-center text-[0.8rem]" ]
                                     [ div [ class "flex-grow-1" ]
-                                        [ Html.map AddOrganismSelMsg <|
+                                        [ Html.map AddRoleSelMsg <|
                                             Styled.toUnstyled <|
-                                                Le.Block.Select.renderSelectSingle
-                                                    organismSelectedItem
-                                                    addState.inpOrganism.selectState
-                                                    addState.inpOrganism.items
-                                                    "організм"
+                                                Le.Block.Select.renderSelect
+                                                    (addState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                                    addState.inpRole.selectState
+                                                    addState.inpRole.items
+                                                    "роль"
                                                     (Le.Block.Select.defaultOptions shared.isDarkMode)
                                         ]
                                     ]
-                                , div [ class "text-center" ]
-                                    [ Button.new
-                                        { label = "Додати"
-                                        , onClick =
-                                            if addState.addDeltaLogin then
-                                                AddLoginDelta
-
-                                            else
-                                                AddLogin
-                                        }
-                                        |> Button.view
-                                    ]
+                                , viewFormErrors Roles addState.fieldsErrors
                                 ]
-                            ]
-
-                    -- Calculate role counts using filtered data
-                    roleCounts =
-                        getFilteredDataForRoleFilter model
-                            |> List.concatMap .roles
-                            |> List.foldl
-                                (\role acc ->
-                                    Dict.update role
-                                        (\maybeCount ->
-                                            case maybeCount of
-                                                Just count ->
-                                                    Just (count + 1)
-
-                                                Nothing ->
-                                                    Just 1
-                                        )
-                                        acc
-                                )
-                                Dict.empty
-
-                    roleMenuItems =
-                        List.map
-                            (\role ->
-                                let
-                                    count =
-                                        Dict.get role roleCounts |> Maybe.withDefault 0
-                                in
-                                Select.customMenuItem
-                                    { item = role
-                                    , label = role
-                                    , view =
-                                        fromUnstyled
-                                            (Html.div []
-                                                [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ]
-                                            )
-                                    }
-                            )
-                            roles
-
-                    -- Calculate status counts using filtered data
-                    filteredDataForStatus =
-                        getFilteredDataForStatusFilter model
-
-                    activeCount =
-                        List.length <| List.filter (\login -> not login.deleted) filteredDataForStatus
-
-                    deletedCount =
-                        List.length <| List.filter (\login -> login.deleted) filteredDataForStatus
-
-                    deletedByAdminCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) filteredDataForStatus
-
-                    deletedByInactivityCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) filteredDataForStatus
-
-                    deletedByOrganismCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False) filteredDataForStatus
-
-                    unknownCount =
-                        List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False) filteredDataForStatus
-
-                    -- Calculate organism counts using filtered data
-                    filteredDataForOrganism =
-                        getFilteredDataForOrganismFilter model
-
-                    organismCounts =
-                        filteredDataForOrganism
-                            |> List.filterMap .organismId
-                            |> List.foldl
-                                (\orgId acc ->
-                                    Dict.update orgId
-                                        (\maybeCount ->
-                                            case maybeCount of
-                                                Just count ->
-                                                    Just (count + 1)
-
-                                                Nothing ->
-                                                    Just 1
-                                        )
-                                        acc
-                                )
-                                Dict.empty
-
-                    organismMenuItems =
-                        List.map
-                            (\org ->
-                                let
-                                    count =
-                                        Dict.get org.id organismCounts |> Maybe.withDefault 0
-                                in
-                                Select.customMenuItem
-                                    { item = org.id
-                                    , label = org.name
-                                    , view =
-                                        fromUnstyled
-                                            (Html.div []
-                                                [ Html.text (org.name ++ " (" ++ String.fromInt count ++ ")") ]
-                                            )
-                                    }
-                            )
-                            model.organisms
-
-                    statusMenuItems =
-                        [ Select.customMenuItem
-                            { item = Active
-                            , label = statusToLabel Active
-                            , view =
-                                fromUnstyled
-                                    (Html.div []
-                                        [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ]
-                                    )
-                            }
-                        , Select.customMenuItem
-                            { item = Deleted
-                            , label = statusToLabel Deleted
-                            , view =
-                                fromUnstyled
-                                    (Html.div []
-                                        [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ]
-                                    )
-                            }
-                        , Select.customMenuItem
-                            { item = DeletedByAdmin
-                            , label = statusToLabel DeletedByAdmin
-                            , view =
-                                fromUnstyled
-                                    (Html.div []
-                                        [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ]
-                                    )
-                            }
-                        , Select.customMenuItem
-                            { item = DeletedByInactivity
-                            , label = statusToLabel DeletedByInactivity
-                            , view =
-                                fromUnstyled
-                                    (Html.div []
-                                        [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ]
-                                    )
-                            }
-                        , Select.customMenuItem
-                            { item = DeletedByOrganism
-                            , label = statusToLabel DeletedByOrganism
-                            , view =
-                                fromUnstyled
-                                    (Html.div []
-                                        [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ]
-                                    )
-                            }
-                        , Select.customMenuItem
-                            { item = Unknown
-                            , label = statusToLabel Unknown
-                            , view =
-                                fromUnstyled
-                                    (Html.div []
-                                        [ Html.text (statusToLabel Unknown ++ " (" ++ String.fromInt unknownCount ++ ")") ]
-                                    )
-                            }
-                        ]
-
-                    rows =
-                        model.logins
-                            |> List.filter
-                                (\login ->
-                                    let
-                                        matchesStatus =
-                                            case model.filterStatusSelect.selectedItem of
-                                                Nothing ->
-                                                    True
-
-                                                Just Active ->
-                                                    not login.deleted
-
-                                                Just Deleted ->
-                                                    login.deleted
-
-                                                Just DeletedByAdmin ->
-                                                    login.deleted && login.deactivationReason == Just B.Admin
-
-                                                Just DeletedByInactivity ->
-                                                    login.deleted && login.deactivationReason == Just B.Inactive
-
-                                                Just DeletedByOrganism ->
-                                                    login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
-
-                                                Just Unknown ->
-                                                    login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
-
-                                        matchesOrganism =
-                                            case model.filterOrganismSelect.selectedItems of
-                                                [] ->
-                                                    True
-
-                                                organismIds ->
-                                                    case login.organismId of
-                                                        Just orgId ->
-                                                            List.member orgId organismIds
-
-                                                        Nothing ->
-                                                            False
-
-                                        matchesRole =
-                                            case model.filterRoleSelect.selectedItems of
-                                                [] ->
-                                                    True
-
-                                                selectedRoles ->
-                                                    List.any (\role -> List.member role selectedRoles) login.roles
-                                    in
-                                    matchesStatus && matchesOrganism && matchesRole
-                                )
-
-                    viewFilterBlock : Html Msg
-                    viewFilterBlock =
-                        div [ class "mb-4 p-4 style bg-[var(--bs-tertiary-bg)] rounded-lg border" ]
-                            [ h5 [ class "mb-2" ] [ text "Фільтри" ]
-                            , div [ class "flex gap-4" ]
-                                [ div [ class "flex-1" ]
-                                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Організм" ]
-                                    , Html.map FilterOrganismSelMsg <|
-                                        Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelect
-                                                (model.filterOrganismSelect.selectedItems
-                                                    |> List.map
-                                                        (\orgId ->
-                                                            case ListX.find (\org -> org.id == orgId) model.organisms of
-                                                                Just org ->
-                                                                    let
-                                                                        count =
-                                                                            Dict.get org.id organismCounts |> Maybe.withDefault 0
-                                                                    in
-                                                                    Select.customMenuItem
-                                                                        { item = org.id
-                                                                        , label = org.name
-                                                                        , view =
-                                                                            fromUnstyled
-                                                                                (Html.div []
-                                                                                    [ Html.text (org.name ++ " (" ++ String.fromInt count ++ ")") ]
-                                                                                )
-                                                                        }
-
-                                                                Nothing ->
-                                                                    Select.basicMenuItem { item = orgId, label = String.fromInt orgId }
-                                                        )
-                                                )
-                                                model.filterOrganismSelect.selectState
-                                                organismMenuItems
-                                                "Всі организми"
-                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                            , div [ class "flex-1" ]
+                                [ div [ class "flex justify-between items-center text-[0.8rem]" ]
+                                    [ div [ class "flex-grow-1" ]
+                                        [ Html.map AddZoneSelMsg <|
+                                            Styled.toUnstyled <|
+                                                Le.Block.Select.renderSelectSingle
+                                                    zoneSelectedItem
+                                                    addState.inpZone.selectState
+                                                    addState.inpZone.items
+                                                    "зона"
+                                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                        ]
                                     ]
-                                , div [ class "flex-1" ]
-                                    [ label [ class "block text-sm font-medium  mb-1" ] [ text "Статус" ]
-                                    , Html.map FilterStatusSelMsg <|
+                                , viewFormErrors Zone addState.fieldsErrors
+                                ]
+                            , div [ class "flex justify-between items-center text-[0.8rem] flex-1" ]
+                                [ div [ class "flex-grow-1" ]
+                                    [ Html.map AddOrganismSelMsg <|
                                         Styled.toUnstyled <|
                                             Le.Block.Select.renderSelectSingle
-                                                (Maybe.map
-                                                    (\status ->
+                                                organismSelectedItem
+                                                addState.inpOrganism.selectState
+                                                addState.inpOrganism.items
+                                                "організм"
+                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    ]
+                                ]
+                            , div [ class "text-center" ]
+                                [ Button.new
+                                    { label = "Додати"
+                                    , onClick =
+                                        if addState.addDeltaLogin then
+                                            AddLoginDelta
+
+                                        else
+                                            AddLogin
+                                    }
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+
+                -- Calculate role counts using filtered data
+                roleCounts =
+                    getFilteredDataForRoleFilter model
+                        |> List.concatMap .roles
+                        |> List.foldl
+                            (\role acc ->
+                                Dict.update role
+                                    (\maybeCount ->
+                                        case maybeCount of
+                                            Just count ->
+                                                Just (count + 1)
+
+                                            Nothing ->
+                                                Just 1
+                                    )
+                                    acc
+                            )
+                            Dict.empty
+
+                roleMenuItems =
+                    List.map
+                        (\role ->
+                            let
+                                count =
+                                    Dict.get role roleCounts |> Maybe.withDefault 0
+                            in
+                            Select.customMenuItem
+                                { item = role
+                                , label = role
+                                , view =
+                                    fromUnstyled
+                                        (Html.div []
+                                            [ Html.text (role ++ " (" ++ String.fromInt count ++ ")") ]
+                                        )
+                                }
+                        )
+                        roles
+
+                -- Calculate status counts using filtered data
+                filteredDataForStatus =
+                    getFilteredDataForStatusFilter model
+
+                activeCount =
+                    List.length <| List.filter (\login -> not login.deleted) filteredDataForStatus
+
+                deletedCount =
+                    List.length <| List.filter (\login -> login.deleted) filteredDataForStatus
+
+                deletedByAdminCount =
+                    List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Admin) filteredDataForStatus
+
+                deletedByInactivityCount =
+                    List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Just B.Inactive) filteredDataForStatus
+
+                deletedByOrganismCount =
+                    List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False) filteredDataForStatus
+
+                unknownCount =
+                    List.length <| List.filter (\login -> login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False) filteredDataForStatus
+
+                -- Calculate organism counts using filtered data
+                filteredDataForOrganism =
+                    getFilteredDataForOrganismFilter model
+
+                organismCounts =
+                    filteredDataForOrganism
+                        |> List.filterMap .organismId
+                        |> List.foldl
+                            (\orgId acc ->
+                                Dict.update orgId
+                                    (\maybeCount ->
+                                        case maybeCount of
+                                            Just count ->
+                                                Just (count + 1)
+
+                                            Nothing ->
+                                                Just 1
+                                    )
+                                    acc
+                            )
+                            Dict.empty
+
+                organismMenuItems =
+                    List.map
+                        (\org ->
+                            let
+                                count =
+                                    Dict.get org.id organismCounts |> Maybe.withDefault 0
+                            in
+                            Select.customMenuItem
+                                { item = org.id
+                                , label = org.name
+                                , view =
+                                    fromUnstyled
+                                        (Html.div []
+                                            [ Html.text (org.name ++ " (" ++ String.fromInt count ++ ")") ]
+                                        )
+                                }
+                        )
+                        model.organisms
+
+                statusMenuItems =
+                    [ Select.customMenuItem
+                        { item = Active
+                        , label = statusToLabel Active
+                        , view =
+                            fromUnstyled
+                                (Html.div []
+                                    [ Html.text (statusToLabel Active ++ " (" ++ String.fromInt activeCount ++ ")") ]
+                                )
+                        }
+                    , Select.customMenuItem
+                        { item = Deleted
+                        , label = statusToLabel Deleted
+                        , view =
+                            fromUnstyled
+                                (Html.div []
+                                    [ Html.text (statusToLabel Deleted ++ " (" ++ String.fromInt deletedCount ++ ")") ]
+                                )
+                        }
+                    , Select.customMenuItem
+                        { item = DeletedByAdmin
+                        , label = statusToLabel DeletedByAdmin
+                        , view =
+                            fromUnstyled
+                                (Html.div []
+                                    [ Html.text (statusToLabel DeletedByAdmin ++ " (" ++ String.fromInt deletedByAdminCount ++ ")") ]
+                                )
+                        }
+                    , Select.customMenuItem
+                        { item = DeletedByInactivity
+                        , label = statusToLabel DeletedByInactivity
+                        , view =
+                            fromUnstyled
+                                (Html.div []
+                                    [ Html.text (statusToLabel DeletedByInactivity ++ " (" ++ String.fromInt deletedByInactivityCount ++ ")") ]
+                                )
+                        }
+                    , Select.customMenuItem
+                        { item = DeletedByOrganism
+                        , label = statusToLabel DeletedByOrganism
+                        , view =
+                            fromUnstyled
+                                (Html.div []
+                                    [ Html.text (statusToLabel DeletedByOrganism ++ " (" ++ String.fromInt deletedByOrganismCount ++ ")") ]
+                                )
+                        }
+                    , Select.customMenuItem
+                        { item = Unknown
+                        , label = statusToLabel Unknown
+                        , view =
+                            fromUnstyled
+                                (Html.div []
+                                    [ Html.text (statusToLabel Unknown ++ " (" ++ String.fromInt unknownCount ++ ")") ]
+                                )
+                        }
+                    ]
+
+                rows =
+                    model.logins
+                        |> List.filter
+                            (\login ->
+                                let
+                                    matchesStatus =
+                                        case model.filterStatusSelect.selectedItem of
+                                            Nothing ->
+                                                True
+
+                                            Just Active ->
+                                                not login.deleted
+
+                                            Just Deleted ->
+                                                login.deleted
+
+                                            Just DeletedByAdmin ->
+                                                login.deleted && login.deactivationReason == Just B.Admin
+
+                                            Just DeletedByInactivity ->
+                                                login.deleted && login.deactivationReason == Just B.Inactive
+
+                                            Just DeletedByOrganism ->
+                                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled == Just False
+
+                                            Just Unknown ->
+                                                login.deleted && login.deactivationReason == Nothing && login.organismEnabled /= Just False
+
+                                    matchesOrganism =
+                                        case model.filterOrganismSelect.selectedItems of
+                                            [] ->
+                                                True
+
+                                            organismIds ->
+                                                case login.organismId of
+                                                    Just orgId ->
+                                                        List.member orgId organismIds
+
+                                                    Nothing ->
+                                                        False
+
+                                    matchesRole =
+                                        case model.filterRoleSelect.selectedItems of
+                                            [] ->
+                                                True
+
+                                            selectedRoles ->
+                                                List.any (\role -> List.member role selectedRoles) login.roles
+                                in
+                                matchesStatus && matchesOrganism && matchesRole
+                            )
+
+                viewFilterBlock : Html Msg
+                viewFilterBlock =
+                    div [ class "mb-4 p-4 style bg-[var(--bs-tertiary-bg)] rounded-lg border" ]
+                        [ h5 [ class "mb-2" ] [ text "Фільтри" ]
+                        , div [ class "flex gap-4" ]
+                            [ div [ class "flex-1" ]
+                                [ label [ class "block text-sm font-medium mb-1" ] [ text "Організм" ]
+                                , Html.map FilterOrganismSelMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelect
+                                            (model.filterOrganismSelect.selectedItems
+                                                |> List.map
+                                                    (\orgId ->
+                                                        case ListX.find (\org -> org.id == orgId) model.organisms of
+                                                            Just org ->
+                                                                let
+                                                                    count =
+                                                                        Dict.get org.id organismCounts |> Maybe.withDefault 0
+                                                                in
+                                                                Select.customMenuItem
+                                                                    { item = org.id
+                                                                    , label = org.name
+                                                                    , view =
+                                                                        fromUnstyled
+                                                                            (Html.div []
+                                                                                [ Html.text (org.name ++ " (" ++ String.fromInt count ++ ")") ]
+                                                                            )
+                                                                    }
+
+                                                            Nothing ->
+                                                                Select.basicMenuItem { item = orgId, label = String.fromInt orgId }
+                                                    )
+                                            )
+                                            model.filterOrganismSelect.selectState
+                                            organismMenuItems
+                                            "Всі организми"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                ]
+                            , div [ class "flex-1" ]
+                                [ label [ class "block text-sm font-medium  mb-1" ] [ text "Статус" ]
+                                , Html.map FilterStatusSelMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            (Maybe.map
+                                                (\status ->
+                                                    Select.customMenuItem
+                                                        { item = status
+                                                        , label = statusToLabel status
+                                                        , view =
+                                                            fromUnstyled
+                                                                (Html.div []
+                                                                    [ Html.text
+                                                                        (statusToLabel status
+                                                                            ++ " ("
+                                                                            ++ (case status of
+                                                                                    Active ->
+                                                                                        String.fromInt activeCount
+
+                                                                                    Deleted ->
+                                                                                        String.fromInt deletedCount
+
+                                                                                    DeletedByAdmin ->
+                                                                                        String.fromInt deletedByAdminCount
+
+                                                                                    DeletedByInactivity ->
+                                                                                        String.fromInt deletedByInactivityCount
+
+                                                                                    DeletedByOrganism ->
+                                                                                        String.fromInt deletedByOrganismCount
+
+                                                                                    Unknown ->
+                                                                                        String.fromInt unknownCount
+                                                                               )
+                                                                            ++ ")"
+                                                                        )
+                                                                    ]
+                                                                )
+                                                        }
+                                                )
+                                                model.filterStatusSelect.selectedItem
+                                            )
+                                            model.filterStatusSelect.selectState
+                                            statusMenuItems
+                                            "Всі статуси"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                ]
+                            , div [ class "flex-1" ]
+                                [ label [ class "block text-sm font-medium mb-1" ] [ text "Роль" ]
+                                , Html.map FilterRoleSelMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelect
+                                            (model.filterRoleSelect.selectedItems
+                                                |> List.map
+                                                    (\role ->
                                                         Select.customMenuItem
-                                                            { item = status
-                                                            , label = statusToLabel status
+                                                            { item = role
+                                                            , label = role
                                                             , view =
                                                                 fromUnstyled
                                                                     (Html.div []
                                                                         [ Html.text
-                                                                            (statusToLabel status
+                                                                            (role
                                                                                 ++ " ("
-                                                                                ++ (case status of
-                                                                                        Active ->
-                                                                                            String.fromInt activeCount
-
-                                                                                        Deleted ->
-                                                                                            String.fromInt deletedCount
-
-                                                                                        DeletedByAdmin ->
-                                                                                            String.fromInt deletedByAdminCount
-
-                                                                                        DeletedByInactivity ->
-                                                                                            String.fromInt deletedByInactivityCount
-
-                                                                                        DeletedByOrganism ->
-                                                                                            String.fromInt deletedByOrganismCount
-
-                                                                                        Unknown ->
-                                                                                            String.fromInt unknownCount
-                                                                                   )
+                                                                                ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
                                                                                 ++ ")"
                                                                             )
                                                                         ]
                                                                     )
                                                             }
                                                     )
-                                                    model.filterStatusSelect.selectedItem
-                                                )
-                                                model.filterStatusSelect.selectState
-                                                statusMenuItems
-                                                "Всі статуси"
-                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
-                                    ]
-                                , div [ class "flex-1" ]
-                                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Роль" ]
-                                    , Html.map FilterRoleSelMsg <|
-                                        Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelect
-                                                (model.filterRoleSelect.selectedItems
-                                                    |> List.map
-                                                        (\role ->
-                                                            Select.customMenuItem
-                                                                { item = role
-                                                                , label = role
-                                                                , view =
-                                                                    fromUnstyled
-                                                                        (Html.div []
-                                                                            [ Html.text
-                                                                                (role
-                                                                                    ++ " ("
-                                                                                    ++ (Dict.get role roleCounts |> Maybe.withDefault 0 |> String.fromInt)
-                                                                                    ++ ")"
-                                                                                )
-                                                                            ]
-                                                                        )
-                                                                }
-                                                        )
-                                                )
-                                                model.filterRoleSelect.selectState
-                                                roleMenuItems
-                                                "Всі ролі"
-                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
-                                    ]
+                                            )
+                                            model.filterRoleSelect.selectState
+                                            roleMenuItems
+                                            "Всі ролі"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
                                 ]
                             ]
-                  in
-                  div []
-                    [ addLoginPanel model
-                    , viewFilterBlock
-                    , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
-                        [ thead [ class "" ]
-                            [ tr [ class "" ]
-                                [ th [ scope "col", class "w-[12%]" ] [ text "Логін" ]
-                                , if featureDelta then
-                                    th [ scope "col", class "w-[10%]" ] [ text "Дельта логін" ]
-
-                                  else
-                                    text ""
-                                , th [ scope "col", class "w-[10%]" ] [ text "Пароль" ]
-                                , th [ scope "col", class "w-[19%]" ] [ text "Ролі" ]
-                                , th [ scope "col", class "w-[15%]" ] [ text "Організм" ]
-                                , th [ scope "col", class "w-[15%]" ] [ text "Зона" ]
-                                , th [ scope "col", class "w-[12%]" ] [ text "Створено" ]
-                                , th [ scope "col", class "w-[10%]" ] [ text "Статус" ]
-                                , th [ scope "col", class "w-[5%]" ] [ text "" ]
-                                ]
-                            ]
-                        , tbody [] <|
-                            List.map
-                                (\l ->
-                                    case model.editLogin of
-                                        Just ( login_, editState ) ->
-                                            if login_ == l.login then
-                                                viewLoginEditable shared model editState l
-
-                                            else
-                                                viewLoginReadonly shared model l
-
-                                        Nothing ->
-                                            viewLoginReadonly shared model l
-                                )
-                                rows
                         ]
+              in
+              div []
+                [ addLoginPanel model
+                , viewFilterBlock
+                , table [ class "table-fixed w-full text-[0.85rem] text-center" ]
+                    [ thead [ class "" ]
+                        [ tr [ class "" ]
+                            [ th [ scope "col", class "w-[12%]" ] [ text "Логін" ]
+                            , if featureDelta then
+                                th [ scope "col", class "w-[10%]" ] [ text "Дельта логін" ]
+
+                              else
+                                text ""
+                            , th [ scope "col", class "w-[10%]" ] [ text "Пароль" ]
+                            , th [ scope "col", class "w-[19%]" ] [ text "Ролі" ]
+                            , th [ scope "col", class "w-[15%]" ] [ text "Організм" ]
+                            , th [ scope "col", class "w-[15%]" ] [ text "Зона" ]
+                            , th [ scope "col", class "w-[12%]" ] [ text "Створено" ]
+                            , th [ scope "col", class "w-[10%]" ] [ text "Статус" ]
+                            , th [ scope "col", class "w-[5%]" ] [ text "" ]
+                            ]
+                        ]
+                    , tbody [] <|
+                        List.map
+                            (\l ->
+                                case model.editLogin of
+                                    Just ( login_, editState ) ->
+                                        if login_ == l.login then
+                                            viewLoginEditable shared model editState l
+
+                                        else
+                                            viewLoginReadonly shared model l
+
+                                    Nothing ->
+                                        viewLoginReadonly shared model l
+                            )
+                            rows
                     ]
                 ]
+            ]
         ]
     }
 
