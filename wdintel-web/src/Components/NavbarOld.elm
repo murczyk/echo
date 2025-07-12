@@ -143,20 +143,19 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-6" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                                         ([ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode ]
-                      ]
-                         ++ (if props.isRerDuty then
-                                 [ div
-                                     [ class "pointer text-white"
-                                     , onClick props.onNavbarVisibilityChange
-                                     ]
-                                     [ i [ class "bi bi-arrows-fullscreen" ] []
-                                     ]
-                                 ]
-                             else
-                                 []
-                            )
-                     )
+                    [ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode ]
+                    , div 
+                        [ class "w-6 h-6 flex items-center justify-center"
+                        , onClick props.onNavbarVisibilityChange
+                        ]
+                        [ i 
+                            [ class "bi bi-arrows-fullscreen text-white cursor-pointer hover:text-white transition-colors duration-200"
+                            , style "opacity" (if props.isRerDuty then "1" else "0")
+                            , style "pointer-events" (if props.isRerDuty then "auto" else "none")
+                            ] 
+                            [] 
+                        ]
+                    ]
                 ]
             ]
         ]

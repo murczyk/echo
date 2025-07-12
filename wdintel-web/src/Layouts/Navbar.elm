@@ -128,25 +128,15 @@ view user activeName shared route { toContentMsg, model, content } =
                     )
                 ]
                 [ navbarComponent user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
-            , if route.url.path == "/rer-duty" then
-                if not model.isNavbarVisible then
-                    div
-                        [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
-                        [ div
-                            [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
-                            , onClick ToggleNavbarVisibility
-                            ]
-                            [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
+            , if route.url.path == "/rer-duty" && not model.isNavbarVisible then
+                div
+                    [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]
+                    [ div
+                        [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
+                        , onClick ToggleNavbarVisibility
                         ]
-                else
-                    div
-                        [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-0 pointer-events-none" ]
-                        [ div
-                            [ class "cursor-pointer p-2 rounded-full bg-[var(--color-card)] hover:bg-[var(--color-column)] transition-all duration-200"
-                            , onClick ToggleNavbarVisibility
-                            ]
-                            [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
-                        ]
+                        [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
+                    ]
               else
                 div [] []
             , Toast.overlay ToastMsg shared.toasts
