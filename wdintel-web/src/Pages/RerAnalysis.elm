@@ -18,6 +18,7 @@ import Le.Block.Select
 import Le.Block.Toast
 import Le.Components exposing (..)
 import Le.Config
+import Le.ErrorHandling
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.RerMessage
 import Le.Time
@@ -727,7 +728,9 @@ update user shared route msg model =
                     ( m2, E.none )
 
         GotInbox (Err e) ->
-            Api.handleHttpError ToastMsg e { model | loadingInboxMessages = False }
+            ( { model | loadingInboxMessages = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
+            )
 
         GotInbox (Ok rsp) ->
             let
@@ -755,7 +758,9 @@ update user shared route msg model =
             )
 
         GotInboxMore (Err e) ->
-            Api.handleHttpError ToastMsg e { model | loadingInboxMessages = False }
+            ( { model | loadingInboxMessages = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження додаткових повідомлень" e
+            )
 
         GotInboxMore (Ok rsp) ->
             let
@@ -788,7 +793,9 @@ update user shared route msg model =
             )
 
         GotStatsCount (Err e) ->
-            Api.handleHttpError ToastMsg e { model | counts = Failure e }
+            ( { model | counts = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
+            )
 
         GotStatsCount (Ok counts) ->
             ( { model
@@ -798,7 +805,9 @@ update user shared route msg model =
             )
 
         GotStatsFreqs (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e
+            )
 
         GotStatsFreqs (Ok rsp) ->
             let
@@ -831,7 +840,9 @@ update user shared route msg model =
             )
 
         GotStatsCallsigns (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позывних" e
+            )
 
         GotStatsCallsigns (Ok rsp) ->
             ( { model
@@ -850,7 +861,9 @@ update user shared route msg model =
             )
 
         GotStatsLocations (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження локацій" e
+            )
 
         GotStatsLocations (Ok rsp) ->
             ( { model
@@ -869,7 +882,9 @@ update user shared route msg model =
             )
 
         GotStatsPosts (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження постів" e
+            )
 
         GotStatsPosts (Ok rsp) ->
             ( { model
@@ -889,7 +904,9 @@ update user shared route msg model =
             )
 
         GotStatsTags (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
+            )
 
         GotStatsTags (Ok rsp) ->
             ( { model
@@ -899,7 +916,9 @@ update user shared route msg model =
             )
 
         GotStatsUnits (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" e
+            )
 
         GotStatsUnits (Ok rsp) ->
             ( { model
@@ -919,7 +938,9 @@ update user shared route msg model =
             )
 
         GotStatsSenders (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження відправників" e
+            )
 
         GotStatsSenders (Ok rsp) ->
             let
@@ -969,7 +990,9 @@ update user shared route msg model =
             )
 
         GotStatsGroups (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e
+            )
 
         GotStatsGroups (Ok rsp) ->
             let
@@ -1531,7 +1554,9 @@ update user shared route msg model =
             )
 
         GotCallsignGraph (Err e) ->
-            Api.handleHttpError ToastMsg e { model | loadingCallsignGraph = False }
+            ( { model | loadingCallsignGraph = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження графу позивних" e
+            )
 
         GotCallsignGraph (Ok graphDataAndMeta) ->
             ( { model
@@ -1552,7 +1577,9 @@ update user shared route msg model =
             loadCoreStats m2
 
         GotSumTable (Err e) ->
-            Api.handleHttpError ToastMsg e { model | sumTable = Failure e }
+            ( { model | sumTable = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зведеної таблиці" e
+            )
 
         GotSumTable (Ok sumTable) ->
             let
@@ -1585,7 +1612,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         DownloadXlsxDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження Excel файлу" e
+            )
 
         DownloadXlsxDone (Ok bs) ->
             ( model
@@ -1620,7 +1649,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         DownloadKmzDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ файлу" e
+            )
 
         DownloadKmzDone (Ok bs) ->
             ( model
@@ -1654,7 +1685,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         DownloadGeojsonDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження GeoJSON файлу" e
+            )
 
         DownloadGeojsonDone (Ok bs) ->
             ( model
@@ -1697,7 +1730,9 @@ update user shared route msg model =
             )
 
         GotCorrelatedFreqs (Err e) ->
-            Api.handleHttpError ToastMsg e { model | correlatedFreqs = Failure e }
+            ( { model | correlatedFreqs = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження суміжних частот" e
+            )
 
         ClearAllFilters ->
             case ( model.zone, model.now ) of
@@ -1778,7 +1813,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         EditUnitSaveDone _ _ _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження назви підрозділу" e
+            )
 
         EditUnitSaveDone freq unit_ unitNew (Ok ()) ->
             --  loadStats model
