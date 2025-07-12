@@ -14,6 +14,7 @@ import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
+import Le.ErrorHandling
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Le.Waterfall exposing (Msg(..), waterfallDivId)
@@ -34,8 +35,7 @@ import Views
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , navCollapsed : Bool
+    { navCollapsed : Bool
     , waterfalls : List ( String, Le.Waterfall.Model )
     , duplicates : Set Int
     , lastPushQuery : Dict String String
@@ -94,8 +94,7 @@ init route _ =
                    )
 
         model =
-            { formErrors = Dict.empty
-            , navCollapsed = False
+            { navCollapsed = False
             , waterfalls = waterfalls
             , duplicates = Set.empty
             , lastPushQuery = route.query
@@ -291,7 +290,7 @@ update shared user msg model =
                 )
 
         GotDatasourceList (Err e) ->
-            ( model, E.showError "Somthing went wrong" )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел даних" e )
 
         GotDatasourceList (Ok xs) ->
             let
