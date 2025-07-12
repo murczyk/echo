@@ -90,9 +90,21 @@ navBar user shared activeName props =
                     [ menu Route.Path.Settings "settings" "налаштування" ]
                 ++ ifOrEmpty (hasRole "Admin" user)
                     [ menuWithSubs "admin" "адмін" adminSubs ]
+
+        -- Conditional styling based on feature flag
+        navbarStyles =
+            if shared.featureNavbarFrontOnly then
+                -- Current styling (to be hidden under feature flag)
+                [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
+            else
+                -- Reverted styling (original background - coyote gradient with white text)
+                [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
+                , class "border-b border-black/15 py-2 [&_a]:!text-white/85 [&_a:hover]:!text-white"
+                ]
+
+
     in
-    header
-        [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
+    header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
             [ div [ class "flex items-center justify-between" ]
                 [ a
@@ -139,21 +151,21 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-6" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                                         ([ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
-                      ]
-                         ++ (if props.isRerDuty then
-                                 [ div
-                                     [ class "pointer"
-                                     , onClick props.onNavbarVisibilityChange
-                                     ]
-                                     [ i [ class "bi bi-arrows-fullscreen" ] []
-                                     ]
-                                 ]
+                    ([ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
+                     ]
+                        ++ (if props.isRerDuty then
+                                [ div
+                                    [ class "pointer"
+                                    , onClick props.onNavbarVisibilityChange
+                                    ]
+                                    [ i [ class "bi bi-arrows-fullscreen" ] []
+                                    ]
+                                ]
 
-                             else
-                                 []
-                            )
-                     )
+                            else
+                                []
+                           )
+                    )
                 ]
             ]
         ]

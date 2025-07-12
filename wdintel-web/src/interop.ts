@@ -76,7 +76,11 @@ import('../static/js-search').then(module => {
 export const flags = ({ env }) => {
 	const isDark = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
 	const now = dayjs().tz('Europe/Kiev').valueOf();
-	return { "isDark": isDark, now };
+	return { 
+		"isDark": isDark, 
+		"now": now,
+		"featureNavbarFrontOnly": false // Feature flag for navbar styling
+	};
 
 }
 

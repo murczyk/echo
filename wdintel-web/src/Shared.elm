@@ -29,14 +29,16 @@ import Url
 type alias Flags =
     { isDark : Bool
     , now : Int
+    , featureNavbarFrontOnly : Bool
     }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map2 Flags
+    Json.Decode.map3 Flags
         (Json.Decode.field "isDark" Json.Decode.bool)
         (Json.Decode.field "now" Json.Decode.int)
+        (Json.Decode.field "featureNavbarFrontOnly" Json.Decode.bool)
 
 
 type alias Model =
@@ -54,6 +56,7 @@ init flagsResult route =
                 Err _ ->
                     { isDark = False
                     , now = 0
+                    , featureNavbarFrontOnly = False
                     }
     in
     ( { user =
@@ -73,6 +76,7 @@ init flagsResult route =
       , callsignsInfo = Dict.empty
       , posts = NotAsked
       , toasts = Le.Block.Toast.init
+      , featureNavbarFrontOnly = flags.featureNavbarFrontOnly
       }
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()

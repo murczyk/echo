@@ -19,4 +19,5 @@ type alias Model =
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , posts : RemoteData ApiError (Dict Int B.Post)
     , toasts : Le.Block.Toast.Model
+    , featureNavbarFrontOnly : Bool
     }
