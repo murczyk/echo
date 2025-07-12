@@ -28,8 +28,8 @@ import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..)
 import Le.Block.DateTime
 import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
 import Le.Block.Unit as Unit
+import Le.ErrorHandling
 import Le.NetworksUtils as EUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
@@ -58,9 +58,8 @@ type NetworksMergeStatus
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , zone : Maybe Time.Zone
+    { 
+     zone : Maybe Time.Zone
     , now : Maybe Time.Posix
     , from : Le.Block.DateTime.Model
     , to : Le.Block.DateTime.Model
@@ -124,9 +123,8 @@ init _ =
     let
         m2 : Model
         m2 =
-            { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
-            , zone = Nothing
+            { 
+             zone = Nothing
             , now = Nothing
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
@@ -256,8 +254,7 @@ loadNetworksFixLater model shared =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | GotZone (Result TimeZone.Error ( String, Time.Zone ))
+    = GotZone (Result TimeZone.Error ( String, Time.Zone ))
     | GotTime Time.Zone Posix
     | NetworksReturnedByApi (Result ApiError (List B.Network))
     | NetworksGroupsActivityReturnedByApi (Result ApiError GroupsActivityPerDayRsp)
@@ -404,21 +401,12 @@ generatePreview x =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         GotZone (Err e) ->
             ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
+            , E.showErrorWithDetails
+                { title = "Помилка отримання часового поясу"
+                , content = "Error getting timezone: " ++ renderZoneError e
+                }
             )
 
         GotZone (Ok ( _, zone )) ->
@@ -445,7 +433,9 @@ update shared msg model =
             loadNetworks m2 shared
 
         NetworksReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | networks = Failure err, currentRequestTracker = Nothing }
+            ( { model | networks = Failure err, currentRequestTracker = Nothing }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
+            )
 
         NetworksReturnedByApi (Ok networks) ->
             ( { model
@@ -473,7 +463,9 @@ update shared msg model =
             )
 
         UnitsReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            )
 
         UnitsReturnedByApi (Ok rsp) ->
             ( { model
@@ -488,7 +480,9 @@ update shared msg model =
             )
 
         NetworksGroupsActivityReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | networksGroupsActivity = Failure err }
+            ( { model | networksGroupsActivity = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мереж" err
+            )
 
         NetworksGroupsActivityReturnedByApi (Ok res) ->
             ( { model | networksGroupsActivity = Success res }, E.none )
@@ -531,10 +525,14 @@ update shared msg model =
             )
 
         CallsignsByNetworkReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
+            )
 
         CallsignsInfoReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e
+            )
 
         CallsignsInfoReturnedByApi (Ok callsigns) ->
             let
@@ -571,7 +569,9 @@ update shared msg model =
             ( { model | map = Closed }, E.none )
 
         NetworkPointsReturnedByApi _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок мережі" e
+            )
 
         NetworkPointsReturnedByApi networkId (Ok res) ->
             ( { model | map = Opened networkId res.points }, E.none )
@@ -670,7 +670,9 @@ update shared msg model =
             )
 
         UnitStatsReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | unitStats = Failure err }
+            ( { model | unitStats = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            )
 
         UnitStatsReturnedByApi (Ok rsp) ->
             ( { model
@@ -693,10 +695,11 @@ update shared msg model =
 
         ReportDownloadReturnedByApi (Err e) ->
             let
-                m2 =
-                    { model | reportDownloadInProgress = False }
+                m2 = { model | reportDownloadInProgress = False }
             in
-            Api.handleHttpError ToastMsg e m2
+            ( m2
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
+            )
 
         ReportDownloadReturnedByApi (Ok bytes) ->
             let
@@ -827,7 +830,9 @@ update shared msg model =
             )
 
         NetworksMergedByApi _ (Err e) ->
-            Api.handleHttpError ToastMsg e { model | networksMergeInProgress = False }
+            ( { model | networksMergeInProgress = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка об'єднання мереж" e
+            )
 
         NetworksMergedByApi idToRemove (Ok res) ->
             let
@@ -1473,8 +1478,7 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "мережі"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)" ]
+        [ div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)" ]
                 [ if model.showSidebar then
                     leftPanel shared model
 

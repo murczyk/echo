@@ -20,7 +20,7 @@ import Le.Auth
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
@@ -87,8 +87,6 @@ type alias Model =
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
-    , formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode B.UpdateNetworkReq
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
@@ -119,8 +117,6 @@ init route shared () =
       , freqsEditingState = Readonly
       , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
-      , toasts = Le.Block.Toast.init
-      , formErrors = Dict.empty
       , networks = NotAsked
       , mode = Readonly
       , editKindSelect =
@@ -173,8 +169,7 @@ init route shared () =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
+    = CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
     | NetworkReturnedByApi (Result ApiError B.Network)
     | MapPointsReturnedByApi (Result ApiError B.ListNetworkPointsRsp)
     | GroupsActivityReturnedByApi (Result ApiError GroupsByDate)
@@ -227,23 +222,20 @@ type Msg
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
+       
 
         CallsignsReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e { model | callsigns = Failure e }
+            ( { model | callsigns = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" e
+            )
 
         CallsignsReturnedByApi (Ok res) ->
             ( { model | callsigns = Success res.callsigns }, E.none )
 
         NetworkReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e { model | network = Failure e }
+            ( { model | network = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мережі" e
+            )
 
         NetworkReturnedByApi (Ok res) ->
             let
@@ -288,19 +280,25 @@ update shared msg model =
             )
 
         MapPointsReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e { model | mapPoints = Failure e }
+            ( { model | mapPoints = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок мережі" e
+            )
 
         MapPointsReturnedByApi (Ok res) ->
             ( { model | mapPoints = Success res.points }, E.none )
 
         GroupsActivityReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e { model | groupsActivity = Failure e }
+            ( { model | groupsActivity = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мережі" e
+            )
 
         GroupsActivityReturnedByApi (Ok res) ->
             ( { model | groupsActivity = Success res }, E.none )
 
         FreqsReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e { model | freqs = Failure e }
+            ( { model | freqs = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e
+            )
 
         FreqsReturnedByApi (Ok res) ->
             let
@@ -388,13 +386,17 @@ update shared msg model =
             )
 
         NetworkPostsUpdatedByApi _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
+            )
 
         NetworkPostsUpdatedByApi editState (Ok _) ->
             ( model, E.updateNetwork NetworkUpdatedByApi editState )
 
         NetworkUpdatedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
+            )
 
         NetworkUpdatedByApi (Ok network) ->
             ( { model | network = Success network, mode = Readonly }, E.none )
@@ -534,7 +536,9 @@ update shared msg model =
             )
 
         NetworkDescriptionAdded _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання опису мережі" e
+            )
 
         NetworkDescriptionAdded descType (Ok network) ->
             let
@@ -565,7 +569,9 @@ update shared msg model =
             ( { model | addSignsInp = inp }, E.none )
 
         SignalsForNetworkLoaded (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( { model | signals = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" e
+            )
 
         SignalsForNetworkLoaded (Ok res) ->
             ( { model | signals = Success res.signals }, E.none )
@@ -600,13 +606,17 @@ update shared msg model =
             )
 
         DescriptionEditUpdated _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення опису мережі" e
+            )
 
         DescriptionEditUpdated descrId (Ok res) ->
             ( { model | network = Success res, descriptionsEditDict = Dict.remove descrId model.descriptionsEditDict }, E.none )
 
         DescriptionDeleted (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення опису мережі" e
+            )
 
         DescriptionDeleted (Ok res) ->
             ( { model | network = Success res }, E.none )
@@ -745,7 +755,9 @@ update shared msg model =
             )
 
         FreqUpdatedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти" e
+            )
 
         FreqUpdatedByApi (Ok network) ->
             ( { model | network = Success network, freqsEditingState = Readonly }, E.none )
@@ -764,7 +776,9 @@ update shared msg model =
             )
 
         CallsignReportingStatusUpdatedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення статусу позивного" e
+            )
 
         CallsignReportingStatusUpdatedByApi (Ok res) ->
             case ( model.network, model.callsigns, model.callsignsEditingState ) of
@@ -839,11 +853,9 @@ update shared msg model =
                     ( model, E.none )
 
         ReportDownloadReturnedByApi (Err e) ->
-            let
-                m2 =
-                    { model | reportDownloadInProgress = False }
-            in
-            Api.handleHttpError ToastMsg e m2
+            ( { model | reportDownloadInProgress = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
+            )
 
         ReportDownloadReturnedByApi (Ok bytes) ->
             let
@@ -1897,8 +1909,7 @@ view user shared model =
     { title = "Мережа"
     , body =
         [ div []
-            [ Le.Block.Toast.view ToastMsg model.toasts <|
-                div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
+            [ div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
                     [ div [ class "w-[85vw] mx-auto py-[16px]" ]
                         (case model.network of
                             Success network ->
