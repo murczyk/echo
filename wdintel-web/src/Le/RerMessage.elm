@@ -16,6 +16,7 @@ import Le.Block.Callsign
 import Le.Block.MarkedText
 import Le.Block.Toast
 import Le.Block.Unit
+import Le.ErrorHandling
 import Le.Callsign
 import Le.Components exposing (fieldError, isInvalidCls)
 import Le.Time
@@ -502,13 +503,9 @@ update vps msg model =
             }
 
         InboxSubmitDone _ (Err e) ->
-            let
-                res =
-                    Api.handleHttpError2 ToastMsg e
-            in
             { model = model
-            , cmds = res.cmds
-            , sigs = ifOrEmpty (not (Dict.isEmpty res.formErrors)) [ OutFormErrors res.formErrors ]
+            , cmds = Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження повідомлення" e
+            , sigs = []
             , messages = vps.messages
             }
 
@@ -546,13 +543,9 @@ update vps msg model =
             }
 
         BookmarkAddDone (Err e) ->
-            let
-                res =
-                    Api.handleHttpError2 ToastMsg e
-            in
             { model = model
-            , cmds = res.cmds
-            , sigs = ifOrEmpty (not (Dict.isEmpty res.formErrors)) [ OutFormErrors res.formErrors ]
+            , cmds = Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання закладки" e
+            , sigs = []
             , messages = vps.messages
             }
 
@@ -571,13 +564,9 @@ update vps msg model =
             }
 
         BookmarkRemoveDone (Err e) ->
-            let
-                res =
-                    Api.handleHttpError2 ToastMsg e
-            in
             { model = model
-            , cmds = res.cmds
-            , sigs = ifOrEmpty (not (Dict.isEmpty res.formErrors)) [ OutFormErrors res.formErrors ]
+            , cmds = Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення закладки" e
+            , sigs = []
             , messages = vps.messages
             }
 
@@ -596,13 +585,9 @@ update vps msg model =
             }
 
         ImportantAddDone (Err e) ->
-            let
-                res =
-                    Api.handleHttpError2 ToastMsg e
-            in
             { model = model
-            , cmds = res.cmds
-            , sigs = ifOrEmpty (not (Dict.isEmpty res.formErrors)) [ OutFormErrors res.formErrors ]
+            , cmds = Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання важливого повідомлення" e
+            , sigs = []
             , messages = vps.messages
             }
 
@@ -621,13 +606,9 @@ update vps msg model =
             }
 
         ImportantRemoveDone (Err e) ->
-            let
-                res =
-                    Api.handleHttpError2 ToastMsg e
-            in
             { model = model
-            , cmds = res.cmds
-            , sigs = ifOrEmpty (not (Dict.isEmpty res.formErrors)) [ OutFormErrors res.formErrors ]
+            , cmds = Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення важливого повідомлення" e
+            , sigs = []
             , messages = vps.messages
             }
 
