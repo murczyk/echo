@@ -27,8 +27,7 @@ import View exposing (View)
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | Refresh
+    = Refresh
     | GotFreqs Bool (Result ApiError B.ListFreqsRsp)
     | GotFreqNetworks String (Result ApiError (List B.Network))
     | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)

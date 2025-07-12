@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, Model, NetworkWorkflowStatus(..), NetworkSearchState, ShowAllPopupFor(..), TextLocation(..), FurtherInvestigationFilter(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, FurtherInvestigationFilter(..), Model, NetworkSearchState, NetworkWorkflowStatus(..), ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -6,7 +6,6 @@ import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Le.Block.DateTime
 import Le.Block.Select
-import Le.Block.Toast
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData exposing (RemoteData)
 import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
@@ -22,9 +21,7 @@ type FurtherInvestigationFilter
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , zone : Maybe Time.Zone
+    { zone : Maybe Time.Zone
     , now : Maybe Time.Posix
     , loading : Bool
     , currentRequestTracker : Maybe String
