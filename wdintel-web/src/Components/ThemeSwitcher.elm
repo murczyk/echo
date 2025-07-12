@@ -8,7 +8,7 @@ import Html.Events exposing (onClick)
 colorThemeSwitcher : msg -> Bool -> Html msg
 colorThemeSwitcher msg isDark =
     div
-        [ class "text-text"
+        [ 
         ]
         [ div [ class "flex justify-center items-start" ]
             [ div

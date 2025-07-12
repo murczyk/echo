@@ -1,7 +1,8 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
 import Auth
-import Components.Navbar exposing (navBar)
+import Components.Navbar
+import Components.NavbarOld
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (class, classList)
@@ -107,6 +108,13 @@ subscriptions model =
 
 view : Auth.User -> String -> Shared.Model -> Route () -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
 view user activeName shared route { toContentMsg, model, content } =
+    let
+        navbarComponent =
+            if shared.featureNavbarFrontOnly then
+                Components.Navbar.navBar
+            else
+                Components.NavbarOld.navBar
+    in
     { title = content.title
     , body =
         [ div []
@@ -115,12 +123,11 @@ view user activeName shared route { toContentMsg, model, content } =
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"
-
                      else
                         "-translate-y-full"
                     )
                 ]
-                [ navBar user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
+                [ navbarComponent user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
             , if route.url.path == "/rer-duty" then
                 if not model.isNavbarVisible then
                     div
@@ -131,7 +138,6 @@ view user activeName shared route { toContentMsg, model, content } =
                             ]
                             [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
                         ]
-
                 else
                     div
                         [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-0 pointer-events-none" ]
@@ -141,7 +147,6 @@ view user activeName shared route { toContentMsg, model, content } =
                             ]
                             [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
                         ]
-
               else
                 div [] []
             , Toast.overlay ToastMsg shared.toasts
@@ -152,7 +157,6 @@ view user activeName shared route { toContentMsg, model, content } =
             , class
                 (if model.isNavbarVisible then
                     "pt-[50px] min-h-[calc(100vh-50px)]"
-
                  else
                     "pt-0 min-h-screen"
                 )

@@ -69,7 +69,6 @@ navBar user shared activeName props =
             ]
                 ++ (if hasRole "Admin" user then
                         [ Menu (Internal Route.Path.RadiosConvert) "radios-convert" "радіо kmz конвертер" ]
-
                     else
                         []
                    )
@@ -91,18 +90,9 @@ navBar user shared activeName props =
                 ++ ifOrEmpty (hasRole "Admin" user)
                     [ menuWithSubs "admin" "адмін" adminSubs ]
 
-        -- Conditional styling based on feature flag
+        -- Only the new/modern style remains
         navbarStyles =
-            if shared.featureNavbarFrontOnly then
-                -- Current styling (to be hidden under feature flag)
-                [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
-            else
-                -- Reverted styling (original background - coyote gradient with white text)
-                [ style "background" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), .95))"
-                , class "border-b border-black/15 py-2 [&_a]:!text-white/85 [&_a:hover]:!text-white"
-                ]
-
-
+            [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
@@ -151,25 +141,23 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-6" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                    ([ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
-                     ]
-                        ++ (if props.isRerDuty then
-                                [ div
-                                    [ class "pointer"
-                                    , onClick props.onNavbarVisibilityChange
-                                    ]
-                                    [ i [ class "bi bi-arrows-fullscreen" ] []
-                                    ]
-                                ]
-
-                            else
-                                []
-                           )
-                    )
+                                         ([ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
+                      ]
+                         ++ (if props.isRerDuty then
+                                 [ div
+                                     [ class "pointer"
+                                     , onClick props.onNavbarVisibilityChange
+                                     ]
+                                     [ i [ class "bi bi-arrows-fullscreen" ] []
+                                     ]
+                                 ]
+                             else
+                                 []
+                            )
+                     )
                 ]
             ]
         ]
-
 
 menuItem activeName hrefLink activeNameExp nameText =
     li []
@@ -180,7 +168,6 @@ menuItem activeName hrefLink activeNameExp nameText =
             ]
             [ text nameText ]
         ]
-
 
 menuItemWithSubs : String -> String -> String -> List Menu -> Html msg
 menuItemWithSubs activeName activeNameExp nameText subs =
@@ -198,11 +185,9 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                             [ span [] [ text sub.label ]
                             , if sub.activeName == activeName then
                                 i [ class "bi bi-check text-[var(--color-text)] ml-2" ] []
-
                               else
                                 text ""
                             ]
-
                     External link ->
                         a
                             [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"
