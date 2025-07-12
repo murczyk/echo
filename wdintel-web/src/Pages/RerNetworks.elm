@@ -1459,14 +1459,19 @@ view dark shared user model =
             [ if model.showSidebar then
                 leftPanel shared model
 
-              else
-                text ""
-            , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
-                [ div [ class "flex justify-between mb-[16px] w-full" ]
-                    [ div [ class "flex gap-[16px]" ]
-                        [ h1 []
-                            [ text "мережі" ]
-                        , dateAndPanelsBlock dark model
+                  else
+                    text ""
+                , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
+                    [ div [ class "flex justify-between mb-[16px] w-full" ]
+                        [ div [ class "flex gap-[16px]" ]
+                            [ h1 []
+                                [ text "мережі" ]
+                            , dateAndPanelsBlock dark model
+                            ]
+                        , div [ class "flex gap-[16px]" ]
+                            [ Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
+                            , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                            ]
                         ]
                     , div [ class "flex gap-[16px]" ]
                         [ --Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view

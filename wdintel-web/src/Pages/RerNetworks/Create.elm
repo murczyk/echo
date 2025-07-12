@@ -1,15 +1,18 @@
 module Pages.RerNetworks.Create exposing (Model, Msg, page)
 
+import Api exposing (check_if_freq_exist)
 import Auth
 import Bindings as B
 import Components.Button as Button
 import Components.Sidebar as Sidebar
+import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
+import Http
 import Layouts
 import Le.Block.Select
 import Le.Block.Toast
@@ -18,6 +21,7 @@ import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError)
+import Maybe.Extra as MaybeX
 import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
@@ -47,16 +51,6 @@ validateRequiredString fieldName value errors =
 
     else
         errors
-
-
-validateRequiredMaybe : String -> Maybe a -> Dict String String -> Dict String String
-validateRequiredMaybe fieldName maybeValue errors =
-    case maybeValue of
-        Nothing ->
-            Dict.insert fieldName "Це поле обов'язкове" errors
-
-        Just _ ->
-            errors
 
 
 validateRequiredFreqs : String -> List a -> Dict String String -> Dict String String
@@ -109,6 +103,9 @@ type alias Model =
     , freqKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , modulations : RemoteData ApiError (List B.ModulationRec)
+    , freqInpDebounce : Debounce String
+    , requestCounter : Int
+    , currentRequestTracker : Maybe String
     }
 
 
@@ -188,6 +185,9 @@ init route shared () =
             , selected = Nothing
             }
       , modulations = NotAsked
+      , freqInpDebounce = Debounce.init
+      , requestCounter = 0
+      , currentRequestTracker = Nothing
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -199,6 +199,13 @@ init route shared () =
         , E.getModulations ModulationsReturnedByApi
         ]
     )
+
+
+freqInpDebounceConfig : Debounce.Config Msg
+freqInpDebounceConfig =
+    { strategy = Debounce.later 2000
+    , transform = FreqInpDebounceMsg
+    }
 
 
 
@@ -222,10 +229,13 @@ type Msg
     | OpenFreqSidebar
     | CloseFreqSidebar
     | UpdateFreqField (B.AddNetworkFreq -> B.AddNetworkFreq)
+    | UpdateFreqName String
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | AddFreqToNetwork
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | FreqInpDebounceMsg Debounce.Msg
+    | CheckIfFreqExistDone (Result ApiError ())
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -535,6 +545,87 @@ update shared msg model =
 
         ModulationsReturnedByApi (Err error) ->
             ( { model | modulations = RD.Failure error }, E.none )
+
+        UpdateFreqName inp ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push freqInpDebounceConfig inp model.freqInpDebounce
+
+                freqCreateState =
+                    model.freqCreateState
+
+                freqCreateState2 =
+                    { freqCreateState | freq = inp }
+
+                m2 =
+                    { model
+                        | freqCreateState = freqCreateState2
+                        , freqInpDebounce = debounce
+                    }
+            in
+            ( m2, E.sendCmd cmd )
+
+        FreqInpDebounceMsg imsg ->
+            case model.createNetworkState.activeFrom of
+                Just activeFrom ->
+                    let
+                        tracker =
+                            "freq-" ++ String.fromInt (model.requestCounter + 1)
+
+                        cancelPrevious =
+                            case model.currentRequestTracker of
+                                Just prevTracker ->
+                                    Http.cancel prevTracker
+
+                                Nothing ->
+                                    Cmd.none
+
+                        ( debounce, debounceCmd ) =
+                            Debounce.update
+                                freqInpDebounceConfig
+                                (Debounce.takeLast
+                                    (\_ ->
+                                        checkIfFreqExist
+                                            model.freqCreateState.freq
+                                            activeFrom
+                                            tracker
+                                    )
+                                )
+                                imsg
+                                model.freqInpDebounce
+
+                        model2 =
+                            { model
+                                | freqInpDebounce = debounce
+                                , currentRequestTracker = Just tracker
+                                , requestCounter = model.requestCounter + 1
+                            }
+                    in
+                    ( model2
+                    , E.batch
+                        [ E.sendCmd cancelPrevious
+                        , E.sendCmd debounceCmd
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        CheckIfFreqExistDone (Err e) ->
+            Api.handleHttpError ToastMsg e model
+
+        CheckIfFreqExistDone (Ok _) ->
+            ( model, E.none )
+
+
+checkIfFreqExist : String -> Int -> String -> Cmd Msg
+checkIfFreqExist freq sinceDate tracker =
+    Api.check_if_freq_exist CheckIfFreqExistDone
+        tracker
+        { freq =
+            freq
+        , sinceDateInclusiveMs = sinceDate
+        }
 
 
 
@@ -857,14 +948,24 @@ viewFrequenciesSection model =
         [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ div [ class "mb-[8px] flex justify-between items-center" ]
                 [ h4 [] [ text "Частоти" ]
-                , Button.new { label = "Додати частоту", onClick = OpenFreqSidebar } |> Button.withStyleSecondary |> Button.view
+                , Button.new { label = "Додати частоту", onClick = OpenFreqSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.withDisabled (MaybeX.isNothing model.createNetworkState.activeFrom)
+                    |> Button.view
                 ]
             , div [] (fieldError "freqs" model.formErrors)
             , if List.isEmpty model.createNetworkState.freqs then
                 div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
                     [ div [ class "text-center" ]
                         [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
-                        , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
+                        , div [ class "text-sm" ]
+                            [ case model.createNetworkState.activeFrom of
+                                Nothing ->
+                                    text "Заповність поле 'Активна з', щоб почати додавати частоти"
+
+                                Just _ ->
+                                    text "Натисніть 'Додати частоту' для додавання першої частоти"
+                            ]
                         ]
                     ]
 
@@ -924,7 +1025,7 @@ viewFreqSidebar shared model =
                     , class "w-full p-2 border border-border rounded"
                     , placeholder "наприклад, 146.500"
                     , value model.freqCreateState.freq
-                    , onInput (\newFreq -> UpdateFreqField (\state -> { state | freq = newFreq }))
+                    , onInput UpdateFreqName
                     ]
                     []
                 ]
@@ -1068,4 +1169,3 @@ createMainInfoBlock createReq shared model =
             ]
         ]
     ]
-
