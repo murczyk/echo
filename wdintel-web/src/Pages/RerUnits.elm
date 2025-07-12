@@ -16,9 +16,10 @@ import Html.Styled
 import Layouts
 import Le.Auth
 import Le.Block.Popup
+import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
 import Le.Console
+import Le.ErrorHandling
 import Le.Time
 import Le.Types exposing (ApiError)
 import Le.Utils exposing (..)
@@ -26,14 +27,13 @@ import List.Extra as ListX
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
+import Select
 import Shared
 import Task
 import Time
 import TimeZone
 import View exposing (View)
 import Views
-import Select
-import Le.Block.Select
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -56,9 +56,7 @@ toLayout user model =
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , zone : Maybe Time.Zone
+    { zone : Maybe Time.Zone
     , units : List B.Unit
     , inpCompany : String
     , inpBattalion : String
@@ -99,9 +97,7 @@ loadUnits =
 
 init : () -> ( Model, Effect Msg )
 init _ =
-    ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
-      , zone = Nothing
+    ( { zone = Nothing
       , units = []
       , inpCompany = ""
       , inpBattalion = ""
@@ -131,8 +127,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
+    = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
     | GotUnits (Result ApiError B.ListUnitsRsp)
     | InpCompany String
     | InpBattalion String
@@ -188,21 +183,10 @@ type alias EditUnitState =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         InitGotZone (Err e) ->
             ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError
+                ("Error getting timezone: " ++ renderZoneError e)
             )
 
         InitGotZone (Ok ( _, zone )) ->
@@ -211,11 +195,14 @@ update msg model =
             )
 
         GotUnits (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            )
 
         GotUnits (Ok rsp) ->
             let
-                units = rsp.units
+                units =
+                    rsp.units
             in
             ( { model | units = units }
             , E.none
@@ -257,7 +244,9 @@ update msg model =
             )
 
         AddUnitDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення підрозділу" err
+            )
 
         AddUnitDone (Ok _) ->
             ( { model
@@ -326,7 +315,9 @@ update msg model =
                             )
 
         EditUnitDone _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділу" err
+            )
 
         EditUnitDone id (Ok _) ->
             ( { model | editUnit = Dict.remove id model.editUnit }
@@ -362,7 +353,9 @@ update msg model =
             ( { model | deleteUnitConfirmation = Nothing }, E.none )
 
         DeleteUnitDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення підрозділу" err
+            )
 
         DeleteUnitDone (Ok _) ->
             ( model
@@ -401,7 +394,9 @@ update msg model =
             )
 
         LoadKMZDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ файлу" e
+            )
 
         LoadKMZDone _ (Ok taskId) ->
             ( model
@@ -471,7 +466,9 @@ update msg model =
                     ( model, E.none )
 
         RemoveDuplicateDone (Err err) ->
-            Api.handleHttpError ToastMsg err { model | removeDuplicateLoading = False }
+            ( { model | removeDuplicateLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення дублікату підрозділу" err
+            )
 
         RemoveDuplicateDone (Ok _) ->
             let
@@ -512,53 +509,74 @@ update msg model =
 filteredUnits : Model -> List B.Unit
 filteredUnits model =
     model.units
-        |> List.filter (\unit ->
-            if not model.filterActive then
-                True
-            else
-                unit.active == True
-        )
-        |> List.filter (\unit -> 
-            if String.isEmpty model.filterDivision then
-                True
-            else
-                String.contains (String.toLower model.filterDivision) (String.toLower unit.division)
-        )
-        |> List.filter (\unit -> 
-            if String.isEmpty model.filterArmy then
-                True
-            else
-                String.contains (String.toLower model.filterArmy) (String.toLower unit.army)
-        )
-        |> List.filter (\unit -> 
-            if String.isEmpty model.filterRegiment then
-                True
-            else
-                String.contains (String.toLower model.filterRegiment) (String.toLower unit.regiment)
-        )
-        |> List.filter (\unit -> 
-            if String.isEmpty model.filterBattalion then
-                True
-            else
-                String.contains (String.toLower model.filterBattalion) (String.toLower unit.battalion)
-        )
-        |> List.filter (\unit -> 
-            if String.isEmpty model.filterCompany then
-                True
-            else
-                String.contains (String.toLower model.filterCompany) (String.toLower unit.company)
-        )
-     
+        |> List.filter
+            (\unit ->
+                if not model.filterActive then
+                    True
+
+                else
+                    unit.active == True
+            )
+        |> List.filter
+            (\unit ->
+                if String.isEmpty model.filterDivision then
+                    True
+
+                else
+                    String.contains (String.toLower model.filterDivision) (String.toLower unit.division)
+            )
+        |> List.filter
+            (\unit ->
+                if String.isEmpty model.filterArmy then
+                    True
+
+                else
+                    String.contains (String.toLower model.filterArmy) (String.toLower unit.army)
+            )
+        |> List.filter
+            (\unit ->
+                if String.isEmpty model.filterRegiment then
+                    True
+
+                else
+                    String.contains (String.toLower model.filterRegiment) (String.toLower unit.regiment)
+            )
+        |> List.filter
+            (\unit ->
+                if String.isEmpty model.filterBattalion then
+                    True
+
+                else
+                    String.contains (String.toLower model.filterBattalion) (String.toLower unit.battalion)
+            )
+        |> List.filter
+            (\unit ->
+                if String.isEmpty model.filterCompany then
+                    True
+
+                else
+                    String.contains (String.toLower model.filterCompany) (String.toLower unit.company)
+            )
 
 
 potentialDuplicates : Model -> List B.Unit
 potentialDuplicates model =
     let
-        company = String.toLower (String.trim model.inpCompany)
-        battalion = String.toLower (String.trim model.inpBattalion)
-        regiment = String.toLower (String.trim model.inpRegiment)
-        division = String.toLower (String.trim model.inpDivision)
-        army = String.toLower (String.trim model.inpArmy)
+        company =
+            String.toLower (String.trim model.inpCompany)
+
+        battalion =
+            String.toLower (String.trim model.inpBattalion)
+
+        regiment =
+            String.toLower (String.trim model.inpRegiment)
+
+        division =
+            String.toLower (String.trim model.inpDivision)
+
+        army =
+            String.toLower (String.trim model.inpArmy)
+
         anyInput =
             not (List.all String.isEmpty [ company, battalion, regiment, division, army ])
 
@@ -568,13 +586,15 @@ potentialDuplicates model =
     in
     if anyInput then
         model.units
-            |> List.filter (\unit ->
-                matchesField company unit.company
-                    && matchesField battalion unit.battalion
-                    && matchesField regiment unit.regiment
-                    && matchesField division unit.division
-                    && matchesField army unit.army
-            )
+            |> List.filter
+                (\unit ->
+                    matchesField company unit.company
+                        && matchesField battalion unit.battalion
+                        && matchesField regiment unit.regiment
+                        && matchesField division unit.division
+                        && matchesField army unit.army
+                )
+
     else
         []
 
@@ -658,6 +678,7 @@ contentBlock shared model =
                     [ if unit.active then
                         div [ class "flex flex-col items-center" ]
                             [ i [ class "bi bi-check-circle-fill", style "color" "#198754", style "font-size" "1.3em", title "Активний" ] [] ]
+
                       else
                         div [ class "flex flex-col items-center" ]
                             [ i [ class "bi bi-x-circle-fill", style "color" "#dc3545", style "font-size" "1.3em", title "Неактивний" ] [] ]
@@ -1144,33 +1165,40 @@ contentBlock shared model =
                     [ addUnitPanel
                     ]
                 , let
-                    duplicates = potentialDuplicates model
+                    duplicates =
+                        potentialDuplicates model
                   in
                   if not (List.isEmpty duplicates) then
                     div [ class "alert alert-warning mt-2" ]
                         [ text "Можливо, такий підрозділ вже існує:"
                         , table [ class "table table-sm mt-2" ]
-                            [ thead [] [ tr []
-                                [ th [] [ text "Назва" ]
-                                , th [] [ text "Рота/Взвод" ]
-                                , th [] [ text "Батальйон" ]
-                                , th [] [ text "Полк/Бригада" ]
-                                , th [] [ text "Дивізія" ]
-                                , th [] [ text "Корпус/Армія" ]
-                                ]
-                              ]
-                            , tbody [] (List.map (\unit ->
-                                tr []
-                                    [ td [] [ text unit.name ]
-                                    , td [] [ text unit.company ]
-                                    , td [] [ text unit.battalion ]
-                                    , td [] [ text unit.regiment ]
-                                    , td [] [ text unit.division ]
-                                    , td [] [ text unit.army ]
+                            [ thead []
+                                [ tr []
+                                    [ th [] [ text "Назва" ]
+                                    , th [] [ text "Рота/Взвод" ]
+                                    , th [] [ text "Батальйон" ]
+                                    , th [] [ text "Полк/Бригада" ]
+                                    , th [] [ text "Дивізія" ]
+                                    , th [] [ text "Корпус/Армія" ]
                                     ]
-                              ) duplicates)
+                                ]
+                            , tbody []
+                                (List.map
+                                    (\unit ->
+                                        tr []
+                                            [ td [] [ text unit.name ]
+                                            , td [] [ text unit.company ]
+                                            , td [] [ text unit.battalion ]
+                                            , td [] [ text unit.regiment ]
+                                            , td [] [ text unit.division ]
+                                            , td [] [ text unit.army ]
+                                            ]
+                                    )
+                                    duplicates
+                                )
                             ]
                         ]
+
                   else
                     text ""
                 , div
@@ -1281,12 +1309,11 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "підрозділи противника"
     , body =
-        [ Views.noHeaderAndContent ToastMsg model.toasts <|
-            div [ class "page-rer-units" ] <|
-                [ div [ class "row" ]
-                    [ div [ class "col-sm-12" ]
-                        [ contentBlock shared model ]
-                    ]
+        [ div [ class "page-rer-units w-5/6 mx-auto" ] <|
+            [ div [ class "row" ]
+                [ div [ class "col-sm-12" ]
+                    [ contentBlock shared model ]
                 ]
+            ]
         ]
     }
