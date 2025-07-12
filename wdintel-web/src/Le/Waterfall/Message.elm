@@ -12,7 +12,6 @@ import Html.Extra as HtmlX
 import Json.Encode as Encode
 import Le.Auth
 import Le.Block.MarkedText
-import Le.Block.Toast
 import Le.Block.Unit
 import Le.Callsign
 import Le.Config
@@ -27,12 +26,11 @@ import Set exposing (Set)
 import Time
 import Time.Extra
 import Url.Builder
+import Le.ErrorHandling
 
 
 type alias Model =
     { id : Int
-    , formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , isDuplicate : Bool
 
     --TODO: create custom type, it is related to isDuplocatesUnfolded directly
@@ -44,8 +42,6 @@ type alias Model =
 init : { id : Int } -> Model
 init x =
     { id = x.id
-    , formErrors = Dict.empty
-    , toasts = Le.Block.Toast.init
     , isDuplicate = False
     , isUnfolded = False
     , edited = Nothing
@@ -244,7 +240,6 @@ computeDateTimeRenderParts message ps =
 
 type InternalMsg
     = NoOp
-    | ToastMsg Le.Block.Toast.Msg
     | Edit
     | ToggleTag Int Int
     | ExtendedFormChanged String
@@ -305,16 +300,6 @@ update vps msg model =
     case msg of
         NoOp ->
             ( model, E.none, vps.message )
-
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            , vps.message
-            )
 
         Edit ->
             let
@@ -405,11 +390,7 @@ update vps msg model =
             )
 
         InboxSubmitDone _ (Err e) ->
-            let
-                ( m, cmd ) =
-                    Api.handleHttpError ToastMsg e model
-            in
-            ( m, cmd, vps.message )
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Повідомлення не збереглося" e, vps.message )
 
         InboxSubmitDone _ (Ok ()) ->
             ( { model | edited = Nothing }
@@ -819,6 +800,7 @@ rightColumn ( messageId, message ) ps model =
                                         , style "overflow-wrap" "break-word"
                                         , style "word-break" "break-word"
                                         , style "min-width" "0"
+
                                         -- , class "text-nowrap"
                                         ]
                                         [ i [ class "bi bi-geo text-icons", title "Локація" ] []

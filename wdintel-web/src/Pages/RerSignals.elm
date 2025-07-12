@@ -16,7 +16,7 @@ import Layouts
 import Le.Auth
 import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.Time
 import Le.Types exposing (ApiError)
 import Le.Utils exposing (..)
@@ -51,9 +51,7 @@ toLayout user model =
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , zone : Maybe Time.Zone
+    { zone : Maybe Time.Zone
     , inpUnitSelState : Select.State
     , inpUnitSelMenu : List (Select.MenuItem Int)
     , units : List B.Unit
@@ -78,8 +76,7 @@ type alias Model =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
+    = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
     | GotUnits (Result ApiError B.ListUnitsRsp)
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | AddUnitSelMsg (Select.Msg Int)
@@ -146,9 +143,7 @@ init _ =
     let
         m2 : Model
         m2 =
-            { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
-            , zone = Nothing
+            { zone = Nothing
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
             , inpUnitSelMenu = []
             , units = []
@@ -198,21 +193,10 @@ subscriptions _ =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         InitGotZone (Err e) ->
             ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError
+                ("Error getting timezone: " ++ renderZoneError e)
             )
 
         InitGotZone (Ok ( _, zone )) ->
@@ -221,7 +205,9 @@ update msg model =
             )
 
         GotSignals (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err
+            )
 
         GotSignals (Ok rsp) ->
             ( { model | signals = rsp.signals, loading = False }
@@ -232,7 +218,9 @@ update msg model =
             ( model, loadUnits )
 
         GotUnits (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            )
 
         GotUnits (Ok rsp) ->
             ( { model
@@ -315,7 +303,9 @@ update msg model =
             ( { model | deleteSignalConfirmation = Nothing }, E.none )
 
         DeleteSignalDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення сигналу" err
+            )
 
         DeleteSignalDone (Ok _) ->
             ( { model | loading = True, loadingUnitStats = True }
@@ -387,7 +377,9 @@ update msg model =
                             )
 
         EditSignalDone _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення сигналу" err
+            )
 
         EditSignalDone id (Ok _) ->
             ( { model | editSignal = Dict.remove id model.editSignal, loading = True, loadingUnitStats = True }
@@ -430,7 +422,9 @@ update msg model =
             )
 
         AddSignalDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення сигналу" err
+            )
 
         --TODO: подивитися чи можна не перезавантажувати все кожного разу
         AddSignalDone (Ok _) ->
@@ -546,9 +540,9 @@ update msg model =
             ( { model | inpText = "", inpMeaning = "", inpUnit = Nothing, inpCoordinates = "" }, E.none )
 
         GotUnitStats (Err err) ->
-            Api.handleHttpError ToastMsg
-                err
-                { model | loadingUnitStats = False }
+            ( { model | loadingUnitStats = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            )
 
         GotUnitStats (Ok rsp) ->
             ( { model | unitStats = rsp.units, loadingUnitStats = False }
@@ -1057,51 +1051,50 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view _ shared user model =
     { title = "сигнали"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "flex justify-start items-start page-rer-callsigns" ]
+        [ div [ class "flex justify-start items-start page-rer-callsigns" ]
+            [ div
+                [ class "align-self-stretch"
+                , style "width" "220px"
+                , style "min-width" "220px"
+                , style "height" "calc(-50px + 100vh)"
+                , style "overflow-y" "scroll"
+                ]
                 [ div
-                    [ class "align-self-stretch"
-                    , style "width" "220px"
-                    , style "min-width" "220px"
-                    , style "height" "calc(-50px + 100vh)"
-                    , style "overflow-y" "scroll"
+                    [ class "filter-col d-flex flex-column pt-1 left-panel"
+                    , style "height" "100%"
                     ]
-                    [ div
-                        [ class "filter-col d-flex flex-column pt-1 left-panel"
-                        , style "height" "100%"
+                    [ unitsBlock shared model
+                    , div [ class "flex-grow-1" ] []
+                    ]
+                ]
+            , div
+                [ class "border-start grow-1"
+                , style "height" "calc(-50px + 100vh)"
+                , style "overflow-y" "scroll"
+                ]
+                [ h1 [ class "py-2 ps-4" ]
+                    [ span [ class "me-2" ] [ text "Сигнали" ]
+                    , button
+                        [ type_ "button"
+                        , class "inline-block btn btn-outline-secondary me-2"
+                        , onClick Refresh
+                        , attribute "data-tooltip" "оновити"
+                        , attribute "data-position" "bottom"
                         ]
-                        [ unitsBlock shared model
-                        , div [ class "flex-grow-1" ] []
-                        ]
-                    ]
-                , div
-                    [ class "border-start grow-1"
-                    , style "height" "calc(-50px + 100vh)"
-                    , style "overflow-y" "scroll"
-                    ]
-                    [ h1 [ class "py-2 ps-4" ]
-                        [ span [ class "me-2" ] [ text "Сигнали" ]
-                        , button
-                            [ type_ "button"
-                            , class "inline-block btn btn-outline-secondary me-2"
-                            , onClick Refresh
-                            , attribute "data-tooltip" "оновити"
-                            , attribute "data-position" "bottom"
-                            ]
-                            (if model.loading then
-                                [ Le.Block.Spinner.loadingSpinner2Sm ]
+                        (if model.loading then
+                            [ Le.Block.Spinner.loadingSpinner2Sm ]
 
-                             else
-                                [ i [ class "bi bi-arrow-repeat" ] [] ]
-                            )
-                        ]
-                    , div [] <|
-                        [ div []
-                            [ div [ class "mx-2" ]
-                                [ contentBlock shared model user ]
-                            ]
+                         else
+                            [ i [ class "bi bi-arrow-repeat" ] [] ]
+                        )
+                    ]
+                , div [] <|
+                    [ div []
+                        [ div [ class "mx-2" ]
+                            [ contentBlock shared model user ]
                         ]
                     ]
                 ]
+            ]
         ]
     }

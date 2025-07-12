@@ -20,6 +20,7 @@ import Le.Block.DateTime
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.Block.Toast
+import Le.ErrorHandling
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
@@ -60,9 +61,7 @@ init _ =
     let
         m2 : Model
         m2 =
-            { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
-            , zone = Nothing
+            { zone = Nothing
             , now = Nothing
             , loading = False
             , currentRequestTracker = Nothing
@@ -496,21 +495,10 @@ filterNameToCmd filterName =
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         GotZone (Err e) ->
             ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError
+                ("Error getting timezone: " ++ renderZoneError e)
             )
 
         GotZone (Ok ( _, zone )) ->
@@ -525,7 +513,9 @@ update shared msg model =
             )
 
         GotFreqs _ (Err err) ->
-            Api.handleHttpError ToastMsg err { model | loading = False }
+            ( { model | loading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" err
+            )
 
         GotFreqs paginating (Ok rsp) ->
             let
@@ -588,10 +578,14 @@ update shared msg model =
             ( { model | groupsMessageCountByDay = r }, E.none )
 
         GroupsMessageCountByDayReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики активності" err
+            )
 
         GotFreqNetworks _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж частот" err
+            )
 
         GotFreqNetworks freqS (Ok networks) ->
             let
@@ -658,7 +652,9 @@ update shared msg model =
             ( m2, initLoad m2 )
 
         UnitsReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            )
 
         UnitsReturnedByApi (Ok rsp) ->
             let
@@ -823,7 +819,7 @@ update shared msg model =
                             }
 
                         f2 =
-                            case List.head addNetworkState.freqs   of
+                            case List.head addNetworkState.freqs of
                                 Just freqObj ->
                                     [ { freqObj | modulationId = updatedNetworkModulation } ]
 
@@ -948,7 +944,7 @@ update shared msg model =
                             }
 
                         f2 =
-                            case List.head addNetworkState.freqs   of
+                            case List.head addNetworkState.freqs of
                                 Just freqObj ->
                                     [ { freqObj | kind = NetworksUtils.networkKindToString updatedNetworkKind } ]
 
@@ -1081,7 +1077,9 @@ update shared msg model =
             )
 
         NetworksReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
+            )
 
         NetworksReturnedByApi (Ok networks) ->
             ( { model
@@ -1111,12 +1109,16 @@ update shared msg model =
 
         FilterStateDebounceMsg imsg ->
             let
-                tracker = "freqs-" ++ String.fromInt (model.requestCounter + 1)
+                tracker =
+                    "freqs-" ++ String.fromInt (model.requestCounter + 1)
 
                 cancelPrevious =
                     case model.currentRequestTracker of
-                        Just prevTracker -> Http.cancel prevTracker
-                        Nothing -> Cmd.none
+                        Just prevTracker ->
+                            Http.cancel prevTracker
+
+                        Nothing ->
+                            Cmd.none
 
                 ( debounce, debounceCmd ) =
                     Debounce.update
@@ -1127,11 +1129,11 @@ update shared msg model =
 
                 model2 =
                     { model
-                    | filterStateDebounce = debounce
-                    , loading = True
-                    , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
-                    , currentRequestTracker = Just tracker
-                    , requestCounter = model.requestCounter + 1
+                        | filterStateDebounce = debounce
+                        , loading = True
+                        , callsignsForFilter = NeedsReload (RD.withDefault [] model.callsignsForFilter)
+                        , currentRequestTracker = Just tracker
+                        , requestCounter = model.requestCounter + 1
                     }
             in
             ( model2
@@ -1142,7 +1144,9 @@ update shared msg model =
             )
 
         UnitStatsReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | loadingUnitStats = False }
+            ( { model | loadingUnitStats = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            )
 
         UnitStatsReturnedByApi (Ok rsp) ->
             ( { model
@@ -1183,7 +1187,9 @@ update shared msg model =
                     ( { model | openMapRowId = Just containerId, locationTexts = Dict.insert containerId LocationText model.locationTexts }, E.sendCmd <| Ports.rer_freqs_openMap { points = rsp.points, containerId = containerId } )
 
         PointsByFreqReturnedByApi _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
+            )
 
         CallsignsByFreqsReturnedByApi (Ok rsp) ->
             let
@@ -1217,7 +1223,9 @@ update shared msg model =
             )
 
         CallsignsByFreqsReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
+            )
 
         AltUnitsByFreqReturnedByApi (Ok rsp) ->
             ( { model | altUnitsByFreq = rsp }
@@ -1225,10 +1233,14 @@ update shared msg model =
             )
 
         AltUnitsByFreqReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
+            )
 
         CallsignsInfoReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
+            )
 
         CallsignsInfoReturnedByApi (Ok callsignsRes) ->
             let
@@ -1308,7 +1320,9 @@ update shared msg model =
             )
 
         GotFilterCallsigns (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження фільтру позивних" e
+            )
 
         GotFilterCallsigns (Ok rsp) ->
             ( { model
@@ -1390,7 +1404,9 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkCreated _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення мережі" e
+            )
 
         NetworkCreated freq (Ok network) ->
             let
@@ -1425,7 +1441,9 @@ update shared msg model =
             )
 
         NetworkConfirmationAdded (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання підтвердження мережі" e
+            )
 
         NetworkConfirmationAdded (Ok network) ->
             let
@@ -1453,14 +1471,14 @@ update shared msg model =
                                 --, kind =
                                 , unitIds = Maybe.map (\unitId -> [ unitId ]) model.networkDialogUnitSelect.selected
                                 , freqs =
-                                        [ { freq = freq
-                                          , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
-                                          , modulationId = model.addModulationSelect.selected
-                                          , description = Nothing
-                                          , activeFrom = Nothing
-                                          , activeTo = Nothing
-                                          }
-                                        ]
+                                    [ { freq = freq
+                                      , kind = NetworksUtils.networkKindToString model.addKindSelect.selected
+                                      , modulationId = model.addModulationSelect.selected
+                                      , description = Nothing
+                                      , activeFrom = Nothing
+                                      , activeTo = Nothing
+                                      }
+                                    ]
                                 , operationPeriod = Just "цілодобово"
                                 , activeTo = Nothing
                                 , activeFrom = Nothing
@@ -1585,7 +1603,9 @@ update shared msg model =
                     ( model, E.none )
 
         FreqAddedToNetwork _ (Err e) ->
-            Api.handleHttpError ToastMsg e { model | networkAddLoading = False }
+            ( { model | networkAddLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання частоти до мережі" e
+            )
 
         FreqAddedToNetwork freq (Ok network) ->
             let
@@ -1629,7 +1649,9 @@ update shared msg model =
             )
 
         FreqRemovedFromNetwork _ (Err e) ->
-            Api.handleHttpError ToastMsg e { model | networkAddLoading = False }
+            ( { model | networkAddLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти з мережі" e
+            )
 
         FreqRemovedFromNetwork freq (Ok network) ->
             let
@@ -1669,7 +1691,9 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkUpdated _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
+            )
 
         NetworkUpdated freq (Ok network) ->
             ( { model
@@ -1680,7 +1704,9 @@ update shared msg model =
             )
 
         ModulationsReturnedByApi (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            )
 
         ModulationsReturnedByApi (Ok modulations) ->
             let
@@ -1727,7 +1753,9 @@ update shared msg model =
             ( { model | freqGroupsActivityForNetworkAdd = Success r }, E.none )
 
         FreqGroupsActivityReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
+            ( { model | freqGroupsActivityForNetworkAdd = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності груп частот" err
+            )
 
         NetworkPostsUpdated freq editState (Ok r) ->
             ( model
@@ -1742,13 +1770,17 @@ update shared msg model =
             )
 
         NetworkPostsUpdated _ _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" err
+            )
 
         NetworkFreqUpdated freq editState (Ok r) ->
             ( model, E.updateNetwork (NetworkUpdated freq) editState )
 
         NetworkFreqUpdated _ _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти мережі" err
+            )
 
         ConfirmationInputChangedByUser val ->
             ( { model | addExistingConfirmationInp = Just val }, E.none )
@@ -2037,64 +2069,63 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "частоти"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "flex justify-start items-start page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
-                [ if model.showSidebar then
-                    leftPanel shared model
+        [ div [ class "flex justify-start items-start page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
+            [ if model.showSidebar then
+                leftPanel shared model
 
-                  else
-                    text ""
-                , div
-                    [ class "grow-1 overflow-y-auto"
-                    ]
-                    [ div [ class "flex gap-[8px]" ]
-                        [ h1 [ class "py-2 ps-4" ]
-                            [ text "частоти"
-                            ]
-                        , div [ class "flex justify-between items-center" ]
-                            [ -- Left-side content
-                              div [ class "flex items-center me-auto" ]
-                                [ button
-                                    [ type_ "button"
-                                    , class "btn btn-outline-secondary me-2"
-                                    , onClick Refresh
-                                    , attribute "data-tooltip" "оновити"
-                                    , attribute "data-position" "bottom"
-                                    ]
-                                    (if model.loading then
-                                        [ Le.Block.Spinner.loadingSpinner2Sm ]
-
-                                     else
-                                        [ i [ class "bi bi-arrow-repeat" ] [] ]
-                                    )
-                                , dateAndPanelsBlock dark model
+              else
+                text ""
+            , div
+                [ class "grow-1 overflow-y-auto"
+                ]
+                [ div [ class "flex gap-[8px]" ]
+                    [ h1 [ class "py-2 ps-4" ]
+                        [ text "частоти"
+                        ]
+                    , div [ class "flex justify-between items-center" ]
+                        [ -- Left-side content
+                          div [ class "flex items-center me-auto" ]
+                            [ button
+                                [ type_ "button"
+                                , class "btn btn-outline-secondary me-2"
+                                , onClick Refresh
+                                , attribute "data-tooltip" "оновити"
+                                , attribute "data-position" "bottom"
                                 ]
+                                (if model.loading then
+                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                                 else
+                                    [ i [ class "bi bi-arrow-repeat" ] [] ]
+                                )
+                            , dateAndPanelsBlock dark model
                             ]
                         ]
-                    , div [ class "px-2" ]
-                        [ let
-                            networkAddSidebarOpen =
-                                case model.networkWorkflowStatus of
-                                    NotStarted ->
-                                        False
+                    ]
+                , div [ class "px-2" ]
+                    [ let
+                        networkAddSidebarOpen =
+                            case model.networkWorkflowStatus of
+                                NotStarted ->
+                                    False
 
-                                    _ ->
-                                        True
-                          in
-                          div []
-                            [ Sidebar.view networkAddSidebarOpen
-                                CloseAddNetworkSidebar
-                                (NetworkWorkflow.view model shared)
-                            , div
-                                [ class "border mb-4 p-2"
-                                ]
-                                [ FilterPanel.view shared model
-                                ]
-                            , Table.view shared model user
+                                _ ->
+                                    True
+                      in
+                      div []
+                        [ Sidebar.view networkAddSidebarOpen
+                            CloseAddNetworkSidebar
+                            (NetworkWorkflow.view model shared)
+                        , div
+                            [ class "border mb-4 p-2"
                             ]
+                            [ FilterPanel.view shared model
+                            ]
+                        , Table.view shared model user
                         ]
                     ]
                 ]
+            ]
         ]
     }
 

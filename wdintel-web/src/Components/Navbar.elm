@@ -1,9 +1,11 @@
 module Components.Navbar exposing (navBar)
 
 import Auth
+import Components.ThemeSwitcher exposing (colorThemeSwitcher)
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
 import Le.Auth exposing (hasRole, serverModeIs)
 import Le.Utils exposing (..)
 import Route
@@ -23,8 +25,15 @@ type alias Menu =
     }
 
 
-navBar : Auth.User -> Shared.Model -> String -> Html msg
-navBar user shared activeName =
+type alias Props msg =
+    { onToggleTheme : msg
+    , onNavbarVisibilityChange : msg
+    , isRerDuty : Bool
+    }
+
+
+navBar : Auth.User -> Shared.Model -> String -> Props msg -> Html msg
+navBar user shared activeName props =
     let
         menu =
             menuItem activeName
@@ -83,102 +92,79 @@ navBar user shared activeName =
                     [ menuWithSubs "admin" "адмін" adminSubs ]
     in
     header
-        [ class "navbar navbar-expand-lg navbar-dark bd-navbar"
-        ]
-        [ nav [ class "container-xxl bd-gutter flex-wrap flex-lg-nowrap" ]
-            [ div [ class "d-lg-none" ] []
-            , a
-                [ class "navbar-brand p-0 me-0 me-lg-2"
-                , class "logo-animated d-flex align-items-center justify-content-center"
-                , href "/"
-                , style "position" "relative"
-                ]
-                [ div
-                    [ class "d-flex align-items-center justify-content-center"
-                    , style "width" "34px"
-                    , style "height" "28px"
+        [ class "bg-[var(--color-card)] border-b border-[var(--color-border)] py-2 [&_a]:!text-[var(--color-text)] [&_a:hover]:!text-[var(--color-text)]" ]
+        [ nav [ class "container mx-auto px-4" ]
+            [ div [ class "flex items-center justify-between" ]
+                [ a
+                    [ class "flex items-center space-x-2"
+                    , href "/"
                     ]
                     [ div
-                        [ class "main-image"
-                        , style "height" "28px"
-                        , style "width" "28px"
-                        ]
-                        [ img
-                            [ src "/img/SIGINT_190_kraken_transparent.png"
+                        [ class "relative w-8 h-7" ]
+                        [ div
+                            [ class "main-image absolute"
+                            , style "height" "28px"
+                            , style "width" "28px"
+                            ]
+                            [ img
+                                [ src "/img/SIGINT_190_kraken_transparent.png"
+                                , style "width" "28px"
+                                , style "height" "28px"
+                                ]
+                                []
+                            ]
+                        , div
+                            [ class "hover-image absolute"
                             , style "width" "28px"
                             , style "height" "28px"
-                            , alt "SIGINT 190 Kraken"
+                            , style "background-color" "#000"
+                            , style "border-radius" "50%"
                             ]
-                            []
-                        ]
-                    , div
-                        [ class "hover-image"
-                        , style "width" "28px"
-                        , style "height" "28px"
-                        , style "background-color" "#000"
-                        , style "border-radius" "50%"
-                        ]
-                        [ img
-                            [ src "/img/flying_skull_logo_transparent.png"
-                            , style "width" "28px"
-                            , style "z-index" "1"
-                            , alt "Flying Skull"
+                            [ img
+                                [ src "/img/flying_skull_logo_transparent.png"
+                                , style "width" "28px"
+                                , style "z-index" "1"
+                                , alt "Flying Skull"
+                                ]
+                                []
                             ]
-                            []
                         ]
-                    ]
-                , img
-                    [ src "/img/echo-logo-white.svg"
-                    , class "h-[16px]"
-                    ]
-                    []
-                ]
-            , div [ class "d-flex" ]
-                [ button
-                    [ class "navbar-toggler d-flex d-lg-none order-3 p-2"
-                    , type_ "button"
-                    , attribute "data-bs-toggle" "offcanvas"
-                    , attribute "data-bs-target" "#bdNavbar"
-                    , attribute "aria-controls" "bdNavbar"
-                    , attribute "aria-label" "Toggle navigation"
-                    ]
-                    [ i [ class "bi bi-three-dots" ] []
-                    ]
-                ]
-            , div
-                [ id "bdNavbar"
-                , class "offcanvas-lg offcanvas-end flex-grow-1"
-                , attribute "tabindex" "-1"
-                , attribute "aria-labelledby" "bdNavbarOffcanvasLabel"
-                , attribute "data-bs-scroll" "true"
-                ]
-                [ div [ class "offcanvas-header px-4 pb-0" ]
-                    [ h5 [ id "bdNavbarOffcanvasLabel", class "offcanvas-title text-white" ]
-                        [ text "🦆" ]
-                    , button
-                        [ class "btn-close btn-close-white"
-                        , type_ "button"
-                        , attribute "data-bs-dismiss" "offcanvas"
-                        , attribute "aria-label" "close"
-                        , attribute "data-bs-target" "#bdNavbar"
+                    , img
+                        [ src "/img/echo-logo.svg"
+                        , class "dark:invert dark:brightness-0 dark:contrast-200 h-[16px]"
                         ]
                         []
                     ]
-                , div [ class "offcanvas-body p-4 pt-0 p-lg-0" ]
-                    [ hr [ class "d-lg-none text-white-50" ] []
-                    , ul [ class "navbar-nav flex-row flex-wrap bd-navbar-nav" ] menuItems
+                , div [ class "flex items-center space-x-6" ]
+                    [ ul [ class "flex items-center space-x-6" ] menuItems
                     ]
+                , div [ class "flex gap-1 items-center" ]
+                                         ([ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
+                      ]
+                         ++ (if props.isRerDuty then
+                                 [ div
+                                     [ class "pointer"
+                                     , onClick props.onNavbarVisibilityChange
+                                     ]
+                                     [ i [ class "bi bi-arrows-fullscreen" ] []
+                                     ]
+                                 ]
+
+                             else
+                                 []
+                            )
+                     )
                 ]
             ]
         ]
 
 
 menuItem activeName hrefLink activeNameExp nameText =
-    li [ class "nav-item col-6 col-lg-auto" ]
+    li []
         [ a
-            [ class "nav-link py-2 px-0 px-lg-2"
+            [ class "block py-2 hover:text-[var(--color-text)] hover:bg-[var(--color-column)] px-2 rounded transition-all duration-200"
             , Route.Path.href hrefLink
-            , classList [ ( "active", activeName == activeNameExp ) ]
+            , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
             ]
             [ text nameText ]
         ]
@@ -193,37 +179,45 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                 [ case sub.link of
                     Internal path ->
                         a
-                            [ class "dropdown-item"
-                            , classList [ ( "active", sub.activeName == activeName ) ]
+                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"
+                            , classList [ ( "text-[var(--color-text)] font-medium", sub.activeName == activeName ) ]
                             , Route.Path.href path
                             ]
-                            [ text sub.label ]
+                            [ span [] [ text sub.label ]
+                            , if sub.activeName == activeName then
+                                i [ class "bi bi-check text-[var(--color-text)] ml-2" ] []
+
+                              else
+                                text ""
+                            ]
 
                     External link ->
                         a
-                            [ class "dropdown-item"
-                            , classList [ ( "active", sub.activeName == activeName ) ]
+                            [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"
+                            , classList [ ( "text-[var(--color-text)] font-medium", sub.activeName == activeName ) ]
                             , href link
                             , target "_blank"
                             ]
-                            [ text <| sub.label ++ " "
-                            , sup []
-                                [ i
-                                    [ class "bi bi-box-arrow-up-right"
-                                    ]
-                                    []
-                                ]
+                            [ span [] [ text sub.label ]
+                            , i [ class "bi bi-box-arrow-up-right text-[var(--color-icons)] ml-2 group-hover:text-[var(--color-text)]" ] []
                             ]
                 ]
     in
-    li [ class "nav-item dropdown col-6 col-lg-auto" ]
-        [ button
-            [ class "nav-link dropdown-toggle py-2 px-0 px-lg-2"
-            , attribute "data-bs-toggle" "dropdown"
-            , attribute "aria-expanded" "false"
-            , classList [ ( "active", activeName == activeNameExp ) ]
+    li [ class "relative group" ]
+        [ a
+            [ class "inline-flex items-center py-2 px-2 cursor-pointer hover:text-[var(--color-text)] hover:bg-[var(--color-column)] rounded transition-all duration-200"
+            , classList [ ( "text-[var(--color-text)] font-medium", activeName == activeNameExp ) ]
+            , href "#"
             ]
-            [ text nameText ]
-        , ul [ class "dropdown-menu" ]
-            (List.map dropdownItem subs)
+            [ span [] [ text nameText ]
+            , i
+                [ class "bi bi-chevron-down ml-1 text-xs transition-transform group-hover:rotate-180" ]
+                []
+            ]
+        , div [ class "absolute left-0 pt-2 z-500" ]
+            [ ul
+                [ class "w-56 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200"
+                ]
+                (List.map dropdownItem subs)
+            ]
         ]

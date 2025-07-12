@@ -9,7 +9,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.Types exposing (ApiError)
 import List.Extra as ListX
 import Page exposing (Page)
@@ -40,7 +40,6 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , filterInput : String
     , loadingCallsigns : Bool
     , callsigns : List B.CallsignWithFrequencies
@@ -52,7 +51,6 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , filterInput = ""
       , loadingCallsigns = True
       , callsigns = []
@@ -64,8 +62,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | FilterInput String
+    = FilterInput String
     | ClearFilter
     | ClearSelected
     | GotCallsigns (Result ApiError (List B.CallsignWithFrequencies))
@@ -103,15 +100,6 @@ callsignsPerFreq callsigns =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         FilterInput s ->
             ( { model
                 | filterInput = s
@@ -135,7 +123,7 @@ update msg model =
             )
 
         GotCallsigns (Err e) ->
-            Api.handleHttpError ToastMsg e { model | loadingCallsigns = False }
+            ( { model | loadingCallsigns = False }, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Callsigns Import Error" e )
 
         GotCallsigns (Ok callsigns) ->
             ( { model
@@ -360,9 +348,11 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "позивні"
     , body =
-        [ -- , Views.navBarRer dark mServerInfo "callsigns" (SharedMsg Shared.NeedReload)
-          Views.noHeaderAndContent ToastMsg model.toasts <|
-            div [ class "page-rer-importer-callsigns" ] <|
-                mainBlock model
+        [ div [ class "w-4/5 mx-auto bd-gutter" ]
+            [ div [ class "row" ]
+                [ div [ class "col-sm-12" ]
+                    (mainBlock model)
+                ]
+            ]
         ]
     }

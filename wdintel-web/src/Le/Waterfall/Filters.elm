@@ -30,8 +30,6 @@ type alias Filter r =
         , sendersSelectedNames : List String
         , sendersDeniedNames : List String
         , profiles : Dict String (Maybe B.SignalProfileEntry)
-        , formErrors : Dict String String
-        , toasts : Le.Block.Toast.Model
         , savedFilters : List ( Int, B.SavedFilterDuty )
         , saveFilterInp : String
         , deleteFilterConfirmationId : Maybe Int

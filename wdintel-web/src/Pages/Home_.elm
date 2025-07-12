@@ -23,6 +23,7 @@ import Shared
 import Task
 import Time
 import View exposing (View)
+import Le.ErrorHandling
 
 
 type alias Model =
@@ -88,7 +89,9 @@ update msg model =
             )
 
         GotInboxGroupsActivityStats (Err err) ->
-            Api.handleHttpError ToastMsg err { model | inboxGroupsActivityStats = Failure err }
+            ( { model | inboxGroupsActivityStats = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики активності груп" err
+            )
 
         GotInboxGroupsActivityStats (Ok resp) ->
             ( { model | inboxGroupsActivityStats = Success resp }, E.none )
@@ -111,43 +114,38 @@ view : Shared.Model -> B.User -> Model -> View Msg
 view shared user model =
     { title = "головна"
     , body =
-        [ mainContent user model
+        [ div [ class "my-4 w-4/5 mx-auto" ]
+            [ section []
+                [ h1 [ class "" ] [ text "Головна" ]
+                ]
+            , section [ class "flex gap-4 h-[50vh]" ]
+                [ a [ target "_blank", href "/docs", class "basis-[35%] bg-card border border-[var(--ochre-normal)] rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
+                    [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
+                        [ i [ class "bi bi-book text-white text-2xl" ] []
+                        ]
+                    , div [ class "text-center" ]
+                        [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1" ] [ text "Алгоритм Роботи" ]
+                        , p [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "Документація та інструкції" ]
+                        ]
+                    , div [ class "flex items-center gap-2 text-[var(--action-color)] group-hover:text-[var(--action-hovered-color)] transition-colors duration-300" ]
+                        [ span [ class "text-sm font-medium" ] [ text "Переглянути" ]
+                        , i [ class "bi bi-arrow-up-right text-lg group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-300" ] []
+                        ]
+                    ]
+                , HtmlX.viewIf (Le.Auth.hasRole "Rer" user) <|
+                    div [ class "grow-1 border rounded-sm relative" ]
+                        [ h4 [ class "pl-2 pt-2" ] [ text "Активність груп" ]
+                        , div [ class "h-[45vh]" ]
+                            [ Html.node "bar-chart-2"
+                                [ Attr.property "data" <|
+                                    B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
+                                ]
+                                []
+                            ]
+                        , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
+                            span [ class "absolute top-[50%] left-[50%]" ] [ Le.Block.Spinner.loadingSpinner ]
+                        ]
+                ]
+            ]
         ]
     }
-
-
-mainContent : B.User -> Model -> Html Msg
-mainContent user model =
-    div [ class "max-w-[80%] mx-auto my-4" ]
-        [ section []
-            [ h1 [ class "" ] [ text "Головна" ]
-            ]
-        , section [ class "flex gap-4 h-[50vh]" ]
-            [ a [ target "_blank", href "/docs", class "basis-[35%] bg-card border border-[var(--ochre-normal)] rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
-                [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
-                    [ i [ class "bi bi-book text-white text-2xl" ] []
-                    ]
-                , div [ class "text-center" ]
-                    [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1" ] [ text "Алгоритм Роботи" ]
-                    , p [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "Документація та інструкції" ]
-                    ]
-                , div [ class "flex items-center gap-2 text-[var(--action-color)] group-hover:text-[var(--action-hovered-color)] transition-colors duration-300" ]
-                    [ span [ class "text-sm font-medium" ] [ text "Переглянути" ]
-                    , i [ class "bi bi-arrow-up-right text-lg group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-300" ] []
-                    ]
-                ]
-            , HtmlX.viewIf (Le.Auth.hasRole "Rer" user) <|
-                div [ class "grow-1 border rounded-sm relative" ]
-                    [ h4 [ class "pl-2 pt-2" ] [ text "Активність груп" ]
-                    , div [ class "h-[45vh]" ]
-                        [ Html.node "bar-chart-2"
-                            [ Attr.property "data" <|
-                                B.inboxByGroupDigestRspEncoder (RD.withDefault2 { statsPerMinute = [] } model.inboxGroupsActivityStats)
-                            ]
-                            []
-                        ]
-                    , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
-                        span [ class "absolute top-[50%] left-[50%]" ] [ Le.Block.Spinner.loadingSpinner ]
-                    ]
-            ]
-        ]

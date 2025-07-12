@@ -17,8 +17,8 @@ import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
 import Le.Block.Select
-import Le.Block.Toast
 import Le.Components exposing (..)
+import Le.ErrorHandling
 import Le.Time
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
@@ -67,7 +67,6 @@ groupName group =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , timeZone : Maybe Time.Zone
     , organisms : List B.Organism
     , tableState : Table.State
@@ -136,7 +135,6 @@ type alias FieldError =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , organisms = []
       , inpName = ""
       , autoAddGroups = False
@@ -172,8 +170,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | SetTableState Table.State
+    = SetTableState Table.State
     | GotOrganisms (Result ApiError (List B.Organism))
     | AddRoleSelMsg (Select.Msg String)
     | EditRoleSelMsg (Select.Msg String)
@@ -202,20 +199,11 @@ type Msg
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         SetTableState newTableState ->
             ( { model | tableState = newTableState }, E.none )
 
         GotOrganisms (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження організмів" e )
 
         GotOrganisms (Ok res) ->
             let
@@ -296,6 +284,7 @@ update msg model =
                             in
                             if List.isEmpty groups then
                                 Nothing
+
                             else
                                 Just groups
 
@@ -306,6 +295,7 @@ update msg model =
                             in
                             if List.isEmpty groups then
                                 Nothing
+
                             else
                                 Just groups
 
@@ -313,7 +303,9 @@ update msg model =
                             Nothing
 
                         _ ->
-                            model.groupsValidation -- Keep existing validation state
+                            model.groupsValidation
+
+                -- Keep existing validation state
             in
             ( { model | inpGroups = inpGroups2, groupsValidation = groupsValidation }
             , E.batch
@@ -347,6 +339,7 @@ update msg model =
                                     in
                                     if List.isEmpty groups then
                                         Nothing
+
                                     else
                                         Just groups
 
@@ -357,6 +350,7 @@ update msg model =
                                     in
                                     if List.isEmpty groups then
                                         Nothing
+
                                     else
                                         Just groups
 
@@ -364,8 +358,9 @@ update msg model =
                                     Nothing
 
                                 _ ->
-                                    editOrganism.groupsValidation -- Keep existing validation state
+                                    editOrganism.groupsValidation
 
+                        -- Keep existing validation state
                         editOrganism2 =
                             { editOrganism | inpGroups = inpGroups2, groupsValidation = groupsValidation }
                     in
@@ -402,6 +397,7 @@ update msg model =
                             in
                             if List.isEmpty groups then
                                 Nothing
+
                             else
                                 Just groups
 
@@ -412,6 +408,7 @@ update msg model =
                             in
                             if List.isEmpty groups then
                                 Nothing
+
                             else
                                 Just groups
 
@@ -419,7 +416,9 @@ update msg model =
                             Nothing
 
                         _ ->
-                            model.groupsValidation -- Keep existing validation state
+                            model.groupsValidation
+
+                -- Keep existing validation state
             in
             ( { model | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
             , E.batch
@@ -453,6 +452,7 @@ update msg model =
                                     in
                                     if List.isEmpty groups then
                                         Nothing
+
                                     else
                                         Just groups
 
@@ -463,6 +463,7 @@ update msg model =
                                     in
                                     if List.isEmpty groups then
                                         Nothing
+
                                     else
                                         Just groups
 
@@ -470,8 +471,9 @@ update msg model =
                                     Nothing
 
                                 _ ->
-                                    editOrganism.groupsValidation -- Keep existing validation state
+                                    editOrganism.groupsValidation
 
+                        -- Keep existing validation state
                         editOrganism2 =
                             { editOrganism | inpParentOrganism = inpParentOrganism2, groupsValidation = groupsValidation }
                     in
@@ -560,7 +562,7 @@ update msg model =
             )
 
         AddOrganismDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання організму" e )
 
         AddGroupToOrganismDone organismId groupId edited (Ok _) ->
             if edited then
@@ -584,7 +586,7 @@ update msg model =
                 ( { model | inpGroups = inpGroups2, organisms = organisms }, E.none )
 
         AddGroupToOrganismDone _ _ _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання групи до організму" e )
 
         RemoveGroupFromOrganismDone organismId groupId (Ok _) ->
             let
@@ -594,7 +596,7 @@ update msg model =
             ( { model | organisms = organisms }, E.none )
 
         RemoveGroupFromOrganismDone _ _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
 
         ToggleAutoAddGroups ->
             ( { model | autoAddGroups = not model.autoAddGroups }, E.none )
@@ -664,10 +666,7 @@ update msg model =
 
         GotTimeZone (Err e) ->
             ( model
-            , E.sendCmd <|
-                Le.Block.Toast.addError
-                    ToastMsg
-                    ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError "Помилка завантаження часового поясу"
             )
 
         SetName value ->
@@ -686,7 +685,7 @@ update msg model =
                     ( model, E.none )
 
         GotGroupsList (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e )
 
         GotGroupsList (Ok res) ->
             let
@@ -797,7 +796,7 @@ update msg model =
             ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
 
         EditOrganismDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
 
 
 validator : Validate.Validator ( FormField, String ) { a | inpName : String }
@@ -1217,9 +1216,9 @@ editOrganismSidebarContent isDark model organismId editState =
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
             [ div [ class "flex justify-end gap-3" ]
-                                  [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
-                      |> Button.withStyleSecondary
-                      |> Button.view
+                [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
                 , Button.new
                     { label =
                         case editState.groupsValidation of
@@ -1263,13 +1262,13 @@ body dark shared user model =
                 Nothing ->
                     []
     in
-    [ Views.noHeaderAndContent ToastMsg model.toasts <|
-        div
-            [ classList [ ( "overflow-hidden", sidebarOpen ) ]
-            ]
-            [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
-            , div [] (mainBlock dark model)
-            ]
+    [ div
+        [ classList [ ( "overflow-hidden", sidebarOpen ) ]
+        , class "w-5/6 mx-auto"
+        ]
+        [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
+        , div [] (mainBlock dark model)
+        ]
     ]
 
 

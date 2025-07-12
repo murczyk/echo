@@ -13,7 +13,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Le.Block.Toast
+import Layouts
+import Le.ErrorHandling
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Le.Waterfall exposing (Msg(..), waterfallDivId)
@@ -34,9 +35,7 @@ import Views
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , navCollapsed : Bool
+    { navCollapsed : Bool
     , waterfalls : List ( String, Le.Waterfall.Model )
     , duplicates : Set Int
     , lastPushQuery : Dict String String
@@ -95,9 +94,7 @@ init route _ =
                    )
 
         model =
-            { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
-            , navCollapsed = False
+            { navCollapsed = False
             , waterfalls = waterfalls
             , duplicates = Set.empty
             , lastPushQuery = route.query
@@ -113,8 +110,7 @@ init route _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | WaterfallMsg String Le.Waterfall.Msg
+    = WaterfallMsg String Le.Waterfall.Msg
     | ResizeHappened
     | GenerateNewWaterfallId
     | AddWaterfall String
@@ -130,6 +126,15 @@ page user shared req =
         , update = update shared user
         , view = view shared.isDarkMode shared user
         , subscriptions = subscriptions
+        }
+        |> Page.withLayout (toLayout user)
+
+
+toLayout : Auth.User -> Model -> Layouts.Layout Msg
+toLayout user model =
+    Layouts.Navbar
+        { user = user
+        , activeName = "rer"
         }
 
 
@@ -199,15 +204,6 @@ recalcDuplicates model =
 update : Shared.Model -> B.User -> Msg -> Model -> ( Model, Effect Msg )
 update shared user msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         CollapseNavToggle ->
             ( { model | navCollapsed = not model.navCollapsed }
             , E.sendCmd <| Task.perform (\_ -> ResizeHappened) Time.now
@@ -294,7 +290,7 @@ update shared user msg model =
                 )
 
         GotDatasourceList (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел даних" e )
 
         GotDatasourceList (Ok xs) ->
             let
@@ -398,85 +394,40 @@ newTabBlock =
         ]
 
 
-collapseNavBar : Model -> Html Msg
-collapseNavBar model =
-    div
-        ([ style "position" "absolute"
-         , style "right" "80px"
-         , style "top" "11px"
-         , style "z-index" "150"
-         ]
-            ++ (if model.navCollapsed then
-                    [ style "color" "var(--bs-body-color)" ]
-
-                else
-                    [ style "color" "var(--bs-body-bg)" ]
-               )
-        )
-        [ div [ class "d-flex justify-content-center align-items-start" ]
-            [ -- div
-              -- [ class "pointer me-2"
-              -- , onClick <| SharedMsg Shared.ToggleDarkMode
-              -- ]
-              -- [ i [ class "bi bi-lightbulb" ] []
-              -- ]
-              div
-                [ class "pointer"
-                , onClick CollapseNavToggle
-                ]
-                [ i [ class "bi bi-arrows-fullscreen" ] []
-                ]
-            ]
-        ]
-
-
 body : Bool -> Shared.Model -> User -> Model -> List (Html Msg)
 body isDarkMode shared user model =
-    [ collapseNavBar model
-    , colorThemeSwitcher SwitchTheme shared.isDarkMode
+    [ div [ class "bg-background flex rer-duty flex-1" ] <|
+        [ div
+            [ class
+                ("grid-container grow-1 "
+                    ++ (if List.length model.waterfalls <= 2 then
+                            "justify-items-center"
+
+                        else
+                            ""
+                       )
+                )
+            ]
+          <|
+            List.map
+                (\( id_, wf ) ->
+                    Html.map (WaterfallMsg id_)
+                        (Le.Waterfall.messageTab
+                            { isDarkMode = isDarkMode
+                            , duplicates = model.duplicates
+                            , datasources = model.datasources
+                            , serverInfo = shared.serverInfo
+                            , user = user
+                            , waterfallsAmount = List.length model.waterfalls
+                            }
+                            wf
+                        )
+                )
+                model.waterfalls
+        , div [ class "shrink mt-12" ]
+            [ newTabBlock ]
+        ]
     ]
-        ++ (if model.navCollapsed then
-                []
-
-            else
-                [ div [ class "fade-in fade-out" ]
-                    [ navBar user shared "duty"
-                    ]
-                ]
-           )
-        ++ [ Views.noHeaderAndContentNoContainer ToastMsg model.toasts <|
-                div [ class "bg-background flex rer-duty" ] <|
-                    [ div
-                        [ class
-                            ("grid-container grow-1 "
-                                ++ (if List.length model.waterfalls <= 2 then
-                                        "justify-items-center"
-
-                                    else
-                                        ""
-                                   )
-                            )
-                        ]
-                      <|
-                        List.map
-                            (\( id_, wf ) ->
-                                Html.map (WaterfallMsg id_)
-                                    (Le.Waterfall.messageTab
-                                        { isDarkMode = isDarkMode
-                                        , duplicates = model.duplicates
-                                        , datasources = model.datasources
-                                        , serverInfo = shared.serverInfo
-                                        , user = user
-                                        , waterfallsAmount = List.length model.waterfalls
-                                        }
-                                        wf
-                                    )
-                            )
-                            model.waterfalls
-                    , div [ class "shrink" ]
-                        [ newTabBlock ]
-                    ]
-           ]
 
 
 view : Bool -> Shared.Model -> User -> Model -> View Msg

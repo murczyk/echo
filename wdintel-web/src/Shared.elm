@@ -13,6 +13,7 @@ import Dict
 import Effect as E exposing (Effect)
 import Http
 import Json.Decode
+import Le.Block.Toast
 import Le.RemoteData as RD exposing (RemoteData(..))
 import PagePorts.SharedPorts as Ports
 import Process
@@ -71,6 +72,7 @@ init flagsResult route =
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
       , posts = NotAsked
+      , toasts = Le.Block.Toast.init
       }
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
@@ -121,6 +123,11 @@ update req msg model =
         ToggleDarkMode ->
             ( { model | isDarkMode = not model.isDarkMode }
             , E.sendCmd <| Ports.shared_toggleDarkMode ()
+            )
+
+        TriggerResize ->
+            ( model
+            , E.sendCmd <| Ports.shared_triggerResize ()
             )
 
         SignOut ->
@@ -206,6 +213,25 @@ update req msg model =
 
         PostsReturnedByApi (Err err) ->
             ( model, E.none )
+
+        ToastMsg toastMsg ->
+            let
+                ( toastModel, toastCmd ) =
+                    Le.Block.Toast.update toastMsg model.toasts
+            in
+            ( { model | toasts = toastModel }
+            , E.sendCmd <| Cmd.map ToastMsg toastCmd
+            )
+
+        ShowToast error ->
+            ( model
+            , E.sendCmd <| Le.Block.Toast.addError ToastMsg error
+            )
+
+        ShowToastWithDetails title content ->
+            ( model
+            , E.sendCmd <| Le.Block.Toast.addErrorV2 ToastMsg title content
+            )
 
 
 subscriptions : Route () -> Model -> Sub Msg

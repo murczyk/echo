@@ -34,6 +34,7 @@ import Le.Block.Toast
 import Le.Block.Tooltip as Tooltip
 import Le.Callsign
 import Le.Config
+import Le.ErrorHandling
 import Le.RerMessage exposing (model0)
 import Le.Time
 import Le.Types exposing (..)
@@ -59,7 +60,6 @@ import TimeZone
 
 type Msg
     = NoOp
-    | ToastMsg Le.Block.Toast.Msg
       -- TIME
     | InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
     | TickTimeTick Posix
@@ -148,9 +148,7 @@ type LoadingEarlierStatus
 
 
 type alias Model =
-    { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , id : String
+    { id : String
     , height : Int
     , lastScroll : Maybe Posix
     , lastBottomCheck : Maybe Posix
@@ -228,9 +226,7 @@ init :
     -> Maybe B.RerDutyQueryStateWf
     -> ( Model, Effect Msg )
 init id_ ms =
-    ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
-      , id = id_
+    ( { id = id_
       , height = 200
       , lastScroll = Nothing
       , lastBottomCheck = Nothing
@@ -764,7 +760,7 @@ updateFilters msg model =
             ( m3, E.getCurrentTime LoadInitialStatsNow )
 
         SavedFiltersGot (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження збережених фільтрів" e )
 
         SavedFiltersGot (Ok filters) ->
             let
@@ -811,7 +807,7 @@ updateFilters msg model =
             )
 
         SaveFilterDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження фільтру" e )
 
         SaveFilterDone (Ok filters) ->
             let
@@ -963,7 +959,7 @@ updateFilters msg model =
             ( { model | deleteFilterConfirmationId = Nothing }, E.none )
 
         DeleteFilterDone (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення фільтру" err )
 
         DeleteFilterDone (Ok _) ->
             let
@@ -1184,18 +1180,9 @@ update shared user msg model =
         NoOp ->
             ( model, E.none )
 
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         InitGotZone (Err e) ->
             ( model
-            , E.sendCmd <| Le.Block.Toast.addError ToastMsg ("Error getting timezone: " ++ renderZoneError e)
+            , E.showError ("Error getting timezone: " ++ renderZoneError e)
             )
 
         InitGotZone (Ok ( _, zone )) ->
@@ -1369,11 +1356,9 @@ update shared user msg model =
             )
 
         GotInitialInbox _ (Err e) ->
-            Api.handleHttpError ToastMsg
-                e
-                { model
-                    | loadingInboxMessages = False
-                }
+            ( { model | loadingInboxMessages = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
+            )
 
         GotInitialInbox reload (Ok { inboxItems }) ->
             let
@@ -1418,12 +1403,9 @@ update shared user msg model =
             )
 
         GotInboxEarlier (Err e) ->
-            Api.handleHttpError ToastMsg
-                e
-                { model
-                    | loadingInboxMessages = False
-                    , loadingEarlier = NotLoading
-                }
+            ( { model | loadingInboxMessages = False, loadingEarlier = NotLoading }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження старіших повідомлень" e
+            )
 
         GotInboxEarlier (Ok { inboxItems }) ->
             let
@@ -1470,7 +1452,7 @@ update shared user msg model =
             )
 
         GotProfileInfos (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження профілів" e )
 
         GotProfileInfos (Ok profiles) ->
             let
@@ -1491,7 +1473,7 @@ update shared user msg model =
             ( m4, E.none )
 
         GotGroupInfos (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e )
 
         GotGroupInfos (Ok groups) ->
             let
@@ -1671,7 +1653,9 @@ update shared user msg model =
             )
 
         GotInboxMessagesDigest (Err e) ->
-            Api.handleHttpError ToastMsg e { model | loadingInboxDigest = False }
+            ( { model | loadingInboxDigest = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статусу повідомлень" e
+            )
 
         InboxLoopSleptBeforeLoadNewer ->
             ( model
@@ -1806,7 +1790,7 @@ update shared user msg model =
             ( model, E.none )
 
         GotBookmarks (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e )
 
         GotBookmarks (Ok bookmarks) ->
             ( { model | bookmarks = Set.fromList (List.map .messageId bookmarks) }
@@ -1814,7 +1798,7 @@ update shared user msg model =
             )
 
         GotImportants (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e )
 
         GotImportants (Ok importants) ->
             ( { model | importants = Set.fromList (List.map .messageId importants) }
@@ -1933,7 +1917,7 @@ update shared user msg model =
                 ( model, E.none )
 
         InitGotLatestSenders (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження відправників" e )
 
         InitGotLatestSenders (Ok profiles) ->
             let
@@ -1956,7 +1940,7 @@ update shared user msg model =
             )
 
         GotGroupKeys (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження ключів груп" e )
 
         GotGroupKeys (Ok vs) ->
             ( { model | groups = vs }
@@ -1989,7 +1973,7 @@ update shared user msg model =
             )
 
         GotTags (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e )
 
         GotTags (Ok vs) ->
             ( { model | tags = vs }
@@ -2029,10 +2013,10 @@ update shared user msg model =
             )
 
         GotLatestFrequencies (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e )
 
         GotPosts (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження постів" e )
 
         GotPosts (Ok rsp) ->
             let
@@ -2054,7 +2038,7 @@ update shared user msg model =
             ( model, E.sendCmd <| Api.sigint_latest_frequencies GotLatestFrequencies )
 
         GotCallsignsInfo (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e )
 
         GotCallsignsInfo (Ok callsigns) ->
             let
@@ -2074,7 +2058,7 @@ update shared user msg model =
             ( m2, E.none )
 
         GotSignals (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err )
 
         GotSignals (Ok rsp) ->
             ( { model | signals = rsp.signals }
@@ -2082,7 +2066,7 @@ update shared user msg model =
             )
 
         GotNetworks (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err )
 
         GotNetworks (Ok networks) ->
             let
@@ -2105,7 +2089,7 @@ update shared user msg model =
             )
 
         GotUnits (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err )
 
         GotUnits (Ok rsp) ->
             ( { model
@@ -2217,13 +2201,13 @@ update shared user msg model =
             )
 
         BookmarkAddDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання закладки" e )
 
         BookmarkAddDone id (Ok ()) ->
             ( { model | bookmarks = Set.insert id model.bookmarks }, E.none )
 
         BookmarkRemoveDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення закладки" e )
 
         BookmarkRemoveDone id (Ok ()) ->
             ( { model | bookmarks = Set.remove id model.bookmarks }, E.none )
@@ -2242,13 +2226,13 @@ update shared user msg model =
             )
 
         ImportantAddDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання важливого повідомлення" e )
 
         ImportantAddDone id (Ok ()) ->
             ( { model | importants = Set.insert id model.importants }, E.none )
 
         ImportantRemoveDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення важливого повідомлення" e )
 
         ImportantRemoveDone id (Ok ()) ->
             ( { model | importants = Set.remove id model.importants }, E.none )
@@ -2271,7 +2255,7 @@ update shared user msg model =
                     ( model, E.none )
 
         DeleteMessageDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення повідомлення" e )
 
         DeleteMessageDone id (Ok ()) ->
             ( { model | messages = model.messages |> Messages.filterMessages (\( id_, _ ) -> id_ /= id), deleteMessageConfirmationId = Nothing }, E.none )
@@ -2370,7 +2354,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo model =
     in
     div
         [ style "position" "relative"
-        , class "waterfall bg-column min-w-[300px]"
+        , class "waterfall bg-column min-w-[300px] grow-1"
         , style "z-index" "50"
         ]
         [ div
@@ -3086,7 +3070,7 @@ messageTab ps model =
                        )
     in
     div
-        [ class "relative max-w-[800px]"
+        [ class "relative max-w-[800px] flex flex-col"
         ]
         [ deleteFilterModal
         , deleteMessageModal

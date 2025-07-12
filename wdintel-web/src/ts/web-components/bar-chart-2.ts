@@ -268,6 +268,14 @@ export class BarChart2 extends LitElement {
 		this.chartHeight = rect.height - topLine
 	}
 
+	disconnectedCallback(): void {
+		super.disconnectedCallback();
+		if (this.tooltip) {
+			this.tooltip.remove();
+			this.tooltip = null as any;
+		}
+	}
+
 	updated(changedProperties: PropertyValues<this>) {
 		if (changedProperties.has('data')) {
 			this.renderChart()
@@ -333,13 +341,14 @@ export class BarChart2 extends LitElement {
 			this.tooltip = d3
 				.select('body')
 				.append('div')
-				.style('position', 'absolute')
+				.style('position', 'fixed')
 				.style('z-index', '100')
 				.style('visibility', 'hidden')
 				.style('padding', '5px')
 				.style('background', 'var(--card-color)')
 				.style('border', '2px solid var(--border-color)')
 				.style('color', 'var(--text-color)')
+				.style('pointer-events', 'none')
 		}
 		const tooltip = this.tooltip;
 		const { xScale, xAxis } = createBandScale(uniqueDates, [this.margins.left, this.chartWidth - this.margins.right], tickFormatFn)
@@ -389,8 +398,8 @@ export class BarChart2 extends LitElement {
 			})
 			.on('mousemove', function(e) {
 				tooltip
-					.style('top', e.pageY - 40 + 'px')
-					.style('left', e.pageX + 10 + 'px')
+					.style('top', (e.pageY - 40) + 'px')
+					.style('left', (e.pageX + 10) + 'px')
 			})
 			.on('mouseout', function(e, a) {
 				tooltip.html(``).style('visibility', 'hidden');
