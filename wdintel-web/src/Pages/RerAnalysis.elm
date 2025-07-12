@@ -1883,7 +1883,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         SaveFilterDone (Err e) ->
-            Api.handleHttpError ToastMsg e { model | saveFilterInProgress = False }
+            ( { model | saveFilterInProgress = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження фільтра" e
+            )
 
         SaveFilterDone (Ok filters) ->
             ( { model
@@ -1896,7 +1898,9 @@ update user shared route msg model =
             )
 
         SavedFiltersGot (Err e) ->
-            Api.handleHttpError ToastMsg e { model | savedFiltersLoading = False }
+            ( { model | savedFiltersLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження збережених фільтрів" e
+            )
 
         SavedFiltersGot (Ok filters) ->
             ( { model
@@ -1971,7 +1975,9 @@ update user shared route msg model =
                     )
 
         SavedFilterRenameDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перейменування фільтра" e
+            )
 
         SavedFilterRenameDone (Ok ()) ->
             ( model, E.none )
@@ -1985,7 +1991,9 @@ update user shared route msg model =
             )
 
         SavedFilterDeleteDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення фільтра" e
+            )
 
         SavedFilterDeleteDone (Ok ()) ->
             ( model, E.none )
@@ -2426,7 +2434,9 @@ update user shared route msg model =
             ( { model | filterUnits = s }, E.none )
 
         GotTags (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
+            )
 
         GotTags (Ok vs) ->
             ( { model | tags = vs }
@@ -2452,11 +2462,9 @@ update user shared route msg model =
             )
 
         ReportDownloadDocxDone (Err e) ->
-            let
-                m2 =
-                    { model | reportDownloadInProgress = False }
-            in
-            Api.handleHttpError ToastMsg e m2
+            ( { model | reportDownloadInProgress = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту" e
+            )
 
         ReportDownloadDocxDone (Ok bytes) ->
             let
@@ -2520,13 +2528,17 @@ update user shared route msg model =
             )
 
         GotBookmarks (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e
+            )
 
         GotBookmarks (Ok vs) ->
             ( { model | bookmarks = (List.map .messageId >> Set.fromList) vs }, E.none )
 
         GotImportants (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e
+            )
 
         GotImportants (Ok vs) ->
             ( { model | importants = (List.map .messageId >> Set.fromList) vs }, E.none )
@@ -2580,11 +2592,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         GotNewCallsignStats (Err e) ->
-            let
-                m2 =
-                    { model | newCallsignsLoading = False }
-            in
-            Api.handleHttpError ToastMsg e m2
+            ( { model | newCallsignsLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових позивних" e
+            )
 
         GotNewCallsignStats (Ok vs) ->
             ( { model
@@ -2595,7 +2605,9 @@ update user shared route msg model =
             )
 
         GotMessagesComments (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження коментарів" e
+            )
 
         GotMessagesComments (Ok comments) ->
             let
@@ -2608,7 +2620,9 @@ update user shared route msg model =
             ( m2, E.batch [ eff3 ] )
 
         GotUserInfo _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації користувача" e
+            )
 
         GotUserInfo login (Ok user_) ->
             let
@@ -2633,7 +2647,9 @@ update user shared route msg model =
                     ( model, E.none )
 
         GotUnits (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            )
 
         GotUnits (Ok rsp) ->
             ( { model
@@ -2646,7 +2662,9 @@ update user shared route msg model =
             )
 
         GotUnitsById (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації підрозділів" err
+            )
 
         GotUnitsById (Ok rsp) ->
             let
@@ -2676,10 +2694,14 @@ update user shared route msg model =
             ( { model | messages = model.messages |> List.filter (\( id_, _ ) -> id_ /= id), deleteMessageModalId = Nothing }, E.none )
 
         DeleteMessageDone _ (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення повідомлення" err
+            )
 
         GotGdocCallsignsForSumTable (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
+            )
 
         GotGdocCallsignsForSumTable (Ok callsigns) ->
             let
@@ -2699,7 +2721,9 @@ update user shared route msg model =
             ( m2, E.none )
 
         GotNetworksForSumTable (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації мереж" err
+            )
 
         GotNetworksForSumTable (Ok networks) ->
             let
@@ -2726,7 +2750,9 @@ update user shared route msg model =
             )
 
         GotMapPoints (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
+            )
 
         MapClosed ->
             ( { model | unfoldMapBlock = False }, E.none )
@@ -2757,13 +2783,17 @@ update user shared route msg model =
             ( { model | mapOpenMessages = Success rsp.messages }, E.none )
 
         GotMessagesForMap (Err err) ->
-            Api.handleHttpError ToastMsg err model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
+            )
 
         GotFreqActivityDaily (Ok r) ->
             ( { model | groupsMessageCountByDay = Success r }, E.none )
 
         GotFreqActivityDaily (Err err) ->
-            Api.handleHttpError ToastMsg err { model | groupsMessageCountByDay = Failure err }
+            ( { model | groupsMessageCountByDay = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності частот" err
+            )
 
         SetUnitFilterFromMap unitName ->
             if List.member unitName model.unitsSelected then
