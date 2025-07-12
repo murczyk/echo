@@ -29,8 +29,8 @@ import Html.Styled as Styled
 import Layouts
 import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
 import Le.Components exposing (fieldError, isInvalidCls)
+import Le.ErrorHandling
 import Le.Types exposing (ApiError)
 import Le.Utils exposing (..)
 import List.Extra as ListX
@@ -104,7 +104,6 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , rows : EnumeratedList Row
     , downloadKmzInProgress : Bool
     , downloadGeojsonInProgress : Bool
@@ -152,7 +151,6 @@ init _ =
             EL.fromList [ emptyRow 0 ]
     in
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , rows = rows
       , downloadKmzInProgress = False
       , downloadGeojsonInProgress = False
@@ -169,8 +167,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | TextareaChanged Int String
+    = TextareaChanged Int String
     | SelectCoordIndex Int Int
     | SelectCoordManual Int
     | GotUsk2000ToWgs84Res
@@ -455,15 +452,6 @@ replaceMacros now input =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         TextareaChanged rowId content ->
             let
                 m_row =
@@ -718,7 +706,9 @@ update msg model =
             )
 
         DownloadKmzDone (Err e) ->
-            Api.handleHttpError ToastMsg e { model | downloadKmzInProgress = False }
+            ( { model | downloadKmzInProgress = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ" e
+            )
 
         DownloadKmzDone (Ok bs) ->
             ( { model | downloadKmzInProgress = False }
@@ -752,7 +742,9 @@ update msg model =
             )
 
         DownloadGeojsonDone (Err e) ->
-            Api.handleHttpError ToastMsg e { model | downloadGeojsonInProgress = False }
+            ( { model | downloadGeojsonInProgress = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження GeoJSON" e
+            )
 
         DownloadGeojsonDone (Ok bs) ->
             ( { model | downloadGeojsonInProgress = False }
@@ -858,7 +850,9 @@ update msg model =
                             in
                             { model | rows = EL.setAtPos rowId row2 model.rows }
             in
-            Api.handleHttpError ToastMsg e m3
+            ( m3
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зображень" e
+            )
 
         UploadImageDone rowId (Ok res) ->
             case EL.findByPosition rowId model.rows of
@@ -900,7 +894,9 @@ update msg model =
             )
 
         UploadPdfDone (Err e) ->
-            Api.handleHttpError ToastMsg e { model | pdfToProcess = Nothing }
+            ( { model | pdfToProcess = Nothing }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження PDF" e
+            )
 
         UploadPdfDone (Ok res) ->
             let
@@ -1526,62 +1522,61 @@ view dark shared user model =
     { title = "імпортер"
     , body =
         [ -- , Views.navBarBpla dark mServerInfo user "importer"
-          Views.headerAndContent "імпортер" ToastMsg model.toasts <|
-            div [ class "page-importer" ] <|
-                p [ class "text-muted mb-4" ]
-                    [ text "окрім ручного вводу, ви також можете "
-                    , span
-                        [ class "text-action cursor-pointer"
-                        , onClick UploadPdfClicked
-                        ]
-                        [ text "підвантажити pdf-рапорт з програми \"Термінал\"" ]
+          div [ class "page-importer" ] <|
+            p [ class "text-muted mb-4" ]
+                [ text "окрім ручного вводу, ви також можете "
+                , span
+                    [ class "text-action cursor-pointer"
+                    , onClick UploadPdfClicked
                     ]
-                    :: pdfUploadProgressDivs model
-                    ++ EL.toList (EL.map (renderImpRow dark model.formErrors) model.rows)
-                    ++ [ div [ class "d-inline-flex flex-wrap" ]
-                            [ button
-                                [ type_ "button"
-                                , class "btn btn-secondary me-2 text-nowrap mb-2"
-                                , onClick <| AddRow
-                                ]
-                                [ i [ class "bi bi-plus-circle" ] []
-                                , text " ще"
-                                ]
-                            , input
-                                [ class "form-control d-inline-block me-2 mb-2 filename-inp"
-                                , type_ "text"
-                                , onInput <| DownloadFilenameChanged
-                                , value <| model.downloadFileName
-                                ]
-                                []
-                            , button
-                                [ type_ "button"
-                                , class "btn btn-primary me-2 text-nowrap mb-2"
-                                , onClick <| DownloadKmz
-                                ]
-                              <|
-                                [ if not model.downloadKmzInProgress then
-                                    i [ class "bi bi-cloud-arrow-down" ] []
-
-                                  else
-                                    spinner
-                                , text " скачати kmz"
-                                ]
-                            , button
-                                [ type_ "button"
-                                , class "btn btn-primary me-2 text-nowrap mb-2"
-                                , onClick <| DownloadGeojson
-                                ]
-                              <|
-                                [ if not model.downloadGeojsonInProgress then
-                                    i [ class "bi bi-cloud-arrow-down" ] []
-
-                                  else
-                                    spinner
-                                , text " скачати geojson"
-                                ]
+                    [ text "підвантажити pdf-рапорт з програми \"Термінал\"" ]
+                ]
+                :: pdfUploadProgressDivs model
+                ++ EL.toList (EL.map (renderImpRow dark model.formErrors) model.rows)
+                ++ [ div [ class "d-inline-flex flex-wrap" ]
+                        [ button
+                            [ type_ "button"
+                            , class "btn btn-secondary me-2 text-nowrap mb-2"
+                            , onClick <| AddRow
                             ]
-                       ]
+                            [ i [ class "bi bi-plus-circle" ] []
+                            , text " ще"
+                            ]
+                        , input
+                            [ class "form-control d-inline-block me-2 mb-2 filename-inp"
+                            , type_ "text"
+                            , onInput <| DownloadFilenameChanged
+                            , value <| model.downloadFileName
+                            ]
+                            []
+                        , button
+                            [ type_ "button"
+                            , class "btn btn-primary me-2 text-nowrap mb-2"
+                            , onClick <| DownloadKmz
+                            ]
+                          <|
+                            [ if not model.downloadKmzInProgress then
+                                i [ class "bi bi-cloud-arrow-down" ] []
+
+                              else
+                                spinner
+                            , text " скачати kmz"
+                            ]
+                        , button
+                            [ type_ "button"
+                            , class "btn btn-primary me-2 text-nowrap mb-2"
+                            , onClick <| DownloadGeojson
+                            ]
+                          <|
+                            [ if not model.downloadGeojsonInProgress then
+                                i [ class "bi bi-cloud-arrow-down" ] []
+
+                              else
+                                spinner
+                            , text " скачати geojson"
+                            ]
+                        ]
+                   ]
         ]
     }
 

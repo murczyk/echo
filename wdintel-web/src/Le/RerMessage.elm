@@ -14,11 +14,10 @@ import Le.Auth
 import Le.Block.ActionMenu
 import Le.Block.Callsign
 import Le.Block.MarkedText
-import Le.Block.Toast
 import Le.Block.Unit
-import Le.ErrorHandling
 import Le.Callsign
 import Le.Components exposing (fieldError, isInvalidCls)
+import Le.ErrorHandling
 import Le.Time
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
@@ -81,8 +80,7 @@ model0 =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | DeleteCallsign Int Int
+    = DeleteCallsign Int Int
     | InputDate Int String
     | InputTime Int String
     | InputFreq Int String
@@ -113,7 +111,6 @@ type Msg
 
 type OutSignal
     = OutFocus { elemId : String }
-    | OutToastMsg Le.Block.Toast.Msg
     | OutFormErrors (Dict String String)
     | OutBookmarkAdd Int
     | OutBookmarkRm Int
@@ -244,13 +241,6 @@ update :
         }
 update vps msg model =
     case msg of
-        ToastMsg imsg ->
-            { model = model
-            , cmds = E.none
-            , sigs = [ OutToastMsg imsg ]
-            , messages = vps.messages
-            }
-
         SetCallsignInput id_ callsign ->
             let
                 callsignInputs2 =

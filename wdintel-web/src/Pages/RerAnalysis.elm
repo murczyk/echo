@@ -1133,15 +1133,6 @@ update user shared route msg model =
                                     , accCmds ++ [ E.focusHtmlElement { elemId = elemId } ]
                                     )
 
-                                Le.RerMessage.OutToastMsg iimsg ->
-                                    let
-                                        ( im, icmds ) =
-                                            Le.Block.Toast.update iimsg accM.toasts
-                                    in
-                                    ( { model | toasts = im }
-                                    , (E.sendCmd <| Cmd.map ToastMsg icmds) :: accCmds
-                                    )
-
                                 Le.RerMessage.OutFormErrors es ->
                                     ( { accM | formErrors = Dict.union es accM.formErrors }
                                     , accCmds

@@ -58,8 +58,7 @@ type NetworksMergeStatus
 
 
 type alias Model =
-    { 
-     zone : Maybe Time.Zone
+    { zone : Maybe Time.Zone
     , now : Maybe Time.Posix
     , from : Le.Block.DateTime.Model
     , to : Le.Block.DateTime.Model
@@ -123,8 +122,7 @@ init _ =
     let
         m2 : Model
         m2 =
-            { 
-             zone = Nothing
+            { zone = Nothing
             , now = Nothing
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
@@ -403,10 +401,7 @@ update shared msg model =
     case msg of
         GotZone (Err e) ->
             ( model
-            , E.showErrorWithDetails
-                { title = "Помилка отримання часового поясу"
-                , content = "Error getting timezone: " ++ renderZoneError e
-                }
+            , E.showErrorWithDetails "Помилка отримання часового поясу" ("Error getting timezone: " ++ renderZoneError e)
             )
 
         GotZone (Ok ( _, zone )) ->
@@ -695,7 +690,8 @@ update shared msg model =
 
         ReportDownloadReturnedByApi (Err e) ->
             let
-                m2 = { model | reportDownloadInProgress = False }
+                m2 =
+                    { model | reportDownloadInProgress = False }
             in
             ( m2
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
@@ -1479,50 +1475,50 @@ view dark shared user model =
     { title = "мережі"
     , body =
         [ div [ class "flex rer-networks", style "height" "calc(-50px + 100vh)" ]
-                [ if model.showSidebar then
-                    leftPanel shared model
+            [ if model.showSidebar then
+                leftPanel shared model
 
-                  else
-                    text ""
-                , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
-                    [ div [ class "flex justify-between mb-[16px] w-full" ]
-                        [ div [ class "flex gap-[16px]" ]
-                            [ h1 []
-                                [ text "мережі" ]
-                            , dateAndPanelsBlock dark model
-                            ]
-                        , div [ class "flex gap-[16px]" ]
-                            [ --Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
-                              Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
-                            ]
+              else
+                text ""
+            , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
+                [ div [ class "flex justify-between mb-[16px] w-full" ]
+                    [ div [ class "flex gap-[16px]" ]
+                        [ h1 []
+                            [ text "мережі" ]
+                        , dateAndPanelsBlock dark model
                         ]
-                    , case model.networksMergeStatus of
-                        CalculatedSuggestions (x :: xs) ->
-                            div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                                , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                    |> Button.withStyleSecondary
-                                    |> Button.view
-                                ]
+                    , div [ class "flex gap-[16px]" ]
+                        [ --Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
+                          Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                        ]
+                    ]
+                , case model.networksMergeStatus of
+                    CalculatedSuggestions (x :: xs) ->
+                        div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                            [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                            , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                            ]
+
+                    _ ->
+                        text ""
+                , contentBlock shared model
+                ]
+            , let
+                isOpen =
+                    case model.networksMergeStatus of
+                        Merging _ _ _ ->
+                            True
 
                         _ ->
-                            text ""
-                    , contentBlock shared model
-                    ]
-                , let
-                    isOpen =
-                        case model.networksMergeStatus of
-                            Merging _ _ _ ->
-                                True
-
-                            _ ->
-                                False
-                  in
-                  Sidebar.view
-                    isOpen
-                    NetworksMergeFinish
-                    (networksMergeSidebarContent model)
-                ]
+                            False
+              in
+              Sidebar.view
+                isOpen
+                NetworksMergeFinish
+                (networksMergeSidebarContent model)
+            ]
         ]
     }
 

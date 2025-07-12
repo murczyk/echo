@@ -10,8 +10,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.Block.Toast
 import Le.Components exposing (fieldError, isInvalidCls)
+import Le.ErrorHandling
 import Le.RerMessage
 import Le.Time
 import Le.Types exposing (ApiError)
@@ -33,7 +33,6 @@ import Views
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , loadingInboxMessages : Bool
     , messages : List ( Int, InboxMessage )
     , zone : Maybe Time.Zone
@@ -62,7 +61,6 @@ init _ =
     let
         model =
             { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
             , loadingInboxMessages = True
             , messages = []
             , zone = Nothing
@@ -140,8 +138,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | GotZone Time.Zone
+    = GotZone Time.Zone
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | LoadEarlier
     | LoadMore
@@ -257,15 +254,6 @@ computeLatestMessage messages =
 update : B.User -> Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update user shared msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         GotTime zone time_ ->
             let
                 dateSelected =
@@ -285,9 +273,9 @@ update user shared msg model =
             )
 
         GotInbox (Err e) ->
-            Api.handleHttpError ToastMsg
-                e
-                { model | loadingInboxMessages = False }
+            ( { model | loadingInboxMessages = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
+            )
 
         GotInbox (Ok { inboxItems }) ->
             let
@@ -514,7 +502,9 @@ update user shared msg model =
                 m2 =
                     { model | inboxSubmitInProgress = False }
             in
-            Api.handleHttpError ToastMsg e m2
+            ( m2
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка відправки повідомлень" e
+            )
 
         InboxSubmitDone oldestId (Ok ()) ->
             ( { model
@@ -568,7 +558,9 @@ update user shared msg model =
             )
 
         GotInboxCursor (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання курсора" e
+            )
 
         GotInboxCursor (Ok mCursor) ->
             ( { model
@@ -578,13 +570,17 @@ update user shared msg model =
             )
 
         CursorUpdateDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення курсора" e
+            )
 
         CursorUpdateDone (Ok ()) ->
             ( model, E.none )
 
         GotUnreadCounters (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання лічильників" e
+            )
 
         GotUnreadCounters (Ok unreadCounters) ->
             ( { model | unreadCounters = Just unreadCounters }
@@ -772,13 +768,17 @@ update user shared msg model =
                     )
 
         GotGroupInfos (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп сигналів" e
+            )
 
         GotGroupInfos (Ok groups) ->
             ( { model | groupInfos = groups.data |> List.foldl (\group acc -> Dict.insert group.masterKey group acc) model.groupInfos }, E.none )
 
         GotProfileInfos (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження профілів сигналів" e
+            )
 
         GotProfileInfos (Ok profiles) ->
             ( { model | profiles = Dict.union profiles.data model.profiles }, E.none )
@@ -822,15 +822,6 @@ update user shared msg model =
                                 Le.RerMessage.OutFocus { elemId } ->
                                     ( accM
                                     , accCmds ++ [ E.sendCmd <| Ports.rer_importer_focus { elemId = elemId } ]
-                                    )
-
-                                Le.RerMessage.OutToastMsg imsg ->
-                                    let
-                                        ( im, icmds ) =
-                                            Le.Block.Toast.update imsg accM.toasts
-                                    in
-                                    ( { model | toasts = im }
-                                    , (E.sendCmd <| Cmd.map ToastMsg icmds) :: accCmds
                                     )
 
                                 Le.RerMessage.OutFormErrors _ ->
@@ -878,7 +869,9 @@ update user shared msg model =
             )
 
         GotTags (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
+            )
 
         GotTags (Ok vs) ->
             ( { model | tags = vs }
@@ -959,180 +952,179 @@ body dark shared user model =
             ]
     in
     [ -- , Views.navBarRer dark mServerInfo "inbox" (SharedMsg Shared.NeedReload)
-      Views.headerAndContent "вхідні" ToastMsg model.toasts <|
-        div [ class "page-rer-importer" ] <|
-            (div [ class "d-flex justify-content-between align-items-center mb-4" ] <|
-                [ div [ class "flex-shrink-1" ]
-                    [ button
-                        [ type_ "button"
-                        , class "btn btn-light me-2 text-nowrap"
-                        , onClick ToggleFilter
-                        , classList [ ( "active", model.showFilter ) ]
+      div [ class "page-rer-importer w-5/6 mx-auto mt-2" ] <|
+        (div [ class "d-flex justify-content-between align-items-center mb-4" ] <|
+            [ div [ class "flex-shrink-1" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn-light me-2 text-nowrap"
+                    , onClick ToggleFilter
+                    , classList [ ( "active", model.showFilter ) ]
+                    ]
+                    [ span
+                        [ class "text-muted"
                         ]
-                        [ span
-                            [ class "text-muted"
+                        [ i
+                            [ class "bi bi-funnel"
+                            , style "vertical-align" "middle"
                             ]
-                            [ i
-                                [ class "bi bi-funnel"
-                                , style "vertical-align" "middle"
-                                ]
-                                []
-                            , span
-                                [ style "font-size" ".8rem"
-                                ]
-                                [ text " фільтр" ]
+                            []
+                        , span
+                            [ style "font-size" ".8rem"
                             ]
+                            [ text " фільтр" ]
                         ]
                     ]
-                , div [ class "flex-shrink-1" ]
-                    [ button
-                        [ type_ "button"
-                        , class "btn btn-light me-2 text-nowrap"
-                        , onClick ToggleDateSelector
-                        , classList [ ( "active", model.showDateSelector ) ]
-                        ]
-                        [ span
-                            [ class "text-muted"
-                            , style "font-size" ".8rem"
-                            ]
-                            [ text "перейти на дату/час" ]
-                        ]
-                    ]
-                , div [ class "w-100" ] navButtonsBlock
                 ]
-            )
-                :: (if model.showFilter then
-                        let
-                            filterBlock =
-                                div
-                                    [ class "fade-in mb-4"
-                                    ]
-                                <|
-                                    [ div [ class "form-check d-block" ] <|
-                                        [ input
-                                            [ class "form-check-input me-1"
-                                            , type_ "checkbox"
-                                            , id "filter-only-show-unprocessed"
-                                            , checked <| model.filterOnlyShowUnprocessed
-                                            , onClick ToggleFilterOnlyShowUnprocessed
-                                            ]
-                                            []
-                                        , label
-                                            [ class "form-check-label"
-                                            , for "filter-only-show-unprocessed"
-                                            , style "user-select" "none"
-                                            ]
-                                            [ text "лише необроблені" ]
-                                        ]
-                                    , div []
-                                        [ button
-                                            [ type_ "button"
-                                            , class "btn btn-primary mt-3"
-                                            , onClick <| ApplyFilters
-                                            ]
-                                            [ text "застосувати" ]
-                                        ]
-                                    ]
-                        in
-                        [ filterBlock ]
-
-                    else
-                        []
-                   )
-                ++ (if model.showDateSelector then
-                        let
-                            dateSelectorBlock =
-                                div
-                                    [ class "fade-in mb-4 d-flex justify-content-start align-items-start"
-                                    ]
-                                <|
-                                    [ div [] <|
-                                        input
-                                            [ type_ "datetime-local"
-                                            , class "form-control"
-                                            , style "max-width" "300px"
-                                            , onInput <| SetGotoDate
-                                            , value model.dateSelectedStr
-                                            , isInvalidCls dateFieldErrId model.formErrors
-                                            ]
-                                            []
-                                            :: fieldError dateFieldErrId model.formErrors
-                                    , button
-                                        [ type_ "button"
-                                        , class "btn btn-primary ms-2"
-                                        , classList [ ( "disabled", MaybeX.isNothing model.dateSelected ) ]
-                                        , onClick GotoDate
-                                        ]
-                                        [ text "перейти" ]
-                                    ]
-                        in
-                        [ dateSelectorBlock ]
-
-                    else
-                        []
-                   )
-                ++ (if List.length model.messages == 0 then
-                        [ div
-                            [ class "text-center"
-                            , style "margin-top" "7rem"
-                            , style "margin-bottom" "7rem"
-                            ]
-                            [ text "немає вхідних повідомлень. натисніть \"завантажити раніше\" для перегляду старших повідомлень" ]
+            , div [ class "flex-shrink-1" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn-light me-2 text-nowrap"
+                    , onClick ToggleDateSelector
+                    , classList [ ( "active", model.showDateSelector ) ]
+                    ]
+                    [ span
+                        [ class "text-muted"
+                        , style "font-size" ".8rem"
                         ]
+                        [ text "перейти на дату/час" ]
+                    ]
+                ]
+            , div [ class "w-100" ] navButtonsBlock
+            ]
+        )
+            :: (if model.showFilter then
+                    let
+                        filterBlock =
+                            div
+                                [ class "fade-in mb-4"
+                                ]
+                            <|
+                                [ div [ class "form-check d-block" ] <|
+                                    [ input
+                                        [ class "form-check-input me-1"
+                                        , type_ "checkbox"
+                                        , id "filter-only-show-unprocessed"
+                                        , checked <| model.filterOnlyShowUnprocessed
+                                        , onClick ToggleFilterOnlyShowUnprocessed
+                                        ]
+                                        []
+                                    , label
+                                        [ class "form-check-label"
+                                        , for "filter-only-show-unprocessed"
+                                        , style "user-select" "none"
+                                        ]
+                                        [ text "лише необроблені" ]
+                                    ]
+                                , div []
+                                    [ button
+                                        [ type_ "button"
+                                        , class "btn btn-primary mt-3"
+                                        , onClick <| ApplyFilters
+                                        ]
+                                        [ text "застосувати" ]
+                                    ]
+                                ]
+                    in
+                    [ filterBlock ]
 
-                    else
-                        []
-                   )
-                ++ [ div [] <|
-                        let
-                            vps =
-                                { profiles = model.profiles
-                                , groupInfos = model.groupInfos
-                                , zone = model.zone
-                                , messages = model.messages
-                                , tags = model.tags
-                                , bookmarks = model.bookmarks
-                                , importants = model.importants
-                                , callsignsInfo = model.callsignsInfo
-                                , messageComments = Dict.empty
-                                , user = user
-                                , users = Dict.empty
-                                , serverInfo = shared.serverInfo
-                                , networks = Dict.empty
-                                , masterUnits = Dict.empty
-                                , freqNetworkIds = Dict.empty
-                                , currentRoute = Nothing
-                                }
+                else
+                    []
+               )
+            ++ (if model.showDateSelector then
+                    let
+                        dateSelectorBlock =
+                            div
+                                [ class "fade-in mb-4 d-flex justify-content-start align-items-start"
+                                ]
+                            <|
+                                [ div [] <|
+                                    input
+                                        [ type_ "datetime-local"
+                                        , class "form-control"
+                                        , style "max-width" "300px"
+                                        , onInput <| SetGotoDate
+                                        , value model.dateSelectedStr
+                                        , isInvalidCls dateFieldErrId model.formErrors
+                                        ]
+                                        []
+                                        :: fieldError dateFieldErrId model.formErrors
+                                , button
+                                    [ type_ "button"
+                                    , class "btn btn-primary ms-2"
+                                    , classList [ ( "disabled", MaybeX.isNothing model.dateSelected ) ]
+                                    , onClick GotoDate
+                                    ]
+                                    [ text "перейти" ]
+                                ]
+                    in
+                    [ dateSelectorBlock ]
 
-                            renderPs =
-                                { hideCheckboxes = False
-                                , hideIndividualSave = True
-                                }
-                        in
-                        List.map (Html.map RowsMsg)
-                            (List.map
-                                (Le.RerMessage.renderRow vps
-                                    renderPs
-                                    model.rowsModel
-                                    model.formErrors
-                                )
-                                (enumerate model.messages)
+                else
+                    []
+               )
+            ++ (if List.length model.messages == 0 then
+                    [ div
+                        [ class "text-center"
+                        , style "margin-top" "7rem"
+                        , style "margin-bottom" "7rem"
+                        ]
+                        [ text "немає вхідних повідомлень. натисніть \"завантажити раніше\" для перегляду старших повідомлень" ]
+                    ]
+
+                else
+                    []
+               )
+            ++ [ div [] <|
+                    let
+                        vps =
+                            { profiles = model.profiles
+                            , groupInfos = model.groupInfos
+                            , zone = model.zone
+                            , messages = model.messages
+                            , tags = model.tags
+                            , bookmarks = model.bookmarks
+                            , importants = model.importants
+                            , callsignsInfo = model.callsignsInfo
+                            , messageComments = Dict.empty
+                            , user = user
+                            , users = Dict.empty
+                            , serverInfo = shared.serverInfo
+                            , networks = Dict.empty
+                            , masterUnits = Dict.empty
+                            , freqNetworkIds = Dict.empty
+                            , currentRoute = Nothing
+                            }
+
+                        renderPs =
+                            { hideCheckboxes = False
+                            , hideIndividualSave = True
+                            }
+                    in
+                    List.map (Html.map RowsMsg)
+                        (List.map
+                            (Le.RerMessage.renderRow vps
+                                renderPs
+                                model.rowsModel
+                                model.formErrors
                             )
-                   , div [ class "d-flex justify-content-center align-items-center" ] <|
-                        button
-                            [ type_ "button"
-                            , class "btn btn-primary me-2 text-nowrap"
-                            , onClick InboxSubmit
-                            ]
-                            [ if not model.inboxSubmitInProgress then
-                                i [ class "bi bi-send-fill" ] []
+                            (enumerate model.messages)
+                        )
+               , div [ class "d-flex justify-content-center align-items-center" ] <|
+                    button
+                        [ type_ "button"
+                        , class "btn btn-primary me-2 text-nowrap"
+                        , onClick InboxSubmit
+                        ]
+                        [ if not model.inboxSubmitInProgress then
+                            i [ class "bi bi-send-fill" ] []
 
-                              else
-                                Le.Block.Spinner.loadingSpinner2Sm
-                            , text " обробити, завантажити наступні"
-                            ]
-                            :: navButtonsBlock
-                   ]
+                          else
+                            Le.Block.Spinner.loadingSpinner2Sm
+                        , text " обробити, завантажити наступні"
+                        ]
+                        :: navButtonsBlock
+               ]
     ]
 
 

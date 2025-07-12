@@ -9,8 +9,8 @@ import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Le.Block.Toast
 import Le.Components exposing (fieldError, isInvalidCls)
+import Le.ErrorHandling
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Maybe
@@ -26,7 +26,6 @@ import View exposing (View)
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , loginInp : String
     , passwordInp : String
     , redirect : Maybe String
@@ -57,7 +56,6 @@ init route shared _ =
                     )
     in
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , loginInp = ""
       , passwordInp = ""
       , redirect = Dict.get "redirect" route.query
@@ -67,7 +65,7 @@ init route shared _ =
         ((E.sendCmd <| focusLoginInput)
             :: (case mDeltaRedirectError of
                     Just deltaError ->
-                        [ E.sendCmd <| Le.Block.Toast.addError ToastMsg deltaError
+                        [ E.showErrorWithDetails "Помилка авторизації" deltaError
                         , E.replaceRoute { path = Route.Path.Login, hash = Nothing, query = Dict.remove "api_error" route.query }
                         ]
 
@@ -80,7 +78,6 @@ init route shared _ =
 
 type Msg
     = NoOp
-    | ToastMsg Le.Block.Toast.Msg
     | SetLoginInp String
     | SetPasswordInp String
     | Login
@@ -111,15 +108,6 @@ update shared msg model =
         NoOp ->
             ( model, E.none )
 
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         SetLoginInp s ->
             ( { model | loginInp = s }, E.none )
 
@@ -136,7 +124,9 @@ update shared msg model =
             )
 
         LoginDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка авторизації" e
+            )
 
         LoginDone (Ok ()) ->
             case shared.location of
@@ -201,7 +191,8 @@ update shared msg model =
                             )
 
                     else if isIpAddress loc.hostname then
-                        Le.Block.Toast.addWarning ToastMsg ("Ви використовуєте ЕХО через IP-адресу: " ++ loc.hostname ++ ". Відділ безпеки Дельти може звернутись щодо підтвердження користування ЕХО.")
+                    --TODO add warning later
+                        Cmd.none
 
                     else
                         Cmd.none
@@ -225,7 +216,9 @@ update shared msg model =
             )
 
         GotDeltaRedirectUrl (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання URL Delta" e
+            )
 
 
 subscriptions : Model -> Sub Msg
@@ -235,148 +228,147 @@ subscriptions model =
 
 body : Bool -> Bool -> Model -> List (Html Msg)
 body isDarkMode deltaLoginFlag model =
-    [ Le.Block.Toast.view ToastMsg model.toasts <|
-        div
+    [ div
+        [ class "d-flex flex-column justify-content-center align-items-center"
+        , style "height" "100vh"
+        , style "background-image" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), var(--bd-oak-barrel)"
+        ]
+        [ Html.form
             [ class "d-flex flex-column justify-content-center align-items-center"
-            , style "height" "100vh"
-            , style "background-image" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), var(--bd-oak-barrel)"
-            ]
-            [ Html.form
-                [ class "d-flex flex-column justify-content-center align-items-center"
-                , class "border shadow-lg p-4"
-                , style "background-image" "linear-gradient(to bottom, rgba(var(--bs-body-bg-rgb), .7), rgba(var(--bs-body-bg-rgb), .9))"
-                , onSubmit Login
+            , class "border shadow-lg p-4"
+            , style "background-image" "linear-gradient(to bottom, rgba(var(--bs-body-bg-rgb), .7), rgba(var(--bs-body-bg-rgb), .9))"
+            , onSubmit Login
 
-                -- , style "background-color" "var(--bs-body-bg)"
-                ]
-                [ div [ class "mb-4 pt-2" ]
+            -- , style "background-color" "var(--bs-body-bg)"
+            ]
+            [ div [ class "mb-4 pt-2" ]
+                [ div
+                    [ class "logo-animated d-flex justify-content-center align-items-center"
+                    , style "gap" "5px"
+                    ]
                     [ div
-                        [ class "logo-animated d-flex justify-content-center align-items-center"
-                        , style "gap" "5px"
+                        [ class "d-flex align-items-center justify-content-center"
+                        , style "width" "65px"
+                        , style "height" "60px"
+                        , style "position" "relative"
                         ]
                         [ div
-                            [ class "d-flex align-items-center justify-content-center"
-                            , style "width" "65px"
+                            [ class "main-image"
+                            , style "width" "60px"
                             , style "height" "60px"
-                            , style "position" "relative"
                             ]
-                            [ div
-                                [ class "main-image"
-                                , style "width" "60px"
-                                , style "height" "60px"
-                                ]
-                                [ img
-                                    [ src "/img/SIGINT_190_kraken_transparent.png"
-                                    , style "width" "60px"
-                                    , style "height" "60px"
-                                    , alt "SIGINT 190 Kraken"
-                                    ]
-                                    []
-                                ]
-                            , div
-                                [ class "hover-image"
-                                , style "width" "60px"
-                                , style "height" "60px"
-                                , style "background-color" "#000"
-                                , style "border-radius" "50%"
-                                ]
-                                [ img
-                                    [ src "/img/flying_skull_logo_transparent.png"
-                                    , style "width" "60px"
-                                    , style "height" "42px"
-                                    , style "z-index" "1"
-                                    , alt "Flying Skull"
-                                    ]
-                                    []
-                                ]
-                            ]
-                        , div []
                             [ img
-                                [ src
-                                    (if isDarkMode then
-                                        "/img/echo-logo-white.svg"
-
-                                     else
-                                        "/img/echo-logo.svg"
-                                    )
-                                , class "h-[50px]"
+                                [ src "/img/SIGINT_190_kraken_transparent.png"
+                                , style "width" "60px"
+                                , style "height" "60px"
+                                , alt "SIGINT 190 Kraken"
                                 ]
                                 []
                             ]
+                        , div
+                            [ class "hover-image"
+                            , style "width" "60px"
+                            , style "height" "60px"
+                            , style "background-color" "#000"
+                            , style "border-radius" "50%"
+                            ]
+                            [ img
+                                [ src "/img/flying_skull_logo_transparent.png"
+                                , style "width" "60px"
+                                , style "height" "42px"
+                                , style "z-index" "1"
+                                , alt "Flying Skull"
+                                ]
+                                []
+                            ]
+                        ]
+                    , div []
+                        [ img
+                            [ src
+                                (if isDarkMode then
+                                    "/img/echo-logo-white.svg"
 
-                        -- , div
-                        --     [ class "display-3"
-                        --     ]
-                        --     [ text "Е Х О"
-                        --     ]
+                                 else
+                                    "/img/echo-logo.svg"
+                                )
+                            , class "h-[50px]"
+                            ]
+                            []
                         ]
+
+                    -- , div
+                    --     [ class "display-3"
+                    --     ]
+                    --     [ text "Е Х О"
+                    --     ]
                     ]
-                , div [ class "mb-2 w-[240px]" ] <|
-                    input
-                        [ type_ "text"
-                        , class "form-control"
-                        , id "login"
-                        , placeholder "логін"
-                        , value model.loginInp
-                        , onInput SetLoginInp
-                        , isInvalidCls "login" model.formErrors
-                        ]
-                        []
-                        :: fieldError "login" model.formErrors
-                , div [ class "mb-2 w-[240px]" ] <|
-                    input
-                        [ type_ "password"
-                        , class "form-control"
-                        , placeholder "пароль"
-                        , value model.passwordInp
-                        , onInput SetPasswordInp
-                        , isInvalidCls "password" model.formErrors
-                        ]
-                        []
-                        :: fieldError "password" model.formErrors
-                , div
-                    [ class "mb-2"
+                ]
+            , div [ class "mb-2 w-[240px]" ] <|
+                input
+                    [ type_ "text"
+                    , class "form-control"
+                    , id "login"
+                    , placeholder "логін"
+                    , value model.loginInp
+                    , onInput SetLoginInp
+                    , isInvalidCls "login" model.formErrors
+                    ]
+                    []
+                    :: fieldError "login" model.formErrors
+            , div [ class "mb-2 w-[240px]" ] <|
+                input
+                    [ type_ "password"
+                    , class "form-control"
+                    , placeholder "пароль"
+                    , value model.passwordInp
+                    , onInput SetPasswordInp
+                    , isInvalidCls "password" model.formErrors
+                    ]
+                    []
+                    :: fieldError "password" model.formErrors
+            , div
+                [ class "mb-2"
+                , style "width" "100%"
+                , class "d-flex justify-content-center"
+                ]
+                [ button
+                    [ type_ "submit"
+                    , class "btn btn-primary btn-dark"
+                    , style "width" "50%"
+                    , style "min-width" "160px"
+                    ]
+                    [ text "увійти" ]
+                ]
+            , if deltaLoginFlag then
+                div
+                    [ style "border-top" "1px solid var(--bs-border-color)"
                     , style "width" "100%"
                     , class "d-flex justify-content-center"
                     ]
                     [ button
-                        [ type_ "submit"
+                        [ type_ "button"
                         , class "btn btn-primary btn-dark"
-                        , style "width" "50%"
+                        , class "text-nowrap"
+                        , onClick GetDeltaRedirectUrl
                         , style "min-width" "160px"
                         ]
-                        [ text "увійти" ]
+                        [ img
+                            [ src "/img/delta-icon.webp"
+                            , class "me-2 inline-block"
+                            , style "height" "18px"
+                            ]
+                            []
+                        , span
+                            [ style "margin-right" "4px"
+                            ]
+                            [ text "увійти з delta" ]
+                        ]
                     ]
-                , if deltaLoginFlag then
-                    div
-                        [ style "border-top" "1px solid var(--bs-border-color)"
-                        , style "width" "100%"
-                        , class "d-flex justify-content-center"
-                        ]
-                        [ button
-                            [ type_ "button"
-                            , class "btn btn-primary btn-dark"
-                            , class "text-nowrap"
-                            , onClick GetDeltaRedirectUrl
-                            , style "min-width" "160px"
-                            ]
-                            [ img
-                                [ src "/img/delta-icon.webp"
-                                , class "me-2 inline-block"
-                                , style "height" "18px"
-                                ]
-                                []
-                            , span
-                                [ style "margin-right" "4px"
-                                ]
-                                [ text "увійти з delta" ]
-                            ]
-                        ]
 
-                  else
-                    text ""
-                ]
+              else
+                text ""
             ]
+        ]
     ]
 
 
