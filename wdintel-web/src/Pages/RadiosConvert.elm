@@ -14,8 +14,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.Block.Toast
 import Le.Console
+import Le.ErrorHandling
 import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Process
@@ -47,7 +47,6 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , console : Le.Console.Model
     , file : Maybe File
     , taskId : Maybe Int
@@ -58,7 +57,6 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , console = Le.Console.init
       , file = Nothing
       , taskId = Nothing
@@ -69,8 +67,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | UploadFileToConvert
+    = UploadFileToConvert
     | UploadFileToConvertSelected File
     | UploadFileToConvertDone File (Result ApiError Int)
     | ConvertDonePerRadio File (Result ApiError Bytes)
@@ -97,15 +94,6 @@ finalizer model =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         UploadFileToConvert ->
             ( model
             , E.sendCmd <|
@@ -125,7 +113,7 @@ update msg model =
             )
 
         UploadFileToConvertDone _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "File Upload Error" e )
 
         UploadFileToConvertDone _ (Ok taskId) ->
             ( { model | taskId = Just taskId }
@@ -142,7 +130,7 @@ update msg model =
                 }
 
         ConvertDonePerRadio _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Download Error" e )
 
         ConvertDonePerRadio file (Ok bs) ->
             ( model
@@ -154,7 +142,7 @@ update msg model =
             )
 
         ConvertDonePerDate _ (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Download Error" e )
 
         ConvertDonePerDate file (Ok bs) ->
             ( model
@@ -168,7 +156,6 @@ update msg model =
         ConvertDoneCsv _ _ (Err _) ->
             ( model, E.none )
 
-        -- Api.handleHttpError ToastMsg e model
         ConvertDoneCsv resPage file (Ok bs) ->
             let
                 m2 =
@@ -225,12 +212,18 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Конвертер радіо kmz-файлу"
     , body =
-        [ Views.headerAndContent "Конвертер радіо kmz-файлу" ToastMsg model.toasts <|
-            div [ class "page-radios-convert" ] <|
-                [ div [ class "row" ]
-                    [ div [ class "col-sm-12" ]
-                        [ contentBlock model ]
+        [ div [ class "w-4/5 mx-auto bd-gutter" ]
+            [ div [ class "row" ]
+                [ div [ class "col-12" ]
+                    [ h1 [ class "py-4" ] [ text "Конвертер радіо kmz-файлу" ]
+                    , div [ class "page-radios-convert" ] <|
+                        [ div [ class "row" ]
+                            [ div [ class "col-sm-12" ]
+                                [ contentBlock model ]
+                            ]
+                        ]
                     ]
                 ]
+            ]
         ]
     }

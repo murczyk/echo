@@ -10,7 +10,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.Block.Toast
+import Le.ErrorHandling
 import Le.Types exposing (..)
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
@@ -22,7 +22,6 @@ import Views
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , zones : List ( Int, B.SigintZone )
     , zoneId : Maybe Int
     , saveInProgress : Bool
@@ -32,7 +31,6 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , zones = []
       , zoneId = Nothing
       , saveInProgress = False
@@ -46,8 +44,7 @@ init _ =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | LogOut
+    = LogOut
     | GotZoneList (Result ApiError (List ( Int, B.SigintZone )))
     | SelectZone String
     | Save
@@ -82,22 +79,13 @@ subscriptions model =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
-
         LogOut ->
             ( model
             , E.logout
             )
 
         GotZoneList (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Zones" e )
 
         GotZoneList (Ok vs) ->
             ( { model | zones = vs }, E.none )
@@ -126,7 +114,7 @@ update msg model =
                 m2 =
                     { model | saveInProgress = False }
             in
-            Api.handleHttpError ToastMsg e m2
+            ( m2, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Save Failed" e )
 
         SaveDone (Ok ()) ->
             let
@@ -136,7 +124,7 @@ update msg model =
             ( m2, E.none )
 
         GotUser (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load User" e )
 
         GotUser (Ok user) ->
             ( { model | zoneId = user.sigintZoneId }
@@ -185,49 +173,57 @@ view shared user model =
     in
     { title = "налаштування"
     , body =
-        [ Views.headerAndContentLabeled "налаштування" labels ToastMsg model.toasts <|
-            div []
-                [ div [ class "d-flex justify-content-center align-items-center" ]
-                    [ div
-                        [ class "text-end me-2"
-                        , style "width" "260px"
-                        ]
-                        [ text "РЕР-напрямок:" ]
-                    , div
-                        [ style "width" "600px"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ select
-                            [ class "form-select"
-                            , onInput SelectZone
-                            ]
-                          <|
-                            (if MaybeX.isNothing model.zoneId then
-                                [ option [ selected True ]
-                                    [ text "Оберіть зону" ]
+        [ div [ class "w-4/5 mx-auto bd-gutter" ]
+            [ div [ class "row" ]
+                [ div [ class "col-12 p-0" ]
+                    [ h1 [ class "py-2" ] <|
+                        text "налаштування"
+                            :: labels
+                    , div []
+                        [ div [ class "d-flex justify-content-center align-items-center" ]
+                            [ div
+                                [ class "text-end me-2"
+                                , style "width" "260px"
                                 ]
+                                [ text "РЕР-напрямок:" ]
+                            , div
+                                [ style "width" "600px"
+                                , style "font-size" ".8rem"
+                                ]
+                                [ select
+                                    [ class "form-select"
+                                    , onInput SelectZone
+                                    ]
+                                  <|
+                                    (if MaybeX.isNothing model.zoneId then
+                                        [ option [ selected True ]
+                                            [ text "Оберіть зону" ]
+                                        ]
 
-                             else
-                                []
-                            )
-                                ++ List.map renderZone model.zones
-                        ]
-                    ]
-                , div [ class "d-flex justify-content-center align-items-center mt-4" ]
-                    [ button
-                        [ class "btn btn-primary btn-sm"
-                        , onClick Save
-                        ]
-                      <|
-                        (if model.saveInProgress then
-                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                     else
+                                        []
+                                    )
+                                        ++ List.map renderZone model.zones
+                                ]
+                            ]
+                        , div [ class "d-flex justify-content-center align-items-center mt-4" ]
+                            [ button
+                                [ class "btn btn-primary btn-sm"
+                                , onClick Save
+                                ]
+                              <|
+                                (if model.saveInProgress then
+                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
 
-                         else
-                            [ i [ class "bi bi-save fade-in" ] [] ]
-                        )
-                            ++ [ text " зберегти"
-                               ]
+                                 else
+                                    [ i [ class "bi bi-save fade-in" ] [] ]
+                                )
+                                    ++ [ text " зберегти"
+                                       ]
+                            ]
+                        ]
                     ]
                 ]
+            ]
         ]
     }
