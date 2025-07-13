@@ -5,7 +5,6 @@ use crate::types::*;
 use crate::utils::*;
 use actix_web::web::Json;
 use chrono::prelude::*;
-use echo_migration::WithQuery;
 use futures::stream::TryStreamExt;
 use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
@@ -97,6 +96,12 @@ pub enum Modulation {
     Table,
     Id,
     Name,
+}
+
+#[derive(Iden)]
+pub enum Callsigns {
+    Table,
+    Callsign,
 }
 
 pub async fn load_freqs(
@@ -498,20 +503,169 @@ pub async fn find_all_known_callsigns(
     Ok(res)
 }
 
+#[derive(Debug, Clone)]
+struct CallsignCommunicationInfo {
+    message_count: i64,
+    last_datetime: Option<i64>,
+    freqs: Option<Vec<String>>,
+    network_names: Option<Vec<String>>,
+}
+
 pub async fn load_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
     known_callsigns: &Vec<KnownCallsignRes>,
-    _active_callsigns_only: bool,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
     trace!("> load_callsigns for network: {:?}", filter.network_id);
 
-    let date_since = filter.since_date_inclusive_ms;
-    let date_till = filter.till_date_noninclusive_ms;
+    let (callsigns_cte, unique_callsigns_cte) =
+        build_callsigns_cte_query(groups, filter).context(h!())?;
 
+    let active_callsigns_query = get_active_callsigns(
+        &db,
+        callsigns_cte.clone(),
+        unique_callsigns_cte.clone(),
+    )
+    .await
+    .context(h!())?;
+
+    let duration = start.elapsed();
+    debug!(
+        "[load_callsigns] Execution time part 1: {:.2?} (network: {:?})",
+        duration, filter.network_id
+    );
+
+    let mut res: Vec<CallsignRes> = active_callsigns_query
+        .iter()
+        .map(|row| {
+            let callsign = row.callsign.clone();
+            let unit_id = row.unit_id.unwrap_or_default();
+            let regiment = row.regiment.clone();
+            let division = row.division.clone();
+            let army = row.army.clone();
+
+            // Collect all matching known_callsigns based on the same Regiment
+            let matched_known_callsigns = known_callsigns
+                .iter()
+                .filter(|kc| {
+                    kc.callsign == callsign
+                        && kc.regiment.is_some()
+                        && kc.regiment == regiment
+                        && kc.division == division
+                        && kc.army == army
+                })
+                .cloned()
+                .collect::<Vec<KnownCallsignRes>>();
+
+            // If no match found, fallback to Callsign + UnitId matching when Regiment is empty
+            let matched_known_callsigns = if matched_known_callsigns.is_empty()
+            {
+                known_callsigns
+                    .iter()
+                    .filter(|kc| {
+                        kc.callsign == callsign
+                            && kc.regiment.is_none()
+                            && kc.unit_id == unit_id
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                matched_known_callsigns
+            };
+
+            let short_known_callsigns: Vec<KnownCallsignShortRes> =
+                matched_known_callsigns
+                    .into_iter()
+                    .map(|kc| KnownCallsignShortRes {
+                        callsign: kc.callsign,
+                        position: kc.position,
+                        comment: kc.comment,
+                        unit_id: kc.unit_id,
+                        unit_name: kc.unit_name,
+                        source_name: kc.source_name,
+                        created_at: kc.created_at.and_utc().timestamp_millis(),
+                    })
+                    .collect();
+
+            CallsignRes {
+                callsign: callsign.clone(),
+                known_callsigns: (!short_known_callsigns.is_empty())
+                    .then(|| short_known_callsigns),
+                message_count: 0,
+                last_datetime: None,
+                freqs: None,
+                network_names: None,
+                is_old: false,
+            }
+        })
+        .collect();
+
+    let duration = start.elapsed();
+    debug!(
+        "[load_callsigns] Execution time part 2: {:.2?} (network: {:?})",
+        duration, filter.network_id
+    );
+
+    res = filter_callsigns(res);
+
+    let res_known_callsigns: Vec<String> = res
+        .iter()
+        .filter(|c| c.known_callsigns.is_some())
+        .map(|c| c.callsign.clone())
+        .collect();
+
+    let duration = start.elapsed();
+    debug!(
+        "[load_callsigns] Execution time part 3: {:.2?} (network: {:?})",
+        duration, filter.network_id
+    );
+
+    let known_callsigns_comm_info = get_communication_info_for_callsigns(
+        &db,
+        callsigns_cte,
+        &res_known_callsigns,
+    )
+    .await
+    .context(h!())?;
+
+    let duration = start.elapsed();
+    debug!(
+        "[load_callsigns] Execution time part 4: {:.2?} (network: {:?})",
+        duration, filter.network_id
+    );
+
+    // Update res vector with communication info for callsigns with known_callsigns
+    for c in &mut res {
+        if let Some(comm_info) = known_callsigns_comm_info.get(&c.callsign) {
+            c.message_count = comm_info.message_count;
+            c.last_datetime = comm_info.last_datetime.clone();
+            c.freqs = comm_info.freqs.clone();
+            c.network_names = comm_info.network_names.clone();
+        }
+    }
+
+    res.sort_by(|a, b| match (&a.known_callsigns, &b.known_callsigns) {
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        _ => a.callsign.cmp(&b.callsign),
+    });
+
+    let duration = start.elapsed();
+    debug!(
+        "[load_callsigns] Execution time: {:.2?} (network: {:?})",
+        duration, filter.network_id
+    );
+
+    Ok(res)
+}
+
+fn build_callsigns_cte_query(
+    groups: &Vec<String>,
+    filter: &EtalonkaFilter,
+) -> Result<(CommonTableExpression, CommonTableExpression), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
             Expr::cust(
@@ -616,297 +770,33 @@ pub async fn load_callsigns(
         .and_where(
             Expr::col((SigintUnit::Table, SigintUnit::Deleted))
                 .eq(false)
-                .or(Expr::col((SigintUnit::Table, SigintUnit::Id))
-                    .is_null()),
+                .or(Expr::col((SigintUnit::Table, SigintUnit::Id)).is_null()),
         )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintUnit::Id))
                 .eq(filter.network_id),
         );
 
-    // debug!(
-    //     "> base_subquery_callsigns: {}",
-    //     base_subquery_callsigns.to_string(PostgresQueryBuilder)
-    // );
-
-    let mut subquery_callsigns = base_subquery_callsigns.clone();
-    if let Some(date_since) = date_since {
-        subquery_callsigns.and_where(
+    if let Some(date_since) = filter.since_date_inclusive_ms {
+        base_subquery_callsigns.and_where(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
                 .gte(dt_from_millis(date_since)?),
         );
     }
-    if let Some(date_till) = date_till {
-        subquery_callsigns.and_where(
+    if let Some(date_till) = filter.till_date_noninclusive_ms {
+        base_subquery_callsigns.and_where(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
                 .lt(dt_from_millis(date_till)?),
         );
     }
 
-    let active_callsigns_query =
-        build_callsigns_full_query(subquery_callsigns.clone())
-            .await
-            .context(h!())?;
+    // debug!(
+    //     "> base_subquery_callsigns: {}",
+    //     base_subquery_callsigns.to_string(PostgresQueryBuilder)
+    // );
 
-    // let q = active_callsigns_query.to_string(PostgresQueryBuilder);
-    // debug!("> active callsigns sql: {}", q);
-
-    let mut res: Vec<CallsignRes> = db
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            active_callsigns_query.to_string(PostgresQueryBuilder),
-        ))
-        .await
-        .context(h!())?
-        .iter()
-        .map(|row| {
-            let callsign: String =
-                row.try_get("", "callsign").unwrap_or_default();
-            let unit_id: i64 = row.try_get("", "unit_id").unwrap_or_default();
-            let regiment: Option<String> =
-                row.try_get("", "regiment").ok().flatten();
-            let division: Option<String> =
-                row.try_get("", "division").ok().flatten();
-            let army: Option<String> = row.try_get("", "army").ok().flatten();
-
-            // Collect all matching known_callsigns based on the same Regiment
-            let matched_known_callsigns = known_callsigns
-                .iter()
-                .filter(|kc| {
-                    kc.callsign == callsign
-                        && kc.regiment.is_some()
-                        && kc.regiment == regiment
-                        && kc.division == division
-                        && kc.army == army
-                })
-                .cloned()
-                .collect::<Vec<KnownCallsignRes>>();
-
-            // If no match found, fallback to Callsign + UnitId matching when Regiment is empty
-            let matched_known_callsigns = if matched_known_callsigns.is_empty()
-            {
-                known_callsigns
-                    .iter()
-                    .filter(|kc| {
-                        kc.callsign == callsign
-                            && kc.regiment.is_none()
-                            && kc.unit_id == unit_id
-                    })
-                    .cloned()
-                    .collect()
-            } else {
-                matched_known_callsigns
-            };
-
-            let short_known_callsigns: Vec<KnownCallsignShortRes> =
-                matched_known_callsigns
-                    .into_iter()
-                    .map(|kc| KnownCallsignShortRes {
-                        callsign: kc.callsign,
-                        position: kc.position,
-                        comment: kc.comment,
-                        unit_id: kc.unit_id,
-                        unit_name: kc.unit_name,
-                        source_name: kc.source_name,
-                        created_at: kc.created_at.and_utc().timestamp_millis(),
-                    })
-                    .collect();
-
-            // let freqs_list = row
-            //     .try_get::<String>("", "freqs")
-            //     .ok()
-            //     .unwrap_or_default()
-            //     .split(", ")
-            //     .map(|s| s.to_string())
-            //     .collect::<Vec<String>>();
-
-            // let network_names_list = row
-            //     .try_get::<String>("", "network_names")
-            //     .ok()
-            //     .unwrap_or_default()
-            //     .split(", ")
-            //     .map(|s| s.to_string())
-            //     .collect::<Vec<String>>();
-
-            CallsignRes {
-                callsign: callsign.clone(),
-                known_callsigns: (!short_known_callsigns.is_empty())
-                    .then(|| short_known_callsigns),
-                // message_count: row.try_get("", "message_count").unwrap_or(0),
-                // last_datetime: row
-                //     .try_get::<NaiveDateTime>("", "last_datetime")
-                //     .ok()
-                //     .map(|ndt| ndt.and_utc().timestamp_millis()),
-                // freqs: (!freqs_list.is_empty()).then(|| freqs_list),
-                // network_names: (!network_names_list.is_empty())
-                //     .then(|| network_names_list),
-                message_count: 0,
-                last_datetime: None,
-                freqs: None,
-                network_names: None,
-                is_old: false,
-            }
-        })
-        .collect();
-
-    res = filter_callsigns(res);
-
-    // **Step 2: Add missing records from known_callsigns**
-    // if !active_callsigns_only {
-    //     if let Some(unit) = filter.filter_unit.clone() {
-    //         let existing_callsigns: HashSet<String> =
-    //             res.iter().map(|r| r.callsign.clone()).collect();
-
-    //         let mut additional_callsigns: Vec<CallsignRes> = known_callsigns
-    //             .iter()
-    //             .filter(|kc| {
-    //                 kc.unit_name == unit
-    //                     && !existing_callsigns.contains(&kc.callsign)
-    //             })
-    //             .map(|kc| CallsignRes {
-    //                 callsign: kc.callsign.clone(),
-    //                 known_callsigns: Some(vec![KnownCallsignShortRes {
-    //                     callsign: kc.callsign.clone(),
-    //                     position: kc.position.clone(),
-    //                     comment: kc.comment.clone(),
-    //                     unit_id: kc.unit_id.clone(),
-    //                     unit_name: kc.unit_name.clone(),
-    //                     source_name: kc.source_name.clone(),
-    //                     created_at: kc.created_at.and_utc().timestamp_millis(),
-    //                 }]),
-    //                 message_count: 0,
-    //                 last_datetime: None,
-    //                 freqs: None,
-    //                 network_names: None,
-    //                 is_old: false,
-    //             })
-    //             .collect();
-
-    //         // find old (for 60 days) communications for additional callsigns
-    //         let sixty_days_millis = 60 * 24 * 60 * 60 * 1000;
-
-    //         let old_date_range = date_till.map(|till_date| {
-    //             let since_date = till_date - sixty_days_millis;
-    //             (since_date, till_date)
-    //         });
-
-    //         let mut subquery_old_additional_callsigns = base_subquery_callsigns;
-
-    //         if let Some((since_date, till_date)) = old_date_range {
-    //             let from_expr = dt_from_millis(since_date)?;
-    //             let to_expr = dt_from_millis(till_date)?;
-
-    //             subquery_old_additional_callsigns
-    //                 .and_where(
-    //                     Expr::col((
-    //                         SigintInboxItem::Table,
-    //                         SigintInboxItem::Datetime,
-    //                     ))
-    //                     .gte(from_expr),
-    //                 )
-    //                 .and_where(
-    //                     Expr::col((
-    //                         SigintInboxItem::Table,
-    //                         SigintInboxItem::Datetime,
-    //                     ))
-    //                     .lt(to_expr),
-    //                 );
-    //         }
-
-    //         subquery_old_additional_callsigns.and_where(
-    //             Expr::expr(SimpleExpr::Custom("c.callsign".to_string())).is_in(
-    //                 additional_callsigns
-    //                     .iter()
-    //                     .map(|c| c.callsign.clone())
-    //                     .collect::<Vec<String>>(),
-    //             ),
-    //         );
-
-    //         let additional_callsigns_old_communications_query =
-    //             build_callsigns_full_query(
-    //                 subquery_old_additional_callsigns.clone(),
-    //             )
-    //             .await
-    //             .context(h!())?;
-
-    //         // let q = additional_callsigns_old_communications_query
-    //         //     .to_string(PostgresQueryBuilder);
-    //         // debug!("> old additional callsigns sql: {}", q);
-
-    //         let additional_callsigns_old_communications: HashMap<
-    //             String,
-    //             (Option<i64>, Option<String>, Option<String>),
-    //         > = db
-    //             .query_all(Statement::from_string(
-    //                 DatabaseBackend::Postgres,
-    //                 additional_callsigns_old_communications_query
-    //                     .to_string(PostgresQueryBuilder),
-    //             ))
-    //             .await
-    //             .context(h!())?
-    //             .into_iter()
-    //             .map(|row| {
-    //                 let callsign: String =
-    //                     row.try_get("", "callsign").unwrap_or_default();
-    //                 let last_datetime: Option<i64> = row
-    //                     .try_get::<NaiveDateTime>("", "last_datetime")
-    //                     .ok()
-    //                     .map(|ndt| ndt.and_utc().timestamp_millis());
-    //                 let freqs: Option<String> = row.try_get("", "freqs").ok();
-    //                 let network_names: Option<String> =
-    //                     row.try_get("", "network_names").ok();
-
-    //                 (callsign, (last_datetime, freqs, network_names))
-    //             })
-    //             .collect();
-
-    //         for c1 in &mut additional_callsigns {
-    //             if let Some((last_datetime, freqs, network_names)) =
-    //                 additional_callsigns_old_communications.get(&c1.callsign)
-    //             {
-    //                 let freqs_list = freqs
-    //                     .as_deref()
-    //                     .map(|s| s.split(", ").map(|s| s.to_string()).collect())
-    //                     .unwrap_or_else(Vec::new);
-
-    //                 let network_names_list = network_names
-    //                     .as_deref()
-    //                     .map(|s| s.split(", ").map(|s| s.to_string()).collect())
-    //                     .unwrap_or_else(Vec::new);
-
-    //                 c1.last_datetime = last_datetime.clone();
-    //                 c1.freqs = (!freqs_list.is_empty()).then(|| freqs_list);
-    //                 c1.network_names = (!network_names_list.is_empty())
-    //                     .then(|| network_names_list);
-    //                 c1.is_old = true;
-    //             }
-    //         }
-
-    //         // Append missing known callsigns to result
-    //         res.extend(additional_callsigns);
-    //     }
-    // }
-
-    res.sort_by(|a, b| match (&a.known_callsigns, &b.known_callsigns) {
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        _ => a.callsign.cmp(&b.callsign),
-    });
-
-    let duration = start.elapsed();
-    debug!(
-        "[load_callsigns] Execution time: {:.2?} (network: {:?})",
-        duration, filter.network_id
-    );    
-
-    Ok(res)
-}
-
-async fn build_callsigns_full_query(
-    callsigns_filtered: SelectStatement,
-) -> Result<WithQuery, AppError> {
     let callsigns_cte = CommonTableExpression::new()
-        .query(callsigns_filtered)
+        .query(base_subquery_callsigns)
         .table_name(Alias::new("callsigns"))
         .to_owned();
 
@@ -925,34 +815,16 @@ async fn build_callsigns_full_query(
         .table_name(Alias::new("unique_callsigns"))
         .to_owned();
 
+    Ok((callsigns_cte, unique_callsigns_cte))
+}
+
+pub async fn get_active_callsigns(
+    db: &DatabaseConnection,
+    callsigns_cte: CommonTableExpression,
+    unique_callsigns_cte: CommonTableExpression,
+) -> Result<Vec<CallsignQueryResult>, AppError> {
     let main_query: sea_query::SelectStatement = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
-        .expr_as(Expr::cust("null"), Alias::new("position"))
-        .expr_as(Expr::cust("null"), Alias::new("comment"))
-        .expr_as(
-            Expr::cust(
-                "(SELECT datetime FROM callsigns c WHERE c.callsign = unique_callsigns.callsign ORDER BY datetime DESC LIMIT 1)"
-            ),
-            Alias::new("last_datetime"),
-        )
-        .expr_as(
-            Expr::cust(
-                "(SELECT string_agg(t.freq, ', ') FROM (SELECT DISTINCT c.freq FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
-            ),
-            Alias::new("freqs"),
-        )
-        .expr_as(
-            Expr::cust(
-                "(SELECT string_agg(t.network_name, ', ') FROM (SELECT DISTINCT c.network_name FROM callsigns c WHERE c.callsign = unique_callsigns.callsign) t)"
-            ),
-            Alias::new("network_names"),
-        )
-        .expr_as(
-            Expr::cust(
-                "(SELECT COUNT(*) FROM callsigns c WHERE c.callsign = unique_callsigns.callsign)"
-            ),
-            Alias::new("message_count"),
-        )
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
         .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
@@ -968,7 +840,92 @@ async fn build_callsigns_full_query(
         .clone()
         .query(main_query);
 
-    Ok(combined_query)
+    let records: Vec<CallsignQueryResult> = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query.to_string(PostgresQueryBuilder),
+        ))
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|row| CallsignQueryResult {
+            callsign: row.try_get("", "callsign").unwrap_or_default(),
+            unit_id: row.try_get("", "unit_id").unwrap_or_default(),
+            unit_name: row.try_get("", "unit_name").ok().flatten(),
+            regiment: row.try_get("", "regiment").ok().flatten(),
+            division: row.try_get("", "division").ok().flatten(),
+            army: row.try_get("", "army").ok().flatten(),
+        })
+        .collect();
+
+    Ok(records)
+}
+
+async fn get_communication_info_for_callsigns(
+    db: &DatabaseConnection,
+    callsigns_cte: CommonTableExpression,
+    callsigns: &[String],
+) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError> {
+    if callsigns.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let q = Query::select()
+        .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
+        .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
+        .expr_as(Expr::cust("MAX(datetime)"), Alias::new("last_datetime"))
+        .expr_as(
+            Expr::cust("STRING_AGG(DISTINCT freq, ', ')"),
+            Alias::new("freqs"),
+        )
+        .expr_as(
+            Expr::cust("STRING_AGG(DISTINCT network_name, ', ')"),
+            Alias::new("network_names"),
+        )
+        .from(Alias::new("callsigns"))
+        .and_where(
+            Expr::col((Alias::new("callsigns"), Alias::new("callsign")))
+                .is_in(callsigns),
+        )
+        .add_group_by(vec![Expr::cust("callsign")])
+        .to_owned();
+
+    let combined_query = Query::with().cte(callsigns_cte).clone().query(q);
+
+    let rows = db
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query.to_string(PostgresQueryBuilder),
+        ))
+        .await
+        .context(h!())?;
+
+    let mut res = HashMap::new();
+    for row in rows {
+        let callsign: String = row.try_get("", "callsign").unwrap_or_default();
+        let message_count: i64 = row.try_get("", "message_count").unwrap_or(0);
+        let last_datetime: Option<i64> = row
+            .try_get::<NaiveDateTime>("", "last_datetime")
+            .ok()
+            .map(|dt| dt.and_utc().timestamp_millis());
+        let freqs: Option<String> = row.try_get("", "freqs").ok();
+        let network_names: Option<String> =
+            row.try_get("", "network_names").ok();
+        res.insert(
+            callsign.clone(),
+            CallsignCommunicationInfo {
+                message_count,
+                last_datetime,
+                freqs: freqs
+                    .as_ref()
+                    .map(|s| s.split(", ").map(|s| s.to_string()).collect()),
+                network_names: network_names
+                    .as_ref()
+                    .map(|s| s.split(", ").map(|s| s.to_string()).collect()),
+            },
+        );
+    }
+    Ok(res)
 }
 
 pub async fn load_signals_per_unit(
