@@ -1,0 +1,28 @@
+/* Custom Scrollbar Styles */
+.thinscroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.thinscroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.thinscroll::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 3px;
+}
+
+[id^=waterfall-wf-]::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+[id^=waterfall-wf-]::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+[id^=waterfall-wf-]::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 3px;
+}

@@ -8,6 +8,11 @@
 @import "styles/table/_table.css";
 @import "styles/toggle/_toggle.css";
 @import "styles/tabs/_tabs.css";
+@import "styles/toast/_toast.css";
+@import "styles/tooltip/_tooltip.css";
+@import "styles/dialog/_dialog.css";
+@import "styles/scrollbar/_scrollbar.css";
+@import "styles/highlight/_highlight.css";
 
 @custom-variant dark (&:where([data-bs-theme=dark], [data-bs-theme=dark] *));
 
@@ -50,205 +55,6 @@
             width: 15px;
         }
     }
-}
-
-[data-tooltip] {
-    position: relative;
-    font-size: .8rem;
-    /* border-bottom: 1px dashed #000;
-  cursor: help */
-}
-
-[data-tooltip]::after {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-    content: attr(data-tooltip);
-    left: 0;
-    top: calc(100% + 10px);
-    border-radius: 3px;
-    box-shadow: 0 0 5px 2px rgba(100, 100, 100, 0.6);
-    background-color: var(--bs-body-color);
-    color: var(--bs-body-bg);
-    z-index: 10;
-    padding: 4px;
-    /* width: 300px; */
-    transform: translateY(-20px);
-    transition: all 150ms cubic-bezier(.25, .8, .25, 1);
-}
-
-[data-tooltip]:hover::after {
-    opacity: 1;
-    transform: translateY(0);
-    transition-duration: 100ms;
-}
-
-[data-tooltip-f2] {
-    position: relative;
-    font-size: .8rem;
-    /* border-bottom: 1px dashed #000;
-  cursor: help */
-}
-
-[data-tooltip-f2]::after {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-    content: attr(data-tooltip-f2);
-    /* white-space: pre; */
-    left: 0;
-    top: calc(100% + 10px);
-    border-radius: 3px;
-    box-shadow: 0 0 5px 2px rgba(100, 100, 100, 0.6);
-    background-color: var(--bs-body-color);
-    color: var(--bs-body-bg);
-    z-index: 10;
-    padding: 4px;
-    width: 400px;
-    transform: translateY(-20px);
-    transition: all 150ms cubic-bezier(.25, .8, .25, 1);
-}
-
-[data-tooltip-f2]:hover::after {
-    opacity: 1;
-    transform: translateY(0);
-    transition-duration: 100ms;
-}
-
-[data-tooltip-f3] {
-    position: relative;
-    font-size: .8rem;
-    /* border-bottom: 1px dashed #000;
-  cursor: help */
-}
-
-[data-tooltip-f3]::after {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-    content: attr(data-tooltip-f3);
-    white-space: pre-wrap;
-    left: 0;
-    top: calc(100% + 10px);
-    border-radius: 3px;
-    box-shadow: 0 0 5px 2px rgba(100, 100, 100, 0.6);
-    background-color: var(--bs-body-color);
-    color: var(--bs-body-bg);
-    z-index: 10;
-    padding: 4px;
-    width: 400px;
-    transform: translateY(-20px);
-    transition: all 150ms cubic-bezier(.25, .8, .25, 1);
-}
-
-[data-tooltip-f3]:hover::after {
-    opacity: 1;
-    transform: translateY(0);
-    transition-duration: 100ms;
-}
-
-.bg-grad-mm14-dark {
-    background: linear-gradient(#525c51, #555a44);
-}
-
-.bg-grad-mm14-light {
-    /* background: linear-gradient(#b8b695, #aea580); */
-    background: linear-gradient(#e4df8e, #ffc798);
-}
-
-.toasts {
-    position: relative;
-    z-index: 100;
-    /* min-height: 200px; */
-}
-
-.toasts .toasts__wrap {
-    position: absolute;
-    top: 40px;
-    right: 10px;
-}
-
-.toasts .toast {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    border-left: 5px #3ac47d solid;
-    min-width: 350px;
-}
-
-.toasts .fa-times {
-    font-size: 1rem;
-}
-
-.toasts .toast-header {
-    text-transform: uppercase;
-    font-size: .65rem;
-    font-weight: 800;
-    border-bottom: none;
-    padding: 0.25rem 0.8rem 0 1.75rem;
-    border-bottom: none;
-    font-family: Lato, Montserrat, "Roboto", sans-serif;
-    justify-content: space-between;
-}
-
-.toasts .toast-body {
-    padding: 0 1.75rem 0.75rem 1.75rem;
-}
-
-.toasts small {
-    font-weight: italic;
-}
-
-.toasts .toast--info {
-    border-left-color: #3ac47d;
-}
-
-.toasts .toast-header {
-    color: #3ac47d;
-}
-
-.toasts .toast--warning {
-    border-left-color: #ffff36;
-}
-
-.toasts .toast-header {
-    color: #ffff36;
-}
-
-.toasts .toast--error {
-    border-left-color: #d61d1d;
-}
-
-.toasts .toast-header {
-    color: #d61d1d;
-}
-
-.toasts .toast-close-btn {
-    font-size: 1rem;
-    cursor: pointer;
-}
-
-/* .link-like { */
-/*     cursor: pointer; */
-/*     &:hover { */
-/*         text-decoration: underline; */
-/*     } */
-/* } */
-
-/* .dashed-text-pointer { */
-/*     // text-decoration: underline dashed $dark; */
-/*     border-bottom: 1px dashed $dark; */
-/*     display: inline; */
-/*     cursor: pointer; */
-/* } */
-
-.bd-navbar {
-    /* padding: 5px 0; */
-    padding: 0;
-    height: 50px;
-    background-color: transparent;
-    background-image: linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), rgba(var(--bd-coyote-rgb), 0.95));
-    /* box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.15); */
-    border-bottom: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 [data-tooltip] {
@@ -765,17 +571,6 @@
 }
 
 /* https://stackoverflow.com/questions/15907079/css3-transition-fade-out-effect */
-.so-visible {
-    visibility: visible;
-    opacity: 1;
-    transition: opacity .3s ease;
-}
-
-.so-hidden {
-    visibility: hidden;
-    opacity: 0;
-    transition: visibility 0s .3s, opacity .3s ease;
-}
 
 .badge-selected {
     cursor: pointer;
@@ -806,20 +601,6 @@
 /*   /\* cursor: pointer; *\/ */
 /* } */
 
-.thinscroll::-webkit-scrollbar {
-    width: 6px;
-}
-
-.thinscroll::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.thinscroll::-webkit-scrollbar-thumb {
-    background-color: rgba(155, 155, 155, 0.5);
-    border-radius: 20px;
-    border: transparent;
-}
-
 
 [id^=waterfall-wf-]::-webkit-scrollbar {
     width: 6px;
@@ -833,43 +614,6 @@
     background-color: rgba(155, 155, 155, 0.5);
     border-radius: 20px;
     border: transparent;
-}
-
-.badge-highlighed-token {
-    background-color: #fd884f;
-    color: #fff;
-    font-size: 90%;
-    padding: 0.15em 0.3em;
-    font-weight: 700;
-    border-radius: 0.25rem;
-    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
-}
-
-.badge-highlighed-token--ner {
-    background-color: rgba(23, 162, 184);
-}
-
-.badge-highlighed-token--callsign {
-    background-color: #fd884f;
-}
-
-.badge-highlighed-token--sm {
-    font-size: 0.8rem;
-}
-
-.badge-highlighed-token--neutral {
-    background-color: #fff;
-    color: #000;
-}
-
-.badge-highlighed-token--dep-parent {
-    background-color: #a2b870;
-    color: #000;
-}
-
-.badge-highlighed-token--dep-child {
-    background-color: #dcf3f5;
-    color: #000;
 }
 
 .badge-highlighed-nearby-font {
@@ -1269,51 +1013,6 @@ sl-tooltip {
 }
 
 
-
-dialog {
-    padding: 1rem;
-    border: none;
-    border-radius: 6px;
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    margin: 0;
-}
-
-dialog:modal>.modal-filler {
-    opacity: 0;
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: -10;
-}
-
-dialog::backdrop {
-    background: rgb(0 0 0 / 0.7);
-}
-
-dialog.large-modal {
-    width: 800px;
-    max-width: 95vw;
-    max-height: 90vh;
-}
-
-/* Small modal for confirmations */
-dialog.small-modal {
-    width: 400px;
-    max-width: 80vw;
-    max-height: 60vh;
-}
-
-/* Medium modal for user selection */
-dialog.medium-modal {
-    width: 600px;
-    max-width: 90vw;
-    max-height: 80vh;
-}
 
 .rer-networks table {
     border-collapse: collapse;
