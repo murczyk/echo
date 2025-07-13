@@ -1935,7 +1935,7 @@ pub async fn network_callsigns_list(
         find_all_known_callsigns(&env.dbx).await.context(h!())?;
 
     let callsigns_raw =
-        load_callsigns(&env.dbx, &groups, &filter, &all_known_callsigns, true)
+        load_callsigns(&env.dbx, &groups, &filter, &all_known_callsigns)
             .await
             .context(h!())?;
 

@@ -1,4 +1,4 @@
-module RerFreqs.Utils exposing (adjacentRangeToLabel, findConnectedNetworks)
+module RerFreqs.Utils exposing (findConnectedNetworks)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -26,12 +26,3 @@ findConnectedNetworks selectedUnit networks masterUnits =
     Dict.toList networks
         |> List.map Tuple.second
         |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) (Maybe.withDefault [] network.unitIds))
-
-
-adjacentRangeToLabel value =
-    case value of
-        B.ShortRange ->
-            "5 кГц"
-
-        B.LongRange ->
-            "7.5 кГц"
