@@ -304,7 +304,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"network_ids\":[2782,2834],\n    \"sort_by\":null,\n    \"settings\":\n    {\n        \"networks_only\":false,\n        \"active_callsigns_only\":true,\n        \"active_freqs_only\":true,\n        \"include_pelengs_map\":true,\n        \"include_sigint_signs\":true,\n        \"include_confirmation\":true\n    }\n}",
+					"raw": "{\n    \"network_ids\":[2830],\n    \"sort_by\":null,\n    \"settings\":\n    {\n        \"networks_only\":true,\n        \"active_freqs_only\":true,\n        \"include_pelengs_map\":false,\n        \"include_sigint_signs\":false,\n        \"include_confirmation\":false\n    }\n}",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -336,7 +336,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"since_date_inclusive_ms\":1751016081543,\n    \"till_date_noninclusive_ms\":1751620881543,\n    \"filter_freq\":null,\n    \"filter_unit\":\"291 мсп 42 мсд\",\n    \"sort_by\":null,\n    \"settings\":\n        {\n            \"networks_only\":false,\n            \"active_callsigns_only\":true,\n            \"active_freqs_only\":true,\n            \"include_pelengs_map\":false,\n            \"include_sigint_signs\":true,\n            \"include_confirmation\":true\n        }\n}",
+					"raw": "{\n    \"since_date_inclusive_ms\":1751016081543,\n    \"till_date_noninclusive_ms\":1751620881543,\n    \"filter_freq\":null,\n    \"filter_unit\":\"291 мсп 42 мсд\",\n    \"sort_by\":null,\n    \"settings\":\n        {\n            \"networks_only\":false,\n            \"active_freqs_only\":true,\n            \"include_pelengs_map\":false,\n            \"include_sigint_signs\":true,\n            \"include_confirmation\":true\n        }\n}",
 					"options": {
 						"raw": {
 							"language": "json"
