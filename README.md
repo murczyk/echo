@@ -186,3 +186,6 @@ for server in echo-kherson echo-soledarnist; do echo "\n🚀🚀🚀 deploying $
 ```bash
 just server=echo-gpu deploy-rustdocs
 ```
+
+## Delta integration
+[Delta.md](DELTA.md)
