@@ -25,7 +25,7 @@ default:
     @just --list
 
 _print-servers:
-    @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, jvln, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
+    @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
 
 evaluate:
     @just --evaluate
@@ -164,10 +164,6 @@ _update-nginx:
     ssh -t {{ server }}  'sudo mv ~/{{ server }} /etc/nginx/sites-enabled && sudo systemctl restart nginx'
     ssh -t {{ server }}  'sudo rm ~/_{{ server }}-nginx-bkp'
 
-setup-restreamer:
-    echo "TODO put deploy/rootsshconfig into jvln:/root/.ssh/config"
-    echo "TODO ensure ssh won't do yes/no prompt (add to known hosts)"
-
 copy-db:
     #!/bin/bash
     set -euxo pipefail
@@ -198,13 +194,13 @@ copy-db:
         just _print-servers; exit 1; \
     fi
 
-_jvln-copy-db:
-    ssh -t jvln '(cd /fast/kon/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    scp jvln:/fast/kon/Downloads/wd-{{ dt1 }}.pgrestore /tmp
-    ssh -t jvln 'rm /fast/kon/Downloads/wd-{{ dt1 }}.pgrestore'
-    sudo -u postgres dropdb --force wd
-    sudo -u postgres psql -c "CREATE DATABASE wd" postgres
-    sudo -u postgres pg_restore -d wd /tmp/wd-{{ dt1 }}.pgrestore
+# _jvln-copy-db:
+#     ssh -t jvln '(cd /fast/kon/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+#     scp jvln:/fast/kon/Downloads/wd-{{ dt1 }}.pgrestore /tmp
+#     ssh -t jvln 'rm /fast/kon/Downloads/wd-{{ dt1 }}.pgrestore'
+#     sudo -u postgres dropdb --force wd
+#     sudo -u postgres psql -c "CREATE DATABASE wd" postgres
+#     sudo -u postgres pg_restore -d wd /tmp/wd-{{ dt1 }}.pgrestore
 
 _copy-db:
     #!/bin/bash
@@ -409,53 +405,8 @@ deploy-signal-cli-native:
     rsync --progress ~/Downloads/signal-cli-native_0.1.0-1_amd64.deb {{ server }}:Downloads/
     ssh -t {{ server }} 'cd Downloads && sudo dpkg -i signal-cli-native_0.1.0-1_amd64.deb'
 
-_echo-zaporizhzha-deploy: _echo-zaporizhzha-deploy-front _echo-zaporizhzha-deploy-back
-
-_echo-zaporizhzha-deploy-front:
-    ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh jvln '(cd /fast/kon/workspace/echo/wdintel-web && npm ci && npx elm-land build)'
-
-_echo-zaporizhzha-build-rs:
-    # build deb on jvln and download into ~/Downloads
-    ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    # ssh jvln '(cd /fast/kon/workspace/echo/wdintel-rs && /fast/kon/.cargo/bin/cargo build --release)'
-    ssh jvln '(cd /fast/kon/workspace/echo/wdintel-rs && /fast/kon/.cargo/bin/cargo deb)'
-
-    # TODO: determine version from Cargo.toml
-    rsync --progress jvln:/fast/kon/workspace/echo/wdintel-rs/target/debian/wdintel-rs_0.1.0-1_amd64.deb ~/Downloads/
-
-_echo-zaporizhzha-deploy-back: _echo-zaporizhzha-build-rs
-    # sync toml config
-    ssh echo-zaporizhzha sudo mkdir -p /etc/echo/storage
-    scp "$(realpath ./deploy/config-live-echo-zaporizhzha.toml)" echo-zaporizhzha:
-    ssh echo-zaporizhzha 'sudo mv config-live-echo-zaporizhzha.toml /etc/echo/config.toml'
-
-    # scp "$(realpath ./deploy/client_secret_479967695500-bu85aiv1ev9jn501el7tv169f1gqs18n.apps.googleusercontent.com.json)" echo-zaporizhzha:storage/
-
-    # TODO: determine version from Cargo.toml
-    rsync --progress ~/Downloads/wdintel-rs_0.1.0-1_amd64.deb echo-zaporizhzha:Downloads/
-    ssh echo-zaporizhzha 'cd Downloads && sudo dpkg -i wdintel-rs_0.1.0-1_amd64.deb'
-    echo "Back-end is ready. Now open https://zptzr.alpines-banded.ts.net"
-
 build-docker:
     docker buildx build --platform linux/amd64 .
-
-setup:
-    @if [[ "{{ server }}" == "echo-zaporizhzha" ]]; then \
-        just _echo-zaporizhzha-setup; \
-    elif [[ "{{ server }}" == "jvln" ]]; then \
-        just _jvln-setup; \
-    else \
-        just _print-servers; exit 1; \
-    fi
-
-setup-grafana:
-    ssh {{ server }} 'sudo grafana-cli plugins install marcusolsson-json-datasource'
-    scp deploy/grafana-{{ server }}.ini {{ server }}:
-    ssh {{ server }} 'sudo mv grafana-{{ server }}.ini /etc/grafana/grafana.ini'
-    ssh {{ server }} 'sudo chown root:grafana /etc/grafana/grafana.ini'
-    ssh {{ server }} 'sudo chmod 0640 /etc/grafana/grafana.ini'
-    ssh {{ server }} 'sudo systemctl restart grafana-server'
 
 setup-py:
     @if [[ "{{ server }}" == "echo-zaporizhzha" ]]; then \
@@ -463,11 +414,6 @@ setup-py:
     else \
         just _print-servers; exit 1; \
     fi
-
-_jvln-setup:
-    ssh jvln sudo mkdir -p /etc/echo
-    scp "$(realpath ./deploy/config-live-jvln.toml)" jvln:
-    ssh jvln 'sudo mv config-live-jvln.toml /etc/echo/config.toml'
 
 _echo-zaporizhzha-setup-py:
     scp deploy/wdintel-py.service echo-zaporizhzha: && ssh -t echo-zaporizhzha 'sudo mv wdintel-py.service /etc/systemd/system/'
@@ -555,25 +501,25 @@ migrate-up:
 migrate-down:
     cd wdintel-rs && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd sea-orm-cli migrate down
 
-# builds whatsapp worker on jvln and puts into current repo for an update
-_jvln-build-whatsapp-worker:
-    ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh jvln '(cd /fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp && go build)'
-    scp jvln:/fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/
+# # builds whatsapp worker on jvln and puts into current repo for an update
+# _jvln-build-whatsapp-worker:
+#     ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
+#     ssh jvln '(cd /fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp && go build)'
+#     scp jvln:/fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/
 
-# builds signal-cli-rest-api on jvln and puts into current repo for an update
-_jvln-build-signal-cli-rest-api:
-    BRANCH=main
-    ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
-    ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && go build)'
-    rsync --progress jvln:/fast/kon/workspace/signal-cli-rest-api/src/signal-cli-rest-api signal-cli-native/deploy/signal-cli/signal-cli-rest-api
+# # builds signal-cli-rest-api on jvln and puts into current repo for an update
+# _jvln-build-signal-cli-rest-api:
+#     BRANCH=main
+#     ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
+#     ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && go build)'
+#     rsync --progress jvln:/fast/kon/workspace/signal-cli-rest-api/src/signal-cli-rest-api signal-cli-native/deploy/signal-cli/signal-cli-rest-api
 
-# builds signal-cli-native on jvln and puts into current repo for an update
-_jvln-build-signal-cli-native:
-    BRANCH=master
-    ssh jvln '(cd /fast/kon/workspace/signal-cli && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
-    ssh jvln '(cd /fast/kon/workspace/signal-cli && GRAALVM_HOME=/fast/kon/Downloads/graalvm-jdk-21.0.2+13.1 ./gradlew --no-daemon nativeCompile)'
-    rsync --progress jvln:/fast/kon/workspace/signal-cli/build/native/nativeCompile/signal-cli signal-cli-native/deploy/signal-cli/signal-cli-native
+# # builds signal-cli-native on jvln and puts into current repo for an update
+# _jvln-build-signal-cli-native:
+#     BRANCH=master
+#     ssh jvln '(cd /fast/kon/workspace/signal-cli && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
+#     ssh jvln '(cd /fast/kon/workspace/signal-cli && GRAALVM_HOME=/fast/kon/Downloads/graalvm-jdk-21.0.2+13.1 ./gradlew --no-daemon nativeCompile)'
+#     rsync --progress jvln:/fast/kon/workspace/signal-cli/build/native/nativeCompile/signal-cli signal-cli-native/deploy/signal-cli/signal-cli-native
 
 # puts deploy/vector/vector-echo.yaml into /etc/vector/vector.yaml of a corresponding server
 deploy-vector-conf:
