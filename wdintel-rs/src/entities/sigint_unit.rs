@@ -26,8 +26,6 @@ pub struct Model {
     pub comment: String,
     #[sea_orm(column_type = "Text")]
     pub battalion: String,
-    #[sea_orm(column_type = "custom(\"tsvector\")", nullable)]
-    pub search_tsv: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
