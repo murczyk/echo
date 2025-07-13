@@ -259,6 +259,7 @@ enum Cmd {
     OneoffEnsureTagsOrdering,
     OneoffMergeTwoNetworks(OneoffMergeNetworksPs),
     OneoffInstall(OneoffInstallPs),
+    OneoffReprocessUnitsSearchIndex,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -477,5 +478,9 @@ fn main() -> Result<(), AppError> {
                 .unwrap())
         }
         Cmd::OneoffInstall(ps) => Ok(crate::install::mount_tmp(&ps).unwrap()),
+        Cmd::OneoffReprocessUnitsSearchIndex => {
+            crate::sigint::unit::oneoff_reprocess_units_search_index(
+                mode)
+        }
     }
 }

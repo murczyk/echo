@@ -188,6 +188,7 @@ pub async fn create_unit(
         comment: Set(req.comment.clone()),
         name: Set(unit_name_req(&req)),
         deleted: Set(false),
+        search_tsv: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -520,5 +521,26 @@ async fn update_original_unit(
     }
 
     unit.update(dbx).await.context(h!())?;
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn oneoff_reprocess_units_search_index(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+
+    let pool = dbx.get_postgres_connection_pool();
+
+    let update_query =
+        "UPDATE sigint_unit SET search_tsv = to_tsvector('russian', name);";
+
+    sqlx::query(&update_query)
+        .execute(pool)
+        .await
+        .context(h!())?;
+
+    println!("Sigint_unit search index updated successfully.");
+
     Ok(())
 }
