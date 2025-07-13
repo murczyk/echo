@@ -78,3 +78,10 @@ pub struct DeleteUnitDuplicateReq {
     pub clone_to_delete_id: i64,
     pub original_id: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitSearchReq {
+    pub search: String,
+}

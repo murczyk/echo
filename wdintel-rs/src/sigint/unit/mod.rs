@@ -188,7 +188,6 @@ pub async fn create_unit(
         comment: Set(req.comment.clone()),
         name: Set(unit_name_req(&req)),
         deleted: Set(false),
-        search_tsv: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -569,4 +568,70 @@ where
     );
     txn.execute(statement).await.context(h!())?;
     Ok(())
+}
+
+/// АПІ ендпоінт для пошуку підрозділів за назвою (використовується websearch)
+///
+/// # API URL
+/// - POST: /api/sigint/unit/search
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<UnitSearchReq>`] - де [`UnitSearchReq`] Тіло запиту, що містить параметри пошуку підрозділу за назвою.
+///
+/// # Тіло запиту
+///
+/// Запит використовує структуру [`UnitSearchReq`], яка має наступні поля:
+///
+/// * `search`: `String` - пошукова строка.
+
+///
+/// # Повертає
+///
+/// У випадку успішного виконання, функція повертає `Json<ListUnitsByIdRsp>`, де [`ListUnitsByIdRsp`] - вектор підрозділів `Vec<Unit>`.
+///
+/// # Помилки
+///
+/// Функція повертає [`AppError`] у випадку виникнення помилок, таких як:
+/// * Помилки під час взаємодії з базою даних.
+/// * Недостатньо прав доступу у користувача для виконання цієї операції.
+///
+/// # Дозволи
+///
+/// Для доступу до цього ендпоінту користувач повинен мати роль: "Rer".
+#[post("/api/sigint/unit/search")]
+pub async fn units_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UnitSearchReq>,
+) -> Result<Json<ListUnitsByIdRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer"]).await?;
+
+    let search_phrase = req.search.trim();
+    if search_phrase.is_empty() {
+        return Ok(Json(ListUnitsByIdRsp { units: vec![] }));
+    }
+
+    let q = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(Expr::cust_with_values(
+            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1)",
+            vec![search_phrase.to_string()],
+        ))
+        .order_by_desc(sigint_unit::Column::Name);
+
+    // debug!(
+    //     ">find units query: {}",
+    //     q.build(DbBackend::Postgres).to_string()
+    // );
+
+    let units = q.all(&env.dbx).await.context(h!())?;
+
+    let mut res = vec![];
+    for unit in units {
+        res.push(render_unit(&unit)?);
+    }
+    Ok(Json(ListUnitsByIdRsp { units: res }))
 }
