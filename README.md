@@ -189,3 +189,7 @@ just server=echo-gpu deploy-rustdocs
 
 ## Delta integration
 [Delta.md](DELTA.md)
+
+## Wipe DB
+in order to erase data from db you may just run [clear_db.sql](deploy/clear_db.sql).
+it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
