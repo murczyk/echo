@@ -452,6 +452,38 @@
 			"response": []
 		},
 		{
+			"name": "sigint/unit/search",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\"search\":\"58 42 шторм\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/unit/search",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"unit",
+						"search"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/freq/freq-exists",
 			"request": {
 				"auth": {
