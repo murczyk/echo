@@ -521,24 +521,20 @@ pub async fn load_callsigns(
 
     trace!("> load_callsigns for network: {:?}", filter.network_id);
 
-    let (callsigns_cte, unique_callsigns_cte) =
-        build_callsigns_cte_query(groups, filter).context(h!())?;
+    let (callsigns_select, unique_callsigns_select) =
+        build_callsigns_queries(groups, filter).context(h!())?;
 
-    let active_callsigns_query = get_active_callsigns(
+
+    // Step 1. Get all active callsigns for the given network
+    let active_callsigns = get_active_callsigns(
         &db,
-        callsigns_cte.clone(),
-        unique_callsigns_cte.clone(),
+        callsigns_select.clone(),
+        unique_callsigns_select.clone(),
     )
     .await
     .context(h!())?;
 
-    let duration = start.elapsed();
-    debug!(
-        "[load_callsigns] Execution time part 1: {:.2?} (network: {:?})",
-        duration, filter.network_id
-    );
-
-    let mut res: Vec<CallsignRes> = active_callsigns_query
+    let mut res: Vec<CallsignRes> = active_callsigns
         .iter()
         .map(|row| {
             let callsign = row.callsign.clone();
@@ -603,41 +599,24 @@ pub async fn load_callsigns(
         })
         .collect();
 
-    let duration = start.elapsed();
-    debug!(
-        "[load_callsigns] Execution time part 2: {:.2?} (network: {:?})",
-        duration, filter.network_id
-    );
-
     res = filter_callsigns(res);
 
+    // Step 2. Get communication info for callsigns with known_callsigns
     let res_known_callsigns: Vec<String> = res
         .iter()
         .filter(|c| c.known_callsigns.is_some())
         .map(|c| c.callsign.clone())
         .collect();
 
-    let duration = start.elapsed();
-    debug!(
-        "[load_callsigns] Execution time part 3: {:.2?} (network: {:?})",
-        duration, filter.network_id
-    );
-
     let known_callsigns_comm_info = get_communication_info_for_callsigns(
         &db,
-        callsigns_cte,
+        callsigns_select,
         &res_known_callsigns,
     )
     .await
     .context(h!())?;
 
-    let duration = start.elapsed();
-    debug!(
-        "[load_callsigns] Execution time part 4: {:.2?} (network: {:?})",
-        duration, filter.network_id
-    );
-
-    // Update res vector with communication info for callsigns with known_callsigns
+    // Step 3. Update res vector with communication info for callsigns with known_callsigns
     for c in &mut res {
         if let Some(comm_info) = known_callsigns_comm_info.get(&c.callsign) {
             c.message_count = comm_info.message_count;
@@ -654,7 +633,7 @@ pub async fn load_callsigns(
     });
 
     let duration = start.elapsed();
-    debug!(
+    trace!(
         "[load_callsigns] Execution time: {:.2?} (network: {:?})",
         duration, filter.network_id
     );
@@ -662,10 +641,10 @@ pub async fn load_callsigns(
     Ok(res)
 }
 
-fn build_callsigns_cte_query(
+fn build_callsigns_queries(
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
-) -> Result<(CommonTableExpression, CommonTableExpression), AppError> {
+) -> Result<(SelectStatement, SelectStatement), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
             Expr::cust(
@@ -675,8 +654,8 @@ fn build_callsigns_cte_query(
         )
         .to_owned();
 
-    let mut base_subquery_callsigns = Query::select();
-    base_subquery_callsigns.expr_as(
+    let mut callsigns_select = Query::select();
+    callsigns_select.expr_as(
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
         Alias::new("freq"),
     )
@@ -716,7 +695,7 @@ fn build_callsigns_cte_query(
             END"#.to_string()),
             Alias::new("network_name"),
         );
-    base_subquery_callsigns
+    callsigns_select
         .from(SignalMessage::Table)
         .join(
             JoinType::InnerJoin,
@@ -756,7 +735,7 @@ fn build_callsigns_cte_query(
             Alias::new("c"),
             Expr::cust("true"),
         );
-    base_subquery_callsigns
+    callsigns_select
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
                 .is_in(groups),
@@ -778,29 +757,26 @@ fn build_callsigns_cte_query(
         );
 
     if let Some(date_since) = filter.since_date_inclusive_ms {
-        base_subquery_callsigns.and_where(
+        callsigns_select.and_where(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
                 .gte(dt_from_millis(date_since)?),
         );
     }
     if let Some(date_till) = filter.till_date_noninclusive_ms {
-        base_subquery_callsigns.and_where(
+        callsigns_select.and_where(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
                 .lt(dt_from_millis(date_till)?),
         );
     }
 
+    let callsigns_select = callsigns_select.to_owned();
+
     // debug!(
-    //     "> base_subquery_callsigns: {}",
-    //     base_subquery_callsigns.to_string(PostgresQueryBuilder)
+    //     "> callsigns_select: {}",
+    //     callsigns_select.to_string(PostgresQueryBuilder)
     // );
 
-    let callsigns_cte = CommonTableExpression::new()
-        .query(base_subquery_callsigns)
-        .table_name(Alias::new("callsigns"))
-        .to_owned();
-
-    let unique_callsigns = Query::select()
+    let unique_callsigns_select = Query::select()
         .expr_as(Expr::cust("DISTINCT callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
@@ -810,19 +786,24 @@ fn build_callsigns_cte_query(
         .from(Alias::new("callsigns"))
         .to_owned();
 
-    let unique_callsigns_cte = CommonTableExpression::new()
-        .query(unique_callsigns)
-        .table_name(Alias::new("unique_callsigns"))
-        .to_owned();
-
-    Ok((callsigns_cte, unique_callsigns_cte))
+    Ok((callsigns_select, unique_callsigns_select))
 }
 
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
-    callsigns_cte: CommonTableExpression,
-    unique_callsigns_cte: CommonTableExpression,
+    callsigns_select: SelectStatement,
+    unique_callsigns_select: SelectStatement,
 ) -> Result<Vec<CallsignQueryResult>, AppError> {
+    let callsigns_cte = CommonTableExpression::new()
+        .query(callsigns_select)
+        .table_name(Alias::new("callsigns"))
+        .to_owned();
+
+    let unique_callsigns_cte = CommonTableExpression::new()
+        .query(unique_callsigns_select)
+        .table_name(Alias::new("unique_callsigns"))
+        .to_owned();
+
     let main_query: sea_query::SelectStatement = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
@@ -863,12 +844,22 @@ pub async fn get_active_callsigns(
 
 async fn get_communication_info_for_callsigns(
     db: &DatabaseConnection,
-    callsigns_cte: CommonTableExpression,
+    callsigns_select: SelectStatement,
     callsigns: &[String],
 ) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError> {
     if callsigns.is_empty() {
         return Ok(HashMap::new());
     }
+
+    // Clone and filter the select statement before wrapping it in the CTE
+    let mut filtered_select = callsigns_select.clone();
+    filtered_select
+        .and_where(Expr::col(Alias::new("callsign")).is_in(callsigns));
+
+    let callsigns_cte = CommonTableExpression::new()
+        .query(filtered_select)
+        .table_name(Alias::new("callsigns"))
+        .to_owned();
 
     let q = Query::select()
         .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
@@ -883,10 +874,6 @@ async fn get_communication_info_for_callsigns(
             Alias::new("network_names"),
         )
         .from(Alias::new("callsigns"))
-        .and_where(
-            Expr::col((Alias::new("callsigns"), Alias::new("callsign")))
-                .is_in(callsigns),
-        )
         .add_group_by(vec![Expr::cust("callsign")])
         .to_owned();
 
