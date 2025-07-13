@@ -479,8 +479,7 @@ fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffInstall(ps) => Ok(crate::install::mount_tmp(&ps).unwrap()),
         Cmd::OneoffReprocessUnitsSearchIndex => {
-            crate::sigint::unit::oneoff_reprocess_units_search_index(
-                mode)
+            crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
         }
     }
 }

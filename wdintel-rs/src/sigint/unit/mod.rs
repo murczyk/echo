@@ -210,6 +210,9 @@ pub async fn create_unit(
     }
     .insert(&env.dbx)
     .await?;
+    unit_after_insert_update(&env.dbx, unit.id)
+        .await
+        .context(h!())?;
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -254,6 +257,9 @@ pub async fn update_unit(
     }
     .insert(&env.dbx)
     .await?;
+    unit_after_insert_update(&env.dbx, req.id)
+        .await
+        .context(h!())?;
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -524,6 +530,7 @@ async fn update_original_unit(
     Ok(())
 }
 
+/// Oneoff function to reprocess the search index for units.
 #[tokio::main]
 pub async fn oneoff_reprocess_units_search_index(
     mode: Mode,
@@ -542,5 +549,24 @@ pub async fn oneoff_reprocess_units_search_index(
 
     println!("Sigint_unit search index updated successfully.");
 
+    Ok(())
+}
+
+/// Updates the search_tsv field for a specific unit after insert or update.
+pub async fn unit_after_insert_update<'a, 'async_trait, C>(
+    txn: &'a C,
+    unit_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let statement = Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"UPDATE sigint_unit 
+                SET search_tsv = to_tsvector('russian', name) 
+                WHERE id = $1"#,
+        [unit_id.into()],
+    );
+    txn.execute(statement).await.context(h!())?;
     Ok(())
 }
