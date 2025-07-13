@@ -8,12 +8,12 @@ import File exposing (File)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Le.Api.RetryableHttp as RetryableHttp
 import Le.Block.Toast
 import Le.Types exposing (ApiError, ModelWithErrorFields)
 import Le.Utils exposing (..)
 import Temp exposing (jsonPair, leExpectJson, resolve)
 import Url.Builder
-import Le.Api.RetryableHttp as RetryableHttp
 
 
 handleHttpError :
@@ -1236,18 +1236,6 @@ rer_freqs_callsigns toMsg req =
         { url = "/api/sigint/freq/callsigns-filter"
         , body = Http.jsonBody (callsignsForFreqReqEncoder req)
         , expect = leExpectJson toMsg callsignsForFreqRspDecoder
-        }
-
-
-rer_freq_report_etalonka :
-    (Result ApiError Bytes -> msg)
-    -> EtalonkaReq
-    -> Cmd msg
-rer_freq_report_etalonka toMsg req =
-    Http.post
-        { url = "/api/sigint/etalonka/report"
-        , body = Http.jsonBody (etalonkaReqEncoder req)
-        , expect = Http.expectBytesResponse toMsg (resolve Ok)
         }
 
 

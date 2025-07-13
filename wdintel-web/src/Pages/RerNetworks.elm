@@ -80,7 +80,6 @@ type alias Model =
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
     , reportGUROnly : Bool
-    , reportActiveCallsignsOnly : Bool
     , reportActiveFreqsOnly : Bool
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
@@ -106,15 +105,6 @@ type alias FilterState =
     , unit : String
     , callsigns : List String
     }
-
-
-adjacentRangeToLabel value =
-    case value of
-        B.ShortRange ->
-            "5 кГц"
-
-        B.LongRange ->
-            "7.5 кГц"
 
 
 init : () -> ( Model, Effect Msg )
@@ -148,7 +138,6 @@ init _ =
             , reportModalOpened = False
             , reportDownloadInProgress = False
             , reportGUROnly = False
-            , reportActiveCallsignsOnly = True
             , reportActiveFreqsOnly = True
             , reportIncludePelengsMap = True
             , reportIncludeSigintSigns = True
@@ -281,7 +270,6 @@ type Msg
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportGURCheckedByUser Bool
     | ReportActiveFreqsOnlyCheckedByUser Bool
-    | ReportActiveCallsignsOnlyCheckedByUser Bool
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
@@ -309,7 +297,6 @@ prepareReportDownloadCmd model =
                     , sortBy = Nothing
                     , settings =
                         { networksOnly = model.reportGUROnly
-                        , activeCallsignsOnly = model.reportActiveCallsignsOnly
                         , activeFreqsOnly = model.reportActiveFreqsOnly
                         , includePelengsMap = model.reportIncludePelengsMap
                         , includeSigintSigns = model.reportIncludeSigintSigns
@@ -745,9 +732,6 @@ update shared msg model =
 
         ReportActiveFreqsOnlyCheckedByUser isChecked ->
             ( { model | reportActiveFreqsOnly = isChecked }, E.none )
-
-        ReportActiveCallsignsOnlyCheckedByUser isChecked ->
-            ( { model | reportActiveCallsignsOnly = isChecked }, E.none )
 
         ReportIncludePelengsMapCheckedByUser isChecked ->
             ( { model | reportIncludePelengsMap = isChecked }, E.none )
@@ -1303,9 +1287,6 @@ filterPanel shared model =
                                 |> Checkbox.view
                              , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
                                 |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
-                                |> Checkbox.view
-                             , Checkbox.new { isChecked = model.reportActiveCallsignsOnly, onToggle = ReportActiveCallsignsOnlyCheckedByUser }
-                                |> Checkbox.withContent [ span [] [ text "Лише активні позивні" ] ]
                                 |> Checkbox.view
                              ]
                                 ++ (if not model.reportGUROnly then

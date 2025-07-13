@@ -99,7 +99,6 @@ type alias Model =
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
     , reportNetworksOnly : Bool
-    , reportActiveCallsignsOnly : Bool
     , reportActiveFreqsOnly : Bool
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
@@ -149,7 +148,6 @@ init route shared () =
       , reportModalOpened = False
       , reportDownloadInProgress = False
       , reportNetworksOnly = False
-      , reportActiveCallsignsOnly = True
       , reportActiveFreqsOnly = True
       , reportIncludePelengsMap = True
       , reportIncludeSigintSigns = True
@@ -213,7 +211,6 @@ type Msg
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportNetworksOnlyCheckedByUser Bool
     | ReportActiveFreqsOnlyCheckedByUser Bool
-    | ReportActiveCallsignsOnlyCheckedByUser Bool
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
@@ -222,8 +219,6 @@ type Msg
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
 update shared msg model =
     case msg of
-       
-
         CallsignsReturnedByApi (Err e) ->
             ( { model | callsigns = Failure e }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" e
@@ -840,7 +835,6 @@ update shared msg model =
                         , sortBy = Nothing
                         , settings =
                             { networksOnly = model.reportNetworksOnly
-                            , activeCallsignsOnly = model.reportActiveCallsignsOnly
                             , activeFreqsOnly = model.reportActiveFreqsOnly
                             , includePelengsMap = model.reportIncludePelengsMap
                             , includeSigintSigns = model.reportIncludeSigintSigns
@@ -859,13 +853,23 @@ update shared msg model =
 
         ReportDownloadReturnedByApi (Ok bytes) ->
             let
-                m2 = { model | reportDownloadInProgress = False }
-                extension = "docx"
-                fname = "etalonka_network_" ++
-                    (case model.network of
-                        Success network -> String.fromInt network.id
-                        _ -> "unknown"
-                    ) ++ "." ++ extension
+                m2 =
+                    { model | reportDownloadInProgress = False }
+
+                extension =
+                    "docx"
+
+                fname =
+                    "etalonka_network_"
+                        ++ (case model.network of
+                                Success network ->
+                                    String.fromInt network.id
+
+                                _ ->
+                                    "unknown"
+                           )
+                        ++ "."
+                        ++ extension
             in
             ( m2
             , E.sendCmd <|
@@ -879,9 +883,6 @@ update shared msg model =
 
         ReportActiveFreqsOnlyCheckedByUser isChecked ->
             ( { model | reportActiveFreqsOnly = isChecked }, E.none )
-
-        ReportActiveCallsignsOnlyCheckedByUser isChecked ->
-            ( { model | reportActiveCallsignsOnly = isChecked }, E.none )
 
         ReportIncludePelengsMapCheckedByUser isChecked ->
             ( { model | reportIncludePelengsMap = isChecked }, E.none )
@@ -1910,66 +1911,63 @@ view user shared model =
     , body =
         [ div []
             [ div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-sceen" ]
-                    [ div [ class "w-[85vw] mx-auto py-[16px]" ]
-                        (case model.network of
-                            Success network ->
-                                contentBlock user shared network model
+                [ div [ class "w-[85vw] mx-auto py-[16px]" ]
+                    (case model.network of
+                        Success network ->
+                            contentBlock user shared network model
 
-                            _ ->
-                                [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
-                        )
-                    , let
-                        dialogContent =
-                            [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
-                                [ div [ class "pb-12" ]
-                                    [ h2 [] [ text "Звіт \"еталонка\"" ]
-                                    , p [] [ text "Еталонка для мережі" ]
-                                    , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
-                                        ([ Checkbox.new { isChecked = model.reportNetworksOnly, onToggle = ReportNetworksOnlyCheckedByUser }
-                                            |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
-                                            |> Checkbox.view
-                                         , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
-                                            |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
-                                            |> Checkbox.view
-                                         , Checkbox.new { isChecked = model.reportActiveCallsignsOnly, onToggle = ReportActiveCallsignsOnlyCheckedByUser }
-                                            |> Checkbox.withContent [ span [] [ text "Лише активні позивні" ] ]
-                                            |> Checkbox.view
-                                         ]
-                                            ++ (if not model.reportNetworksOnly then
-                                                    [ Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
-                                                        |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
-                                                        |> Checkbox.view
-                                                    , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
-                                                        |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
-                                                        |> Checkbox.view
-                                                    , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
-                                                        |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
-                                                        |> Checkbox.view
-                                                    ]
-
-                                                else
-                                                    []
-                                               )
-                                        )
-                                    ]
-                                , div [ class "flex justify-between" ]
-                                    [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
-                                    , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
-                                        |> (if model.reportDownloadInProgress then
-                                                Button.withIcon
-                                                    [ Le.Block.Spinner.loadingSpinner2Sm
-                                                    ]
+                        _ ->
+                            [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
+                    )
+                , let
+                    dialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-12" ]
+                                [ h2 [] [ text "Звіт \"еталонка\"" ]
+                                , p [] [ text "Еталонка для мережі" ]
+                                , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
+                                    ([ Checkbox.new { isChecked = model.reportNetworksOnly, onToggle = ReportNetworksOnlyCheckedByUser }
+                                        |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
+                                        |> Checkbox.view
+                                     , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
+                                        |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
+                                        |> Checkbox.view
+                                     ]
+                                        ++ (if not model.reportNetworksOnly then
+                                                [ Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
+                                                    |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
+                                                    |> Checkbox.view
+                                                , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
+                                                    |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
+                                                    |> Checkbox.view
+                                                , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
+                                                    |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
+                                                    |> Checkbox.view
+                                                ]
 
                                             else
-                                                identity
+                                                []
                                            )
-                                        |> Button.view
-                                    ]
+                                    )
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
+                                    |> (if model.reportDownloadInProgress then
+                                            Button.withIcon
+                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                ]
+
+                                        else
+                                            identity
+                                       )
+                                    |> Button.view
                                 ]
                             ]
-                      in
-                      ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
-                    ]
+                        ]
+                  in
+                  ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+                ]
             ]
         ]
     }

@@ -3618,22 +3618,6 @@ updateCallsignReportingReqEncoder struct =
         ]
 
 
-type alias EtalonkaReq =
-    { listFreqReq : ListFreqsReq
-    , fullEtalonkaReport : Bool
-    , adjacentFreqsDistance : Maybe AdjacentFreqDistance
-    }
-
-
-etalonkaReqEncoder : EtalonkaReq -> Json.Encode.Value
-etalonkaReqEncoder struct =
-    Json.Encode.object
-        [ ( "list_freq_req", listFreqsReqEncoder struct.listFreqReq )
-        , ( "full_etalonka_report", Json.Encode.bool struct.fullEtalonkaReport )
-        , ( "adjacent_freqs_distance", (Maybe.withDefault Json.Encode.null << Maybe.map adjacentFreqDistanceEncoder) struct.adjacentFreqsDistance )
-        ]
-
-
 type alias EtalonkaJimForksReq =
     { sinceDateInclusiveMs : Maybe Int
     , tillDateNoninclusiveMs : Maybe Int
@@ -3673,7 +3657,6 @@ etalonkaJimForksSortByEncoder enum =
 
 type alias EtalonkaSettings =
     { networksOnly : Bool
-    , activeCallsignsOnly : Bool
     , activeFreqsOnly : Bool
     , includePelengsMap : Bool
     , includeSigintSigns : Bool
@@ -3685,7 +3668,6 @@ etalonkaSettingsEncoder : EtalonkaSettings -> Json.Encode.Value
 etalonkaSettingsEncoder struct =
     Json.Encode.object
         [ ( "networks_only", Json.Encode.bool struct.networksOnly )
-        , ( "active_callsigns_only", Json.Encode.bool struct.activeCallsignsOnly )
         , ( "active_freqs_only", Json.Encode.bool struct.activeFreqsOnly )
         , ( "include_pelengs_map", Json.Encode.bool struct.includePelengsMap )
         , ( "include_sigint_signs", Json.Encode.bool struct.includeSigintSigns )
@@ -3707,21 +3689,6 @@ etalonkaNetworkBatchReqEncoder struct =
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list etalonkaJimForksSortByEncoder)) struct.sortBy )
         , ( "settings", etalonkaSettingsEncoder struct.settings )
         ]
-
-
-type AdjacentFreqDistance
-    = ShortRange
-    | LongRange
-
-
-adjacentFreqDistanceEncoder : AdjacentFreqDistance -> Json.Encode.Value
-adjacentFreqDistanceEncoder enum =
-    case enum of
-        ShortRange ->
-            Json.Encode.string "ShortRange"
-
-        LongRange ->
-            Json.Encode.string "LongRange"
 
 
 type alias NetworkFreqsRes =
@@ -7070,14 +7037,6 @@ callsignReportingItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
 
 
-etalonkaReqDecoder : Json.Decode.Decoder EtalonkaReq
-etalonkaReqDecoder =
-    Json.Decode.succeed EtalonkaReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list_freq_req" listFreqsReqDecoder))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_etalonka_report" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_distance" (Json.Decode.nullable adjacentFreqDistanceDecoder)))
-
-
 etalonkaJimForksReqDecoder : Json.Decode.Decoder EtalonkaJimForksReq
 etalonkaJimForksReqDecoder =
     Json.Decode.succeed EtalonkaJimForksReq
@@ -7119,7 +7078,6 @@ etalonkaSettingsDecoder : Json.Decode.Decoder EtalonkaSettings
 etalonkaSettingsDecoder =
     Json.Decode.succeed EtalonkaSettings
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "networks_only" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_callsigns_only" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_pelengs_map" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" Json.Decode.bool))
@@ -7132,32 +7090,6 @@ etalonkaNetworkBatchReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list etalonkaJimForksSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
-
-
-adjacentFreqDistanceDecoder : Json.Decode.Decoder AdjacentFreqDistance
-adjacentFreqDistanceDecoder =
-    Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "ShortRange" ->
-                            Json.Decode.succeed ShortRange
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "LongRange" ->
-                            Json.Decode.succeed LongRange
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        ]
 
 
 networkFreqsResDecoder : Json.Decode.Decoder NetworkFreqsRes
