@@ -22,7 +22,6 @@ pub struct EtalonkaJimForksReq {
 )]
 pub struct EtalonkaSettings {
     pub networks_only: bool,
-    pub active_callsigns_only: bool,
     pub active_freqs_only: bool,
     pub include_pelengs_map: bool,
     pub include_sigint_signs: bool,
@@ -142,6 +141,16 @@ pub struct KnownCallsignRes {
     pub army: Option<String>,
     pub source_name: String,
     pub created_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct CallsignQueryResult {
+    pub callsign: String,
+    pub unit_id: Option<i64>,
+    pub unit_name: Option<String>,
+    pub regiment: Option<String>,
+    pub division: Option<String>,
+    pub army: Option<String>,
 }
 
 #[derive(Debug, FromQueryResult)]
