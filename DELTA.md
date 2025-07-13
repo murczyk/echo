@@ -1,9 +1,4 @@
-Цими даними ми поділились із Дельтою для інтеграції. 
-
-## 0.IPs
-> TODO внести решту
-
-додався новий IP: 95.217.135.183
+Цими даними ми поділились із Дельтою для інтеграції.
 
 ## 1. Redirect URL
 - https://echo-zp.alpines-banded.ts.net/api/delta-redirect
@@ -22,6 +17,12 @@
 - https://echo-kherson2.alpines-banded.ts.net/api/delta-redirect
 - https://echo-starobilsk.bilby-ruffe.ts.net/api/delta-redirect
 - https://echo-volyn2.siren-gecko.ts.net/api/delta-redirect
+- https://echo-kyiv.mulley-neon.ts.net/api/delta-redirect
+- https://echo-mothership.pitta-becrux.ts.net/api/delta-redirect
+- https://echo-pivden.spotted-pierce.ts.net/api/delta-redirect
+- https://echo-pivnich.hyakutake-chromatic.ts.net/api/delta-redirect
+- https://echo-skhid.serengeti-porbeagle.ts.net/api/delta-redirect
+- https://echo-zakhid.gila-mirach.ts.net/api/delta-redirect
 - https://dn.echoua.info/api/delta-redirect
 - https://kharkiv.echoua.info/api/delta-redirect
 - https://kherson.echoua.info/api/delta-redirect
@@ -30,6 +31,12 @@
 - https://siversk.echoua.info/api/delta-redirect
 - https://starobilsk.echoua.info/api/delta-redirect
 - https://volyn.echoua.info/api/delta-redirect
+- https://kyiv.echoua.info/api/delta-redirect
+- https://mothership.echoua.info/api/delta-redirect
+- https://pivden.echoua.info/api/delta-redirect
+- https://pivnich.echoua.info/api/delta-redirect
+- https://skhid.echoua.info/api/delta-redirect
+- https://zakhid.echoua.info/api/delta-redirect
 
 
 ## 2. REFERER
@@ -49,6 +56,12 @@
 - https://echo-kherson2.alpines-banded.ts.net/login
 - https://echo-starobilsk.bilby-ruffe.ts.net/login
 - https://echo-volyn2.siren-gecko.ts.net/login
+- https://echo-kyiv.mulley-neon.ts.net/login
+- https://echo-mothership.pitta-becrux.ts.net/login
+- https://echo-pivden.spotted-pierce.ts.net/login
+- https://echo-pivnich.hyakutake-chromatic.ts.net/login
+- https://echo-skhid.serengeti-porbeagle.ts.net/login
+- https://echo-zakhid.gila-mirach.ts.net/login
 - https://dn.echoua.info/login
 - https://kharkiv.echoua.info/login
 - https://kherson.echoua.info/login
@@ -57,3 +70,9 @@
 - https://siversk.echoua.info/login
 - https://starobilsk.echoua.info/login
 - https://volyn.echoua.info/login
+- https://kyiv.echoua.info/login
+- https://mothership.echoua.info/login
+- https://pivden.echoua.info/login
+- https://pivnich.echoua.info/login
+- https://skhid.echoua.info/login
+- https://zakhid.echoua.info/login
