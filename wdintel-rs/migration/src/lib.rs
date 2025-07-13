@@ -101,6 +101,7 @@ mod m20250617_111140_update_login_table;
 mod m20250628_175425_add_organism_hierarchy;
 mod m20250702_115302_add_noautologout_role;
 mod m20250710_094800_remove_comment_from_network;
+mod m20250713_091110_add_tsvector_to_units;
 
 pub struct Migrator;
 
@@ -209,6 +210,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250628_175425_add_organism_hierarchy::Migration),
             Box::new(m20250702_115302_add_noautologout_role::Migration),
             Box::new(m20250710_094800_remove_comment_from_network::Migration),
+            Box::new(m20250713_091110_add_tsvector_to_units::Migration),
         ]
     }
 }
