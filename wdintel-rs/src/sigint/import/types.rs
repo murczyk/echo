@@ -16,9 +16,11 @@ pub struct EtalonData {
     pub sigint_network_unit: Vec<sigint_network_unit::Model>,
     pub sigint_network_unit_changelog:
         Vec<sigint_network_unit_changelog::Model>,
-    pub sigint_zone: Vec<sigint_zone::Model>,
     pub sigint_callsign: Vec<sigint_callsign::Model>,
     pub sigint_callsign_changelog: Vec<sigint_callsign_changelog::Model>,
+    //libs
+    pub modulation: Vec<modulation::Model>,
+    pub source: Vec<source::Model>,
 }
 
 #[derive(Debug)]

@@ -43,6 +43,8 @@ impl MigrationTrait for Migration {
             alter table sigint_zone add column sigint_origin_id bigint references sigint_origin(id) ON DELETE SET NULL;
             alter table sigint_callsign add column sigint_origin_id bigint references sigint_origin(id) ON DELETE SET NULL;
             alter table sigint_callsign_changelog add column sigint_origin_id bigint references sigint_origin(id) ON DELETE SET NULL;
+            alter table source add column sigint_origin_id bigint references sigint_origin(id) ON DELETE SET NULL;
+            alter table modulation add column sigint_origin_id bigint references sigint_origin(id) ON DELETE SET NULL;
 
             alter table sigint_unit add column mothership_id bigint;
             alter table sigint_signal add column mothership_id bigint;
@@ -57,6 +59,24 @@ impl MigrationTrait for Migration {
             alter table sigint_zone add column mothership_id bigint;
             alter table sigint_callsign add column mothership_id bigint;
             alter table sigint_callsign_changelog add column mothership_id bigint;
+            alter table source add column mothership_id bigint;
+            alter table modulation add column mothership_id int;
+
+            alter table sigint_unit add column original_id bigint;
+            alter table sigint_signal add column original_id bigint;
+            alter table sigint_signal_changelog add column original_id bigint;
+            alter table sigint_network add column original_id bigint;
+            alter table sigint_network_changelog add column original_id bigint;
+            alter table sigint_network_description add column original_id bigint;
+            alter table sigint_network_freq add column original_id bigint;
+            alter table sigint_network_freq_changelog add column original_id bigint;
+            alter table sigint_network_unit add column original_id bigint;
+            alter table sigint_network_unit_changelog add column original_id bigint;
+            alter table sigint_zone add column original_id bigint;
+            alter table sigint_callsign add column original_id bigint;
+            alter table sigint_callsign_changelog add column original_id bigint;
+            alter table source add column original_id bigint;
+            alter table modulation add column original_id int;
             ",
         )
             .await?;
@@ -69,6 +89,22 @@ impl MigrationTrait for Migration {
 
         db.execute_unprepared(
             "
+            alter table sigint_unit drop column original_id;
+            alter table sigint_signal drop column original_id;
+            alter table sigint_signal_changelog drop column original_id;
+            alter table sigint_network drop column original_id;
+            alter table sigint_network_changelog drop column original_id;
+            alter table sigint_network_description drop column original_id;
+            alter table sigint_network_freq drop column original_id;
+            alter table sigint_network_freq_changelog drop column original_id;
+            alter table sigint_network_unit drop column original_id;
+            alter table sigint_network_unit_changelog drop column original_id;
+            alter table sigint_zone drop column original_id;
+            alter table sigint_callsign drop column original_id;
+            alter table sigint_callsign_changelog drop column original_id;
+            alter table source drop column original_id;
+            alter table modulation drop column original_id;
+
             alter table sigint_unit drop column mothership_id;
             alter table sigint_signal drop column mothership_id;
             alter table sigint_signal_changelog drop column mothership_id;
@@ -82,6 +118,8 @@ impl MigrationTrait for Migration {
             alter table sigint_zone drop column mothership_id;
             alter table sigint_callsign drop column mothership_id;
             alter table sigint_callsign_changelog drop column mothership_id;
+            alter table source drop column mothership_id;
+            alter table modulation drop column mothership_id;
 
             alter table sigint_unit drop column sigint_origin_id;
             alter table sigint_signal drop column sigint_origin_id;
@@ -96,6 +134,8 @@ impl MigrationTrait for Migration {
             alter table sigint_zone drop column sigint_origin_id;
             alter table sigint_callsign drop column sigint_origin_id;
             alter table sigint_callsign_changelog drop column sigint_origin_id;
+            alter table source drop column sigint_origin_id;
+            alter table modulation drop column sigint_origin_id;
 
             drop table sigint_origin;
             ",

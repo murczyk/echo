@@ -16,6 +16,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::modulation::Entity")]
+    Modulation,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
@@ -42,6 +44,14 @@ pub enum Relation {
     SigintUnit,
     #[sea_orm(has_many = "super::sigint_zone::Entity")]
     SigintZone,
+    #[sea_orm(has_many = "super::source::Entity")]
+    Source,
+}
+
+impl Related<super::modulation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Modulation.def()
+    }
 }
 
 impl Related<super::sigint_callsign::Entity> for Entity {
@@ -119,6 +129,12 @@ impl Related<super::sigint_unit::Entity> for Entity {
 impl Related<super::sigint_zone::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintZone.def()
+    }
+}
+
+impl Related<super::source::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Source.def()
     }
 }
 

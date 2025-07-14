@@ -146,6 +146,7 @@ pub async fn create_signal(
         created_at: NotSet,
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -163,6 +164,7 @@ pub async fn create_signal(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -208,6 +210,7 @@ pub async fn update_signal(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -244,6 +247,7 @@ pub async fn delete_signal(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;

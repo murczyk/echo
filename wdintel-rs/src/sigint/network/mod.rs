@@ -479,6 +479,7 @@ pub async fn create_network(
         active_to: Set(active_to),
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&txn)
     .await
@@ -501,6 +502,7 @@ pub async fn create_network(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&txn)
     .await
@@ -528,6 +530,7 @@ pub async fn create_network(
             modulation_id: Set(frequency.modulation_id),
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
+            original_id: NotSet,
         }
         .insert(&txn)
         .await
@@ -553,6 +556,7 @@ pub async fn create_network(
                 created_at: NotSet,
                 sigint_origin_id: NotSet,
                 mothership_id: NotSet,
+                original_id: NotSet,
             })
             .collect();
         if !network_units.is_empty() {
@@ -1119,6 +1123,7 @@ pub async fn update_freq_networks(
                         created_at: NotSet,
                         sigint_origin_id: NotSet,
                         mothership_id: NotSet,
+                        original_id: NotSet,
                     };
                     network_unit.save(&txn).await.context(h!())?;
                 }
@@ -1151,6 +1156,7 @@ pub async fn update_freq_networks(
                     created_at: NotSet,
                     sigint_origin_id: NotSet,
                     mothership_id: NotSet,
+                    original_id: NotSet,
                 };
                 let _updated_entry =
                     network_unit.save(&txn).await.context(h!())?;
@@ -1280,6 +1286,7 @@ pub async fn add_network_freq(
             active_to: Set(active_to),
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
+            original_id: NotSet,
         };
 
         network_freq.insert(&txn).await.context(h!())?
@@ -2643,6 +2650,7 @@ pub async fn merge_two_networks(
             req: Set(None),
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
+            original_id: NotSet,
         }
         .insert(txn)
         .await
@@ -2907,6 +2915,7 @@ fn map_add_network_description(
         created_at: NotSet,
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
 }
 
@@ -2928,5 +2937,6 @@ fn map_add_network_frequency_description(
         created_at: NotSet,
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
+        original_id: NotSet,
     }
 }
