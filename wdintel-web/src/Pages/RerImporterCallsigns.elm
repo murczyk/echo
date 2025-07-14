@@ -265,7 +265,7 @@ mainBlock model =
             in
             div [ class "me-3" ] <|
                 (div [] <|
-                    [ span [ class "fs-3 text-primary" ]
+                    [ span [ class "fs-3 text-action" ]
                         [ text freq ]
                     ]
                 )

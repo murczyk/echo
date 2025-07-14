@@ -302,7 +302,14 @@ update shared msg model =
                     model.createNetworkState
 
                 newNetworkState =
-                    { oldNetworkState | unitIds = if List.isEmpty updatedUnit then Nothing else Just updatedUnit }
+                    { oldNetworkState
+                        | unitIds =
+                            if List.isEmpty updatedUnit then
+                                Nothing
+
+                            else
+                                Just updatedUnit
+                    }
             in
             ( { model | unitSelect = newSelect, createNetworkState = newNetworkState }
             , E.sendCmd <| Cmd.map UnitSelectMsg selectCmd
@@ -530,7 +537,7 @@ update shared msg model =
                 , freqValidationState = NotAsked
                 , freqValidationError = Nothing
               }
-            , E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Частоту додано до мережі"
+            , E.none
             )
 
         ModulationsReturnedByApi (Ok modulations) ->
@@ -697,6 +704,7 @@ view user shared model =
                     [ viewHeader model
                     , viewMainLayout shared model
                     , viewFrequenciesSection model
+                    , viewActionButtons model
                     ]
                 ]
         ]
@@ -707,12 +715,6 @@ viewHeader : Model -> Html Msg
 viewHeader model =
     div [ class "flex justify-between items-center mb-[16px]" ]
         [ h2 [] [ text "Створення нової мережі" ]
-        , div [ class "flex gap-[8px]" ]
-            [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
-            , Button.new { label = "Зберегти", onClick = CreateClicked }
-                |> Button.withDisabled model.creatingNetwork
-                |> Button.view
-            ]
         ]
 
 
@@ -1020,23 +1022,37 @@ viewFrequenciesSection model =
         [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ div [ class "mb-[8px] flex justify-between items-center" ]
                 [ h4 [] [ text "Частоти" ]
-                , Button.new { label = "Додати частоту", onClick = OpenFreqSidebar }
-                    |> Button.withStyleSecondary
-                    |> Button.view
+                , button
+                    [ title "Додати частоту"
+                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                    , onClick OpenFreqSidebar
+                    ]
+                    [ i [ class "bi bi-plus-lg" ] [] ]
                 ]
             , div [] (fieldError "freqs" model.formErrors)
             , if List.isEmpty model.createNetworkState.freqs then
-                div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
-                    [ div [ class "text-center" ]
-                        [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
-                        , div [ class "text-sm" ]
-                            [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
+                div [ class "flex flex-col items-center justify-center h-48 border-2 border-dashed border-border rounded-lg text-muted-foreground bg-muted/20" ]
+                    [ h3 [ class "text-lg font-semibold" ] [ text "Потрібно додати частоти" ]
+                    , p [ class "text-sm text-muted-foreground/80" ] [ text "Збереження неможливе без хоча б однієї частоти." ]
+                    , div [ class "flex justify-center mt-3" ]
+                        [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.withIcon [ i [ class "bi bi-plus-lg" ] [] ]
+                            |> Button.view
                         ]
                     ]
 
               else
                 div [ class "space-y-2" ]
-                    (List.indexedMap viewFrequencyRow model.createNetworkState.freqs)
+                    (List.indexedMap viewFrequencyRow model.createNetworkState.freqs
+                        ++ [ div [ class "flex justify-center mt-3" ]
+                                [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
+                                    |> Button.withStyleSecondary
+                                    |> Button.withIcon [ i [ class "bi bi-plus-lg" ] [] ]
+                                    |> Button.view
+                                ]
+                           ]
+                    )
             ]
         ]
 
@@ -1122,7 +1138,7 @@ viewFreqSidebar shared model =
                     ]
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип частоти*" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип" ]
                 , let
                     selectedItem =
                         Select.basicMenuItem
@@ -1140,7 +1156,7 @@ viewFreqSidebar shared model =
                             model.freqKindSelect.state
                             model.freqKindSelect.items
                             "Виберіть тип"
-                            defaultOptions
+                            { defaultOptions | clearable = False }
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
@@ -1205,6 +1221,29 @@ viewFreqSidebar shared model =
     ]
 
 
+viewActionButtons : Model -> Html Msg
+viewActionButtons model =
+    let
+        isSaveDisabled =
+            model.creatingNetwork || List.isEmpty model.createNetworkState.freqs
+
+        disabledTooltip =
+            if isSaveDisabled then
+                "Для збереження необхідно додати хоча б одну частоту"
+
+            else
+                ""
+    in
+    div [ class "flex justify-end gap-[8px] mt-[16px]" ]
+        [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
+        , div [ Attr.title disabledTooltip ]
+            [ Button.new { label = "Зберегти", onClick = CreateClicked }
+                |> Button.withDisabled isSaveDisabled
+                |> Button.view
+            ]
+        ]
+
+
 
 -- Helper function to create the main info block for creation
 
@@ -1217,7 +1256,7 @@ createMainInfoBlock createReq shared model =
         ]
     , div [ class "space-y-3" ]
         [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання*:" ]
             , div [ class "col-span-2" ]
                 ([ input
                     [ value createReq.location

@@ -137,7 +137,7 @@ view shared user model =
     let
         labels =
             [ sup
-                [ class "text-primary ms-2 fs-6 d-inline-block"
+                [ class "text-action ms-2 fs-6 d-inline-block"
                 , style "transform" "translateY(-10px)"
                 ]
                 [ i [ class "bi bi-signal" ] []
@@ -148,7 +148,7 @@ view shared user model =
                     [ text " підтримка" ]
                 ]
             , sup
-                [ class "text-primary ms-2 fs-6 d-inline-block"
+                [ class "text-action ms-2 fs-6 d-inline-block"
                 , style "transform" "translateY(-10px)"
                 ]
                 [ span

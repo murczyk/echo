@@ -2385,7 +2385,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo model =
                         div
                             [ style "font-size" "2rem"
                             , classList
-                                [ ( "text-primary opacity-75", unreadMessagesCounter > 0 )
+                                [ ( "text-action opacity-75", unreadMessagesCounter > 0 )
                                 , ( "opacity-50", unreadMessagesCounter == 0 )
                                 ]
                             ]
