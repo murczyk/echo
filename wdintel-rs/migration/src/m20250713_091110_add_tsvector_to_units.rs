@@ -24,9 +24,13 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
-        db.execute_unprepared("DROP INDEX IF EXISTS sigint_unit_tsv_idx;").await?;
+        db.execute_unprepared("DROP INDEX IF EXISTS sigint_unit_tsv_idx;")
+            .await?;
 
-        db.execute_unprepared("ALTER TABLE sigint_unit DROP COLUMN search_tsv;").await?;
+        db.execute_unprepared(
+            "ALTER TABLE sigint_unit DROP COLUMN search_tsv;",
+        )
+        .await?;
 
         Ok(())
     }
