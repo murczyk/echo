@@ -40,6 +40,7 @@ pub use super::sigint_network_freq_changelog::Entity as SigintNetworkFreqChangel
 pub use super::sigint_network_post::Entity as SigintNetworkPost;
 pub use super::sigint_network_unit::Entity as SigintNetworkUnit;
 pub use super::sigint_network_unit_changelog::Entity as SigintNetworkUnitChangelog;
+pub use super::sigint_origin::Entity as SigintOrigin;
 pub use super::sigint_peleng::Entity as SigintPeleng;
 pub use super::sigint_post::Entity as SigintPost;
 pub use super::sigint_saved_filter::Entity as SigintSavedFilter;

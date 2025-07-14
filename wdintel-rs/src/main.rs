@@ -222,6 +222,10 @@ pub struct OneoffMergeNetworksPs {
 pub struct OneoffImportEtalonDataPs {
     #[arg(long, value_enum)]
     pub path: String,
+    #[arg(long, value_enum)]
+    pub import_type: String,
+    #[arg(long, value_enum)]
+    pub origin: String,
     #[arg(long, action)]
     pub autocommit: Option<bool>,
 }
@@ -495,6 +499,8 @@ fn main() -> Result<(), AppError> {
             crate::sigint::import::oneoff_import_etalon_data(
                 mode,
                 ps.path,
+                ps.origin,
+                ps.import_type,
                 ps.autocommit.unwrap_or(false),
             )
         }

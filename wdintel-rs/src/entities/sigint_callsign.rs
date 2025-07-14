@@ -23,6 +23,8 @@ pub struct Model {
     pub developing: bool,
     #[sea_orm(column_type = "Text")]
     pub radio_freq: String,
+    pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -31,6 +33,14 @@ pub enum Relation {
     SigintCallsignBind,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
     SigintCallsignChangelog,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
     #[sea_orm(
         belongs_to = "super::sigint_unit::Entity",
         from = "Column::UnitId",
@@ -58,6 +68,12 @@ impl Related<super::sigint_callsign_bind::Entity> for Entity {
 impl Related<super::sigint_callsign_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintCallsignChangelog.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 

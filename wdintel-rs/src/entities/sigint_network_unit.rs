@@ -13,6 +13,8 @@ pub struct Model {
     pub network_id: i64,
     pub unit_id: i64,
     pub created_at: DateTime,
+    pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -27,6 +29,14 @@ pub enum Relation {
     SigintNetwork,
     #[sea_orm(has_many = "super::sigint_network_unit_changelog::Entity")]
     SigintNetworkUnitChangelog,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
     #[sea_orm(
         belongs_to = "super::sigint_unit::Entity",
         from = "Column::UnitId",
@@ -46,6 +56,12 @@ impl Related<super::sigint_network::Entity> for Entity {
 impl Related<super::sigint_network_unit_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkUnitChangelog.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 

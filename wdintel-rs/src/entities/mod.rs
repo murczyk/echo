@@ -43,6 +43,7 @@ pub mod sigint_network_freq_changelog;
 pub mod sigint_network_post;
 pub mod sigint_network_unit;
 pub mod sigint_network_unit_changelog;
+pub mod sigint_origin;
 pub mod sigint_peleng;
 pub mod sigint_post;
 pub mod sigint_saved_filter;

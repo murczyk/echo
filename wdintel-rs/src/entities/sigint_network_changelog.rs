@@ -22,6 +22,8 @@ pub struct Model {
     pub old_value: Option<Json>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub req: Option<Json>,
+    pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -34,11 +36,25 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintNetwork,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
 }
 
 impl Related<super::sigint_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetwork.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 

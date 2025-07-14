@@ -16,10 +16,20 @@ pub struct Model {
     pub coordinates: Option<String>,
     pub deleted: bool,
     pub created_at: DateTime,
+    pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
     #[sea_orm(has_many = "super::sigint_signal_changelog::Entity")]
     SigintSignalChangelog,
     #[sea_orm(
@@ -30,6 +40,12 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintUnit,
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
+    }
 }
 
 impl Related<super::sigint_signal_changelog::Entity> for Entity {
