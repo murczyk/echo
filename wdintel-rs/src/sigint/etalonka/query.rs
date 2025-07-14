@@ -524,7 +524,6 @@ pub async fn load_callsigns(
     let (callsigns_select, unique_callsigns_select) =
         build_callsigns_queries(groups, filter).context(h!())?;
 
-
     // Step 1. Get all active callsigns for the given network
     let active_callsigns = get_active_callsigns(
         &db,
@@ -635,7 +634,8 @@ pub async fn load_callsigns(
     let duration = start.elapsed();
     trace!(
         "[load_callsigns] Execution time: {:.2?} (network: {:?})",
-        duration, filter.network_id
+        duration,
+        filter.network_id
     );
 
     Ok(res)

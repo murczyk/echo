@@ -209,6 +209,9 @@ pub async fn create_unit(
     }
     .insert(&env.dbx)
     .await?;
+    unit_after_insert_update(&env.dbx, unit.id)
+        .await
+        .context(h!())?;
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -253,6 +256,9 @@ pub async fn update_unit(
     }
     .insert(&env.dbx)
     .await?;
+    unit_after_insert_update(&env.dbx, req.id)
+        .await
+        .context(h!())?;
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -521,4 +527,111 @@ async fn update_original_unit(
 
     unit.update(dbx).await.context(h!())?;
     Ok(())
+}
+
+/// Oneoff function to reprocess the search index for units.
+#[tokio::main]
+pub async fn oneoff_reprocess_units_search_index(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+
+    let pool = dbx.get_postgres_connection_pool();
+
+    let update_query =
+        "UPDATE sigint_unit SET search_tsv = to_tsvector('russian', name);";
+
+    sqlx::query(&update_query)
+        .execute(pool)
+        .await
+        .context(h!())?;
+
+    println!("Sigint_unit search index updated successfully.");
+
+    Ok(())
+}
+
+/// Updates the search_tsv field for a specific unit after insert or update.
+pub async fn unit_after_insert_update<'a, 'async_trait, C>(
+    txn: &'a C,
+    unit_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let statement = Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"UPDATE sigint_unit 
+                SET search_tsv = to_tsvector('russian', name) 
+                WHERE id = $1"#,
+        [unit_id.into()],
+    );
+    txn.execute(statement).await.context(h!())?;
+    Ok(())
+}
+
+/// АПІ ендпоінт для пошуку підрозділів за назвою (використовується websearch)
+///
+/// # API URL
+/// - POST: /api/sigint/unit/search
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<UnitSearchReq>`] - де [`UnitSearchReq`] Тіло запиту, що містить параметри пошуку підрозділу за назвою.
+///
+/// # Тіло запиту
+///
+/// Запит використовує структуру [`UnitSearchReq`], яка має наступні поля:
+///
+/// * `search`: `String` - пошукова строка.
+
+///
+/// # Повертає
+///
+/// У випадку успішного виконання, функція повертає `Json<ListUnitsByIdRsp>`, де [`ListUnitsByIdRsp`] - вектор підрозділів `Vec<Unit>`.
+///
+/// # Помилки
+///
+/// Функція повертає [`AppError`] у випадку виникнення помилок, таких як:
+/// * Помилки під час взаємодії з базою даних.
+/// * Недостатньо прав доступу у користувача для виконання цієї операції.
+///
+/// # Дозволи
+///
+/// Для доступу до цього ендпоінту користувач повинен мати роль: "Rer".
+#[post("/api/sigint/unit/search")]
+pub async fn units_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UnitSearchReq>,
+) -> Result<Json<ListUnitsByIdRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer"]).await?;
+
+    let search_phrase = req.search.trim();
+    if search_phrase.is_empty() {
+        return Ok(Json(ListUnitsByIdRsp { units: vec![] }));
+    }
+
+    let q = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(Expr::cust_with_values(
+            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1)",
+            vec![search_phrase.to_string()],
+        ))
+        .order_by_desc(sigint_unit::Column::Name);
+
+    // debug!(
+    //     ">find units query: {}",
+    //     q.build(DbBackend::Postgres).to_string()
+    // );
+
+    let units = q.all(&env.dbx).await.context(h!())?;
+
+    let mut res = vec![];
+    for unit in units {
+        res.push(render_unit(&unit)?);
+    }
+    Ok(Json(ListUnitsByIdRsp { units: res }))
 }

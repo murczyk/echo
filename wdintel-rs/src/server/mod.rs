@@ -300,6 +300,7 @@ pub async fn main_server(
             .service(crate::sigint::unit::update_unit)
             .service(crate::sigint::unit::delete_unit)
             .service(crate::sigint::unit::delete_unit_duplicate)
+            .service(crate::sigint::unit::units_search)
             .service(crate::sigint::callsign::list_callsigns)
             .service(crate::sigint::callsign::get_callsigns_with_units_from_inbox)
             .service(crate::sigint::callsign::create_callsign)

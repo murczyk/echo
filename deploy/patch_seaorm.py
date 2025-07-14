@@ -32,6 +32,23 @@ def patch_seaorm_02():
     with open('wdintel-rs/src/entities/signal_message.rs', 'w') as file:
         file.write(data)
 
+def patch_seaorm_03():
+    file_path = 'wdintel-rs/src/entities/sigint_unit.rs'
+    # Open the file to be patched
+    with open(file_path, 'r') as file:
+        data = file.read()
+    # Remove the attribute line that mentions "tsvector"
+    data = re.sub(r'^.*tsvector.*\n?', '', data, flags=re.MULTILINE)
+
+    # Remove the struct field line for `search_tsv`
+    data = re.sub(r'^.*search_tsv.*\n?', '', data, flags=re.MULTILINE)
+    # Write the modified content back to the file
+    with open(file_path, 'w') as file:
+        file.write(data)  
+
+    print(f"Patched: {file_path}")
+
 if __name__ == '__main__':
     patch_seaorm_01()
     patch_seaorm_02()
+    patch_seaorm_03()
