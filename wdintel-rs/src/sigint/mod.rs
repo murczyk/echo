@@ -23,6 +23,7 @@ use uuid::Uuid;
 pub mod callsign;
 pub mod etalonka;
 pub mod freq;
+pub(crate) mod import;
 pub mod network;
 pub mod post;
 pub mod restapi;

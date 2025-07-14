@@ -218,6 +218,13 @@ pub struct OneoffMergeNetworksPs {
     pub network_id_to: i64,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportEtalonDataPs {
+    pub path: String,
+    #[arg(long, action)]
+    pub autocommit: Option<bool>,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -260,6 +267,8 @@ enum Cmd {
     OneoffMergeTwoNetworks(OneoffMergeNetworksPs),
     OneoffInstall(OneoffInstallPs),
     OneoffReprocessUnitsSearchIndex,
+    OneoffImportEtalonData(OneoffImportEtalonDataPs),
+    OneoffExportEtalonData,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -480,6 +489,16 @@ fn main() -> Result<(), AppError> {
         Cmd::OneoffInstall(ps) => Ok(crate::install::mount_tmp(&ps).unwrap()),
         Cmd::OneoffReprocessUnitsSearchIndex => {
             crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
+        }
+        Cmd::OneoffImportEtalonData(ps) => {
+            crate::sigint::import::oneoff_import_etalon_data(
+                mode,
+                ps.path,
+                ps.autocommit.unwrap_or(false),
+            )
+        }
+        Cmd::OneoffExportEtalonData => {
+            crate::sigint::import::oneoff_export_etalon_data(mode)
         }
     }
 }
