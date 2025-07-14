@@ -173,7 +173,7 @@ view shared user model =
     in
     { title = "налаштування"
     , body =
-        [ div [ class "w-4/5 mx-auto bd-gutter" ]
+        [ div [ class "w-4/5 mx-auto bd-gutter mt-4" ]
             [ div [ class "row" ]
                 [ div [ class "col-12 p-0" ]
                     [ h1 [ class "py-2" ] <|

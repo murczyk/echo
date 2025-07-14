@@ -278,7 +278,7 @@ featuresBlock model shared route =
                     , class "so-visible"
                     , style "height" (String.fromInt fullHeight ++ "px")
                     ]
-                  <|
+                <|
                     [ div
                         [ id "callsign-graph-div"
                         , style "height" (String.fromInt fullHeight ++ "px")
@@ -286,7 +286,8 @@ featuresBlock model shared route =
                         []
                     , if model.loadingCallsignGraph then
                         Le.Block.Spinner.loadingSpinner
-                    else
+
+                      else
                         flip viewMaybe model.callsignGraph <|
                             \callsignGraph ->
                                 let
@@ -328,6 +329,7 @@ featuresBlock model shared route =
                                         ]
                                     ]
                     ]
+
               else
                 text ""
             ]
@@ -711,7 +713,7 @@ filtersAndMainContent user model shared route =
                 _ ->
                     div [] []
     in
-    div []
+    div [ class "" ]
         [ -- viewIf model.showReportConstructor reportConstructorBlock
           reportConstructorBlock
         , div
@@ -726,7 +728,7 @@ filtersAndMainContent user model shared route =
                 ]
                 [ RerAnalysis.Filters.leftColumn shared.isDarkMode model ]
             , div
-                [ class "border-start align-self-stretch flex-grow-1"
+                [ class "border-start align-self-stretch flex-grow-1 mt-4"
                 , id "messages-div"
                 , style "max-width" "100"
                 , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
