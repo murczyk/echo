@@ -1354,7 +1354,7 @@ pub async fn freq_exists(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<FreqExistsReq>,
-) -> Result<HttpResponse, AppError> {
+) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let login = user.id()?;
 
@@ -1381,7 +1381,7 @@ pub async fn freq_exists(
         return Err(AppError::NotFound);
     }
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(Json(()))
 }
 
 #[cfg(test)]

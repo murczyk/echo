@@ -245,7 +245,7 @@ type Msg
     | AddFreqToNetwork
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqInpDebounceMsg Debounce.Msg
-    | CheckIfFreqExistDone (Result ApiError Bool)
+    | CheckIfFreqExistDone (Result ApiError ())
     | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
 
 
@@ -745,25 +745,42 @@ viewRightColumn model =
 viewMissingFieldsBlock : Shared.Model -> Model -> Html Msg
 viewMissingFieldsBlock shared model =
     div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-        [ h5 [ class "mb-4" ] [ text "Поля відсутні в стандартній формі" ]
-        , div [ class "space-y-4" ]
-            [ div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    ([ label [ class "mb-1" ] [ text "Назва:*" ]
-                     , input
-                        [ class "form__field"
+        [ div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+            ]
+        , div [ class "network-list-container" ]
+            [ div [ class "border-t-1 border-border py-[12px] flex items-center" ]
+                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Назва:*" ]
+                , div [ class "flex-1" ]
+                    ([ input
+                        [ class "form__field h-[40px]"
                         , type_ "text"
                         , value model.createNetworkState.name
                         , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
                         , isInvalidCls "name" model.formErrors
+                        , placeholder "введіть назву"
                         ]
                         []
                      ]
                         ++ fieldError "name" model.formErrors
                     )
-                , div []
-                    [ label [ class "mb-1" ] [ text "Підрозділ (необов'язково)" ]
-                    , let
+                ]
+            , div [ class "border-t-1 border-border py-[12px] flex items-center" ]
+                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Радіостанція" ]
+                , div [ class "flex-1" ]
+                    [ input
+                        [ class "form__field h-[40px]"
+                        , value (Maybe.withDefault "" model.createNetworkState.radioStation)
+                        , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
+                        , placeholder "введіть радіостанцію"
+                        ]
+                        []
+                    ]
+                ]
+            , div [ class "border-t-1 border-border py-[12px] flex items-center" ]
+                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Підрозділ" ]
+                , div [ class "flex-1" ]
+                    [ let
                         selectedItem =
                             Maybe.map
                                 (\unitId ->
@@ -789,23 +806,14 @@ viewMissingFieldsBlock shared model =
                                 selectedItem
                                 model.unitSelect.state
                                 model.unitSelect.items
-                                "Виберіть підрозділ"
+                                "виберіть підрозділ"
                                 defaultOptions
                     ]
                 ]
-            , div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    [ label [ class "mb-1" ] [ text "Радіостанція" ]
-                    , input
-                        [ class "form__field"
-                        , value (Maybe.withDefault "" model.createNetworkState.radioStation)
-                        , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
-                        ]
-                        []
-                    ]
-                , div []
-                    [ label [ class "mb-1" ] [ text "Пости:" ]
-                    , let
+            , div [ class "border-t-1 border-border py-[12px] flex items-center" ]
+                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Пости:" ]
+                , div [ class "flex-1" ]
+                    [ let
                         selectedItems =
                             model.postsSelect.selected
                                 |> List.map
@@ -833,7 +841,7 @@ viewMissingFieldsBlock shared model =
                                 selectedItems
                                 model.postsSelect.state
                                 model.postsSelect.items
-                                "Виберіть пости"
+                                "виберіть пости"
                                 defaultOptions
                     ]
                 ]
