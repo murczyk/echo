@@ -809,7 +809,7 @@ init-new-db:
         just _print-servers; exit 1;
     fi
     scp ./deploy/wd-init.pgrestore {{ server }}:~/Downloads
-    ssh -t {{ target }} "sudo mv ~/Downloads/wd-init.pgrestore /tmp/wd_init.pgrestore"
-    ssh -t {{ target }} "sudo -u postgres psql -c 'drop database wd with (FORCE)'"
-    ssh -t {{ target }} "sudo -u postgres psql -c 'create database wd'"
-    ssh -t {{ target }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
+    ssh -t {{ server }} "sudo mv ~/Downloads/wd-init.pgrestore /tmp/wd_init.pgrestore"
+    ssh -t {{ server }} "sudo -u postgres psql -c 'drop database wd with (FORCE)'"
+    ssh -t {{ server }} "sudo -u postgres psql -c 'create database wd'"
+    ssh -t {{ server }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
