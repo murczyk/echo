@@ -31,9 +31,9 @@ pub async fn oneoff_import_etalon_data(
     file_read.read_to_end(&mut buffer).await.context(h!())?;
     let etalon = String::from_utf8_lossy(&buffer).to_string();
     let etalon: EtalonData = serde_json::from_str(&etalon).context(h!())?;
-    describe_etalon(&etalon);
 
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    describe_etalon(&etalon);
     let committed = {
         let txn = dbx.begin().await.context(h!())?;
         let ok = import_etalon_data(&txn, etalon.clone(), true)
@@ -42,30 +42,33 @@ pub async fn oneoff_import_etalon_data(
         let should_commit = ok && autocommit;
         if should_commit {
             txn.commit().await.context(h!())?;
+            info!("Import completed.")
         }
         should_commit
     };
     if !committed {
         if Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Confirm?")
+            .with_prompt("Confirm import?")
             .interact()
             .context(h!())?
         {
-            import_etalon_data(&dbx, etalon.clone(), true)
+            import_etalon_data(&dbx, etalon.clone(), false)
                 .await
                 .context(h!())?;
+            info!("Import completed.")
+        } else {
+            info!("Import aborted.")
         }
     }
     Ok(())
 }
 
 fn describe_etalon(etalon: &EtalonData) {
+    info!("------------------");
+    info!("Importing etalon data");
+    info!("- sigint_signal records: {}", etalon.sigint_signal.len());
     info!(
-        "importing sigint_signal records: {}",
-        etalon.sigint_signal.len()
-    );
-    info!(
-        "importing sigint_signal_changelog records: {}",
+        "- sigint_signal_changelog records: {}",
         etalon.sigint_signal_changelog.len()
     );
 }
@@ -159,12 +162,14 @@ where
         sigint_signal_changelog_inserts.push(insert);
     }
 
-    sigint_signal_changelog::Entity::insert_many(
-        sigint_signal_changelog_inserts,
-    )
-    .exec(txn)
-    .await
-    .context(h!())?;
+    if !sigint_signal_changelog_inserts.is_empty() {
+        sigint_signal_changelog::Entity::insert_many(
+            sigint_signal_changelog_inserts,
+        )
+        .exec(txn)
+        .await
+        .context(h!())?;
+    }
 
     let is_ok = import_warnings.is_empty();
     if !is_ok && dry_run {

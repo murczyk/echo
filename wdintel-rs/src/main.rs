@@ -220,6 +220,7 @@ pub struct OneoffMergeNetworksPs {
 
 #[derive(clap::Parser, Debug)]
 pub struct OneoffImportEtalonDataPs {
+    #[arg(long, value_enum)]
     pub path: String,
     #[arg(long, action)]
     pub autocommit: Option<bool>,
