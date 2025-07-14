@@ -90,7 +90,7 @@ type alias Model =
     , toasts : Le.Block.Toast.Model
     , createNetworkState : B.CreateNetworkReq
     , kindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
-    , unitSelect : Le.Block.Select.SelectTypeSingle Int
+    , unitSelect : Le.Block.Select.SelectType Int
     , postsSelect : Le.Block.Select.SelectType Int
     , units : RemoteData ApiError (List B.Unit)
     , addConfirmationInp : String
@@ -149,7 +149,7 @@ init route shared () =
       , unitSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-unit-state")
             , items = []
-            , selected = Nothing
+            , selected = []
             }
       , postsSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-posts-state")
@@ -290,7 +290,7 @@ update shared msg model =
                     Select.update selectMsg model.unitSelect.state
 
                 updatedUnit =
-                    Le.Block.Select.singleUpd mAct model.unitSelect.selected
+                    Le.Block.Select.multiUpdI mAct model.unitSelect.selected
 
                 newSelect =
                     { state = newState
@@ -302,7 +302,7 @@ update shared msg model =
                     model.createNetworkState
 
                 newNetworkState =
-                    { oldNetworkState | unitIds = Maybe.map List.singleton updatedUnit }
+                    { oldNetworkState | unitIds = if List.isEmpty updatedUnit then Nothing else Just updatedUnit }
             in
             ( { model | unitSelect = newSelect, createNetworkState = newNetworkState }
             , E.sendCmd <| Cmd.map UnitSelectMsg selectCmd
@@ -726,7 +726,7 @@ viewMainLayout shared model =
 
 viewLeftColumn : Shared.Model -> Model -> Html Msg
 viewLeftColumn shared model =
-    div [ class "col-span-7 flex flex-col gap-[30px]" ]
+    div [ class "col-span-7 flex flex-col gap-[16px]" ]
         [ viewMissingFieldsBlock shared model
         , viewMainInfoBlock shared model
         , viewActivityBlock shared model
@@ -748,12 +748,12 @@ viewMissingFieldsBlock shared model =
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h5 [] [ text "Поля відсутні в стандартній формі" ]
             ]
-        , div [ class "network-list-container" ]
-            [ div [ class "border-t-1 border-border py-[12px] flex items-center" ]
-                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Назва:*" ]
-                , div [ class "flex-1" ]
+        , div [ class "space-y-3" ]
+            [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Назва:*" ]
+                , div [ class "col-span-2" ]
                     ([ input
-                        [ class "form__field h-[40px]"
+                        [ class "form-input w-full h-[40px]"
                         , type_ "text"
                         , value model.createNetworkState.name
                         , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
@@ -765,11 +765,11 @@ viewMissingFieldsBlock shared model =
                         ++ fieldError "name" model.formErrors
                     )
                 ]
-            , div [ class "border-t-1 border-border py-[12px] flex items-center" ]
-                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Радіостанція" ]
-                , div [ class "flex-1" ]
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція" ]
+                , div [ class "col-span-2" ]
                     [ input
-                        [ class "form__field h-[40px]"
+                        [ class "form-input w-full h-[40px]"
                         , value (Maybe.withDefault "" model.createNetworkState.radioStation)
                         , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
                         , placeholder "введіть радіостанцію"
@@ -777,42 +777,42 @@ viewMissingFieldsBlock shared model =
                         []
                     ]
                 ]
-            , div [ class "border-t-1 border-border py-[12px] flex items-center" ]
-                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Підрозділ" ]
-                , div [ class "flex-1" ]
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи" ]
+                , div [ class "col-span-2" ]
                     [ let
-                        selectedItem =
-                            Maybe.map
-                                (\unitId ->
-                                    Select.basicMenuItem
-                                        { item = unitId
-                                        , label =
-                                            case RD.withDefault [] model.units of
-                                                units ->
-                                                    List.filter (\u -> u.id == unitId) units
-                                                        |> List.head
-                                                        |> Maybe.map .name
-                                                        |> Maybe.withDefault (String.fromInt unitId)
-                                        }
-                                )
-                                model.unitSelect.selected
+                        selectedItems =
+                            model.unitSelect.selected
+                                |> List.map
+                                    (\unitId ->
+                                        Select.basicMenuItem
+                                            { item = unitId
+                                            , label =
+                                                case RD.withDefault [] model.units of
+                                                    units ->
+                                                        List.filter (\u -> u.id == unitId) units
+                                                            |> List.head
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault (String.fromInt unitId)
+                                            }
+                                    )
 
                         defaultOptions =
                             Le.Block.Select.defaultOptions shared.isDarkMode
                       in
                       Html.map UnitSelectMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelectSingle
-                                selectedItem
+                            Le.Block.Select.renderSelect
+                                selectedItems
                                 model.unitSelect.state
                                 model.unitSelect.items
-                                "виберіть підрозділ"
+                                "виберіть підрозділи"
                                 defaultOptions
                     ]
                 ]
-            , div [ class "border-t-1 border-border py-[12px] flex items-center" ]
-                [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Пости:" ]
-                , div [ class "flex-1" ]
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+                , div [ class "col-span-2" ]
                     [ let
                         selectedItems =
                             model.postsSelect.selected
@@ -943,22 +943,13 @@ viewMainInfoBlock shared model =
 viewConfirmationBlock : Model -> Html Msg
 viewConfirmationBlock model =
     div [ class "mb-[16px]" ]
-        [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
-        , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+        [ h5 [ class "mb-3" ] [ text "Обґрунтування прив'язки" ]
+        , div [ class "space-y-3" ]
             [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-            , div [ class "flex justify-between w-full" ]
-                [ div [ class "w-[200px] flex items-center gap-2" ]
-                    [ div [ class "relative" ]
-                        [ select [ class "form-control opacity-50", disabled True ]
-                            [ option [] [ text "Виберіть частоту" ]
-                            ]
-                        , div [ class "absolute -top-2 -right-2" ]
-                            [ span
-                                [ class "text-gray-400 cursor-help"
-                                , title "Додайте хоча б одну частоту до мережі"
-                                ]
-                                [ i [ class "bi bi-question-circle" ] [] ]
-                            ]
+            , div [ class "flex justify-between items-center" ]
+                [ div [ class "w-[200px]" ]
+                    [ select [ class "form-input opacity-50", disabled True ]
+                        [ option [] [ text "" ]
                         ]
                     ]
                 , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
@@ -967,10 +958,10 @@ viewConfirmationBlock model =
                     |> Button.view
                 ]
             ]
-        , div [ class "max-h-[200px] overflow-y-auto" ]
+        , div [ class "max-h-[200px] overflow-y-auto space-y-2" ]
             (List.map
                 (\description ->
-                    div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                    div [ class "min-h-[50px] p-3 bg-muted rounded-md" ]
                         [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
                             [ span [] [ text "Для мережі" ]
                             ]
@@ -986,18 +977,20 @@ viewConfirmationBlock model =
 viewSignsBlock : Model -> Html Msg
 viewSignsBlock model =
     div []
-        [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
-        , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+        [ h5 [ class "mb-3" ] [ text "Розвідувальні ознаки" ]
+        , div [ class "space-y-3" ]
             [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-            , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
-                |> Button.withStyleSecondary
-                |> Button.withDisabled (String.isEmpty model.addSignsInp)
-                |> Button.view
+            , div [ class "flex justify-end" ]
+                [ Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
+                    |> Button.withStyleSecondary
+                    |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                    |> Button.view
+                ]
             ]
-        , div [ class "max-h-[200px] overflow-y-auto" ]
+        , div [ class "max-h-[200px] overflow-y-auto space-y-2" ]
             (List.map
                 (\description ->
-                    div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                    div [ class "min-h-[50px] p-3 bg-muted rounded-md" ]
                         [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
                             [ span [] [ text "Для мережі" ]
                             ]
@@ -1222,15 +1215,14 @@ createMainInfoBlock createReq shared model =
         [ h5 []
             [ text "Згідно форми" ]
         ]
-    , div
-        [ class "network-list-container" ]
-        [ div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Район функціонування/розгортання:" ]
-            , div [ class "flex-1" ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
+            , div [ class "col-span-2" ]
                 ([ input
                     [ value createReq.location
                     , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
-                    , class "form__field"
+                    , class "form-input w-full  h-[40px]"
                     , placeholder "введіть район функціонування/розгортання"
                     , isInvalidCls "location" model.formErrors
                     ]
@@ -1239,42 +1231,42 @@ createMainInfoBlock createReq shared model =
                     ++ fieldError "location" model.formErrors
                 )
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium  basis-[33%]" ] [ text "Призначення:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.purpose
                 , onInput (\newPurpose -> UpdateNetworkState (\state -> { state | purpose = Just newPurpose }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть призначення"
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.operationMode
                 , onInput (\newOperationMode -> UpdateNetworkState (\state -> { state | operationMode = Just newOperationMode }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть режим роботи радіомережі"
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Характер роботи:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.operationType
                 , onInput (\newOperationType -> UpdateNetworkState (\state -> { state | operationType = Just newOperationType }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть характер роботи"
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.operationPeriod
                 , onInput (\newOperationPeriod -> UpdateNetworkState (\state -> { state | operationPeriod = Just newOperationPeriod }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть період функціонування"
                 ]
                 []
