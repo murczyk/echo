@@ -271,72 +271,65 @@ featuresBlock model shared route =
                 fullHeight =
                     600
             in
-            [ div
-                [ style "position" "relative"
-                , style "transform" "translateZ(0)"
-                , classList
-                    [ ( "so-visible", model.unfoldCallsignGraph )
-                    , ( "so-hidden", not model.unfoldCallsignGraph )
-                    ]
-                , style "height"
-                    (if model.unfoldCallsignGraph then
-                        String.fromInt fullHeight ++ "px"
-
-                     else
-                        "10px"
-                    )
-                ]
-              <|
-                [ div
-                    [ id "callsign-graph-div"
+            [ if model.unfoldCallsignGraph then
+                div
+                    [ style "position" "relative"
+                    , style "transform" "translateZ(0)"
+                    , class "so-visible"
                     , style "height" (String.fromInt fullHeight ++ "px")
                     ]
-                    []
-                , if model.loadingCallsignGraph then
-                    Le.Block.Spinner.loadingSpinner
+                  <|
+                    [ div
+                        [ id "callsign-graph-div"
+                        , style "height" (String.fromInt fullHeight ++ "px")
+                        ]
+                        []
+                    , if model.loadingCallsignGraph then
+                        Le.Block.Spinner.loadingSpinner
+                    else
+                        flip viewMaybe model.callsignGraph <|
+                            \callsignGraph ->
+                                let
+                                    shown =
+                                        List.length callsignGraph.graph.nodes
 
-                  else
-                    flip viewMaybe model.callsignGraph <|
-                        \callsignGraph ->
-                            let
-                                shown =
-                                    List.length callsignGraph.graph.nodes
-
-                                overall =
-                                    model.callsignGraph
-                                        |> Maybe.andThen .overallCount
-                                        |> def 0
-                            in
-                            div [ class "mt-2 d-flex justify-content-center align-items-center" ]
-                                [ div
-                                    [ class "me-2"
-                                    , style "margin-bottom" ".125rem"
-                                    ]
-                                    [ text <|
-                                        "показано "
-                                            ++ String.fromInt shown
-                                            ++ " з "
-                                            ++ String.fromInt overall
-                                            ++ " позивних "
-                                    ]
-                                , div [ class "form-check form-switch" ]
-                                    [ input
-                                        [ class "form-check-input"
-                                        , type_ "checkbox"
-                                        , attribute "role" "switch"
-                                        , id "callsign-graph-load-all"
-                                        , checked model.callsignGraphNolimit
-                                        , onClick ToggleCallsignGraphNolimit
+                                    overall =
+                                        model.callsignGraph
+                                            |> Maybe.andThen .overallCount
+                                            |> def 0
+                                in
+                                div [ class "mt-2 d-flex justify-content-center align-items-center" ]
+                                    [ div
+                                        [ class "me-2"
+                                        , style "margin-bottom" ".125rem"
                                         ]
-                                        []
-                                    , label
-                                        [ class "form-check-label"
-                                        , for "callsign-graph-load-all"
+                                        [ text <|
+                                            "показано "
+                                                ++ String.fromInt shown
+                                                ++ " з "
+                                                ++ String.fromInt overall
+                                                ++ " позивних "
                                         ]
-                                        [ text "показувати всі" ]
+                                    , div [ class "form-check form-switch" ]
+                                        [ input
+                                            [ class "form-check-input"
+                                            , type_ "checkbox"
+                                            , attribute "role" "switch"
+                                            , id "callsign-graph-load-all"
+                                            , checked model.callsignGraphNolimit
+                                            , onClick ToggleCallsignGraphNolimit
+                                            ]
+                                            []
+                                        , label
+                                            [ class "form-check-label"
+                                            , for "callsign-graph-load-all"
+                                            ]
+                                            [ text "показувати всі" ]
+                                        ]
                                     ]
-                                ]
-                ]
+                    ]
+              else
+                text ""
             ]
     in
     div []
@@ -676,7 +669,7 @@ filtersAndMainContent user model shared route =
                             Encode.list Encode.string model.unitsSelected
                     in
                     div
-                        (class "h-100 position-relative"
+                        (class "h-full relative"
                             :: (if not model.unfoldMapBlock then
                                     [ class "h-0" ]
 

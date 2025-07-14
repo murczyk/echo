@@ -1,0 +1,64 @@
+/* Toast Notification Styles */
+.toasts {
+    position: relative;
+    z-index: 100;
+}
+
+.toasts .toasts__wrap {
+    position: absolute;
+    top: 40px;
+    right: 10px;
+}
+
+.toasts .toast {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 5px #3ac47d solid;
+    min-width: 350px;
+}
+
+.toasts .fa-times {
+    font-size: 1rem;
+}
+
+.toasts .toast-header {
+    text-transform: uppercase;
+    font-size: .65rem;
+    font-weight: 800;
+    border-bottom: none;
+    padding: 0.25rem 0.8rem 0 1.75rem;
+    border-bottom: none;
+    font-family: Lato, Montserrat, "Roboto", sans-serif;
+    justify-content: space-between;
+}
+
+.toasts .toast-body {
+    padding: 0 1.75rem 0.75rem 1.75rem;
+}
+
+.toasts small {
+    font-weight: italic;
+}
+
+.toasts .toast--info {
+    border-left-color: #3ac47d;
+}
+
+.toasts .toast--warning {
+    border-left-color: #f7b924;
+}
+
+.toasts .toast--error {
+    border-left-color: #d92550;
+}
+
+.toasts .toast-close-btn {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #888;
+    cursor: pointer;
+}

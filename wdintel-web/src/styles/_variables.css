@@ -1,0 +1,142 @@
+/* Variables */
+/* Description: CSS custom properties for theming and colors */
+
+@theme {
+    --breakpoint-xs: 30rem;
+    --breakpoint-2xl: 100rem;
+    --breakpoint-3xl: 120rem;
+}
+
+@theme inline {
+    /* --color-*: initial; */
+    --color-background: var(--background-color);
+    --color-column: var(--column-color);
+    --color-card: var(--card-color);
+    --color-border: var(--border-color);
+    --color-border-selected: var(--border-selected-color);
+    --color-separator: var(--separator-color);
+    --color-icons: var(--icons-color);
+    --color-tag: var(--tag-color);
+    --color-tag-selected: var(--tag-selected-color);
+    --color-text: var(--text-color);
+    --color-text-disabled: var(--text-disabled-color);
+    --color-watermark: var(--watermark-color);
+    --color-action: var(--action-color);
+    --color-action-hovered: var(--action-hovered-color);
+    --color-w: #fff;
+    --color-button-text: var(--button-text-color);
+    --color-toggle: var(--toggle-color);
+    --color-toggle-bal: var(--toggle-ball-color);
+    --color-toggle-selected: var(--toggle-selected-color);
+    --color-toggle-selected-ball: var(--toggle-selected-ball-color);
+    --color-bw: var(--bw-color);
+
+    --text-*: initial;
+    --text-xs: 12px;
+    --text-sm: 13px;
+    --text-base: 14px;
+    --text-lg: 16px;
+}
+
+:root {
+    --bd-coyote: #9c7a54;
+    --bd-oak-barrel: #6f5333;
+    --bd-coyote-rgb: 156, 122, 84;
+    --sl-tooltip-background-color: var(--bs-body-color);
+    --alto-color: #D9D9D9;
+    --athens-gray-color: #F8F9FB;
+    --lynch-color: #6F839D;
+    --geyser-color: #D2DAE5;
+    --link-water-color: #E2EBF7;
+    --mine-shaft-color: #1F1F1F;
+    --shark-color: #2C2C2E;
+    --pigeon-post-color: #A4BAD7;
+    --mid-gray-color: #5E5E64;
+
+    --neutral-100: white;
+    --neutral-200: #F8F9FB;
+    --neutral-300: #EFF0F1;
+    --neutral-400: #D9D9D9;
+    --neutral-600: #5E5E64;
+    --neutral-800: #2C2C2E;
+    --neutral-900: #1F1F1F;
+
+    --teal-blue-light: #eaf0f4;
+    --teal-blue-light-hover: #dfe9ef;
+    --teal-blue-light-active: #bed1dd;
+    --teal-blue-normal: #2c6c91;
+    --teal-blue-normal-hover: #286183;
+    --teal-blue-normal-active: #235674;
+    --teal-blue-dark: #21516d;
+    --teal-blue-dark-hover: #1a4157;
+    --teal-blue-dark-active: #143141;
+    --teal-blue-darker: #0f2633;
+
+    --baby-blue-light: #f4fafe;
+    --baby-blue-light-hover: #eff8fe;
+    --baby-blue-light-active: #def0fc;
+    --baby-blue-normal: #93cdf6;
+    --baby-blue-normal-hover: #84b9dd;
+    --baby-blue-normal-active: #76a4c5;
+    --baby-blue-dark: #6e9ab9;
+    --baby-blue-dark-hover: #587b94;
+    --baby-blue-dark-active: #425c6f;
+    --baby-blue-darker: #334856;
+
+    --ochre-light: #fbf3e8;
+    --ochre-light-hover: #f8eddd;
+    --ochre-light-active: #f1dab9;
+    --ochre-normal: #d3871d;
+    --ochre-normal-hover: #be7a1a;
+    --ochre-normal-active: #a96c17;
+    --ochre-dark: #9e6516;
+    --ochre-dark-hover: #7f5111;
+    --ochre-dark-active: #5f3d0d;
+    --ochre-darker: #4a2f0a;
+
+    --bw-color: white;
+
+    --background-color: var(--neutral-300);
+    --column-color: white;
+    --card-color: var(--athens-gray-color);
+    --border-color: var(--link-water-color);
+    --border-selected-color: var(--ochre-normal);
+    --separator-color: var(--link-water-color);
+    --icons-color: var(--lynch-color);
+    --tag-color: white;
+    --tag-selected-color: var(--ochre-light-active);
+    --text-color: black;
+    --text-disabled-color: var(--geyser-color);
+    --watermark-color: var(--neutral-400);
+
+    --action-color: var(--teal-blue-normal);
+    --action-hovered-color: var(--teal-blue-normal-hover);
+    --button-text-color: white;
+    --toggle-color: white;
+    --toggle-ball-color: var(--neutral-400);
+    --toggle-selected-color: var(--ochre-normal);
+    --toggle-selected-ball-color: white;
+}
+
+html[data-bs-theme="dark"] {
+    --sl-tooltip-background-color: var(--bs-secondary-bg);
+    --bs-body-color: white;
+
+    --background-color: var(--mine-shaft-color);
+    --column-color: black;
+    --card-color: var(--shark-color);
+    --border-color: var(--mid-gray-color);
+    --border-selected-color: #BC8C56;
+    --separator-color: var(--mid-gray-color);
+    --icons-color: var(--pigeon-post-color);
+    --tag-color: black;
+    --tag-selected-color: #FABA72;
+    --text-color: white;
+    --watermark-color: var(--neutral-600);
+    --action-color: var(--baby-blue-normal);
+    --action-hovered-color: var(--baby-blue-normal-hover);
+    --button-text-color: black;
+    --toggle-color: black;
+    --bw-color: var(--bs-body-bg);
+    --toggle-selected-color: var(--ochre-normal);
+}

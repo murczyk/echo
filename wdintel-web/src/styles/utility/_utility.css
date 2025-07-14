@@ -1,0 +1,17 @@
+/* Utility Classes */
+/* TODO: remove this classes later */
+.h-0 {
+    height: 0 !important;
+}
+
+.so-visible {
+    visibility: visible;
+    opacity: 1;
+    transition: opacity .3s ease;
+}
+
+.so-hidden {
+    visibility: hidden;
+    opacity: 0;
+    transition: visibility 0s .3s, opacity .3s ease;
+}

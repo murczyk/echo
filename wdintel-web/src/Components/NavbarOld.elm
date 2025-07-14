@@ -139,8 +139,8 @@ navBar user shared activeName props =
                         ]
                         []
                     ]
-                , div [ class "flex items-center space-x-6" ]
-                    [ ul [ class "flex items-center space-x-6" ] menuItems
+                , div [ class "flex items-center space-x-4" ]
+                    [ ul [ class "flex items-center space-x-4" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
                     [ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode ]

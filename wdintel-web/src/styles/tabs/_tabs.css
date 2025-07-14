@@ -1,0 +1,60 @@
+/* Tabs Styles */
+/* Description: Custom tabs component that overrides Bootstrap */
+
+/* Tabs Container */
+.tabs-container {
+    border-bottom: 1px solid #e5e7eb !important;
+}
+
+/* Tabs Navigation */
+.tabs-nav {
+    display: flex !important;
+    gap: 2rem !important;
+}
+
+/* Tab Button */
+.tab-button {
+    position: relative !important;
+    padding: 0.75rem 0.25rem !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    transition: color 0.2s ease-in-out !important;
+    outline: none !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+}
+
+/* Tab Button Focus State */
+.tab-button:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Active Tab Button */
+.tab-button.active {
+    color: #2563eb !important;
+}
+
+/* Inactive Tab Button */
+.tab-button:not(.active) {
+    color: #6b7280 !important;
+}
+
+/* Hover State for Inactive Tabs */
+.tab-button:not(.active):hover {
+    color: #374151 !important;
+}
+
+/* Tab Indicator - Active tab underline */
+.tab-indicator {
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 0.125rem !important;
+    background-color: #2563eb !important;
+    border-radius: 9999px !important;
+}
