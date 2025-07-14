@@ -5,13 +5,13 @@ use crate::error::AppError;
 use crate::h;
 use crate::sigint::import::types::*;
 use crate::types::Mode;
-use anyhow::{bail, Context};
+use anyhow::Context;
 use chrono::Utc;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use log::{info, warn};
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, EntityTrait, NotSet, QueryFilter, Set,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, NotSet,
+    QueryFilter, Set, TransactionTrait,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -60,7 +60,14 @@ pub async fn oneoff_import_etalon_data(
 }
 
 fn describe_etalon(etalon: &EtalonData) {
-    info!("importing sigint_signal records: ", etalon.sigint_signal.);
+    info!(
+        "importing sigint_signal records: {}",
+        etalon.sigint_signal.len()
+    );
+    info!(
+        "importing sigint_signal_changelog records: {}",
+        etalon.sigint_signal_changelog.len()
+    );
 }
 
 #[tokio::main]
