@@ -35,14 +35,28 @@ import View exposing (View)
 
 -- VALIDATION
 
+type alias ValidationResult =
+    { errors : Dict String String
+    , isValid : Bool
+    }
 
-validateCreateNetworkReq : B.CreateNetworkReq -> Dict String String
+validateCreateNetworkReq : B.CreateNetworkReq -> ValidationResult
 validateCreateNetworkReq req =
-    Dict.empty
-        |> validateRequiredString "name" req.name
-        |> validateRequiredString "location" req.location
-        |> validateRequiredFreqs "freqs" req.freqs
+    let
+        errors =
+            Dict.empty
+                |> validateRequiredString "name" req.name
+                |> validateRequiredString "location" req.location
+                |> validateRequiredFreqs "freqs" req.freqs
+    in
+    { errors = errors
+    , isValid = Dict.isEmpty errors
+    }
 
+-- Helper function to check if form is valid for save button
+isFormValid : B.CreateNetworkReq -> Bool
+isFormValid req =
+    not (String.trim req.name == "" || String.trim req.location == "" || List.isEmpty req.freqs)
 
 validateRequiredString : String -> String -> Dict String String -> Dict String String
 validateRequiredString fieldName value errors =
@@ -234,6 +248,7 @@ type Msg
     | DescriptionAddClickedByUser B.NetworkDescrType
     | CancelClicked
     | CreateClicked
+    | ValidateField String
     | NetworkCreated (Result ApiError B.Network)
       -- Frequency sidebar messages
     | OpenFreqSidebar
@@ -427,16 +442,33 @@ update shared msg model =
 
         CreateClicked ->
             let
-                validationErrors =
+                validationResult =
                     validateCreateNetworkReq model.createNetworkState
             in
-            if Dict.isEmpty validationErrors then
+            if validationResult.isValid then
                 ( { model | creatingNetwork = True, formErrors = Dict.empty }
                 , E.createNetwork NetworkCreated model.createNetworkState
                 )
 
             else
-                ( { model | formErrors = validationErrors }, E.none )
+                ( { model | formErrors = validationResult.errors }, E.none )
+
+        ValidateField fieldName ->
+            let
+                validationResult =
+                    validateCreateNetworkReq model.createNetworkState
+                
+                fieldError =
+                    Dict.get fieldName validationResult.errors
+                
+                updatedErrors =
+                    case fieldError of
+                        Just error ->
+                            Dict.insert fieldName error model.formErrors
+                        Nothing ->
+                            Dict.remove fieldName model.formErrors
+            in
+            ( { model | formErrors = updatedErrors }, E.none )
 
         NetworkCreated (Ok network) ->
             ( { model | creatingNetwork = False }
@@ -752,13 +784,17 @@ viewMissingFieldsBlock shared model =
             ]
         , div [ class "space-y-3" ]
             [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Назва:*" ]
+                [ span [ class "text-[13px] font-medium" ] 
+                    [ text "Назва"
+                    , span [ class "text-red-500 ml-1" ] [ text "*" ]
+                    ]
                 , div [ class "col-span-2" ]
                     ([ input
                         [ class "form-input w-full h-[40px]"
                         , type_ "text"
                         , value model.createNetworkState.name
                         , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
+                        , onBlur (ValidateField "name")
                         , isInvalidCls "name" model.formErrors
                         , placeholder "введіть назву"
                         ]
@@ -1225,12 +1261,17 @@ viewActionButtons : Model -> Html Msg
 viewActionButtons model =
     let
         isSaveDisabled =
-            model.creatingNetwork || List.isEmpty model.createNetworkState.freqs
+            model.creatingNetwork || not (isFormValid model.createNetworkState)
 
         disabledTooltip =
-            if isSaveDisabled then
-                "Для збереження необхідно додати хоча б одну частоту"
-
+            if model.creatingNetwork then
+                "Збереження..."
+            else if String.trim model.createNetworkState.name == "" then
+                "Введіть назву мережі"
+            else if String.trim model.createNetworkState.location == "" then
+                "Введіть район функціонування/розгортання"
+            else if List.isEmpty model.createNetworkState.freqs then
+                "Додайте хоча б одну частоту"
             else
                 ""
     in
@@ -1256,11 +1297,15 @@ createMainInfoBlock createReq shared model =
         ]
     , div [ class "space-y-3" ]
         [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання*:" ]
+            [ span [ class "text-[13px] font-medium" ] 
+                [ text "Район функціонування/розгортання"
+                , span [ class "text-red-500 ml-1" ] [ text "*" ]
+                ]
             , div [ class "col-span-2" ]
                 ([ input
                     [ value createReq.location
                     , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
+                    , onBlur (ValidateField "location")
                     , class "form-input w-full  h-[40px]"
                     , placeholder "введіть район функціонування/розгортання"
                     , isInvalidCls "location" model.formErrors

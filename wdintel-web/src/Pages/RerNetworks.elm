@@ -1459,47 +1459,47 @@ view dark shared user model =
             [ if model.showSidebar then
                 leftPanel shared model
 
-                  else
-                    text ""
-                , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
-                    [ div [ class "flex justify-between mb-[16px] w-full" ]
-                        [ div [ class "flex gap-[16px]" ]
-                            [ h1 []
-                                [ text "мережі" ]
-                            , dateAndPanelsBlock dark model
-                            ]
-                        , div [ class "flex gap-[16px]" ]
-                            [ Button.new { label = "Create New Network", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
-                            , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
-                            ]
+              else
+                text ""
+            , div [ class "grow  px-[32px] py-[16px] overflow-auto" ]
+                [ div [ class "flex justify-between mb-[16px] w-full" ]
+                    [ div [ class "flex gap-[16px]" ]
+                        [ h1 []
+                            [ text "мережі" ]
+                        , dateAndPanelsBlock dark model
                         ]
-                    , case model.networksMergeStatus of
-                        CalculatedSuggestions (x :: xs) ->
-                            div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
-                                [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
-                                , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
-                                    |> Button.withStyleSecondary
-                                    |> Button.view
-                                ]
+                    , div [ class "flex gap-[16px]" ]
+                        [ Button.new { label = "Створити", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
+                        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+                        ]
+                    ]
+                , case model.networksMergeStatus of
+                    CalculatedSuggestions (x :: xs) ->
+                        div [ class "w-full bg-[#F5F28A]/[40%] h-[70px] mb-[16px] border-1 border-[#F5F28A] rounded-lg flex justify-between items-center px-[16px] py-[8px] font-medium" ]
+                            [ text <| (String.fromInt (List.length xs + 1) ++ " неопрацьованих пропозицій по злиттю мереж")
+                            , Button.new { label = "Поєднати мережі", onClick = NetworksMergeStart }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                            ]
+
+                    _ ->
+                        text ""
+                , contentBlock shared model
+                ]
+            , let
+                isOpen =
+                    case model.networksMergeStatus of
+                        Merging _ _ _ ->
+                            True
 
                         _ ->
-                            text ""
-                    , contentBlock shared model
-                    ]
-                , let
-                    isOpen =
-                        case model.networksMergeStatus of
-                            Merging _ _ _ ->
-                                True
-
-                            _ ->
-                                False
-                  in
-                  Sidebar.view
-                    isOpen
-                    NetworksMergeFinish
-                    (networksMergeSidebarContent model)
-                ]
+                            False
+              in
+              Sidebar.view
+                isOpen
+                NetworksMergeFinish
+                (networksMergeSidebarContent model)
+            ]
         ]
     }
 
