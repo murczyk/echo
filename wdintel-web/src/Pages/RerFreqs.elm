@@ -30,7 +30,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.NetworkWorkflow as NetworkWorkflow
 import RerFreqs.Table as Table
@@ -183,6 +183,7 @@ init _ =
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
+            , networkWorkflowTab = RerFreqs.Model.Search
             }
     in
     ( m2
@@ -1537,6 +1538,9 @@ update shared msg model =
                     }
             in
             ( m2, E.sendCmd <| loadFreqs m2 False )
+
+        NetworkWorkflowTabClicked tab ->
+            ( { model | networkWorkflowTab = tab }, E.none )
 
 
 changeSortOrder : B.ListFreqsSortBy -> B.ListFreqsSortBy

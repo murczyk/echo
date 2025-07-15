@@ -83,4 +83,5 @@ type Msg
     | ToggleBattalionExpanded String String String String
     | FilterUnitMsg String
     | ClearAllFilters
+    | NetworkWorkflowTabClicked RerFreqs.Model.NetworkWorkflowTab
     | NetworkUpdated String (Result ApiError B.Network)

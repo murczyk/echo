@@ -51,12 +51,73 @@ renderNetworkSidebar model shared =
     [ div [ class "p-4 w-full flex flex-col overflow-y-auto min-h-[80vh] max-h-screen" ]
         (case model.networkWorkflowStatus of
             SelectingNetwork freq searchState ->
-                h3 [ class "mb-[16px]!" ] [ text ("Прив'язка мережі до частоти " ++ freq) ]
-                    :: viewSelectingNetwork freq searchState model shared
+                let
+                    tabButton tab label =
+                        button
+                            [ onClick (NetworkWorkflowTabClicked tab)
+                            , class "px-4 py-2 text-sm font-medium border-b-2"
+                            , classList [ ( "border-blue-500 text-blue-600", model.networkWorkflowTab == tab ), ( "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300", model.networkWorkflowTab /= tab ) ]
+                            ]
+                            [ text label ]
+                in
+                [ h3 [ class "mb-4 font-semibold" ] [ text ("Прив'язка до частоти: " ++ freq) ]
+                , div [ class "border-b border-gray-200" ]
+                    [ nav [ class "-mb-px flex space-x-8" ]
+                        [ tabButton RerFreqs.Model.Search "Пошук та прив'язка"
+                        , tabButton RerFreqs.Model.Manage ("Уже прив'язані (" ++ String.fromInt (List.length (getLinkedNetworks freq model)) ++ ")")
+                        ]
+                    ]
+                ]
+                    ++ (case model.networkWorkflowTab of
+                            RerFreqs.Model.Search ->
+                                viewSelectingNetwork freq searchState model shared
+
+                            RerFreqs.Model.Manage ->
+                                viewManagingLinks freq model shared
+                       )
 
             NotStarted ->
                 []
         )
+    ]
+
+
+getLinkedNetworks : String -> Model -> List B.Network
+getLinkedNetworks freq model =
+    ListX.find (\f -> f.freq == freq) model.freqs
+        |> Maybe.map .networkIds
+        |> Maybe.map (List.filterMap (\id -> Dict.get id model.networks))
+        |> Maybe.withDefault []
+
+
+viewManagingLinks : String -> Model -> Shared.Model -> List (Html Msg)
+viewManagingLinks freq model shared =
+    let
+        linkedNetworks =
+            getLinkedNetworks freq model
+    in
+    [ div [ class "py-4" ]
+        [ p [ class "text-sm text-gray-600 mb-4" ] [ text "Ця частота прив'язана до наступних мереж. Натисніть на олівець, щоб перейти до редагування мережі." ]
+        , if List.isEmpty linkedNetworks then
+            div [ class "text-center py-8" ] [ text "До цієї частоти не прив'язано жодної мережі." ]
+
+          else
+            div [ class "space-y-2" ]
+                (List.map
+                    (\network_ ->
+                        div
+                            [ class "w-full p-2  border border-border rounded-sm text-text flex justify-between items-center"
+                            ]
+                            [ NetworksUtils.renderNetwork network_ model.masterUnits
+                            , div [ class "flex gap-2" ]
+                                [ a [ class "text-blue-500 hover:underline", Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network_.id }, query = Dict.empty, hash = Nothing }, target "_blank" ] [ i [ class "bi bi-pencil" ] [] ]
+                                , button [ class "text-red-500 hover:underline", onClick (FreqRemoveFromExistingNetwork freq network_) ] [ i [ class "bi bi-trash" ] [] ]
+                                ]
+                            ]
+                    )
+                    linkedNetworks
+                )
+        ]
     ]
 
 
@@ -65,46 +126,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
     [ div [ class "flex flex-col grow relative" ]
         [ HtmlX.viewIf model.networkAddLoading <|
             span [ class "absolute top-[50%] left-[50%] -translate-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
-        , let
-            networksWithThisFreq =
-                ListX.find (\freq_ -> freq_.freq == freq) model.freqs
-                    |> (\mFreq ->
-                            case mFreq of
-                                Just freq_ ->
-                                    Just freq_.networkIds
-
-                                Nothing ->
-                                    Nothing
-                       )
-                    |> (\mNetworkIds ->
-                            case mNetworkIds of
-                                Just ids_ ->
-                                    List.filterMap (\id_ -> Dict.get id_ model.networks) ids_
-
-                                Nothing ->
-                                    []
-                       )
-
-            networksWithThisFreqBlock =
-                networksWithThisFreq
-                    |> List.map
-                        (\network_ ->
-                            div
-                                [ class "w-full p-2  border-1 border-border rounded-sm text-text flex justify-between"
-                                ]
-                                [ NetworksUtils.renderNetwork network_ model.masterUnits
-                                , div [ class "flex gap-[8px]" ]
-                                    [ a [ class "bi bi-pencil cursor-pointer text-action hover:text-action-hovered text-[16px]", Attr.title "редагувати", Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network_.id }, query = Dict.empty, hash = Nothing }, target "_blank" ] [ i [] [] ]
-                                    , i [ class "bi bi-trash cursor-pointer text-[#b94d4d] dark:text-[#f98282] dark:hover:text-[#df7474]  text-[16px]", Attr.title "видалити", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
-                                    ]
-                                ]
-                        )
-          in
-          HtmlX.viewIf (List.length networksWithThisFreq > 0) <|
-            div [ class "mb-2" ]
-                [ h5 [ class "" ] [ text ("Уже прив'язані до " ++ freq) ]
-                , div [ class "flex flex-col gap-[4px]" ] networksWithThisFreqBlock
-                ]
+        , p [ class "text-sm text-gray-600 my-4" ] [ text "Виберіть підрозділ, щоб знайти існуючі мережі, або створіть нову." ]
         , let
             -- Get networks already connected to this frequency
             alreadyConnectedNetworkIds =
@@ -201,25 +223,15 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                         ]
                     ]
                 )
-            , div [ class "flex justify-end mb-2" ]
-                []
-            ]
-        , div [ class "flex gap-2 justify-end border-t-1 pt-2 border-[var(--neutral-400)]" ]
-            [ Button.new { label = "Назад", onClick = CloseAddNetworkSidebar } |> Button.withStyleSecondary |> Button.view
-            , a
-                [ class "inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-action border border-transparent rounded-md hover:bg-[var(--teal-blue-normal-hover)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--teal-blye-normal-active)]"
-                , Route.href { path = Route.Path.RerNetworks_Create, hash = Nothing, query = Dict.fromList [ ( "freq", freq ) ] }
-                , target "_blank"
-                ]
-                [ text "Створити нову мережу" ]
-            , case selectedNetworkId of
-                Just id ->
-                    Button.new { label = "Використати цю мережу", onClick = FreqAddToExistingNetwork freq id }
-                        |> Button.withDisabled (model.networkDialogUnitSelect.selected == Nothing && not model.showNetworksWithoutUnit)
+            , div [ class "flex justify-start mb-2 mt-4 border-t pt-4" ]
+                [ div [ class "flex flex-col items-end gap-4 w-full" ]
+                    [ Button.new { label = "Використати цю мережу", onClick = FreqAddToExistingNetwork freq (Maybe.withDefault 0 selectedNetworkId) }
+                        |> Button.withDisabled (selectedNetworkId == Nothing)
                         |> Button.view
-
-                Nothing ->
-                    text ""
+                    , a [ class "text-sm text-blue-600 hover:underline", Route.href { path = Route.Path.RerNetworks_Create, hash = Nothing, query = Dict.fromList [ ( "freq", freq ) ] }, target "_blank" ]
+                        [ text "Не знайшли потрібну мережу? Створити нову" ]
+                    ]
+                ]
             ]
         ]
     ]

@@ -472,16 +472,19 @@ viewFreqBlock mUser model freq =
                         case Dict.get networkId model.networks of
                             Just network ->
                                 span [ class "inline-flex items-center gap-1" ]
-                                    [ a
-                                        [ class "cursor-pointer"
-                                        , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
-                                        , target "_blank"
-                                        ]
-                                        [ NetworksUtils.renderNetwork network model.masterUnits ]
+                                    [ NetworksUtils.renderNetwork network model.masterUnits
                                     , case network.unitIds of
-                                        Nothing -> span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
-                                        Just ids -> if List.isEmpty ids then span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ] else text ""
+                                        Nothing ->
+                                            span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+
+                                        Just ids ->
+                                            if List.isEmpty ids then
+                                                span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+
+                                            else
+                                                text ""
                                     ]
+
                             _ ->
                                 text "Невідома мережа"
             ]
