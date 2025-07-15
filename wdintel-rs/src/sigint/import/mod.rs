@@ -41,6 +41,7 @@ pub async fn oneoff_export_etalon_data(
     info!("export completed, check out {destination_path}");
     Ok(())
 }
+
 #[tokio::main]
 pub async fn oneoff_import_etalon_data(
     mode: Mode,
@@ -128,6 +129,134 @@ pub async fn oneoff_import_etalon_data(
         info!("import result needs to be imported back to {origin_name}. it' at {file_path}");
     }
 
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn oneoff_clear_mothership_ids(mode: Mode) -> Result<(), AppError> {
+    info!("clearing mothership ids");
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let txn = dbx.begin().await.context(h!())?;
+
+    sigint_signal::Entity::update_many()
+        .col_expr(
+            sigint_signal::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_signal_changelog::Entity::update_many()
+        .col_expr(
+            sigint_signal_changelog::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_unit::Entity::update_many()
+        .col_expr(sigint_unit::Column::MothershipId, Expr::value(None::<i64>))
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_description::Entity::update_many()
+        .col_expr(
+            sigint_network_description::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_changelog::Entity::update_many()
+        .col_expr(
+            sigint_network_changelog::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network::Entity::update_many()
+        .col_expr(
+            sigint_network::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_freq::Entity::update_many()
+        .col_expr(
+            sigint_network_freq::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_unit::Entity::update_many()
+        .col_expr(
+            sigint_network_unit::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_unit_changelog::Entity::update_many()
+        .col_expr(
+            sigint_network_unit_changelog::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_network_freq_changelog::Entity::update_many()
+        .col_expr(
+            sigint_network_freq_changelog::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_callsign::Entity::update_many()
+        .col_expr(
+            sigint_callsign::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    sigint_callsign_changelog::Entity::update_many()
+        .col_expr(
+            sigint_callsign_changelog::Column::MothershipId,
+            Expr::value(None::<i64>),
+        )
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    modulation::Entity::update_many()
+        .col_expr(modulation::Column::MothershipId, Expr::value(None::<i32>))
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    source::Entity::update_many()
+        .col_expr(source::Column::MothershipId, Expr::value(None::<i64>))
+        .exec(&txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+    info!("completed.");
     Ok(())
 }
 

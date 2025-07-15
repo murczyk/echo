@@ -286,6 +286,7 @@ enum Cmd {
     OneoffReprocessUnitsSearchIndex,
     OneoffImportEtalonData(OneoffImportEtalonDataPs),
     OneoffImportMothershipIds(OneoffImportMothershipIdsPs),
+    OneoffClearMothershipIds,
     OneoffExportEtalonData(OneoffExportEtalonDataPs),
 }
 
@@ -508,9 +509,6 @@ fn main() -> Result<(), AppError> {
         Cmd::OneoffReprocessUnitsSearchIndex => {
             crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
         }
-        Cmd::OneoffImportMothershipIds(ps) => {
-            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
-        }
         Cmd::OneoffExportEtalonData(ps) => {
             crate::sigint::import::oneoff_export_etalon_data(
                 mode,
@@ -525,6 +523,12 @@ fn main() -> Result<(), AppError> {
                 ps.mothership_ids_destination_path,
                 ps.autocommit.unwrap_or(false),
             )
+        }
+        Cmd::OneoffImportMothershipIds(ps) => {
+            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
+        }
+        Cmd::OneoffClearMothershipIds => {
+            crate::sigint::import::oneoff_clear_mothership_ids(mode)
         }
     }
 }
