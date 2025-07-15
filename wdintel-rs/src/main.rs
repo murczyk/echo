@@ -512,7 +512,10 @@ fn main() -> Result<(), AppError> {
             crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
         }
         Cmd::OneoffExportEtalonData(ps) => {
-            crate::sigint::import::oneoff_export_etalon_data(mode, ps.destination_path)
+            crate::sigint::import::oneoff_export_etalon_data(
+                mode,
+                ps.destination_path,
+            )
         }
         Cmd::OneoffImportEtalonData(ps) => {
             crate::sigint::import::oneoff_import_etalon_data(

@@ -818,7 +818,7 @@ init-new-db:
     ssh -t {{ server }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
 
 import-etalon-to-mothership:
-    ssh -t {{server}} '{{echo_bin}} --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
-    scp {{server}}:/tmp/et_export_{{ dt1 }}.json {{mothership}}:/tmp/et_import_{{ dt1 }}.json
-    ssh -t {{server}} '{{echo_bin}} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{origin}} --mothership-ids-destination-path /tmp/et_ids_{{ dt1 }}.json'
-    ssh -t {{server}} '{{echo_bin}} --mode=live oneoff-import-mothership-ids --path /tmp/et_ids_{{ dt1 }}.json'
+    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
+    scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ mothership }}:/tmp/et_import_{{ dt1 }}.json
+    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{ origin }} --mothership-ids-destination-path /tmp/et_ids_{{ dt1 }}.json'
+    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-import-mothership-ids --path /tmp/et_ids_{{ dt1 }}.json'
