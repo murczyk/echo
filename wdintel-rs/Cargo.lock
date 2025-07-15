@@ -7247,6 +7247,7 @@ dependencies = [
  "ctor",
  "deadpool-postgres",
  "demoji",
+ "dialoguer",
  "dirs",
  "docx-rs",
  "echo-im",

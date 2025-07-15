@@ -14,17 +14,33 @@ pub struct Model {
     pub name: String,
     pub deleted: bool,
     pub created_at: DateTime,
+    pub mothership_id: Option<i64>,
+    pub sigint_origin_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
 }
 
 impl Related<super::sigint_callsign::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintCallsign.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 

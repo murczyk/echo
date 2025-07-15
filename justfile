@@ -17,6 +17,9 @@ vault_server := "localhost"
 is_dev := "true"
 app := "echo"
 interactive_setup := "true"
+mothership := "echo-mothership"
+origin := ""
+echo_bin := "wdintel-rs"
 
 default:
     @just --list
@@ -813,3 +816,9 @@ init-new-db:
     ssh -t {{ server }} "sudo -u postgres psql -c 'drop database wd with (FORCE)'"
     ssh -t {{ server }} "sudo -u postgres psql -c 'create database wd'"
     ssh -t {{ server }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
+
+import-etalon-to-mothership:
+    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
+    scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ mothership }}:/tmp/et_import_{{ dt1 }}.json
+    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{ origin }} --mothership-ids-destination-path /tmp/et_ids_{{ dt1 }}.json'
+    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-import-mothership-ids --path /tmp/et_ids_{{ dt1 }}.json'

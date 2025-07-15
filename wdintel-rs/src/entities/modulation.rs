@@ -16,17 +16,33 @@ pub struct Model {
     pub rgt: i32,
     pub enabled: bool,
     pub created_at: DateTime,
+    pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::sigint_network_freq::Entity")]
     SigintNetworkFreq,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
 }
 
 impl Related<super::sigint_network_freq::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkFreq.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 

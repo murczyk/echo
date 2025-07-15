@@ -144,6 +144,8 @@ pub async fn create_signal(
         deleted: Set(false),
         coordinates: Set(req.coordinates.clone()),
         created_at: NotSet,
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -159,6 +161,8 @@ pub async fn create_signal(
         new_value: Set(None),
         old_value: Set(None),
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -202,6 +206,8 @@ pub async fn update_signal(
         new_value: Set(None),
         old_value: Set(None),
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -236,6 +242,8 @@ pub async fn delete_signal(
         new_value: Set(None),
         old_value: Set(None),
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;

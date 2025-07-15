@@ -14,6 +14,8 @@ pub struct Model {
     pub name: String,
     pub created_at: DateTime,
     pub deleted: bool,
+    pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -24,6 +26,14 @@ pub enum Relation {
     CompFreqCallsign,
     #[sea_orm(has_many = "super::login::Entity")]
     Login,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
 }
@@ -43,6 +53,12 @@ impl Related<super::comp_freq_callsign::Entity> for Entity {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 

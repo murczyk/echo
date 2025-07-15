@@ -218,6 +218,30 @@ pub struct OneoffMergeNetworksPs {
     pub network_id_to: i64,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportEtalonDataPs {
+    #[arg(long, value_enum)]
+    pub path: String,
+    #[arg(long, value_enum)]
+    pub mothership_ids_destination_path: Option<String>,
+    #[arg(long, value_enum)]
+    pub origin: String,
+    #[arg(long, action)]
+    pub autocommit: Option<bool>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportMothershipIdsPs {
+    #[arg(long, value_enum)]
+    pub path: String,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffExportEtalonDataPs {
+    #[arg(long, value_enum)]
+    pub destination_path: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -260,6 +284,9 @@ enum Cmd {
     OneoffMergeTwoNetworks(OneoffMergeNetworksPs),
     OneoffInstall(OneoffInstallPs),
     OneoffReprocessUnitsSearchIndex,
+    OneoffImportEtalonData(OneoffImportEtalonDataPs),
+    OneoffImportMothershipIds(OneoffImportMothershipIdsPs),
+    OneoffExportEtalonData(OneoffExportEtalonDataPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -480,6 +507,24 @@ fn main() -> Result<(), AppError> {
         Cmd::OneoffInstall(ps) => Ok(crate::install::mount_tmp(&ps).unwrap()),
         Cmd::OneoffReprocessUnitsSearchIndex => {
             crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
+        }
+        Cmd::OneoffImportMothershipIds(ps) => {
+            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
+        }
+        Cmd::OneoffExportEtalonData(ps) => {
+            crate::sigint::import::oneoff_export_etalon_data(
+                mode,
+                ps.destination_path,
+            )
+        }
+        Cmd::OneoffImportEtalonData(ps) => {
+            crate::sigint::import::oneoff_import_etalon_data(
+                mode,
+                ps.path,
+                ps.origin,
+                ps.mothership_ids_destination_path,
+                ps.autocommit.unwrap_or(false),
+            )
         }
     }
 }
