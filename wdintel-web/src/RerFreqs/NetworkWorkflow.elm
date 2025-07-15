@@ -98,7 +98,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                                 ]
                                 [ NetworksUtils.renderNetwork network_ model.masterUnits
                                 , div [ class "flex gap-[8px]" ]
-                                    [ i [ class "bi bi-pencil cursor-pointer text-action hover:text-action-hovered text-[16px]", Attr.title "редагувати", onClick <| NetworkStartEditingFlow network_ ] []
+                                    [ a [ class "bi bi-pencil cursor-pointer text-action hover:text-action-hovered text-[16px]", Attr.title "редагувати", Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network_.id }, query = Dict.empty, hash = Nothing }, target "_blank" ] [ i [] [] ]
                                     , i [ class "bi bi-trash cursor-pointer text-[#b94d4d] dark:text-[#f98282] dark:hover:text-[#df7474]  text-[16px]", Attr.title "видалити", onClick <| FreqRemoveFromExistingNetwork freq network_ ] []
                                     ]
                                 ]
