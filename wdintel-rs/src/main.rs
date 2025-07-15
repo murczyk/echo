@@ -223,6 +223,8 @@ pub struct OneoffImportEtalonDataPs {
     #[arg(long, value_enum)]
     pub path: String,
     #[arg(long, value_enum)]
+    pub mothership_ids_destination_path: Option<String>,
+    #[arg(long, value_enum)]
     pub origin: String,
     #[arg(long, action)]
     pub autocommit: Option<bool>,
@@ -232,6 +234,12 @@ pub struct OneoffImportEtalonDataPs {
 pub struct OneoffImportMothershipIdsPs {
     #[arg(long, value_enum)]
     pub path: String,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffExportEtalonDataPs {
+    #[arg(long, value_enum)]
+    pub destination_path: String,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -278,7 +286,7 @@ enum Cmd {
     OneoffReprocessUnitsSearchIndex,
     OneoffImportEtalonData(OneoffImportEtalonDataPs),
     OneoffImportMothershipIds(OneoffImportMothershipIdsPs),
-    OneoffExportEtalonData,
+    OneoffExportEtalonData(OneoffExportEtalonDataPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -500,19 +508,20 @@ fn main() -> Result<(), AppError> {
         Cmd::OneoffReprocessUnitsSearchIndex => {
             crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
         }
+        Cmd::OneoffImportMothershipIds(ps) => {
+            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
+        }
+        Cmd::OneoffExportEtalonData(ps) => {
+            crate::sigint::import::oneoff_export_etalon_data(mode, ps.destination_path)
+        }
         Cmd::OneoffImportEtalonData(ps) => {
             crate::sigint::import::oneoff_import_etalon_data(
                 mode,
                 ps.path,
                 ps.origin,
+                ps.mothership_ids_destination_path,
                 ps.autocommit.unwrap_or(false),
             )
-        }
-        Cmd::OneoffExportEtalonData => {
-            crate::sigint::import::oneoff_export_etalon_data(mode)
-        }
-        Cmd::OneoffImportMothershipIds(ps) => {
-            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
         }
     }
 }

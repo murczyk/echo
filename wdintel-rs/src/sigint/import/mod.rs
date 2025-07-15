@@ -11,16 +11,15 @@ use crate::h;
 use crate::sigint::import::types::*;
 use crate::types::Mode;
 use anyhow::Context;
-use chrono::Utc;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use echo_migration::Expr;
 use log::{info, warn};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait,
-    IntoActiveModel, NotSet, QueryFilter, Set, TransactionTrait,
+    IntoActiveModel, NotSet, QueryFilter, QueryOrder, QuerySelect, Set,
+    TransactionTrait,
 };
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -28,17 +27,18 @@ mod query;
 pub mod types;
 
 #[tokio::main]
-pub async fn oneoff_export_etalon_data(mode: Mode) -> Result<(), AppError> {
+pub async fn oneoff_export_etalon_data(
+    mode: Mode,
+    destination_path: String,
+) -> Result<(), AppError> {
     info!("exporting etalon...");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let etalon = export_etalon_data(&dbx).await.context(h!())?;
     let content = serde_json::to_string(&etalon).context(h!())?;
-    let file_path = PathBuf::from("/tmp")
-        .join(format!("etalon_data_{}.json", Utc::now().naive_utc()));
-    let path_log = file_path.display().to_string();
-    let mut file = File::create(file_path).await.context(h!())?;
+    let mut file =
+        File::create(destination_path.clone()).await.context(h!())?;
     file.write_all(content.as_bytes()).await.context(h!())?;
-    info!("export completed, check out {path_log}");
+    info!("export completed, check out {destination_path}");
     Ok(())
 }
 #[tokio::main]
@@ -46,9 +46,13 @@ pub async fn oneoff_import_etalon_data(
     mode: Mode,
     path: String,
     origin_name: String,
+    mothership_ids_destination_path: Option<String>,
     autocommit: bool,
 ) -> Result<(), AppError> {
     let from_mothership = origin_name.eq("mothership");
+    if mothership_ids_destination_path.is_none() && !from_mothership {
+        return Err(AppError::BL { msg: format!("mothership_ids_destination_path is required when importing from {origin_name}") });
+    }
     let autocommit_txt = match autocommit {
         true => "autocommit on",
         false => "autocommit off",
@@ -90,7 +94,7 @@ pub async fn oneoff_import_etalon_data(
         }
         (should_commit, import_result)
     };
-    if !committed {
+    let committed = if !committed {
         if Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Confirm import?")
             .interact()
@@ -106,21 +110,22 @@ pub async fn oneoff_import_etalon_data(
             .await
             .context(h!())?;
             import_result = fin_result;
-            info!("Import completed.")
+            info!("Import completed.");
+            true
         } else {
-            info!("Import aborted.")
+            return Err(AppError::BL {
+                msg: "Import aborted.".to_string(),
+            });
         }
-    }
-    if !from_mothership {
+    } else {
+        true
+    };
+    if committed && !from_mothership {
+        let file_path = mothership_ids_destination_path.context(h!())?;
         let content = serde_json::to_string(&import_result).context(h!())?;
-        let file_path = PathBuf::from("/tmp").join(format!(
-            "etalon_import_result_{}.json",
-            Utc::now().naive_utc()
-        ));
-        let path_log = file_path.display().to_string();
-        let mut file = File::create(file_path).await.context(h!())?;
+        let mut file = File::create(file_path.clone()).await.context(h!())?;
         file.write_all(content.as_bytes()).await.context(h!())?;
-        info!("import result needs to be imported back to {origin_name}. it' at {path_log}");
+        info!("import result needs to be imported back to {origin_name}. it' at {file_path}");
     }
 
     Ok(())
@@ -325,7 +330,7 @@ fn describe_etalon(etalon: &EtalonImportResult) {
             "total {}, new {}, updated {}",
             import_stats.ids_map.len(),
             import_stats.num_created,
-            import_stats.num_created
+            import_stats.num_updated
         )
     }
 
@@ -669,6 +674,15 @@ async fn import_modulation_data<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let mut max_id = modulation::Entity::find()
+        .select_only()
+        .column(modulation::Column::Id)
+        .order_by_desc(modulation::Column::Id)
+        .into_tuple()
+        .one(txn)
+        .await
+        .context(h!())?
+        .unwrap_or(0);
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids = query::find_existing_modulations(txn, &recs)
@@ -683,7 +697,10 @@ where
             .map(|id| existing_record_ids.get(&id))
             .flatten();
         let (id, new_record) = match id {
-            None => (NotSet, true),
+            None => {
+                max_id += 1;
+                (Set(max_id), true)
+            }
             Some(id) => (Set(*id), false),
         };
 

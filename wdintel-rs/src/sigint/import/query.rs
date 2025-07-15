@@ -32,7 +32,6 @@ where
 
 pub async fn find_existing_sigint_signals<'a, 'async_trait, C>(
     txn: &C,
-
     recs: &Vec<sigint_signal::Model>,
 ) -> anyhow::Result<BTreeMap<i64, i64>>
 where
@@ -47,7 +46,7 @@ where
     };
 
     let ids_map = sigint_signal::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_signal::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -74,7 +73,7 @@ where
     };
 
     let ids_map = source::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(source::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -100,7 +99,7 @@ where
     };
 
     let ids_map = sigint_unit::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_unit::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -126,7 +125,7 @@ where
     };
 
     let ids_map = sigint_network::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -152,7 +151,7 @@ where
     };
 
     let ids_map = sigint_network_description::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_description::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -178,7 +177,7 @@ where
     };
 
     let ids_map = sigint_network_freq::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_freq::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -204,7 +203,7 @@ where
     };
 
     let ids_map = sigint_callsign::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_callsign::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -230,7 +229,7 @@ where
     };
 
     let ids_map = sigint_network_unit::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_unit::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -256,7 +255,7 @@ where
     };
 
     let ids_map = sigint_network_unit_changelog::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_unit_changelog::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -282,7 +281,7 @@ where
     };
 
     let ids_map = sigint_callsign_changelog::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_callsign_changelog::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -308,7 +307,7 @@ where
     };
 
     let ids_map = sigint_signal_changelog::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_signal_changelog::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -334,7 +333,7 @@ where
     };
 
     let ids_map = sigint_network_freq_changelog::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_freq_changelog::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -360,7 +359,7 @@ where
     };
 
     let ids_map = sigint_network_changelog::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_changelog::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
