@@ -13,6 +13,7 @@ use crate::types::Mode;
 use anyhow::Context;
 use chrono::Utc;
 use dialoguer::{theme::ColorfulTheme, Confirm};
+use echo_migration::Expr;
 use log::{info, warn};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait,
@@ -40,7 +41,6 @@ pub async fn oneoff_export_etalon_data(mode: Mode) -> Result<(), AppError> {
     info!("export completed, check out {path_log}");
     Ok(())
 }
-
 #[tokio::main]
 pub async fn oneoff_import_etalon_data(
     mode: Mode,
@@ -123,6 +123,199 @@ pub async fn oneoff_import_etalon_data(
         info!("import result needs to be imported back to {origin_name}. it' at {path_log}");
     }
 
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn oneoff_import_mothership_ids(
+    mode: Mode,
+    path: String,
+) -> Result<(), AppError> {
+    info!("importing mothership ids from  file {path}");
+    let mut file_read = File::open(path).await.context(h!())?;
+    let mut buffer = Vec::new();
+    file_read.read_to_end(&mut buffer).await.context(h!())?;
+    let etalon = String::from_utf8_lossy(&buffer).to_string();
+    let ids: EtalonImportResult =
+        serde_json::from_str(&etalon).context(h!())?;
+
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let txn = dbx.begin().await.context(h!())?;
+
+    for (original_id, mothership_id) in ids.sigint_signal.ids_map {
+        sigint_signal::Entity::update_many()
+            .filter(sigint_signal::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_signal::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_signal_changelog.ids_map {
+        sigint_signal_changelog::Entity::update_many()
+            .filter(sigint_signal_changelog::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_signal_changelog::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_unit.ids_map {
+        sigint_unit::Entity::update_many()
+            .filter(sigint_unit::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_unit::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_network_description.ids_map {
+        sigint_network_description::Entity::update_many()
+            .filter(sigint_network_description::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network_description::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_network_changelog.ids_map {
+        sigint_network_changelog::Entity::update_many()
+            .filter(sigint_network_changelog::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network_changelog::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_network.ids_map {
+        sigint_network::Entity::update_many()
+            .filter(sigint_network::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_network_freq.ids_map {
+        sigint_network_freq::Entity::update_many()
+            .filter(sigint_network_freq::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network_freq::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_network_unit.ids_map {
+        sigint_network_unit::Entity::update_many()
+            .filter(sigint_network_unit::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network_unit::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in
+        ids.sigint_network_unit_changelog.ids_map
+    {
+        sigint_network_unit_changelog::Entity::update_many()
+            .filter(sigint_network_unit_changelog::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network_unit_changelog::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in
+        ids.sigint_network_freq_changelog.ids_map
+    {
+        sigint_network_freq_changelog::Entity::update_many()
+            .filter(sigint_network_freq_changelog::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_network_freq_changelog::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_callsign.ids_map {
+        sigint_callsign::Entity::update_many()
+            .filter(sigint_callsign::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_callsign::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.sigint_callsign_changelog.ids_map {
+        sigint_callsign_changelog::Entity::update_many()
+            .filter(sigint_callsign_changelog::Column::Id.eq(original_id))
+            .col_expr(
+                sigint_callsign_changelog::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.modulation.ids_map {
+        modulation::Entity::update_many()
+            .filter(modulation::Column::Id.eq(original_id))
+            .col_expr(
+                modulation::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    for (original_id, mothership_id) in ids.source.ids_map {
+        source::Entity::update_many()
+            .filter(source::Column::Id.eq(original_id))
+            .col_expr(
+                source::Column::MothershipId,
+                Expr::value(Some(mothership_id)),
+            )
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    txn.commit().await.context(h!())?;
+    info!("completed.");
     Ok(())
 }
 

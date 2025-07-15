@@ -228,6 +228,12 @@ pub struct OneoffImportEtalonDataPs {
     pub autocommit: Option<bool>,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportMothershipIdsPs {
+    #[arg(long, value_enum)]
+    pub path: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -271,6 +277,7 @@ enum Cmd {
     OneoffInstall(OneoffInstallPs),
     OneoffReprocessUnitsSearchIndex,
     OneoffImportEtalonData(OneoffImportEtalonDataPs),
+    OneoffImportMothershipIds(OneoffImportMothershipIdsPs),
     OneoffExportEtalonData,
 }
 
@@ -503,6 +510,9 @@ fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffExportEtalonData => {
             crate::sigint::import::oneoff_export_etalon_data(mode)
+        }
+        Cmd::OneoffImportMothershipIds(ps) => {
+            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
         }
     }
 }
