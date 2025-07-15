@@ -38,10 +38,6 @@ type Msg
     | NetworkAddUnitSelMsg (Select.Msg Int)
     | NetworkAddExistingKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkAddExistingModulationSelMsg (Select.Msg Int)
-    | NetworkEditPostsSelMsg (Select.Msg Int)
-    | NetworkEditKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
-    | NetworkEditModulationSelMsg (Select.Msg Int)
-    | NetworkEditMsg B.UpdateNetworkReq
     | NetworksReturnedByApi (Result ApiError (List B.Network))
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
@@ -61,14 +57,11 @@ type Msg
     | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
     | OpenAddNetworkSidebar String
     | CloseAddNetworkSidebar
-    | NetworkUpdate
-    | NetworkUpdated String (Result ApiError B.Network)
     | FreqAddToExistingNetwork String Int
     | FreqRemoveFromExistingNetwork String B.Network
     | NetworkAddToggleExistingId Int
     | FreqAddedToNetwork String (Result ApiError B.Network)
     | FreqRemovedFromNetwork String (Result ApiError B.Network)
-    | NetworkStartEditingFlow B.Network
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
     | NetworkPostsUpdated String B.UpdateNetworkReq (Result ApiError B.Network)

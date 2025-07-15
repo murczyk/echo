@@ -97,7 +97,6 @@ type alias NetworkSearchState =
 type NetworkWorkflowStatus
     = NotStarted
     | SelectingNetwork String (Maybe Int)
-    | EditingNetwork String B.UpdateNetworkReq
 
 
 type TextLocation
