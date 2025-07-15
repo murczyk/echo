@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::types::{Deserialize, Serialize};
-use std::str::FromStr;
+use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EtalonData {
@@ -18,26 +19,35 @@ pub struct EtalonData {
         Vec<sigint_network_unit_changelog::Model>,
     pub sigint_callsign: Vec<sigint_callsign::Model>,
     pub sigint_callsign_changelog: Vec<sigint_callsign_changelog::Model>,
-    //libs
     pub modulation: Vec<modulation::Model>,
     pub source: Vec<source::Model>,
 }
 
-#[derive(Debug)]
-
-pub enum ImportType {
-    FromMothership,
-    ToMothership,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ImportResult<ID: Id> {
+    pub ids_map: BTreeMap<ID, ID>,
+    pub num_created: usize,
+    pub num_updated: usize,
 }
 
-impl FromStr for ImportType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "FromMothership" => Ok(ImportType::FromMothership),
-            "ToMothership" => Ok(ImportType::ToMothership),
-            _s => anyhow::bail!("unexpected import type: '{_s}', expected one of: FromMothership, ToMothership"),
-        }
-    }
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EtalonImportResult {
+    pub sigint_signal: ImportResult<i64>,
+    pub sigint_signal_changelog: ImportResult<i64>,
+    pub sigint_unit: ImportResult<i64>,
+    pub sigint_network: ImportResult<i64>,
+    pub sigint_network_changelog: ImportResult<i64>,
+    pub sigint_network_description: ImportResult<i64>,
+    pub sigint_network_freq: ImportResult<i64>,
+    pub sigint_network_freq_changelog: ImportResult<i64>,
+    pub sigint_network_unit: ImportResult<i64>,
+    pub sigint_network_unit_changelog: ImportResult<i64>,
+    pub sigint_callsign: ImportResult<i64>,
+    pub sigint_callsign_changelog: ImportResult<i64>,
+    pub modulation: ImportResult<i32>,
+    pub source: ImportResult<i64>,
 }
+
+pub trait Id: Sized + Ord + Copy + Debug {}
+impl Id for i32 {}
+impl Id for i64 {}
