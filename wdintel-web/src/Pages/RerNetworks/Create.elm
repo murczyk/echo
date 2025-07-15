@@ -121,6 +121,7 @@ type alias Model =
     , requestCounter : Int
     , currentRequestTracker : Maybe String
     , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
+    , freqDescriptionInp : String
 
     -- Frequency validation
     , freqValidationState : RemoteData ApiError Bool
@@ -208,6 +209,7 @@ init route shared () =
       , requestCounter = 0
       , currentRequestTracker = Nothing
       , freqGroupsActivityForNetworkAdd = NotAsked
+      , freqDescriptionInp = ""
 
       -- Frequency validation
       , freqValidationState = NotAsked
@@ -257,6 +259,7 @@ type Msg
     | UpdateFreqName String
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
+    | FreqDescriptionInputChangedByUser String
     | AddFreqToNetwork
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqInpDebounceMsg Debounce.Msg
@@ -488,7 +491,7 @@ update shared msg model =
             ( { model | freqSidebarOpen = True }, E.none )
 
         CloseFreqSidebar ->
-            ( { model | freqSidebarOpen = False }, E.none )
+            ( { model | freqSidebarOpen = False, freqDescriptionInp = "" }, E.none )
 
         UpdateFreqField updateFunc ->
             ( { model | freqCreateState = updateFunc model.freqCreateState }, E.none )
@@ -541,13 +544,34 @@ update shared msg model =
             , E.sendCmd <| Cmd.map FreqModulationSelectMsg selectCmd
             )
 
+        FreqDescriptionInputChangedByUser inp ->
+            ( { model | freqDescriptionInp = inp }, E.none )
+
         AddFreqToNetwork ->
             let
                 oldNetworkState =
                     model.createNetworkState
 
+                -- Create description object if input is not empty
+                description =
+                    if String.trim model.freqDescriptionInp == "" then
+                        Nothing
+                    else
+                        Just
+                            { descrType = B.Confirmation
+                            , description = model.freqDescriptionInp
+                            , freq = model.freqCreateState.freq
+                            }
+
+                -- Create frequency with description
+                currentFreqState =
+                    model.freqCreateState
+
+                freqWithDescription =
+                    { currentFreqState | description = description }
+
                 newFreqs =
-                    model.freqCreateState :: oldNetworkState.freqs
+                    freqWithDescription :: oldNetworkState.freqs
 
                 newNetworkState =
                     { oldNetworkState | freqs = newFreqs }
@@ -568,6 +592,7 @@ update shared msg model =
                 , freqSidebarOpen = False
                 , freqValidationState = NotAsked
                 , freqValidationError = Nothing
+                , freqDescriptionInp = ""
               }
             , E.none
             )
@@ -735,7 +760,7 @@ view user shared model =
                 , div [ class "w-[85vw] mx-auto py-[16px]" ]
                     [ viewHeader model
                     , viewMainLayout shared model
-                    , viewFrequenciesSection model
+                    , viewFrequenciesSection shared model
                     , viewActionButtons model
                     ]
                 ]
@@ -984,13 +1009,8 @@ viewConfirmationBlock model =
         [ h5 [ class "mb-3" ] [ text "Обґрунтування прив'язки" ]
         , div [ class "space-y-3" ]
             [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-            , div [ class "flex justify-between items-center" ]
-                [ div [ class "w-[200px]" ]
-                    [ select [ class "form-input opacity-50", disabled True ]
-                        [ option [] [ text "" ]
-                        ]
-                    ]
-                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
+            , div [ class "flex justify-end" ]
+                [ Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
                     |> Button.withStyleSecondary
                     |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
                     |> Button.view
@@ -1052,8 +1072,8 @@ viewSignalsBlock =
         ]
 
 
-viewFrequenciesSection : Model -> Html Msg
-viewFrequenciesSection model =
+viewFrequenciesSection : Shared.Model -> Model -> Html Msg
+viewFrequenciesSection shared model =
     section [ class "grid grid-cols-12 gap-[30px] mt-[30px]" ]
         [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ div [ class "mb-[8px] flex justify-between items-center" ]
@@ -1080,7 +1100,7 @@ viewFrequenciesSection model =
 
               else
                 div [ class "space-y-2" ]
-                    (List.indexedMap viewFrequencyRow model.createNetworkState.freqs
+                    (List.indexedMap (viewFrequencyRow shared) model.createNetworkState.freqs
                         ++ [ div [ class "flex justify-center mt-3" ]
                                 [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
                                     |> Button.withStyleSecondary
@@ -1093,8 +1113,8 @@ viewFrequenciesSection model =
         ]
 
 
-viewFrequencyRow : Int -> B.AddNetworkFreq -> Html Msg
-viewFrequencyRow index freq =
+viewFrequencyRow : Shared.Model -> Int -> B.AddNetworkFreq -> Html Msg
+viewFrequencyRow shared index freq =
     div [ class "border border-border rounded p-3 bg-card" ]
         [ div [ class "flex justify-between items-start" ]
             [ div [ class "flex-1" ]
@@ -1107,6 +1127,23 @@ viewFrequencyRow index freq =
                         div [ class "text-sm text-muted-foreground" ] [ text "Модуляція: Так" ]
 
                     Nothing ->
+                        text ""
+                , case freq.description of
+                    Just desc ->
+                        div [ class "text-sm text-muted-foreground mt-1" ] [ text ("Обґрунтування: " ++ desc.description) ]
+
+                    Nothing ->
+                        text ""
+                , case ( freq.activeFrom, freq.activeTo ) of
+                    ( Just from, Just to ) ->
+                        div [ class "text-sm text-muted-foreground mt-1" ]
+                            [ text ("Активна: " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix from) ++ " - " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix to)) ]
+
+                    ( Just from, Nothing ) ->
+                        div [ class "text-sm text-muted-foreground mt-1" ]
+                            [ text ("Активна з: " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix from)) ]
+
+                    _ ->
                         text ""
                 ]
             , button
@@ -1228,6 +1265,77 @@ viewFreqSidebar shared model =
 
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
+                , textarea
+                    [ class "w-full p-2 border border-border rounded resize-none"
+                    , rows 3
+                    , placeholder "Введіть обґрунтування прив'язки"
+                    , value model.freqDescriptionInp
+                    , onInput FreqDescriptionInputChangedByUser
+                    ]
+                    []
+                ]
+            , div [ class "grid grid-cols-2 gap-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна з:" ]
+                    , input
+                        [ type_ "date"
+                        , class "w-full p-2 border border-border rounded"
+                        , case model.freqCreateState.activeFrom of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateFreqField
+                                << (\v state ->
+                                        { state
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна по:" ]
+                    , input
+                        [ type_ "date"
+                        , class "w-full p-2 border border-border rounded"
+                        , case model.freqCreateState.activeTo of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateFreqField
+                                << (\v state ->
+                                        { state
+                                            | activeTo =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeTo
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
                 ]
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
