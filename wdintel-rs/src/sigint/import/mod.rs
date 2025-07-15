@@ -954,7 +954,6 @@ where
     let existing_record_ids = query::find_existing_sources(txn, &recs)
         .await
         .context(h!())?;
-    println!("[{}] existing_record_ids {:?}", h!(), existing_record_ids);
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = existing_record_ids.get(&rec.name);
