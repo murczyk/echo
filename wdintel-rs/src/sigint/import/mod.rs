@@ -1,11 +1,4 @@
 use crate::entities::*;
-use crate::entities::{
-    modulation, sigint_callsign, sigint_callsign_changelog, sigint_network,
-    sigint_network_changelog, sigint_network_description, sigint_network_freq,
-    sigint_network_freq_changelog, sigint_network_unit,
-    sigint_network_unit_changelog, sigint_signal, sigint_signal_changelog,
-    sigint_unit, source,
-};
 use crate::error::AppError;
 use crate::h;
 use crate::sigint::import::types::*;
@@ -13,7 +6,7 @@ use crate::types::Mode;
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use echo_migration::Expr;
-use log::{info, warn};
+use log::*;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait,
     IntoActiveModel, NotSet, QueryFilter, QueryOrder, QuerySelect, Set,
@@ -822,11 +815,7 @@ where
 
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&id))
-            .flatten();
+        let id = existing_record_ids.get(&rec.name);
         let (id, new_record) = match id {
             None => {
                 max_id += 1;
@@ -965,13 +954,10 @@ where
     let existing_record_ids = query::find_existing_sources(txn, &recs)
         .await
         .context(h!())?;
+    println!("[{}] existing_record_ids {:?}", h!(), existing_record_ids);
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
-            .flatten();
+        let id = existing_record_ids.get(&rec.name);
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),

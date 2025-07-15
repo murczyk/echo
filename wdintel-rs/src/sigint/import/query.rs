@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 pub async fn find_existing_modulations<'a, 'async_trait, C>(
     txn: &C,
     recs: &Vec<modulation::Model>,
-) -> anyhow::Result<BTreeMap<i32, i32>>
+) -> anyhow::Result<BTreeMap<String, i32>>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -22,7 +22,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .map(|rec| (rec.name, rec.id))
         .collect();
     Ok(ids_map)
 }
@@ -30,7 +30,7 @@ where
 pub async fn find_existing_sources<'a, 'async_trait, C>(
     txn: &C,
     recs: &Vec<source::Model>,
-) -> anyhow::Result<BTreeMap<i64, i64>>
+) -> anyhow::Result<BTreeMap<String, i64>>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -45,7 +45,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .map(|rec| (rec.name, rec.id))
         .collect();
     Ok(ids_map)
 }
