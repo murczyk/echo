@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
             SELECT 'system','["Admin", "NoAutoLogout"]'::jsonb, 1
             WHERE NOT EXISTS (SELECT 1 FROM login where login = 'system');"#,
         )
-            .await?;
+        .await?;
         Ok(())
     }
 

@@ -562,6 +562,8 @@ where
         txn,
         origin_id,
         data.sigint_signal,
+        sigint_unit_import_result.ids_map.clone(),
+        &mut import_warnings,
         from_mothership,
     )
     .await
@@ -745,6 +747,8 @@ async fn import_sigint_signal_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<sigint_signal::Model>,
+    sigint_unit_ids_map: BTreeMap<i64, i64>,
+    import_warnings: &mut Vec<String>,
     from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
@@ -766,13 +770,25 @@ where
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
+        let unit_id = match rec.unit {
+            None => None,
+            Some(unit_id) => {
+                let Some(unit_id) = sigint_unit_ids_map.get(&unit_id).cloned()
+                else {
+                    import_warnings.push(format!(
+                        "sigint_unit with id {unit_id} not found"
+                    ));
+                    continue;
+                };
+                Some(unit_id)
+            }
+        };
 
         let model = sigint_signal::ActiveModel {
             id,
-
             text: Set(rec.text),
             meaning: Set(rec.meaning),
-            unit: Set(rec.unit),
+            unit: Set(unit_id),
             coordinates: Set(rec.coordinates),
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),
