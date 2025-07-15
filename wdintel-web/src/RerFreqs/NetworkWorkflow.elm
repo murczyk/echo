@@ -127,7 +127,7 @@ viewCreateNewNetwork addState freq model shared =
                         ]
                     , button
                         [ Attr.title "Оновити список підрозділів"
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
+                        , class "py-[1px]! px-[6px]! outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
                         , onClick UnitsReloadClickedByUser
                         ]
                         [ i [ class "bi bi-arrow-clockwise" ] []
@@ -517,7 +517,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                         ]
                     , button
                         [ Attr.title "Оновити список підрозділів"
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw  py-[1px] px-[6px]"
                         , onClick UnitsReloadClickedByUser
                         ]
                         [ i [ class "bi bi-arrow-clockwise" ] []

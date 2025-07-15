@@ -1,15 +1,18 @@
 module Pages.RerNetworks.Create exposing (Model, Msg, page)
 
+import Api exposing (check_if_freq_exist)
 import Auth
 import Bindings as B
 import Components.Button as Button
 import Components.Sidebar as Sidebar
+import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
-import Html.Attributes exposing (..)
+import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
+import Http
 import Layouts
 import Le.Block.Select
 import Le.Block.Toast
@@ -18,6 +21,7 @@ import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError)
+import Maybe.Extra as MaybeX
 import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
@@ -31,14 +35,28 @@ import View exposing (View)
 
 -- VALIDATION
 
+type alias ValidationResult =
+    { errors : Dict String String
+    , isValid : Bool
+    }
 
-validateCreateNetworkReq : B.CreateNetworkReq -> Dict String String
+validateCreateNetworkReq : B.CreateNetworkReq -> ValidationResult
 validateCreateNetworkReq req =
-    Dict.empty
-        |> validateRequiredString "name" req.name
-        |> validateRequiredString "location" req.location
-        |> validateRequiredFreqs "freqs" req.freqs
+    let
+        errors =
+            Dict.empty
+                |> validateRequiredString "name" req.name
+                |> validateRequiredString "location" req.location
+                |> validateRequiredFreqs "freqs" req.freqs
+    in
+    { errors = errors
+    , isValid = Dict.isEmpty errors
+    }
 
+-- Helper function to check if form is valid for save button
+isFormValid : B.CreateNetworkReq -> Bool
+isFormValid req =
+    not (String.trim req.name == "" || String.trim req.location == "" || List.isEmpty req.freqs)
 
 validateRequiredString : String -> String -> Dict String String -> Dict String String
 validateRequiredString fieldName value errors =
@@ -47,16 +65,6 @@ validateRequiredString fieldName value errors =
 
     else
         errors
-
-
-validateRequiredMaybe : String -> Maybe a -> Dict String String -> Dict String String
-validateRequiredMaybe fieldName maybeValue errors =
-    case maybeValue of
-        Nothing ->
-            Dict.insert fieldName "Це поле обов'язкове" errors
-
-        Just _ ->
-            errors
 
 
 validateRequiredFreqs : String -> List a -> Dict String String -> Dict String String
@@ -96,7 +104,7 @@ type alias Model =
     , toasts : Le.Block.Toast.Model
     , createNetworkState : B.CreateNetworkReq
     , kindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
-    , unitSelect : Le.Block.Select.SelectTypeSingle Int
+    , unitSelect : Le.Block.Select.SelectType Int
     , postsSelect : Le.Block.Select.SelectType Int
     , units : RemoteData ApiError (List B.Unit)
     , addConfirmationInp : String
@@ -109,6 +117,15 @@ type alias Model =
     , freqKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , modulations : RemoteData ApiError (List B.ModulationRec)
+    , freqInpDebounce : Debounce String
+    , requestCounter : Int
+    , currentRequestTracker : Maybe String
+    , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
+    , freqDescriptionInp : String
+
+    -- Frequency validation
+    , freqValidationState : RemoteData ApiError Bool
+    , freqValidationError : Maybe String
     }
 
 
@@ -147,7 +164,7 @@ init route shared () =
       , unitSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-unit-state")
             , items = []
-            , selected = Nothing
+            , selected = []
             }
       , postsSelect =
             { state = Select.initState (Select.selectIdentifier "create-network-posts-state")
@@ -188,6 +205,15 @@ init route shared () =
             , selected = Nothing
             }
       , modulations = NotAsked
+      , freqInpDebounce = Debounce.init
+      , requestCounter = 0
+      , currentRequestTracker = Nothing
+      , freqGroupsActivityForNetworkAdd = NotAsked
+      , freqDescriptionInp = ""
+
+      -- Frequency validation
+      , freqValidationState = NotAsked
+      , freqValidationError = Nothing
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -199,6 +225,13 @@ init route shared () =
         , E.getModulations ModulationsReturnedByApi
         ]
     )
+
+
+freqInpDebounceConfig : Debounce.Config Msg
+freqInpDebounceConfig =
+    { strategy = Debounce.later 300
+    , transform = FreqInpDebounceMsg
+    }
 
 
 
@@ -217,15 +250,21 @@ type Msg
     | DescriptionAddClickedByUser B.NetworkDescrType
     | CancelClicked
     | CreateClicked
+    | ValidateField String
     | NetworkCreated (Result ApiError B.Network)
       -- Frequency sidebar messages
     | OpenFreqSidebar
     | CloseFreqSidebar
     | UpdateFreqField (B.AddNetworkFreq -> B.AddNetworkFreq)
+    | UpdateFreqName String
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
+    | FreqDescriptionInputChangedByUser String
     | AddFreqToNetwork
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | FreqInpDebounceMsg Debounce.Msg
+    | CheckIfFreqExistDone (Result ApiError ())
+    | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -241,7 +280,9 @@ update shared msg model =
             )
 
         UpdateNetworkState updateFunc ->
-            ( { model | createNetworkState = updateFunc model.createNetworkState }, E.none )
+            ( { model | createNetworkState = updateFunc model.createNetworkState }
+            , E.none
+            )
 
         KindSelectMsg selectMsg ->
             let
@@ -267,7 +308,7 @@ update shared msg model =
                     Select.update selectMsg model.unitSelect.state
 
                 updatedUnit =
-                    Le.Block.Select.singleUpd mAct model.unitSelect.selected
+                    Le.Block.Select.multiUpdI mAct model.unitSelect.selected
 
                 newSelect =
                     { state = newState
@@ -279,7 +320,14 @@ update shared msg model =
                     model.createNetworkState
 
                 newNetworkState =
-                    { oldNetworkState | unitIds = Maybe.map List.singleton updatedUnit }
+                    { oldNetworkState
+                        | unitIds =
+                            if List.isEmpty updatedUnit then
+                                Nothing
+
+                            else
+                                Just updatedUnit
+                    }
             in
             ( { model | unitSelect = newSelect, createNetworkState = newNetworkState }
             , E.sendCmd <| Cmd.map UnitSelectMsg selectCmd
@@ -397,16 +445,33 @@ update shared msg model =
 
         CreateClicked ->
             let
-                validationErrors =
+                validationResult =
                     validateCreateNetworkReq model.createNetworkState
             in
-            if Dict.isEmpty validationErrors then
+            if validationResult.isValid then
                 ( { model | creatingNetwork = True, formErrors = Dict.empty }
                 , E.createNetwork NetworkCreated model.createNetworkState
                 )
 
             else
-                ( { model | formErrors = validationErrors }, E.none )
+                ( { model | formErrors = validationResult.errors }, E.none )
+
+        ValidateField fieldName ->
+            let
+                validationResult =
+                    validateCreateNetworkReq model.createNetworkState
+                
+                fieldError =
+                    Dict.get fieldName validationResult.errors
+                
+                updatedErrors =
+                    case fieldError of
+                        Just error ->
+                            Dict.insert fieldName error model.formErrors
+                        Nothing ->
+                            Dict.remove fieldName model.formErrors
+            in
+            ( { model | formErrors = updatedErrors }, E.none )
 
         NetworkCreated (Ok network) ->
             ( { model | creatingNetwork = False }
@@ -426,7 +491,7 @@ update shared msg model =
             ( { model | freqSidebarOpen = True }, E.none )
 
         CloseFreqSidebar ->
-            ( { model | freqSidebarOpen = False }, E.none )
+            ( { model | freqSidebarOpen = False, freqDescriptionInp = "" }, E.none )
 
         UpdateFreqField updateFunc ->
             ( { model | freqCreateState = updateFunc model.freqCreateState }, E.none )
@@ -479,13 +544,34 @@ update shared msg model =
             , E.sendCmd <| Cmd.map FreqModulationSelectMsg selectCmd
             )
 
+        FreqDescriptionInputChangedByUser inp ->
+            ( { model | freqDescriptionInp = inp }, E.none )
+
         AddFreqToNetwork ->
             let
                 oldNetworkState =
                     model.createNetworkState
 
+                -- Create description object if input is not empty
+                description =
+                    if String.trim model.freqDescriptionInp == "" then
+                        Nothing
+                    else
+                        Just
+                            { descrType = B.Confirmation
+                            , description = model.freqDescriptionInp
+                            , freq = model.freqCreateState.freq
+                            }
+
+                -- Create frequency with description
+                currentFreqState =
+                    model.freqCreateState
+
+                freqWithDescription =
+                    { currentFreqState | description = description }
+
                 newFreqs =
-                    model.freqCreateState :: oldNetworkState.freqs
+                    freqWithDescription :: oldNetworkState.freqs
 
                 newNetworkState =
                     { oldNetworkState | freqs = newFreqs }
@@ -504,8 +590,11 @@ update shared msg model =
                 | createNetworkState = newNetworkState
                 , freqCreateState = resetFreqState
                 , freqSidebarOpen = False
+                , freqValidationState = NotAsked
+                , freqValidationError = Nothing
+                , freqDescriptionInp = ""
               }
-            , E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Частоту додано до мережі"
+            , E.none
             )
 
         ModulationsReturnedByApi (Ok modulations) ->
@@ -536,6 +625,117 @@ update shared msg model =
         ModulationsReturnedByApi (Err error) ->
             ( { model | modulations = RD.Failure error }, E.none )
 
+        UpdateFreqName inp ->
+            let
+                ( debounce, cmd ) =
+                    Debounce.push freqInpDebounceConfig inp model.freqInpDebounce
+
+                freqCreateState =
+                    model.freqCreateState
+
+                freqCreateState2 =
+                    { freqCreateState | freq = inp }
+
+                m2 =
+                    { model
+                        | freqCreateState = freqCreateState2
+                        , freqInpDebounce = debounce
+                        , freqValidationState = NotAsked
+                        , freqValidationError = Nothing
+                    }
+            in
+            ( m2, E.sendCmd cmd )
+
+        FreqInpDebounceMsg imsg ->
+            let
+                tracker =
+                    "freq-" ++ String.fromInt (model.requestCounter + 1)
+
+                cancelPrevious =
+                    case model.currentRequestTracker of
+                        Just prevTracker ->
+                            Http.cancel prevTracker
+
+                        Nothing ->
+                            Cmd.none
+
+                ( debounce, debounceCmd ) =
+                    Debounce.update
+                        freqInpDebounceConfig
+                        (Debounce.takeLast
+                            (\_ ->
+                                checkIfFreqExist
+                                    model.freqCreateState.freq
+                                    shared.now
+                                    tracker
+                            )
+                        )
+                        imsg
+                        model.freqInpDebounce
+
+                model2 =
+                    { model
+                        | freqInpDebounce = debounce
+                        , currentRequestTracker = Just tracker
+                        , requestCounter = model.requestCounter + 1
+                        , freqValidationState = Loading
+                    }
+            in
+            ( model2
+            , E.batch
+                [ E.sendCmd cancelPrevious
+                , E.sendCmd debounceCmd
+                ]
+            )
+
+        CheckIfFreqExistDone (Err e) ->
+            case e.httpError of
+                -- 404 means frequency not found in last 2 months
+                Http.BadStatus 404 ->
+                    ( { model
+                        | freqValidationState = Success False
+                        , freqValidationError = Just "Частота не знайдена в повідомленнях за останні 2 місяці"
+                      }
+                    , E.none
+                    )
+
+                -- Other errors
+                _ ->
+                    ( { model
+                        | freqValidationState = Failure e
+                        , freqValidationError = Just "Помилка при перевірці частоти"
+                      }
+                    , E.none
+                    )
+
+        CheckIfFreqExistDone (Ok _) ->
+            ( { model
+                | freqValidationState = Success True
+                , freqValidationError = Nothing
+              }
+            , E.none
+            )
+
+        FreqGroupsActivityReturnedByApi (Ok r) ->
+            ( { model | freqGroupsActivityForNetworkAdd = Success r }, E.none )
+
+        FreqGroupsActivityReturnedByApi (Err err) ->
+            Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
+
+
+checkIfFreqExist : String -> Int -> String -> Cmd Msg
+checkIfFreqExist freq currentTimeMs tracker =
+    let
+        -- Calculate 2 months ago (60 days)
+        twoMonthsAgo =
+            Time.posixToMillis (Le.Time.xDaysAgo 60 (Time.millisToPosix currentTimeMs))
+    in
+    Api.check_if_freq_exist CheckIfFreqExistDone
+        tracker
+        { freq = freq
+        , sinceDateInclusiveMs = twoMonthsAgo
+        }
+
 
 
 -- SUBSCRIPTIONS
@@ -560,7 +760,8 @@ view user shared model =
                 , div [ class "w-[85vw] mx-auto py-[16px]" ]
                     [ viewHeader model
                     , viewMainLayout shared model
-                    , viewFrequenciesSection model
+                    , viewFrequenciesSection shared model
+                    , viewActionButtons model
                     ]
                 ]
         ]
@@ -571,12 +772,6 @@ viewHeader : Model -> Html Msg
 viewHeader model =
     div [ class "flex justify-between items-center mb-[16px]" ]
         [ h2 [] [ text "Створення нової мережі" ]
-        , div [ class "flex gap-[8px]" ]
-            [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
-            , Button.new { label = "Зберегти", onClick = CreateClicked }
-                |> Button.withDisabled model.creatingNetwork
-                |> Button.view
-            ]
         ]
 
 
@@ -590,9 +785,10 @@ viewMainLayout shared model =
 
 viewLeftColumn : Shared.Model -> Model -> Html Msg
 viewLeftColumn shared model =
-    div [ class "col-span-7 flex flex-col gap-[30px]" ]
+    div [ class "col-span-7 flex flex-col gap-[16px]" ]
         [ viewMissingFieldsBlock shared model
         , viewMainInfoBlock shared model
+        , viewActivityBlock shared model
         ]
 
 
@@ -608,127 +804,79 @@ viewRightColumn model =
 viewMissingFieldsBlock : Shared.Model -> Model -> Html Msg
 viewMissingFieldsBlock shared model =
     div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-        [ h5 [ class "mb-4" ] [ text "Поля відсутні в стандартній формі" ]
-        , div [ class "space-y-4" ]
-            [ div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    ([ label [ class "mb-1" ] [ text "Назва:*" ]
-                     , input
-                        [ class "form__field"
+        [ div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+            ]
+        , div [ class "space-y-3" ]
+            [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] 
+                    [ text "Назва"
+                    , span [ class "text-red-500 ml-1" ] [ text "*" ]
+                    ]
+                , div [ class "col-span-2" ]
+                    ([ input
+                        [ class "form-input w-full h-[40px]"
                         , type_ "text"
                         , value model.createNetworkState.name
                         , onInput (\newName -> UpdateNetworkState (\state -> { state | name = newName }))
+                        , onBlur (ValidateField "name")
                         , isInvalidCls "name" model.formErrors
+                        , placeholder "введіть назву"
                         ]
                         []
                      ]
                         ++ fieldError "name" model.formErrors
                     )
-                , div []
-                    [ label [ class "mb-1" ] [ text "Підрозділ (необов'язково)" ]
-                    , let
-                        selectedItem =
-                            Maybe.map
-                                (\unitId ->
-                                    Select.basicMenuItem
-                                        { item = unitId
-                                        , label =
-                                            case RD.withDefault [] model.units of
-                                                units ->
-                                                    List.filter (\u -> u.id == unitId) units
-                                                        |> List.head
-                                                        |> Maybe.map .name
-                                                        |> Maybe.withDefault (String.fromInt unitId)
-                                        }
-                                )
-                                model.unitSelect.selected
+                ]
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція" ]
+                , div [ class "col-span-2" ]
+                    [ input
+                        [ class "form-input w-full h-[40px]"
+                        , value (Maybe.withDefault "" model.createNetworkState.radioStation)
+                        , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
+                        , placeholder "введіть радіостанцію"
+                        ]
+                        []
+                    ]
+                ]
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи" ]
+                , div [ class "col-span-2" ]
+                    [ let
+                        selectedItems =
+                            model.unitSelect.selected
+                                |> List.map
+                                    (\unitId ->
+                                        Select.basicMenuItem
+                                            { item = unitId
+                                            , label =
+                                                case RD.withDefault [] model.units of
+                                                    units ->
+                                                        List.filter (\u -> u.id == unitId) units
+                                                            |> List.head
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault (String.fromInt unitId)
+                                            }
+                                    )
 
                         defaultOptions =
                             Le.Block.Select.defaultOptions shared.isDarkMode
                       in
                       Html.map UnitSelectMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelectSingle
-                                selectedItem
+                            Le.Block.Select.renderSelect
+                                selectedItems
                                 model.unitSelect.state
                                 model.unitSelect.items
-                                "Виберіть підрозділ"
+                                "виберіть підрозділи"
                                 defaultOptions
                     ]
                 ]
-            , div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    [ label [ class "mb-1" ] [ text "Радіостанція" ]
-                    , input
-                        [ class "form__field"
-                        , value (Maybe.withDefault "" model.createNetworkState.radioStation)
-                        , onInput (\newRadioStation -> UpdateNetworkState (\state -> { state | radioStation = Just newRadioStation }))
-                        ]
-                        []
-                    ]
-                , div []
-                    [ label [ class "mb-1" ] [ text "Активна з:" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control"
-                        , case model.createNetworkState.activeFrom of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateNetworkState
-                                << (\v state ->
-                                        { state
-                                            | activeFrom =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeFrom
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                ]
-            , div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    [ label [ class "mb-1" ] [ text "Активна по:" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control"
-                        , case model.createNetworkState.activeTo of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateNetworkState
-                                << (\v state ->
-                                        { state
-                                            | activeTo =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeTo
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                , div []
-                    [ label [ class "mb-1" ] [ text "Пости:" ]
-                    , let
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+                , div [ class "col-span-2" ]
+                    [ let
                         selectedItems =
                             model.postsSelect.selected
                                 |> List.map
@@ -756,9 +904,94 @@ viewMissingFieldsBlock shared model =
                                 selectedItems
                                 model.postsSelect.state
                                 model.postsSelect.items
-                                "Виберіть пости"
+                                "виберіть пости"
                                 defaultOptions
                     ]
+                ]
+            ]
+        ]
+
+
+viewActivityBlock : Shared.Model -> Model -> Html Msg
+viewActivityBlock shared model =
+    div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        [ h5 [ class "mb-4" ] [ text "Активність мережі" ]
+        , div [ class "space-y-4" ]
+            [ div [ class "mb-4" ]
+                [ span [ class "opacity-70 text-sm" ] [ text "Виберіть дату початку функціонування мережі на основі графіку активності частоти за місяць" ]
+                ]
+            , div [ class "grid grid-cols-12 gap-[8px]" ]
+                [ div [ class "col-span-4" ]
+                    [ label [ class "mb-1" ] [ text "Активна з:" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control w-[150px]!"
+                        , required True
+                        , case model.createNetworkState.activeFrom of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateNetworkState
+                                << (\v state ->
+                                        { state
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div [ class "col-span-4" ]
+                    [ label [ class "mb-1" ] [ text "Активна по:" ]
+                    , input
+                        [ type_ "date"
+                        , class "form-control w-[150px]!"
+                        , case model.createNetworkState.activeTo of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateNetworkState
+                                << (\v state ->
+                                        { state
+                                            | activeTo =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeTo
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div [ class "col-span-4" ]
+                    [ text "" ]
+                ]
+            , div [ class "h-[300px]" ]
+                [ let
+                    groupsMessageCountByDayJson =
+                        B.freqDailyActivityCountEncoder (RD.withDefault { dataPerDate = Dict.empty } model.freqGroupsActivityForNetworkAdd)
+                  in
+                  Html.node "bar-chart-2"
+                    [ Attr.property "data" <| groupsMessageCountByDayJson
+                    ]
+                    []
                 ]
             ]
         ]
@@ -773,34 +1006,20 @@ viewMainInfoBlock shared model =
 viewConfirmationBlock : Model -> Html Msg
 viewConfirmationBlock model =
     div [ class "mb-[16px]" ]
-        [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
-        , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+        [ h5 [ class "mb-3" ] [ text "Обґрунтування прив'язки" ]
+        , div [ class "space-y-3" ]
             [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-            , div [ class "flex justify-between w-full" ]
-                [ div [ class "w-[200px] flex items-center gap-2" ]
-                    [ div [ class "relative" ]
-                        [ select [ class "form-control opacity-50", disabled True ]
-                            [ option [] [ text "Виберіть частоту" ]
-                            ]
-                        , div [ class "absolute -top-2 -right-2" ]
-                            [ span
-                                [ class "text-gray-400 cursor-help"
-                                , title "Додайте хоча б одну частоту до мережі"
-                                ]
-                                [ i [ class "bi bi-question-circle" ] [] ]
-                            ]
-                        ]
-                    ]
-                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
+            , div [ class "flex justify-end" ]
+                [ Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Confirmation }
                     |> Button.withStyleSecondary
                     |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
                     |> Button.view
                 ]
             ]
-        , div [ class "max-h-[200px] overflow-y-auto" ]
+        , div [ class "max-h-[200px] overflow-y-auto space-y-2" ]
             (List.map
                 (\description ->
-                    div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                    div [ class "min-h-[50px] p-3 bg-muted rounded-md" ]
                         [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
                             [ span [] [ text "Для мережі" ]
                             ]
@@ -816,18 +1035,20 @@ viewConfirmationBlock model =
 viewSignsBlock : Model -> Html Msg
 viewSignsBlock model =
     div []
-        [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
-        , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+        [ h5 [ class "mb-3" ] [ text "Розвідувальні ознаки" ]
+        , div [ class "space-y-3" ]
             [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-            , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
-                |> Button.withStyleSecondary
-                |> Button.withDisabled (String.isEmpty model.addSignsInp)
-                |> Button.view
+            , div [ class "flex justify-end" ]
+                [ Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser B.Sign }
+                    |> Button.withStyleSecondary
+                    |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                    |> Button.view
+                ]
             ]
-        , div [ class "max-h-[200px] overflow-y-auto" ]
+        , div [ class "max-h-[200px] overflow-y-auto space-y-2" ]
             (List.map
                 (\description ->
-                    div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                    div [ class "min-h-[50px] p-3 bg-muted rounded-md" ]
                         [ div [ class "opacity-70 flex gap-[4px] items-center mb-2" ]
                             [ span [] [ text "Для мережі" ]
                             ]
@@ -851,32 +1072,49 @@ viewSignalsBlock =
         ]
 
 
-viewFrequenciesSection : Model -> Html Msg
-viewFrequenciesSection model =
+viewFrequenciesSection : Shared.Model -> Model -> Html Msg
+viewFrequenciesSection shared model =
     section [ class "grid grid-cols-12 gap-[30px] mt-[30px]" ]
         [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ div [ class "mb-[8px] flex justify-between items-center" ]
                 [ h4 [] [ text "Частоти" ]
-                , Button.new { label = "Додати частоту", onClick = OpenFreqSidebar } |> Button.withStyleSecondary |> Button.view
+                , button
+                    [ title "Додати частоту"
+                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                    , onClick OpenFreqSidebar
+                    ]
+                    [ i [ class "bi bi-plus-lg" ] [] ]
                 ]
             , div [] (fieldError "freqs" model.formErrors)
             , if List.isEmpty model.createNetworkState.freqs then
-                div [ class "grow-1 flex justify-center items-center h-[200px] text-gray-500" ]
-                    [ div [ class "text-center" ]
-                        [ div [ class "text-lg mb-2" ] [ text "Частоти ще не додані" ]
-                        , div [ class "text-sm" ] [ text "Натисніть 'Додати частоту' для додавання першої частоти" ]
+                div [ class "flex flex-col items-center justify-center h-48 border-2 border-dashed border-border rounded-lg text-muted-foreground bg-muted/20" ]
+                    [ h3 [ class "text-lg font-semibold" ] [ text "Потрібно додати частоти" ]
+                    , p [ class "text-sm text-muted-foreground/80" ] [ text "Збереження неможливе без хоча б однієї частоти." ]
+                    , div [ class "flex justify-center mt-3" ]
+                        [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.withIcon [ i [ class "bi bi-plus-lg" ] [] ]
+                            |> Button.view
                         ]
                     ]
 
               else
                 div [ class "space-y-2" ]
-                    (List.indexedMap viewFrequencyRow model.createNetworkState.freqs)
+                    (List.indexedMap (viewFrequencyRow shared) model.createNetworkState.freqs
+                        ++ [ div [ class "flex justify-center mt-3" ]
+                                [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
+                                    |> Button.withStyleSecondary
+                                    |> Button.withIcon [ i [ class "bi bi-plus-lg" ] [] ]
+                                    |> Button.view
+                                ]
+                           ]
+                    )
             ]
         ]
 
 
-viewFrequencyRow : Int -> B.AddNetworkFreq -> Html Msg
-viewFrequencyRow index freq =
+viewFrequencyRow : Shared.Model -> Int -> B.AddNetworkFreq -> Html Msg
+viewFrequencyRow shared index freq =
     div [ class "border border-border rounded p-3 bg-card" ]
         [ div [ class "flex justify-between items-start" ]
             [ div [ class "flex-1" ]
@@ -889,6 +1127,23 @@ viewFrequencyRow index freq =
                         div [ class "text-sm text-muted-foreground" ] [ text "Модуляція: Так" ]
 
                     Nothing ->
+                        text ""
+                , case freq.description of
+                    Just desc ->
+                        div [ class "text-sm text-muted-foreground mt-1" ] [ text ("Обґрунтування: " ++ desc.description) ]
+
+                    Nothing ->
+                        text ""
+                , case ( freq.activeFrom, freq.activeTo ) of
+                    ( Just from, Just to ) ->
+                        div [ class "text-sm text-muted-foreground mt-1" ]
+                            [ text ("Активна: " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix from) ++ " - " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix to)) ]
+
+                    ( Just from, Nothing ) ->
+                        div [ class "text-sm text-muted-foreground mt-1" ]
+                            [ text ("Активна з: " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix from)) ]
+
+                    _ ->
                         text ""
                 ]
             , button
@@ -921,15 +1176,42 @@ viewFreqSidebar shared model =
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота*" ]
                 , input
                     [ type_ "text"
-                    , class "w-full p-2 border border-border rounded"
+                    , class <|
+                        "w-full p-2 border rounded "
+                            ++ (if String.trim model.freqCreateState.freq == "" || model.freqValidationError /= Nothing then
+                                    "border-red-500"
+
+                                else
+                                    "border-border"
+                               )
                     , placeholder "наприклад, 146.500"
                     , value model.freqCreateState.freq
-                    , onInput (\newFreq -> UpdateFreqField (\state -> { state | freq = newFreq }))
+                    , onInput UpdateFreqName
                     ]
                     []
+                , div [ class "mt-1 min-h-[20px]" ]
+                    [ case model.freqValidationState of
+                        Loading ->
+                            div [ class "text-sm text-blue-600" ]
+                                [ text "Перевірка частоти..." ]
+
+                        _ ->
+                            case model.freqValidationError of
+                                Just error ->
+                                    div [ class "text-sm text-red-600" ]
+                                        [ text error ]
+
+                                Nothing ->
+                                    if String.trim model.freqCreateState.freq == "" then
+                                        div [ class "text-sm text-red-600" ]
+                                            [ text "Це поле обов'язкове" ]
+
+                                    else
+                                        text ""
+                    ]
                 ]
             , div []
-                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип частоти*" ]
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип" ]
                 , let
                     selectedItem =
                         Select.basicMenuItem
@@ -947,7 +1229,7 @@ viewFreqSidebar shared model =
                             model.freqKindSelect.state
                             model.freqKindSelect.items
                             "Виберіть тип"
-                            defaultOptions
+                            { defaultOptions | clearable = False }
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
@@ -984,6 +1266,77 @@ viewFreqSidebar shared model =
                     _ ->
                         div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
                 ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
+                , textarea
+                    [ class "w-full p-2 border border-border rounded resize-none"
+                    , rows 3
+                    , placeholder "Введіть обґрунтування прив'язки"
+                    , value model.freqDescriptionInp
+                    , onInput FreqDescriptionInputChangedByUser
+                    ]
+                    []
+                ]
+            , div [ class "grid grid-cols-2 gap-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна з:" ]
+                    , input
+                        [ type_ "date"
+                        , class "w-full p-2 border border-border rounded"
+                        , case model.freqCreateState.activeFrom of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateFreqField
+                                << (\v state ->
+                                        { state
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна по:" ]
+                    , input
+                        [ type_ "date"
+                        , class "w-full p-2 border border-border rounded"
+                        , case model.freqCreateState.activeTo of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateFreqField
+                                << (\v state ->
+                                        { state
+                                            | activeTo =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeTo
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                ]
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
             [ div [ class "flex justify-end gap-3" ]
@@ -991,12 +1344,53 @@ viewFreqSidebar shared model =
                     |> Button.withStyleSecondary
                     |> Button.view
                 , Button.new { label = "Додати", onClick = AddFreqToNetwork }
-                    |> Button.withDisabled (String.trim model.freqCreateState.freq == "")
+                    |> Button.withDisabled
+                        (String.trim model.freqCreateState.freq
+                            == ""
+                            || (case model.freqValidationState of
+                                    Success False ->
+                                        True
+
+                                    Failure _ ->
+                                        True
+
+                                    _ ->
+                                        False
+                               )
+                        )
                     |> Button.view
                 ]
             ]
         ]
     ]
+
+
+viewActionButtons : Model -> Html Msg
+viewActionButtons model =
+    let
+        isSaveDisabled =
+            model.creatingNetwork || not (isFormValid model.createNetworkState)
+
+        disabledTooltip =
+            if model.creatingNetwork then
+                "Збереження..."
+            else if String.trim model.createNetworkState.name == "" then
+                "Введіть назву мережі"
+            else if String.trim model.createNetworkState.location == "" then
+                "Введіть район функціонування/розгортання"
+            else if List.isEmpty model.createNetworkState.freqs then
+                "Додайте хоча б одну частоту"
+            else
+                ""
+    in
+    div [ class "flex justify-end gap-[8px] mt-[16px]" ]
+        [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
+        , div [ Attr.title disabledTooltip ]
+            [ Button.new { label = "Зберегти", onClick = CreateClicked }
+                |> Button.withDisabled isSaveDisabled
+                |> Button.view
+            ]
+        ]
 
 
 
@@ -1009,15 +1403,18 @@ createMainInfoBlock createReq shared model =
         [ h5 []
             [ text "Згідно форми" ]
         ]
-    , div
-        [ class "network-list-container" ]
-        [ div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Район функціонування/розгортання:" ]
-            , div [ class "flex-1" ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] 
+                [ text "Район функціонування/розгортання"
+                , span [ class "text-red-500 ml-1" ] [ text "*" ]
+                ]
+            , div [ class "col-span-2" ]
                 ([ input
                     [ value createReq.location
                     , onInput (\newLocation -> UpdateNetworkState (\state -> { state | location = newLocation }))
-                    , class "form__field"
+                    , onBlur (ValidateField "location")
+                    , class "form-input w-full  h-[40px]"
                     , placeholder "введіть район функціонування/розгортання"
                     , isInvalidCls "location" model.formErrors
                     ]
@@ -1026,46 +1423,45 @@ createMainInfoBlock createReq shared model =
                     ++ fieldError "location" model.formErrors
                 )
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium  basis-[33%]" ] [ text "Призначення:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.purpose
                 , onInput (\newPurpose -> UpdateNetworkState (\state -> { state | purpose = Just newPurpose }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть призначення"
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.operationMode
                 , onInput (\newOperationMode -> UpdateNetworkState (\state -> { state | operationMode = Just newOperationMode }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть режим роботи радіомережі"
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Характер роботи:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.operationType
                 , onInput (\newOperationType -> UpdateNetworkState (\state -> { state | operationType = Just newOperationType }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть характер роботи"
                 ]
                 []
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
             , input
                 [ value <| Maybe.withDefault "" createReq.operationPeriod
                 , onInput (\newOperationPeriod -> UpdateNetworkState (\state -> { state | operationPeriod = Just newOperationPeriod }))
-                , class "form__field"
+                , class "form-input col-span-2 h-[40px]"
                 , placeholder "введіть період функціонування"
                 ]
                 []
             ]
         ]
     ]
-

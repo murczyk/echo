@@ -1270,3 +1270,20 @@ get_posts toMsg req =
         , body = Http.jsonBody (listPostsReqEncoder req)
         , expect = leExpectJson toMsg (Decode.list postDecoder)
         }
+
+
+check_if_freq_exist :
+    (Result ApiError () -> msg)
+    -> String
+    -> FreqExistsReq
+    -> Cmd msg
+check_if_freq_exist toMsg tracker req =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/sigint/freq/freq-exists"
+        , body = Http.jsonBody (freqExistsReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        , timeout = Nothing
+        , tracker = Just tracker
+        }
