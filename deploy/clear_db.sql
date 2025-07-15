@@ -49,3 +49,4 @@ delete from delta_login;
 delete from sigint_zone where id > 1;
 update sigint_zone set name='Default';
 INSERT INTO sigint_zone (name) SELECT 'Default' WHERE NOT EXISTS (SELECT 1 FROM sigint_zone);
+INSERT INTO login (login,roles, sigint_zone_id) SELECT 'system','["Admin", "NoAutoLogout"]'::jsonb, 1 WHERE NOT EXISTS (SELECT 1 FROM login where login = 'system');

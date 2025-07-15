@@ -764,7 +764,7 @@ where
         let id = rec
             .mothership_id
             .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
+            .map(|id| existing_record_ids.get(&(id)))
             .flatten();
         let (id, new_record) = match id {
             None => (NotSet, true),

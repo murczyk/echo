@@ -11,16 +11,36 @@ pub async fn find_existing_modulations<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.mothership_id)
-        .collect::<Vec<_>>();
-    if ids.is_empty() {
+    let names = recs.iter().map(|rec| rec.name.clone()).collect::<Vec<_>>();
+    if names.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = modulation::Entity::find()
-        .filter(modulation::Column::MothershipId.is_in(ids))
+        .filter(modulation::Column::Name.is_in(names))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
+pub async fn find_existing_sources<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<source::Model>,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let names = recs.iter().map(|rec| rec.name.clone()).collect::<Vec<_>>();
+    if names.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = source::Entity::find()
+        .filter(source::Column::Name.is_in(names))
         .all(txn)
         .await
         .context(h!())?
@@ -47,33 +67,6 @@ where
 
     let ids_map = sigint_signal::Entity::find()
         .filter(sigint_signal::Column::MothershipId.is_in(ids))
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
-        .collect();
-    Ok(ids_map)
-}
-
-pub async fn find_existing_sources<'a, 'async_trait, C>(
-    txn: &C,
-
-    recs: &Vec<source::Model>,
-) -> anyhow::Result<BTreeMap<i64, i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.mothership_id)
-        .collect::<Vec<_>>();
-    if ids.is_empty() {
-        return Ok(BTreeMap::new());
-    };
-
-    let ids_map = source::Entity::find()
-        .filter(source::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
