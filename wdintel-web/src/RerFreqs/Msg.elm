@@ -83,3 +83,4 @@ type Msg
     | ToggleBattalionExpanded String String String String
     | FilterUnitMsg String
     | ClearAllFilters
+    | NetworkUpdated String (Result ApiError B.Network)

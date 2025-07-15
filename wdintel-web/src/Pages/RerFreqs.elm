@@ -823,6 +823,30 @@ update shared msg model =
                     icmd
             )
 
+        NetworkAddExistingKindSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.addExistingKindSelect.state
+
+                updatedNetworkKind =
+                    Le.Block.Select.singleUpdWithDefault mAct model.addExistingKindSelect.selected
+
+                kindSelect =
+                    model.addExistingKindSelect
+
+                kindSelect2 =
+                    { kindSelect
+                        | state = imodel
+                        , selected = updatedNetworkKind
+                    }
+            in
+            ( { model | addExistingKindSelect = kindSelect2 }
+            , E.sendCmd <|
+                Cmd.map
+                    NetworkAddExistingKindSelMsg
+                    icmd
+            )
+
         NetworksReturnedByApi (Err err) ->
             ( model
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
@@ -1127,7 +1151,7 @@ update shared msg model =
 
         NetworkConfirmationAdded (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання підтвердження" e
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання підтвердження мережі" e
             )
 
         NetworkConfirmationAdded (Ok network) ->
@@ -1140,20 +1164,227 @@ update shared msg model =
             in
             ( m1, E.none )
 
+        NetworkAddToggleExistingId id ->
+            ( { model
+                | networkWorkflowStatus =
+                    case model.networkWorkflowStatus of
+                        SelectingNetwork freq (Just prevId) ->
+                            if prevId == id then
+                                SelectingNetwork freq Nothing
+
+                            else
+                                SelectingNetwork freq (Just id)
+
+                        SelectingNetwork freq Nothing ->
+                            SelectingNetwork freq (Just id)
+
+                        _ ->
+                            model.networkWorkflowStatus
+              }
+            , E.none
+            )
+
+        FreqAddToExistingNetwork freq id ->
+            case Dict.get id model.networks of
+                Just network ->
+                    ( { model | networkAddLoading = True }
+                    , E.addFreqToNetwork (FreqAddedToNetwork freq)
+                        { networkId = network.id
+                        , freqRec =
+                            { freq = freq
+                            , kind = NetworksUtils.networkKindToString model.addExistingKindSelect.selected
+                            , modulationId = model.addExistingModulationSelect.selected
+                            , activeFrom = model.addExistingActiveFrom
+                            , activeTo = model.addExistingActiveTo
+                            , description =
+                                case model.addExistingConfirmationInp of
+                                    Just inp ->
+                                        Just
+                                            { descrType = B.Confirmation
+                                            , description = inp
+                                            , freq = freq
+                                            }
+
+                                    Nothing ->
+                                        Nothing
+                            }
+                        }
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqAddedToNetwork _ (Err e) ->
+            ( { model | networkAddLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання частоти до мережі" e
+            )
+
+        FreqAddedToNetwork freq (Ok network) ->
+            let
+                fre =
+                    ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+
+                addUnitSelect =
+                    model.networkDialogUnitSelect
+
+                aus2 =
+                    { addUnitSelect | selected = Nothing }
+
+                freqs2 =
+                    case fre of
+                        Just v ->
+                            let
+                                fre2 =
+                                    { v | networkIds = v.networkIds ++ [ network.id ] }
+                            in
+                            ListX.updateIf (\freq_ -> freq_.freq == freq) (\_ -> fre2) model.freqs
+
+                        Nothing ->
+                            model.freqs
+            in
+            ( { model
+                | networks = Dict.insert network.id network model.networks
+                , freqs = freqs2
+                , networkWorkflowStatus = SelectingNetwork freq Nothing
+                , networkDialogUnitSelect = aus2
+                , networkAddLoading = False
+              }
+            , E.none
+            )
+
+        FreqRemoveFromExistingNetwork freq network ->
+            ( { model | networkAddLoading = True }
+            , E.removeFreqFromNetwork (FreqRemovedFromNetwork freq)
+                { networkId = network.id
+                , freq = freq
+                }
+            )
+
+        FreqRemovedFromNetwork _ (Err e) ->
+            ( { model | networkAddLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти з мережі" e
+            )
+
+        FreqRemovedFromNetwork freq (Ok network) ->
+            let
+                fre =
+                    ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+
+                freqs2 =
+                    case fre of
+                        Just v ->
+                            let
+                                fre2 =
+                                    { v | networkIds = List.filter (\id -> id /= network.id) v.networkIds }
+                            in
+                            ListX.updateIf (\freq_ -> freq_.freq == freq) (\_ -> fre2) model.freqs
+
+                        Nothing ->
+                            model.freqs
+            in
+            ( { model
+                | networks = Dict.insert network.id network model.networks
+                , freqs = freqs2
+                , networkWorkflowStatus = SelectingNetwork freq Nothing
+                , networkAddLoading = False
+              }
+            , E.none
+            )
+
+        NetworkUpdated _ (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
+            )
+
+        NetworkUpdated freq (Ok network) ->
+            ( { model
+                | networks = Dict.insert network.id network model.networks
+                , networkWorkflowStatus = SelectingNetwork freq Nothing
+              }
+            , E.none
+            )
+
+        ModulationsReturnedByApi (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            )
+
+        ModulationsReturnedByApi (Ok modulations) ->
+            let
+                addModulationSelect =
+                    model.addModulationSelect
+
+                addExistingModulationSelect =
+                    model.addExistingModulationSelect
+
+                editModulationSelect =
+                    model.editModulationSelect
+
+                ams =
+                    { addModulationSelect
+                        | items =
+                            modulations
+                                |> List.map (\modulation -> Select.basicMenuItem { item = modulation.id, label = modulation.name })
+                    }
+
+                aems =
+                    { addExistingModulationSelect
+                        | items =
+                            modulations
+                                |> List.map (\modulation -> Select.basicMenuItem { item = modulation.id, label = modulation.name })
+                    }
+
+                ems =
+                    { editModulationSelect
+                        | items =
+                            modulations
+                                |> List.map (\modulation -> Select.basicMenuItem { item = modulation.id, label = modulation.name })
+                    }
+            in
+            ( { model
+                | modulations = Success modulations
+                , addModulationSelect = ams
+                , editModulationSelect = ems
+                , addExistingModulationSelect = aems
+              }
+            , E.none
+            )
+
+        FreqGroupsActivityReturnedByApi (Ok r) ->
+            ( { model | freqGroupsActivityForNetworkAdd = Success r }, E.none )
+
+        FreqGroupsActivityReturnedByApi (Err err) ->
+            ( { model | freqGroupsActivityForNetworkAdd = Failure err }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності груп частот" err
+            )
+
+        NetworkPostsUpdated freq editState (Ok r) ->
+            ( model
+            , E.updateNetworkFreq (NetworkFreqUpdated freq editState)
+                { networkId = editState.id
+                , freq = freq
+                , kind = NetworksUtils.networkKindToString model.editKindSelect.selected
+                , modulationId = model.editModulationSelect.selected
+                , activeFrom = 0
+                , activeTo = Nothing
+                }
+            )
+
         NetworkPostsUpdated _ _ (Err err) ->
             ( model
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" err
             )
 
+        NetworkFreqUpdated freq editState (Ok r) ->
+            ( model, E.updateNetwork (NetworkUpdated freq) editState )
+
         NetworkFreqUpdated _ _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частот" err
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти мережі" err
             )
 
-        NetworkFreqUpdated _ _ (Ok _) ->
-            ( model, E.none )
-        ConfirmationInputChangedByUser inp ->
-            ( { model | addExistingConfirmationInp = Just inp }, E.none )
+        ConfirmationInputChangedByUser val ->
+            ( { model | addExistingConfirmationInp = Just val }, E.none )
 
         Confirmation2InputChangedByUser val ->
             ( { model | addConfirmationInp = Just val }, E.none )
