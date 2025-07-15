@@ -142,13 +142,21 @@ renderFreqTr shared model user rowIndex freq =
                         _ ->
                             ""
 
+                dateToStr =
+                    case ( model.zone, model.now ) of
+                        ( Just zone, Just time ) ->
+                            Le.Time.renderDateF4 zone (Le.Time.xDaysAgo -1 time)
+
+                        _ ->
+                            ""
+
                 stateS =
                     Encode.encode 0
                         (B.rerAnalysisQueryStateEncoder
                             { dateFromStr = dateFromStr
                             , timeFromStr = ""
-                            , dateToStr = ""
-                            , timeToStr = ""
+                            , dateToStr = dateToStr
+                            , timeToStr = "00:00"
                             , groupsSelected = []
                             , sendersSelected = []
                             , freqsSelected = [ freq.freq ]
