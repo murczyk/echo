@@ -89,6 +89,7 @@ type alias Model =
     , callsignsOpenedPopupId : Maybe String
     , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode B.UpdateNetworkReq
+    , missingFieldsMode : Mode B.UpdateNetworkReq
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
     , addConfirmationInp : String
@@ -118,6 +119,7 @@ init route shared () =
       , callsignsOpenedPopupId = Nothing
       , networks = NotAsked
       , mode = Readonly
+      , missingFieldsMode = Readonly
       , editKindSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
             , items =
@@ -179,6 +181,11 @@ type Msg
     | NetworkEditingSavedByUser
     | NetworkEditingCanceledByUser
     | NetworkEditingMsg B.UpdateNetworkReq
+    | MissingFieldsEditStartedByUser
+    | MissingFieldsEditSavedByUser
+    | MissingFieldsEditCanceledByUser
+    | MissingFieldsEditingMsg B.UpdateNetworkReq
+    | MissingFieldsUpdatedByApi (Result ApiError B.Network)
     | FreqsEditingMsg B.UpdateNetworkFreqReq
     | FreqsEditStartedByUser
     | FreqsEditSavedByUser
@@ -380,6 +387,56 @@ update shared msg model =
             , E.none
             )
 
+        MissingFieldsEditStartedByUser ->
+            case model.network of
+                Success network ->
+                    ( { model
+                        | missingFieldsMode =
+                            Editing
+                                { id = network.id
+                                , name = network.name
+                                , location = network.location
+                                , radioStation = network.radioStation
+                                , purpose = network.purpose
+                                , operationMode = network.operationMode
+                                , operationType = network.operationType
+                                , operationPeriod = network.operationPeriod
+                                , activeFrom = network.activeFrom
+                                , activeTo = network.activeTo
+                                , descriptions = Nothing
+                                , restoreNetwork = Nothing
+                                }
+                      }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        MissingFieldsEditSavedByUser ->
+            case model.missingFieldsMode of
+                Editing edit ->
+                    ( model, E.updateNetwork MissingFieldsUpdatedByApi edit )
+
+                Readonly ->
+                    ( model, E.none )
+
+        MissingFieldsEditCanceledByUser ->
+            ( { model | missingFieldsMode = Readonly }, E.none )
+
+        MissingFieldsEditingMsg updNetworkReq ->
+            ( { model
+                | missingFieldsMode =
+                    case model.missingFieldsMode of
+                        Editing _ ->
+                            Editing updNetworkReq
+
+                        Readonly ->
+                            Readonly
+              }
+            , E.none
+            )
+
         NetworkPostsUpdatedByApi _ (Err e) ->
             ( model
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
@@ -395,6 +452,14 @@ update shared msg model =
 
         NetworkUpdatedByApi (Ok network) ->
             ( { model | network = Success network, mode = Readonly }, E.none )
+
+        MissingFieldsUpdatedByApi (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення полів мережі" e
+            )
+
+        MissingFieldsUpdatedByApi (Ok network) ->
+            ( { model | network = Success network, missingFieldsMode = Readonly }, E.none )
 
         EditNetworkKindSelMsg imsg ->
             case model.mode of
@@ -907,6 +972,63 @@ subscriptions model =
 -- VIEW
 
 
+missingFieldsBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
+missingFieldsBlock user network shared model =
+    [ div [ class "mb-[8px] flex justify-between items-center" ]
+        [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+        , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+            i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditStartedByUser ] []
+
+          else
+            text ""
+        ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Назва:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text network.name ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text (Maybe.withDefault "" network.radioStation) ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ case network.unitIds of
+                    Just unitIds ->
+                        List.map 
+                            (\unitId ->
+                                Dict.get unitId (RD.withDefault Dict.empty shared.masterUnits)
+                                    |> Maybe.map .name
+                                    |> Maybe.withDefault (String.fromInt unitId)
+                            )
+                            unitIds
+                            |> String.join ", "
+                            |> text
+                    Nothing ->
+                        text ""
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ case shared.posts of
+                    Success posts ->
+                        List.map (\postId -> Dict.get postId posts) network.postIds
+                            |> List.filterMap identity
+                            |> List.map .name
+                            |> String.join ", "
+                            |> text
+                    _ ->
+                        text ""
+                ]
+            ]
+        ]
+    ]
+
+
 mainInfoBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
 mainInfoBlock user network shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
@@ -918,23 +1040,25 @@ mainInfoBlock user network shared model =
           else
             text ""
         ]
-    , div
-        [ class "network-list-container" ]
-        [ div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Район функціонування/розгортання:" ]
-            , span [] [ text network.location ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text network.location ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium  basis-[33%]" ] [ text "Призначення:" ]
-            , span [] [ text <| Maybe.withDefault "" network.purpose ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.purpose ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Склад кореспондентів:" ]
-            , span [] [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Склад кореспондентів:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex h-[52px]! " ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Вид передачі:" ]
-            , span []
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ List.map (\freqObj -> freqObj.kind) network.freqs
                     |> List.map NetworksUtils.networkStringToLabel
                     |> Set.fromList
@@ -943,32 +1067,45 @@ mainInfoBlock user network shared model =
                     |> text
                 ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]
-            , span [] [ text <| Maybe.withDefault "" network.operationMode ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.operationMode ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Характер роботи:" ]
-            , span [] [ text <| Maybe.withDefault "" network.operationType ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.operationType ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
-            , span [] [ text <| Maybe.withDefault "" network.operationPeriod ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Maybe.withDefault "" network.operationPeriod ]
             ]
         ]
-    , div [ class "mt-[8px]" ]
-        [ h5 [] [ text "Додаткове" ]
-        , div [ class "grid grid-cols-12 gap-[16px]" ]
-            [ div [ class "col-span-2" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
+    ]
+
+
+activityBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
+activityBlock user network shared model =
+    [ div [ class "mb-[8px] flex justify-between items-center" ]
+        [ h5 [] [ text "Активність мережі" ]
+        ]
+    , div [ class "space-y-4" ]
+        [ div [ class "mb-4" ]
+            [ span [ class "opacity-70 text-sm" ] [ text "Графік активності мережі за місяць" ]
+            ]
+        , div [ class "grid grid-cols-12 gap-[8px]" ]
+            [ div [ class "col-span-4" ]
+                [ label [ class "mb-1" ] [ text "Активна з:" ]
                 , div []
                     [ text <|
                         Le.Time.renderDateF6 shared.timeZone
                             (Time.millisToPosix network.activeFrom)
                     ]
                 ]
-            , div [ class "col-span-2" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
+            , div [ class "col-span-4" ]
+                [ label [ class "mb-1" ] [ text "Активна по:" ]
                 , div []
                     [ case network.activeTo of
                         Just millis ->
@@ -980,136 +1117,46 @@ mainInfoBlock user network shared model =
                             text ""
                     ]
                 ]
-            , div [ class "col-span-8" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-                , div [ class "" ]
-                    [ case shared.posts of
-                        Success posts ->
-                            List.map (\postId -> Dict.get postId posts) network.postIds
-                                |> List.filterMap identity
-                                |> List.map .name
-                                |> String.join ", "
-                                |> text
+            , div [ class "col-span-4" ]
+                [ text "" ]
+            ]
+        , div [ class "h-[300px]" ]
+            [ case model.groupsActivity of
+                Success data ->
+                    let
+                        groupsMessageCountByDayJson =
+                            data |> Encode.dict identity (Encode.dict identity Encode.int)
+                    in
+                    Html.node "bar-chart"
+                        [ property "data" <| groupsMessageCountByDayJson
+                        , property "last-day" <| Encode.int shared.now
+                        , class "block"
+                        ]
+                        []
 
-                        _ ->
-                            text ""
-                    ]
-                ]
+                _ ->
+                    Le.Block.Spinner.loadingSpinnerSm
             ]
         ]
     ]
 
 
-mainInfoEditBlock : B.UpdateNetworkReq -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
-mainInfoEditBlock updNetworkReq networkFreqs shared model =
+activityEditBlock : Auth.User -> B.Network -> B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
+activityEditBlock user network updNetworkReq shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 []
-            [ text "Згідно форми" ]
-        , div [ class "flex gap-[8px]" ]
-            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick NetworkEditingCanceledByUser ] []
-            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
-            ]
+        [ h5 [] [ text "Активність мережі" ]
         ]
-    , div
-        [ class "network-list-container" ]
-        [ div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%]" ] [ text "Район функціонування/розгортання:" ]
-            , input
-                [ value <| updNetworkReq.location
-                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | location = v })
-                , class "form__field"
-                , placeholder "введіть район функціонування/розгортання"
-                ]
-                []
+    , div [ class "space-y-4" ]
+        [ div [ class "mb-4" ]
+            [ span [ class "opacity-70 text-sm" ] [ text "Графік активності мережі за місяць" ]
             ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium  basis-[33%]" ] [ text "Призначення:" ]
-            , input
-                [ value <| Maybe.withDefault "" updNetworkReq.purpose
-                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | purpose = Just v })
-                , class "form__field"
-                , placeholder "введіть призначення"
-                ]
-                []
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Склад кореспондентів:" ]
-            , span [] [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex h-[52px]! " ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Вид передачі:" ]
-            , span []
-                [ List.map (\freqObj -> freqObj.kind) networkFreqs
-                    |> List.map NetworksUtils.networkStringToLabel
-                    |> Set.fromList
-                    |> Set.toList
-                    |> String.join ", "
-                    |> text
-                ]
-
-            -- , let
-            --     selectedItem =
-            --         (\item ->
-            --             Select.basicMenuItem
-            --                 { item = item
-            --                 , label =
-            --                     EUtils.networkKindToLabel item
-            --                 }
-            --         )
-            --             model.editKindSelect.selected
-            --     defaultOptions =
-            --         Le.Block.Select.defaultOptions shared.isDarkMode
-            --     do2 =
-            --         { defaultOptions | clearable = False }
-            --   in
-            --   Html.map EditNetworkKindSelMsg <|
-            --     Styled.toUnstyled <|
-            --         Le.Block.Select.renderSelectSingle
-            --             (Just selectedItem)
-            --             model.editKindSelect.state
-            --             model.editKindSelect.items
-            --             "жоден"
-            --             do2
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Режим роботи радіомережі:" ]
-            , input
-                [ value <| Maybe.withDefault "" updNetworkReq.operationMode
-                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationMode = Just v })
-                , class "form__field"
-                , placeholder "введіть режим роботи радіомережі"
-                ]
-                []
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Характер роботи:" ]
-            , input
-                [ value <| Maybe.withDefault "" updNetworkReq.operationType
-                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationType = Just v })
-                , class "form__field"
-                , placeholder "введіть хараткет роботи"
-                ]
-                []
-            ]
-        , div [ class "border-t-1 border-border py-[8px] flex" ]
-            [ span [ class "text-[13px] font-medium basis-[33%] " ] [ text "Період функціонування:" ]
-            , input
-                [ value <| Maybe.withDefault "" updNetworkReq.operationPeriod
-                , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationPeriod = Just v })
-                , class "form__field"
-                , placeholder "введіть період функціонування"
-                ]
-                []
-            ]
-        ]
-    , div [ class "mt-[8px]" ]
-        [ h5 [] [ text "Додаткове" ]
-        , div [ class "grid grid-cols-12 gap-[16px]" ]
-            [ div [ class "col-span-2" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
+        , div [ class "grid grid-cols-12 gap-[8px]" ]
+            [ div [ class "col-span-4" ]
+                [ label [ class "mb-1" ] [ text "Активна з:" ]
                 , input
                     [ type_ "date"
-                    , class "form-control"
+                    , class "form-control w-[150px]!"
+                    , required True
                     , Time.millisToPosix updNetworkReq.activeFrom
                         |> Le.Time.renderDateF4 shared.timeZone
                         |> value
@@ -1130,11 +1177,11 @@ mainInfoEditBlock updNetworkReq networkFreqs shared model =
                     ]
                     []
                 ]
-            , div [ class "col-span-2" ]
-                [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
+            , div [ class "col-span-4" ]
+                [ label [ class "mb-1" ] [ text "Активна по:" ]
                 , input
                     [ type_ "date"
-                    , class "form-control"
+                    , class "form-control w-[150px]!"
                     , case updNetworkReq.activeTo of
                         Just millis ->
                             value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
@@ -1159,37 +1206,115 @@ mainInfoEditBlock updNetworkReq networkFreqs shared model =
                     ]
                     []
                 ]
-            , div [ class "col-span-8" ]
-                [ label [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-                , let
-                    selectedItems =
-                        List.map
-                            (\postId ->
-                                Select.basicMenuItem
-                                    { item = postId
-                                    , label =
-                                        RD.withDefault Dict.empty shared.posts
-                                            |> Dict.get postId
-                                            |> Maybe.map .name
-                                            |> Maybe.withDefault ""
-                                    }
-                            )
-                            model.editPostsSelect.selected
+            , div [ class "col-span-4" ]
+                [ text "" ]
+            ]
+        , div [ class "h-[300px]" ]
+            [ case model.groupsActivity of
+                Success data ->
+                    let
+                        groupsMessageCountByDayJson =
+                            data |> Encode.dict identity (Encode.dict identity Encode.int)
+                    in
+                    Html.node "bar-chart"
+                        [ property "data" <| groupsMessageCountByDayJson
+                        , property "last-day" <| Encode.int shared.now
+                        , class "block"
+                        ]
+                        []
 
-                    defaultOptions =
-                        Le.Block.Select.defaultOptions shared.isDarkMode
+                _ ->
+                    Le.Block.Spinner.loadingSpinnerSm
+            ]
+        ]
+    ]
 
-                    do2 =
-                        { defaultOptions | clearable = False }
-                  in
-                  Html.map NetworkEditPostsSelMsg <|
-                    Styled.toUnstyled <|
-                        Le.Block.Select.renderSelect
-                            selectedItems
-                            model.editPostsSelect.state
-                            model.editPostsSelect.items
-                            "жоден"
-                            do2
+
+mainInfoEditBlock : B.UpdateNetworkReq -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
+mainInfoEditBlock updNetworkReq networkFreqs shared model =
+    [ div [ class "mb-[8px] flex justify-between items-center" ]
+        [ h5 []
+            [ text "Згідно форми" ]
+        , div [ class "flex gap-[8px]" ]
+            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick NetworkEditingCanceledByUser ] []
+            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick NetworkEditingSavedByUser ] []
+            ]
+        ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Район функціонування/розгортання:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value updNetworkReq.location
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | location = v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть район функціонування/розгортання"
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Призначення:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value <| Maybe.withDefault "" updNetworkReq.purpose
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | purpose = Just v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть призначення"
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Склад кореспондентів:" ]
+            , div [ class "col-span-2" ]
+                [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
+            , div [ class "col-span-2" ]
+                [ List.map (\freqObj -> freqObj.kind) networkFreqs
+                    |> List.map NetworksUtils.networkStringToLabel
+                    |> Set.fromList
+                    |> Set.toList
+                    |> String.join ", "
+                    |> text
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Режим роботи радіомережі:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value <| Maybe.withDefault "" updNetworkReq.operationMode
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationMode = Just v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть режим роботи радіомережі"
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Характер роботи:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value <| Maybe.withDefault "" updNetworkReq.operationType
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationType = Just v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть характер роботи"
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Період функціонування:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value <| Maybe.withDefault "" updNetworkReq.operationPeriod
+                    , onInput <| NetworkEditingMsg << (\v -> { updNetworkReq | operationPeriod = Just v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть період функціонування"
+                    ]
+                    []
                 ]
             ]
         ]
@@ -1370,8 +1495,16 @@ contentBlock user shared network model =
         , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
-        [ div [ class "col-span-7 grid  gap-[30px]", style "grid-template-rows" "520px 370px" ]
-            [ div [ class "col-span-8 bg-w dark:bg-[#1C1C21] p-[16px]" ]
+        [ div [ class "col-span-7 flex flex-col gap-[16px]" ]
+            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
+                (case model.missingFieldsMode of
+                    Readonly ->
+                        missingFieldsBlock user network shared model
+
+                    Editing eNetwork ->
+                        missingFieldsEditBlock user network eNetwork shared model
+                )
+            , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
                 (case model.mode of
                     Readonly ->
                         if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
@@ -1387,7 +1520,17 @@ contentBlock user shared network model =
                         else
                             mainInfoBlock user network shared model
                 )
-            , div [ class "col-start-1 col-end-9 row-start-2 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+            , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
+                                (case model.mode of
+                    Readonly ->
+                        activityBlock user network shared model
+
+                    Editing eNetwork ->
+                        activityEditBlock user network eNetwork shared model
+                )
+            ]
+        , div [ class "col-span-5 flex flex-col gap-[16px]" ]
+            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col h-[300px]" ]
                 [ h4 [] [ text "Пеленги" ]
                 , let
                     mapPoints =
@@ -1401,20 +1544,19 @@ contentBlock user shared network model =
                   if List.length mapPoints > 0 then
                     Html.node "small-map"
                         [ property "points" (Encode.list B.networkPointEncoder mapPoints)
-                        , class "grow-1"
+                        , class "flex-1"
                         , property "withExitButton" (Encode.bool False)
                         ]
                         []
 
                   else
-                    div [ class "grow-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
+                    div [ class "flex-1 flex justify-center items-center" ] [ text "Пеленги відсутні" ]
                 ]
-            ]
-        , let
-            ( confirmations, signs ) =
-                List.partition (\description -> description.descrType == B.Confirmation) network.descriptions
-          in
-          div [ class "col-span-5 bg-w dark:bg-[#1C1C21] p-[16px]" ]
+            , let
+                ( confirmations, signs ) =
+                    List.partition (\description -> description.descrType == B.Confirmation) network.descriptions
+              in
+              div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
             [ div [ class "mb-[16px]" ]
                 [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
                 , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
@@ -1573,10 +1715,11 @@ contentBlock user shared network model =
                             (RD.withDefault [] model.signals)
                         )
                     ]
-                ]
-            ]
-        ]
-    , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
+                                 ]
+             ]
+         ]
+     ]
+     , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Частоти" ]
             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
@@ -1971,3 +2114,79 @@ view user shared model =
             ]
         ]
     }
+
+
+missingFieldsEditBlock : Auth.User -> B.Network -> B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
+missingFieldsEditBlock user network updNetworkReq shared model =
+    [ div [ class "mb-[8px] flex justify-between items-center" ]
+        [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+        , div [ class "flex gap-[8px]" ]
+            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditCanceledByUser, title "Скасувати" ] []
+            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditSavedByUser, title "Зберегти" ] []
+            ]
+        ]
+    , div [ class "space-y-3" ]
+        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Назва:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value updNetworkReq.name
+                    , onInput <| MissingFieldsEditingMsg << (\v -> { updNetworkReq | name = v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть назву"
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Радіостанція:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ value (Maybe.withDefault "" updNetworkReq.radioStation)
+                    , onInput <| MissingFieldsEditingMsg << (\v -> { updNetworkReq | radioStation = Just v })
+                    , class "form-input w-full h-[40px]"
+                    , placeholder "введіть радіостанцію"
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text "Редагування підрозділів поки недоступне" ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
+            , div [ class "col-span-2" ]
+                [ let
+                    selectedItems =
+                        List.map
+                            (\postId ->
+                                Select.basicMenuItem
+                                    { item = postId
+                                    , label =
+                                        RD.withDefault Dict.empty shared.posts
+                                            |> Dict.get postId
+                                            |> Maybe.map .name
+                                            |> Maybe.withDefault ""
+                                    }
+                            )
+                            model.editPostsSelect.selected
+
+                    defaultOptions =
+                        Le.Block.Select.defaultOptions shared.isDarkMode
+                  in
+                  Html.map NetworkEditPostsSelMsg <|
+                    Styled.toUnstyled <|
+                        Le.Block.Select.renderSelect
+                            selectedItems
+                            model.editPostsSelect.state
+                            model.editPostsSelect.items
+                            "виберіть пости"
+                            defaultOptions
+                ]
+            ]
+        ]
+    ]
+
+
