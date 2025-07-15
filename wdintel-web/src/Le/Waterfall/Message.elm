@@ -580,13 +580,21 @@ leftColumn ( messageId, message ) ps model =
                                     _ ->
                                         ""
 
+                            dateToStr =
+                                case ( ps.zone, ps.time ) of
+                                    ( Just zone, Just time ) ->
+                                        Le.Time.renderDateF4 zone (Le.Time.xDaysAgo -1 time)
+
+                                    _ ->
+                                        ""
+
                             stateS =
                                 Encode.encode 0
                                     (B.rerAnalysisQueryStateEncoder
                                         { dateFromStr = dateFromStr
                                         , timeFromStr = ""
-                                        , dateToStr = ""
-                                        , timeToStr = ""
+                                        , dateToStr = dateToStr
+                                        , timeToStr = "00:00"
                                         , groupsSelected = []
                                         , sendersSelected = []
                                         , freqsSelected = message.freq |> mmap (\x -> [ x ]) |> def []
