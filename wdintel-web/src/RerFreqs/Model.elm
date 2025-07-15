@@ -98,7 +98,6 @@ type NetworkWorkflowStatus
     = NotStarted
     | SelectingNetwork String (Maybe Int)
     | EditingNetwork String B.UpdateNetworkReq
-    | CreateNewNetwork String B.CreateNetworkReq
 
 
 type TextLocation
