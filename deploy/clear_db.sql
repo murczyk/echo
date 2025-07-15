@@ -1,3 +1,4 @@
+delete from sigint_network_description;
 delete from log_users_report_generation;
 delete from tags_ordering;
 delete from sigint_comment;
@@ -42,6 +43,17 @@ delete from signal_restapi_error;
 delete from tags_ordering;
 delete from whatsapp_queue_attachment;
 delete from whatsapp_group;
+
+delete from sigint_signal;
+delete from sigint_network_freq_changelog;
+delete from sigint_network_freq;
+delete from sigint_network_changelog;
+delete from sigint_network_freq;
+delete from sigint_network;
+delete from sigint_unit;
+
+delete from sigint_signal_changelog;
+delete from sigint_signal;
 
 delete from login;
 delete from delta_login;
