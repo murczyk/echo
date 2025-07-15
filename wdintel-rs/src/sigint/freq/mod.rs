@@ -4,7 +4,7 @@ use crate::location::utils::to_location_list;
 use crate::types::*;
 use crate::utils::*;
 use actix_web::web::Json;
-use actix_web::{post, HttpResponse};
+use actix_web::{post};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
 use log::*;

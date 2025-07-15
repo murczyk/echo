@@ -998,7 +998,7 @@ missingFieldsBlock user network shared model =
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ case network.unitIds of
                     Just unitIds ->
-                        List.map 
+                        List.map
                             (\unitId ->
                                 Dict.get unitId (RD.withDefault Dict.empty shared.masterUnits)
                                     |> Maybe.map .name
@@ -1007,6 +1007,7 @@ missingFieldsBlock user network shared model =
                             unitIds
                             |> String.join ", "
                             |> text
+
                     Nothing ->
                         text ""
                 ]
@@ -1021,7 +1022,24 @@ missingFieldsBlock user network shared model =
                             |> List.map .name
                             |> String.join ", "
                             |> text
+
                     _ ->
+                        text ""
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix network.activeFrom) ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ case network.activeTo of
+                    Just millis ->
+                        Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix millis) |> text
+
+                    Nothing ->
                         text ""
                 ]
             ]
@@ -1095,31 +1113,6 @@ activityBlock user network shared model =
         [ div [ class "mb-4" ]
             [ span [ class "opacity-70 text-sm" ] [ text "Графік активності мережі за місяць" ]
             ]
-        , div [ class "grid grid-cols-12 gap-[8px]" ]
-            [ div [ class "col-span-4" ]
-                [ label [ class "mb-1" ] [ text "Активна з:" ]
-                , div []
-                    [ text <|
-                        Le.Time.renderDateF6 shared.timeZone
-                            (Time.millisToPosix network.activeFrom)
-                    ]
-                ]
-            , div [ class "col-span-4" ]
-                [ label [ class "mb-1" ] [ text "Активна по:" ]
-                , div []
-                    [ case network.activeTo of
-                        Just millis ->
-                            Le.Time.renderDateF6 shared.timeZone
-                                (Time.millisToPosix millis)
-                                |> text
-
-                        Nothing ->
-                            text ""
-                    ]
-                ]
-            , div [ class "col-span-4" ]
-                [ text "" ]
-            ]
         , div [ class "h-[300px]" ]
             [ case model.groupsActivity of
                 Success data ->
@@ -1149,65 +1142,6 @@ activityEditBlock user network updNetworkReq shared model =
     , div [ class "space-y-4" ]
         [ div [ class "mb-4" ]
             [ span [ class "opacity-70 text-sm" ] [ text "Графік активності мережі за місяць" ]
-            ]
-        , div [ class "grid grid-cols-12 gap-[8px]" ]
-            [ div [ class "col-span-4" ]
-                [ label [ class "mb-1" ] [ text "Активна з:" ]
-                , input
-                    [ type_ "date"
-                    , class "form-control w-[150px]!"
-                    , required True
-                    , Time.millisToPosix updNetworkReq.activeFrom
-                        |> Le.Time.renderDateF4 shared.timeZone
-                        |> value
-                    , onInput <|
-                        NetworkEditingMsg
-                            << (\v ->
-                                    { updNetworkReq
-                                        | activeFrom =
-                                            case Le.Time.parseDateParts v of
-                                                Err _ ->
-                                                    updNetworkReq.activeFrom
-
-                                                Ok parts ->
-                                                    Time.Extra.partsToPosix shared.timeZone parts
-                                                        |> Time.posixToMillis
-                                    }
-                               )
-                    ]
-                    []
-                ]
-            , div [ class "col-span-4" ]
-                [ label [ class "mb-1" ] [ text "Активна по:" ]
-                , input
-                    [ type_ "date"
-                    , class "form-control w-[150px]!"
-                    , case updNetworkReq.activeTo of
-                        Just millis ->
-                            value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                        Nothing ->
-                            value ""
-                    , onInput <|
-                        NetworkEditingMsg
-                            << (\v ->
-                                    { updNetworkReq
-                                        | activeTo =
-                                            case Le.Time.parseDateParts v of
-                                                Err _ ->
-                                                    updNetworkReq.activeTo
-
-                                                Ok parts ->
-                                                    Time.Extra.partsToPosix shared.timeZone parts
-                                                        |> Time.posixToMillis
-                                                        |> Just
-                                    }
-                               )
-                    ]
-                    []
-                ]
-            , div [ class "col-span-4" ]
-                [ text "" ]
             ]
         , div [ class "h-[300px]" ]
             [ case model.groupsActivity of
@@ -1267,12 +1201,12 @@ mainInfoEditBlock updNetworkReq networkFreqs shared model =
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Склад кореспондентів:" ]
-            , div [ class "col-span-2" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ RD.withDefault [] model.callsigns |> List.length |> String.fromInt |> text ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Вид передачі:" ]
-            , div [ class "col-span-2" ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ List.map (\freqObj -> freqObj.kind) networkFreqs
                     |> List.map NetworksUtils.networkStringToLabel
                     |> Set.fromList
@@ -1521,7 +1455,7 @@ contentBlock user shared network model =
                             mainInfoBlock user network shared model
                 )
             , div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-                                (case model.mode of
+                (case model.mode of
                     Readonly ->
                         activityBlock user network shared model
 
@@ -1529,8 +1463,8 @@ contentBlock user shared network model =
                         activityEditBlock user network eNetwork shared model
                 )
             ]
-        , div [ class "col-span-5 flex flex-col gap-[16px]" ]
-            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col h-[300px]" ]
+        , div [ class "col-span-5 flex flex-col gap-[16px] h-full" ]
+            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
                 [ h4 [] [ text "Пеленги" ]
                 , let
                     mapPoints =
@@ -1556,170 +1490,170 @@ contentBlock user shared network model =
                 ( confirmations, signs ) =
                     List.partition (\description -> description.descrType == B.Confirmation) network.descriptions
               in
-              div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-            [ div [ class "mb-[16px]" ]
-                [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
-                , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                    [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-                    , div [ class "flex justify-between w-full" ]
-                        [ div [ class "w-[200px]" ]
-                            [ let
-                                selectedItem =
-                                    Maybe.map
-                                        (\freq ->
-                                            Select.basicMenuItem
-                                                { item = freq
-                                                , label = freq
-                                                }
-                                        )
-                                        model.addConfirmationFreqSelect.selected
+              div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col flex-1" ]
+                [ div [ class "mb-[16px]" ]
+                    [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
+                    , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+                        [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
+                        , div [ class "flex justify-between w-full" ]
+                            [ div [ class "w-[200px]" ]
+                                [ let
+                                    selectedItem =
+                                        Maybe.map
+                                            (\freq ->
+                                                Select.basicMenuItem
+                                                    { item = freq
+                                                    , label = freq
+                                                    }
+                                            )
+                                            model.addConfirmationFreqSelect.selected
 
-                                defaultOptions =
-                                    Le.Block.Select.defaultOptions shared.isDarkMode
-                              in
-                              Html.map AddConfirmationFreqSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        selectedItem
-                                        model.addConfirmationFreqSelect.state
-                                        model.addConfirmationFreqSelect.items
-                                        "виберіть частоту"
-                                        defaultOptions
+                                    defaultOptions =
+                                        Le.Block.Select.defaultOptions shared.isDarkMode
+                                  in
+                                  Html.map AddConfirmationFreqSelMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            selectedItem
+                                            model.addConfirmationFreqSelect.state
+                                            model.addConfirmationFreqSelect.items
+                                            "виберіть частоту"
+                                            defaultOptions
+                                ]
+                            , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation }
+                                |> Button.withStyleSecondary
+                                |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
+                                |> Button.view
                             ]
-                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation }
-                            |> Button.withStyleSecondary
-                            |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
-                            |> Button.view
                         ]
-                    ]
-                , div [ class "max-h-[200px] overflow-y-auto" ]
-                    (List.map
-                        (\description ->
-                            div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
-                                [ div [ class "flex justify-between items-center " ]
-                                    [ div [ class "opacity-70 flex gap-[4px] items-center" ]
-                                        [ span [] [ text description.login ]
-                                        , span [] [ text "|" ]
-                                        , span [ class "text-[13px]" ] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
-                                        , span [ class "text-[13px]" ]
-                                            [ description.networkFrequencyId
-                                                |> Maybe.andThen
-                                                    (\freqId ->
-                                                        ListX.find (\freq -> freq.id == freqId) network.freqs
-                                                    )
-                                                |> Maybe.map .freq
-                                                |> (\mFreq ->
-                                                        case mFreq of
-                                                            Just f ->
-                                                                text ("| " ++ f)
+                    , div [ class "max-h-[200px] overflow-y-auto" ]
+                        (List.map
+                            (\description ->
+                                div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                                    [ div [ class "flex justify-between items-center " ]
+                                        [ div [ class "opacity-70 flex gap-[4px] items-center" ]
+                                            [ span [] [ text description.login ]
+                                            , span [] [ text "|" ]
+                                            , span [ class "text-[13px]" ] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                            , span [ class "text-[13px]" ]
+                                                [ description.networkFrequencyId
+                                                    |> Maybe.andThen
+                                                        (\freqId ->
+                                                            ListX.find (\freq -> freq.id == freqId) network.freqs
+                                                        )
+                                                    |> Maybe.map .freq
+                                                    |> (\mFreq ->
+                                                            case mFreq of
+                                                                Just f ->
+                                                                    text ("| " ++ f)
 
-                                                            Nothing ->
-                                                                text ""
-                                                   )
+                                                                Nothing ->
+                                                                    text ""
+                                                       )
+                                                ]
+                                            ]
+                                        , div [ class "flex gap-[8px]" ]
+                                            [ case Dict.get description.id model.descriptionsEditDict of
+                                                Just desc ->
+                                                    i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+
+                                                Nothing ->
+                                                    i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
+                                            , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
                                             ]
                                         ]
-                                    , div [ class "flex gap-[8px]" ]
+                                    , div []
                                         [ case Dict.get description.id model.descriptionsEditDict of
                                             Just desc ->
-                                                i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+                                                textarea
+                                                    [ class "textarea__field"
+                                                    , placeholder "Введіть обґрунтування прив'язки"
+                                                    , value desc.description
+                                                    , onInput <| DescriptionEditedByUser desc.id
+                                                    ]
+                                                    []
 
                                             Nothing ->
-                                                i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
-                                        , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                                text description.description
                                         ]
                                     ]
-                                , div []
-                                    [ case Dict.get description.id model.descriptionsEditDict of
-                                        Just desc ->
-                                            textarea
-                                                [ class "textarea__field"
-                                                , placeholder "Введіть обґрунтування прив'язки"
-                                                , value desc.description
-                                                , onInput <| DescriptionEditedByUser desc.id
-                                                ]
-                                                []
-
-                                        Nothing ->
-                                            text description.description
-                                    ]
-                                ]
-                        )
-                        (List.sortWith
-                            (\a b ->
-                                if a.createdAt > b.createdAt then
-                                    LT
-
-                                else
-                                    GT
                             )
-                            confirmations
+                            (List.sortWith
+                                (\a b ->
+                                    if a.createdAt > b.createdAt then
+                                        LT
+
+                                    else
+                                        GT
+                                )
+                                confirmations
+                            )
                         )
-                    )
-                ]
-            , div []
-                [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
-                , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                    [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-                    , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
-                        |> Button.withStyleSecondary
-                        |> Button.withDisabled (String.isEmpty model.addSignsInp)
-                        |> Button.view
                     ]
-                , div [ class "max-h-[200px] overflow-y-auto" ]
-                    (List.map
-                        (\description ->
-                            div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
-                                [ div [ class "flex justify-between items-center " ]
-                                    [ div [ class "opacity-70 flex gap-[4px] items-center" ]
-                                        [ span [] [ text description.login ]
-                                        , span [] [ text "|" ]
-                                        , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
-                                        ]
-                                    , div [ class "flex gap-[8px]" ]
-                                        [ i [ class "bi bi-pencil cursor-pointer" ] []
-                                        , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
-                                        ]
-                                    ]
-                                , div []
-                                    [ text description.description
-                                    ]
-                                ]
-                        )
-                        (List.sortWith
-                            (\a b ->
-                                if a.createdAt > b.createdAt then
-                                    LT
-
-                                else
-                                    GT
-                            )
-                            signs
-                        )
-                    )
-                , section [ class "mt-[8px]" ]
-                    [ h5 [] [ text "Сигнали" ]
-                    , div [ class "h-[100px] overflow-y-auto" ]
+                , div []
+                    [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
+                    , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
+                        [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
+                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
+                            |> Button.withStyleSecondary
+                            |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                            |> Button.view
+                        ]
+                    , div [ class "max-h-[200px] overflow-y-auto" ]
                         (List.map
-                            (\signalsForUnit ->
-                                if List.length signalsForUnit.signals > 0 then
-                                    div []
-                                        [ div []
-                                            [ span [ class "font-medium" ] [ text signalsForUnit.unitName ]
-                                            , div [ class "grid grid-cols-2 gap-[8px]" ] (List.map (\s -> div [ class "" ] [ span [ class "w-[50px] mr-[8px]" ] [ text s.text ], span [] [ text <| Maybe.withDefault "" s.meaning ] ]) signalsForUnit.signals)
+                            (\description ->
+                                div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
+                                    [ div [ class "flex justify-between items-center " ]
+                                        [ div [ class "opacity-70 flex gap-[4px] items-center" ]
+                                            [ span [] [ text description.login ]
+                                            , span [] [ text "|" ]
+                                            , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                            ]
+                                        , div [ class "flex gap-[8px]" ]
+                                            [ i [ class "bi bi-pencil cursor-pointer" ] []
+                                            , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
                                             ]
                                         ]
-
-                                else
-                                    text "Відсутні прив'язані до підрозділів сигнали"
+                                    , div []
+                                        [ text description.description
+                                        ]
+                                    ]
                             )
-                            (RD.withDefault [] model.signals)
+                            (List.sortWith
+                                (\a b ->
+                                    if a.createdAt > b.createdAt then
+                                        LT
+
+                                    else
+                                        GT
+                                )
+                                signs
+                            )
                         )
+                    , section [ class "mt-[8px]" ]
+                        [ h5 [] [ text "Сигнали" ]
+                        , div [ class "h-[100px] overflow-y-auto" ]
+                            (List.map
+                                (\signalsForUnit ->
+                                    if List.length signalsForUnit.signals > 0 then
+                                        div []
+                                            [ div []
+                                                [ span [ class "font-medium" ] [ text signalsForUnit.unitName ]
+                                                , div [ class "grid grid-cols-2 gap-[8px]" ] (List.map (\s -> div [ class "" ] [ span [ class "w-[50px] mr-[8px]" ] [ text s.text ], span [] [ text <| Maybe.withDefault "" s.meaning ] ]) signalsForUnit.signals)
+                                                ]
+                                            ]
+
+                                    else
+                                        text "Відсутні прив'язані до підрозділів сигнали"
+                                )
+                                (RD.withDefault [] model.signals)
+                            )
+                        ]
                     ]
-                                 ]
-             ]
-         ]
-     ]
-     , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
+                ]
+            ]
+        ]
+    , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Частоти" ]
             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
@@ -1996,55 +1930,6 @@ contentBlock user shared network model =
             _ ->
                 Le.Block.Spinner.loadingSpinnerSm
         ]
-    , section [ class "grid grid-cols-12 gap-[30px] h-[300px] mt-[30px]" ]
-        [ div [ class "col-span-4 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
-            [ h4 [] [ text "Активність мережі" ]
-            , section [ class "grow-1" ]
-                [ case model.groupsActivity of
-                    Success data ->
-                        let
-                            groupsMessageCountByDayJson =
-                                data |> Encode.dict identity (Encode.dict identity Encode.int)
-                        in
-                        Html.node "bar-chart"
-                            [ property "data" <| groupsMessageCountByDayJson
-                            , property "last-day" <| Encode.int shared.now
-                            , class "block"
-                            ]
-                            []
-
-                    _ ->
-                        Le.Block.Spinner.loadingSpinnerSm
-                ]
-            ]
-        , let
-            updatedAtString =
-                Le.Time.renderDateF6 shared.timeZone
-                    (Time.millisToPosix network.lastUpdatedAt)
-
-            updatedByString =
-                Maybe.withDefault "невідомий" network.lastUpdatedBy
-
-            createdAtString =
-                Le.Time.renderDateF6 shared.timeZone
-                    (Time.millisToPosix network.createdAt)
-          in
-          div [ class "col-span-2 bg-w dark:bg-[#1C1C21] p-[16px]" ]
-            [ section []
-                [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
-                    [ i [ class "bi bi-calendar-date" ]
-                        []
-                    , text <|
-                        " "
-                            ++ createdAtString
-                    ]
-                , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
-                    [ i [ class "bi bi-pencil-square" ] []
-                    , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
-                    ]
-                ]
-            ]
-        ]
     ]
 
 
@@ -2157,7 +2042,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-            , div [ class "col-span-2" ]
+            , div [ class "col-span-2 h-[40px] w-full flex items-center" ]
                 [ let
                     selectedItems =
                         List.map
@@ -2186,7 +2071,66 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                             defaultOptions
                 ]
             ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center mt-[24px]" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ type_ "date"
+                    , class "form-input w-full h-[40px]"
+                    , value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix updNetworkReq.activeFrom
+                    , onInput <|
+                        MissingFieldsEditingMsg
+                            << (\v ->
+                                    { updNetworkReq
+                                        | activeFrom =
+                                            case Le.Time.parseDateParts v of
+                                                Err _ ->
+                                                    updNetworkReq.activeFrom
+
+                                                Ok parts ->
+                                                    Time.Extra.partsToPosix shared.timeZone parts
+                                                        |> Time.posixToMillis
+                                    }
+                               )
+                    ]
+                    []
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
+            , div [ class "col-span-2" ]
+                [ input
+                    [ type_ "date"
+                    , class "form-input w-full h-[40px]"
+                    , value <|
+                        case updNetworkReq.activeTo of
+                            Just millis ->
+                                Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                ""
+                    , onInput <|
+                        MissingFieldsEditingMsg
+                            << (\v ->
+                                    { updNetworkReq
+                                        | activeTo =
+                                            if String.trim v == "" then
+                                                Nothing
+
+                                            else
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        updNetworkReq.activeTo
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                    }
+                               )
+                    ]
+                    []
+                ]
+            ]
         ]
     ]
-
-
