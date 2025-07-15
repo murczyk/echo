@@ -131,6 +131,14 @@ type alias Model =
 
 init : Route () -> Shared.Model -> () -> ( Model, Effect Msg )
 init route shared () =
+    let
+        -- Parse frequency from query parameters
+        freqFromQuery = Dict.get "freq" route.query
+        
+        -- Determine if sidebar should be open and pre-filled
+        shouldOpenSidebar = freqFromQuery /= Nothing
+        freqToUse = Maybe.withDefault "" freqFromQuery
+    in
     ( { formErrors = Dict.empty
       , toasts = Le.Block.Toast.init
       , createNetworkState =
@@ -177,9 +185,9 @@ init route shared () =
       , creatingNetwork = False
 
       -- Frequency creation sidebar
-      , freqSidebarOpen = False
+      , freqSidebarOpen = shouldOpenSidebar
       , freqCreateState =
-            { freq = ""
+            { freq = freqToUse
             , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
             , modulationId = Nothing
             , description = Nothing
