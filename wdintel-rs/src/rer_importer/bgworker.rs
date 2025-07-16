@@ -1,5 +1,7 @@
 use crate::config::*;
 use crate::entities::*;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::location::utils;
 use crate::rer_importer::multimessage::*;
 use crate::types::*;
@@ -239,6 +241,9 @@ where
             Set(Some(IMPORT_DIRECTION_FINDING_UUID.to_string()));
         signal_message.update(txn).await.context(h!())?;
     }
+
+    let event = EventMsg::new(EventType::ETInboxChanged(result.id));
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(vec![])
 }
