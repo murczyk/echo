@@ -24,6 +24,8 @@ pub enum Relation {
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_network::Entity")]
     SigintNetwork,
+    #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
+    SigintNetworkCallsign,
     #[sea_orm(has_many = "super::sigint_network_changelog::Entity")]
     SigintNetworkChangelog,
     #[sea_orm(has_many = "super::sigint_network_description::Entity")]
@@ -32,10 +34,14 @@ pub enum Relation {
     SigintNetworkFreq,
     #[sea_orm(has_many = "super::sigint_network_freq_changelog::Entity")]
     SigintNetworkFreqChangelog,
+    #[sea_orm(has_many = "super::sigint_network_post::Entity")]
+    SigintNetworkPost,
     #[sea_orm(has_many = "super::sigint_network_unit::Entity")]
     SigintNetworkUnit,
     #[sea_orm(has_many = "super::sigint_network_unit_changelog::Entity")]
     SigintNetworkUnitChangelog,
+    #[sea_orm(has_many = "super::sigint_post::Entity")]
+    SigintPost,
     #[sea_orm(has_many = "super::sigint_signal::Entity")]
     SigintSignal,
     #[sea_orm(has_many = "super::sigint_signal_changelog::Entity")]
@@ -72,6 +78,12 @@ impl Related<super::sigint_network::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_network_callsign::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkCallsign.def()
+    }
+}
+
 impl Related<super::sigint_network_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkChangelog.def()
@@ -96,6 +108,12 @@ impl Related<super::sigint_network_freq_changelog::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_network_post::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkPost.def()
+    }
+}
+
 impl Related<super::sigint_network_unit::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkUnit.def()
@@ -105,6 +123,12 @@ impl Related<super::sigint_network_unit::Entity> for Entity {
 impl Related<super::sigint_network_unit_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkUnitChangelog.def()
+    }
+}
+
+impl Related<super::sigint_post::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintPost.def()
     }
 }
 
