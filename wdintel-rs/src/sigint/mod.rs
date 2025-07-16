@@ -425,6 +425,7 @@ pub async fn oneoff_sigint_import_mouse(
 
     let config = crate::config::read_config(mode)?;
     let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let mut redis = crate::new_redis(&config).await.context(h!())?;
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
@@ -503,6 +504,7 @@ pub async fn oneoff_sigint_import_mouse(
                         settlements.clone(),
                         ps,
                         &dbx,
+                        &mut redis,
                         &rq,
                         &cur_network,
                         &cur_freq,
@@ -527,6 +529,7 @@ async fn xlsx_import_process_one(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     ps: &crate::OneoffSigintImportMousePs,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     rq: &reqwest::Client,
     network: &str,
     freq: &str,
@@ -589,6 +592,7 @@ async fn xlsx_import_process_one(
         dbx,
         &rq,
         &config,
+        redis,
         db_message_id,
     )
     .await;

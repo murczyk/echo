@@ -1,5 +1,7 @@
 use crate::config::*;
 use crate::entities::*;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::location::utils;
 use crate::rer_importer::multimessage::*;
 use crate::types::*;
@@ -15,6 +17,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,
+    redis: &mut redis::aio::ConnectionManager,
     message_id: i64,
 ) where
     C: ConnectionTrait + 'async_trait,
@@ -32,6 +35,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
             &config,
             message_id,
             &mut cache,
+            redis,
         )
         .await
         {
@@ -52,6 +56,7 @@ async fn inbox_item_worker_1<'a, 'async_trait, C>(
     config: &Config,
     message_id: i64,
     cache: &mut TopKCache<String, String>,
+    redis: &mut redis::aio::ConnectionManager,
 ) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -239,6 +244,9 @@ where
             Set(Some(IMPORT_DIRECTION_FINDING_UUID.to_string()));
         signal_message.update(txn).await.context(h!())?;
     }
+
+    let event = EventMsg::new(EventType::ETInboxChanged(result.id));
+    fanout(redis, event).await.context(h!())?;
 
     Ok(vec![])
 }

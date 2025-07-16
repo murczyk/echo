@@ -82,6 +82,7 @@ pub async fn rer_delta_kmz_import(
             env.settlements.clone(),
             &dbx3,
             &config3,
+            &mut env.redis.clone(),
             &rq3,
             file_name,
             doc_kml,
@@ -110,6 +111,7 @@ pub async fn rer_delta_kmz_import_go(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     dbx: &sea_orm::DatabaseConnection,
     config: &Config,
+    redis: &mut redis::aio::ConnectionManager,
     rq: &reqwest::Client,
     file_name: String,
     doc_kml: std::path::PathBuf,
@@ -206,6 +208,7 @@ pub async fn rer_delta_kmz_import_go(
             dbx,
             &rq,
             &config,
+            redis,
             db_message_id,
         )
         .await;

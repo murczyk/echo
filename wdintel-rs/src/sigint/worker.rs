@@ -7,6 +7,7 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
 
     let config = crate::config::read_config(mode.clone())?;
 
+    let redis = crate::new_redis(&config).await.context(h!())?;
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(config.settlement_paths().unwrap())
             .unwrap(),
@@ -25,11 +26,13 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
             let dbx2 = dbx.clone();
             let config5 = config.clone();
             let settlements2 = settlements.clone();
+            let mut redis = redis.clone();
             jset.spawn_local(async move {
                 receive_thread_signal_restapi_nofail(
                     settlements2,
                     &config5,
                     &dbx2,
+                    &mut redis,
                     datasource.id,
                 )
                 .await
@@ -40,11 +43,13 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
             let dbx2 = dbx.clone();
             let config5 = config.clone();
             let settlements2 = settlements.clone();
+            let mut redis = redis.clone();
             jset.spawn_local(async move {
                 crate::whatsapp::receive_thread_nofail(
                     settlements2,
                     &config5,
                     &dbx2,
+                    &mut redis,
                     &datasource,
                 )
                 .await
@@ -61,6 +66,7 @@ async fn receive_thread_signal_restapi_nofail(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     datasource_id: i64,
 ) {
     loop {
@@ -68,6 +74,7 @@ async fn receive_thread_signal_restapi_nofail(
             settlements.clone(),
             config,
             dbx,
+            redis,
             datasource_id,
         )
         .await
@@ -82,6 +89,7 @@ async fn receive_thread_signal_restapi(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     datasource_id: i64,
 ) -> Result<(), AppError> {
     let rq: reqwest::Client = reqwest::Client::builder()
@@ -117,6 +125,7 @@ async fn receive_thread_signal_restapi(
                     settlements.clone(),
                     config,
                     &dbx,
+                    redis,
                     &rq,
                     datasource_id,
                     &message,
@@ -251,6 +260,7 @@ pub async fn process_incoming_message_restapi(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     rq: &reqwest::Client,
     datasource_id: i64,
     message: &crate::sigint::restapi::Message,
@@ -379,6 +389,7 @@ pub async fn process_incoming_message_restapi(
         dbx,
         &rq,
         &config,
+        redis,
         db_message_id,
     )
     .await;

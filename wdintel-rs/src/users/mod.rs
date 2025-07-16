@@ -542,6 +542,7 @@ async fn user_logout(user: Identity) -> Result<HttpResponse, AppError> {
 #[post("/api/user/login")]
 pub async fn user_login(
     env: actix_web::web::Data<Env>,
+    session: actix_session::Session,
     http_req: HttpRequest,
     req: Json<LoginReq>,
 ) -> Result<Json<()>, AppError> {
@@ -591,11 +592,32 @@ pub async fn user_login(
     Identity::login(&http_req.extensions(), user_id.clone().into())
         .context(h!())?;
 
+    let session_id = Uuid::now_v7();
+    session.insert("id", session_id.to_string()).context(h!())?;
+
+    let account_id = login_obj.login.clone();
+    crate::session::add_session(
+        &mut env.redis.clone(),
+        session_id,
+        &account_id,
+    )
+    .await
+    .context(h!())?;
+    crate::event_stream::create_redis_stream(
+        &mut env.redis.clone(),
+        session_id,
+    )
+    .await
+    .context(h!())?;
+
     update_last_active_at(&env.dbx, &user_id)
         .await
         .context(h!())?;
 
-    record_new_session(&user_id, &env).await.context(h!())?;
+    record_new_session(&user_id, session_id, &env)
+        .await
+        .context(h!())?;
+
     Ok(Json(()))
 }
 
