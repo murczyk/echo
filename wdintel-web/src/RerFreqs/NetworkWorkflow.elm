@@ -167,8 +167,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                                     , label = Unit.unitName model.masterUnits unitId
                                     }
                             )
-              in
-              let
+
                 options =
                     Le.Block.Select.defaultOptions shared.isDarkMode
               in

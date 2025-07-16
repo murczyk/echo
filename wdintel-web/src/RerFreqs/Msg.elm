@@ -85,3 +85,5 @@ type Msg
     | ClearAllFilters
     | NetworkWorkflowTabClicked RerFreqs.Model.NetworkWorkflowTab
     | NetworkUpdated String (Result ApiError B.Network)
+    | UnitsSearchReturned (Result ApiError B.ListUnitsByIdRsp)
+    | UnitsSearchDebounceTimerExpired String

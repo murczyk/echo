@@ -19,7 +19,6 @@ import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..)
 import Le.Block.DateTime
 import Le.Block.Select
 import Le.Block.Spinner
-import Le.Block.Toast
 import Le.ErrorHandling
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
@@ -29,6 +28,7 @@ import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
+import Process
 import RerFreqs.FilterPanel as FilterPanel
 import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
@@ -658,32 +658,12 @@ update shared msg model =
             )
 
         UnitsReturnedByApi (Ok rsp) ->
-            let
-                m1 =
-                    { model
-                        | masterUnits =
-                            rsp.units
-                                |> List.map (\x -> ( x.id, x ))
-                                |> Dict.fromList
-                    }
-
-                items =
-                    Dict.toList m1.masterUnits
-                        |> List.map
-                            (\( unitId, unit ) ->
-                                Select.basicMenuItem
-                                    { item = unitId
-                                    , label = unit.name
-                                    }
-                            )
-
-                addUnitsSelect =
-                    m1.networkDialogUnitSelect
-
-                au2 =
-                    { addUnitsSelect | items = items }
-            in
-            ( { m1 | networkDialogUnitSelect = au2 }
+            ( { model
+                | masterUnits =
+                    rsp.units
+                        |> List.map (\x -> ( x.id, x ))
+                        |> Dict.fromList
+              }
             , E.none
             )
 
@@ -727,6 +707,19 @@ update shared msg model =
                         _ ->
                             model.networkWorkflowStatus
 
+                inputChangeCmd =
+                    case mAct of
+                        Just (Select.InputChange query) ->
+                            if String.length query > 2 then
+                                Task.perform (\_ -> UnitsSearchDebounceTimerExpired query)
+                                    (Process.sleep 300)
+
+                            else
+                                Cmd.none
+
+                        _ ->
+                            Cmd.none
+
                 unitsSelect =
                     model.networkDialogUnitSelect
 
@@ -740,11 +733,32 @@ update shared msg model =
                 | networkDialogUnitSelect = unitsSelect2
                 , networkWorkflowStatus = networkWorkflowStatus
               }
-            , E.sendCmd <|
-                Cmd.map
-                    NetworkAddUnitSelMsg
-                    icmd
+            , E.batch
+                [ E.sendCmd <|
+                    Cmd.map
+                        NetworkAddUnitSelMsg
+                        icmd
+                , E.sendCmd inputChangeCmd
+                ]
             )
+
+        UnitsSearchDebounceTimerExpired query ->
+            ( model, E.sendCmd <| Api.units_search UnitsSearchReturned "units-search" { search = query } )
+
+        UnitsSearchReturned (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка пошуку підрозділів" e
+            )
+
+        UnitsSearchReturned (Ok rsp) ->
+            let
+                unitsSelect =
+                    model.networkDialogUnitSelect
+
+                unitsSelect2 =
+                    { unitsSelect | items = List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) rsp.units }
+            in
+            ( { model | networkDialogUnitSelect = unitsSelect2 }, E.none )
 
         NetworkSearchWithoutUnitToggled showWithoutUnit ->
             let
