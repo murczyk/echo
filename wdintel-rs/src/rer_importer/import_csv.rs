@@ -15,16 +15,18 @@ use tempdir::TempDir;
 pub async fn oneoff_rer_csv_import_go(
     mode: Mode,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     ps: &crate::OneoffRerCsvImportPs,
     bgid: Option<i64>,
 ) -> Result<(), AppError> {
-    let res = oneoff_rer_csv_import_1(mode, ps, bgid).await;
+    let res = oneoff_rer_csv_import_1(mode, redis, ps, bgid).await;
     crate::delta::finish_bgtask(bgid, dbx, &res).await?;
     res
 }
 
 pub async fn oneoff_rer_csv_import_1(
     mode: Mode,
+    redis: &mut redis::aio::ConnectionManager,
     ps: &crate::OneoffRerCsvImportPs,
     bgid: Option<i64>,
 ) -> Result<(), AppError> {
@@ -125,6 +127,7 @@ pub async fn oneoff_rer_csv_import_1(
             &dbx,
             &rq,
             &config,
+            redis,
             db_message_id,
         )
         .await;
@@ -142,7 +145,9 @@ pub async fn oneoff_rer_csv_import(
     mode: Mode,
     ps: &crate::OneoffRerCsvImportPs,
 ) -> Result<(), AppError> {
-    oneoff_rer_csv_import_1(mode, ps, None).await
+    let config = crate::config::read_config(mode).context(h!())?;
+    let mut redis = crate::new_redis(&config).await.context(h!())?;
+    oneoff_rer_csv_import_1(mode, &mut redis, ps, None).await
 }
 
 #[post("/api/rer/csv-import")]
@@ -189,6 +194,7 @@ pub async fn rer_csv_import(
         let res = oneoff_rer_csv_import_go(
             *mode3,
             &dbx3,
+            &mut env.redis.clone(),
             &crate::OneoffRerCsvImportPs {
                 input: csv_file2.as_path().to_string_lossy().to_string(),
             },
@@ -246,6 +252,7 @@ pub async fn rer_delta_csv_import(
             env.settlements.clone(),
             &dbx3,
             &config3,
+            &mut env.redis.clone(),
             &rq3,
             csv_file,
             Some(*bgtask_id3),
@@ -273,6 +280,7 @@ pub async fn rer_delta_csv_import_go(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     dbx: &sea_orm::DatabaseConnection,
     config: &Config,
+    redis: &mut redis::aio::ConnectionManager,
     rq: &reqwest::Client,
     csv_file: std::path::PathBuf,
     bgtask_id: Option<i64>,
@@ -360,6 +368,7 @@ pub async fn rer_delta_csv_import_go(
             dbx,
             &rq,
             &config,
+            redis,
             db_message_id,
         )
         .await;

@@ -9,6 +9,7 @@ pub async fn receive_thread_nofail(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     datasource: &datasource::Model,
 ) {
     if config.whatsapp_api_phone.is_empty() {
@@ -17,7 +18,7 @@ pub async fn receive_thread_nofail(
     }
     loop {
         if let Err(e) =
-            receive_thread(settlements.clone(), config, dbx, datasource).await
+            receive_thread(settlements.clone(), config, dbx, redis, datasource).await
         {
             println!("> whatsapp::receive_thread_nofail error: {e:?}");
         }
@@ -29,6 +30,7 @@ async fn receive_thread(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
+    redis: &mut redis::aio::ConnectionManager,
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
     let rq: reqwest::Client = reqwest::Client::builder()
@@ -39,7 +41,7 @@ async fn receive_thread(
     let mut last_groups_sync_t = std::time::SystemTime::now();
 
     loop {
-        receive_once(settlements.clone(), config, dbx, &rq, datasource).await?;
+        receive_once(settlements.clone(), config, dbx, &rq, redis, datasource).await?;
 
         if last_groups_sync_t.elapsed().unwrap().as_secs() > 60 {
             sync_groups(dbx, datasource).await?;
@@ -55,6 +57,7 @@ async fn receive_once(
     config: &crate::config::Config,
     dbx: &sea_orm::DatabaseConnection,
     rq: &reqwest::Client,
+    redis: &mut redis::aio::ConnectionManager,
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
     let now = Utc::now();
@@ -122,6 +125,7 @@ async fn receive_once(
             &txn,
             &rq,
             &config,
+            redis,
             signal_message.id,
         )
         .await;

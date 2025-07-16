@@ -17,20 +17,13 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
     txn: &'a C,
     rq: &reqwest::Client,
     config: &Config,
+    redis: &mut redis::aio::ConnectionManager,
     message_id: i64,
 ) where
     C: ConnectionTrait + 'async_trait,
 {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
-    let mut redis = match crate::new_redis(config).await.context(h!()) {
-        Ok(r) => Some(r),
-        Err(e) => {
-            println!("> error creating redis: {e:?}");
-            None
-        }
-    };
-
     while !recs.is_empty() {
         let Some(message_id) = recs.pop() else {
             break;
@@ -42,7 +35,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
             &config,
             message_id,
             &mut cache,
-            &mut redis,
+            redis,
         )
         .await
         {
@@ -63,7 +56,7 @@ async fn inbox_item_worker_1<'a, 'async_trait, C>(
     config: &Config,
     message_id: i64,
     cache: &mut TopKCache<String, String>,
-    redis: &mut Option<redis::aio::ConnectionManager>,
+    redis: &mut redis::aio::ConnectionManager,
 ) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -252,10 +245,8 @@ where
         signal_message.update(txn).await.context(h!())?;
     }
 
-    if let Some(redis) = redis {
-        let event = EventMsg::new(EventType::ETInboxChanged(result.id));
-        fanout(redis, event).await.context(h!())?;
-    }
+    let event = EventMsg::new(EventType::ETInboxChanged(result.id));
+    fanout(redis, event).await.context(h!())?;
 
     Ok(vec![])
 }
