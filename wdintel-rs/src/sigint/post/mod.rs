@@ -127,6 +127,8 @@ pub async fn create_post(
         description: Set(req.description.clone()),
         deleted: NotSet,
         created_at: NotSet,
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await

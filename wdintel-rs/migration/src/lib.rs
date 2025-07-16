@@ -104,6 +104,7 @@ mod m20250710_094800_remove_comment_from_network;
 mod m20250713_091110_add_tsvector_to_units;
 mod m20250714_150613_add_sigint_origin;
 mod m20250715_124452_add_system_login;
+mod m20250716_150622_add_mothership_post;
 
 pub struct Migrator;
 
@@ -215,6 +216,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250713_091110_add_tsvector_to_units::Migration),
             Box::new(m20250714_150613_add_sigint_origin::Migration),
             Box::new(m20250715_124452_add_system_login::Migration),
+            Box::new(m20250716_150622_add_mothership_post::Migration),
         ]
     }
 }

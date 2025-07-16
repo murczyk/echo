@@ -575,6 +575,8 @@ pub async fn create_network(
             post_id: Set(post_id),
             deleted: NotSet,
             created_at: NotSet,
+            sigint_origin_id: NotSet,
+            mothership_id: NotSet,
         })
         .collect();
     if !network_posts.is_empty() {
@@ -2172,6 +2174,8 @@ pub async fn update_network_posts(
             post_id: Set(post_id.clone()),
             deleted: NotSet,
             created_at: NotSet,
+            sigint_origin_id: NotSet,
+            mothership_id: NotSet,
         };
         network_post.insert(&txn).await.context(h!())?;
     }
