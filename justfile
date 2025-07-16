@@ -817,6 +817,16 @@ init-new-db:
     ssh -t {{ server }} "sudo -u postgres psql -c 'create database wd'"
     ssh -t {{ server }} "sudo -u postgres pg_restore -d wd /tmp/wd_init.pgrestore"
 
+oneoff-reprocess-units-search-index:
+    ssh echo-volyn2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-zaporizhzha2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-kherson2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-donetsk2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-kharkiv2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-siversk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-lyman -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+    ssh echo-luhansk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+
 import-etalon-to-mothership:
     ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
     scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ mothership }}:/tmp/et_import_{{ dt1 }}.json
