@@ -564,6 +564,8 @@ pub async fn update_callsign_reporting(
                 is_reported: Set(req.is_reported),
                 created_at: NotSet,
                 deleted: NotSet,
+                sigint_origin_id: NotSet,
+                mothership_id: NotSet,
             }
             .insert(&env.dbx)
             .await
@@ -625,6 +627,8 @@ pub async fn update_callsign_reporting_batch(
                     is_reported: Set(item.is_reported),
                     created_at: NotSet,
                     deleted: NotSet,
+                    sigint_origin_id: NotSet,
+                    mothership_id: NotSet,
                 }
                 .insert(&env.dbx)
                 .await

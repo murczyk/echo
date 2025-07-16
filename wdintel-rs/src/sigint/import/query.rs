@@ -128,6 +128,32 @@ where
     Ok(ids_map)
 }
 
+pub async fn find_existing_sigint_posts<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<sigint_post::Model>,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let ids = recs
+        .iter()
+        .flat_map(|rec| rec.mothership_id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = sigint_post::Entity::find()
+        .filter(sigint_post::Column::MothershipId.is_in(ids))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
 pub async fn find_existing_sigint_network_descriptions<'a, 'async_trait, C>(
     txn: &C,
     recs: &Vec<sigint_network_description::Model>,
@@ -171,6 +197,32 @@ where
 
     let ids_map = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::MothershipId.is_in(ids))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
+pub async fn find_existing_sigint_network_callsigns<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<sigint_network_callsign::Model>,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let ids = recs
+        .iter()
+        .flat_map(|rec| rec.mothership_id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = sigint_network_callsign::Entity::find()
+        .filter(sigint_network_callsign::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
@@ -301,6 +353,32 @@ where
 
     let ids_map = sigint_signal_changelog::Entity::find()
         .filter(sigint_signal_changelog::Column::MothershipId.is_in(ids))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
+pub async fn find_existing_sigint_network_posts<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<sigint_network_post::Model>,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let ids = recs
+        .iter()
+        .flat_map(|rec| rec.mothership_id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = sigint_network_post::Entity::find()
+        .filter(sigint_network_post::Column::MothershipId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
