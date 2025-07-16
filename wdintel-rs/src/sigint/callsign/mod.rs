@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use self::types::*;
 use crate::entities::*;
-use crate::error::AppError;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::types::*;
 use crate::utils::dt_from_millis;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::Utc;
-use log::*;
 use sea_orm::*;
 use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
@@ -286,18 +286,20 @@ pub async fn create_callsign(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
     let callsign_json = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     let _changelog = sigint_callsign_changelog::ActiveModel {
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
-        login: Set(user.id()?.to_string()),
+        login: Set(user.id().context(h!())?.to_string()),
         action: Set("create".to_string()),
         created_at: NotSet,
         new_value: Set(Some(callsign_json)),
@@ -305,13 +307,22 @@ pub async fn create_callsign(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
     }
     .insert(&env.dbx)
-    .await?;
-    Ok(Json(render_callsign(
-        &callsign,
-        sigint_unit::Entity::find_by_id(callsign.unit_id)
-            .one(&env.dbx)
-            .await?,
-    )?))
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETCallsignChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    Ok(Json(
+        render_callsign(
+            &callsign,
+            sigint_unit::Entity::find_by_id(callsign.unit_id)
+                .one(&env.dbx)
+                .await
+                .context(h!())?,
+        )
+        .context(h!())?,
+    ))
 }
 
 #[post("/api/sigint/callsign/update")]
@@ -339,11 +350,12 @@ pub async fn update_callsign(
     callsign.source_id = Set(req.source_id);
     callsign.developing = Set(req.developing);
     callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
-    let callsign = callsign.update(&env.dbx).await?;
+    let callsign = callsign.update(&env.dbx).await.context(h!())?;
     let callsign_json_new = sigint_callsign::Entity::find_by_id(callsign.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     let _changelog = sigint_callsign_changelog::ActiveModel {
         id: NotSet,
@@ -358,7 +370,12 @@ pub async fn update_callsign(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETCallsignChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(Json(render_callsign(
         &callsign,
         sigint_unit::Entity::find_by_id(callsign.unit_id)
@@ -495,9 +512,14 @@ pub async fn create_callsign_bind(
             date: Set(one_binding.date.clone()),
         }
         .insert(&env.dbx)
-        .await?;
+        .await
+        .context(h!())?;
         res_vec.push(render_callsign_bind(callsign_bind));
     }
+
+    let event = EventMsg::new(EventType::ETCallsignChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(Json(res_vec))
 }
 
@@ -513,8 +535,9 @@ pub async fn update_callsign_bind(
 
     let mut res_vec = vec![];
     for one_binding in req.0 {
-        let callsign_bind =
-            find_callsign_bind(&env.dbx, one_binding.id).await?;
+        let callsign_bind = find_callsign_bind(&env.dbx, one_binding.id)
+            .await
+            .context(h!())?;
         let mut callsign_bind = callsign_bind.into_active_model();
         callsign_bind.updated_at = Set(Utc::now().naive_utc());
         callsign_bind.updated_by = Set(user_id.clone());

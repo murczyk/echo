@@ -1,7 +1,8 @@
 use self::types::*;
-use crate::entities::sigint_unit::Model;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
@@ -192,7 +193,8 @@ pub async fn create_unit(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
 
     let unit_json = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
@@ -210,10 +212,15 @@ pub async fn create_unit(
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
     unit_after_insert_update(&env.dbx, unit.id)
         .await
         .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -225,11 +232,12 @@ pub async fn update_unit(
 ) -> Result<Json<Unit>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
-    let unit = find_unit(&env.dbx, req.id).await?;
+    let unit = find_unit(&env.dbx, req.id).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
     let mut unit = unit.into_active_model();
     unit.company = Set(req.company.clone());
@@ -240,11 +248,12 @@ pub async fn update_unit(
     unit.active = Set(req.active);
     unit.name = Set(unit_name(&req));
     unit.comment = Set(req.comment.clone());
-    let unit = unit.update(&env.dbx).await?;
+    let unit = unit.update(&env.dbx).await.context(h!())?;
     let unit_json_new = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -257,10 +266,16 @@ pub async fn update_unit(
         req: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
     unit_after_insert_update(&env.dbx, req.id)
         .await
         .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -271,19 +286,21 @@ pub async fn delete_unit(
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
-    let unit = find_unit(&env.dbx, req.into_inner()).await?;
+    let unit = find_unit(&env.dbx, req.into_inner()).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(&env.dbx).await?;
+    let unit = unit.update(&env.dbx).await.context(h!())?;
     let unit_json_new = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -296,7 +313,12 @@ pub async fn delete_unit(
         req: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -310,9 +332,14 @@ pub async fn delete_unit_duplicate(
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
-    let unit_to_delete = find_unit(&env.dbx, req.clone_to_delete_id).await?;
-    let unit_original = find_unit(&env.dbx, req.original_id).await?;
-    update_original_unit(unit_original, &unit_to_delete, &env.dbx).await?;
+    let unit_to_delete = find_unit(&env.dbx, req.clone_to_delete_id)
+        .await
+        .context(h!())?;
+    let unit_original =
+        find_unit(&env.dbx, req.original_id).await.context(h!())?;
+    update_original_unit(unit_original, &unit_to_delete, &env.dbx)
+        .await
+        .context(h!())?;
 
     swap_units(
         req.clone_to_delete_id,
@@ -320,22 +347,25 @@ pub async fn delete_unit_duplicate(
         login.clone(),
         &env.dbx,
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     let unit_json_old = sigint_unit::Entity::find_by_id(req.clone_to_delete_id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
     let unit_json_new = sigint_unit::Entity::find_by_id(req.original_id)
         .into_json()
         .one(&env.dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or(AppError::NotFound)?;
 
     let mut unit = unit_to_delete.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(&env.dbx).await?;
+    let unit = unit.update(&env.dbx).await.context(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -348,7 +378,12 @@ pub async fn delete_unit_duplicate(
         req: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(Json(render_unit(&unit)?))
 }
 
@@ -358,7 +393,8 @@ pub async fn find_unit(
 ) -> Result<sigint_unit::Model, AppError> {
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(dbx)
-        .await?
+        .await
+        .context(h!())?
         .ok_or_else(|| AppError::NotFound)?;
     Ok(unit)
 }
@@ -395,7 +431,8 @@ async fn swap_units(
         let json_old = sigint_callsign::Entity::find_by_id(id)
             .into_json()
             .one(dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
         let mut callsign = callsign.into_active_model();
         callsign.unit_id = Set(new_unit_id);
@@ -403,7 +440,8 @@ async fn swap_units(
         let json_new = sigint_callsign::Entity::find_by_id(id)
             .into_json()
             .one(dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
         sigint_callsign_changelog::ActiveModel {
             id: NotSet,
@@ -418,7 +456,8 @@ async fn swap_units(
             mothership_id: NotSet,
         }
         .insert(dbx)
-        .await?;
+        .await
+        .context(h!())?;
     }
 
     let signals = sigint_signal::Entity::find()
@@ -431,7 +470,8 @@ async fn swap_units(
         let json_old = sigint_signal::Entity::find_by_id(id)
             .into_json()
             .one(dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
         let mut signal = signal.into_active_model();
         signal.unit = Set(Some(new_unit_id));
@@ -439,7 +479,8 @@ async fn swap_units(
         let json_new = sigint_signal::Entity::find_by_id(id)
             .into_json()
             .one(dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
         sigint_signal_changelog::ActiveModel {
             id: NotSet,
@@ -456,7 +497,8 @@ async fn swap_units(
             mothership_id: NotSet,
         }
         .insert(dbx)
-        .await?;
+        .await
+        .context(h!())?;
     }
 
     let network_units = sigint_network_unit::Entity::find()
@@ -469,7 +511,8 @@ async fn swap_units(
         let json_old = sigint_network_unit::Entity::find_by_id(id)
             .into_json()
             .one(dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
         let mut network_unit = network_unit.into_active_model();
         network_unit.unit_id = Set(new_unit_id);
@@ -492,15 +535,16 @@ async fn swap_units(
             mothership_id: NotSet,
         }
         .insert(dbx)
-        .await?;
+        .await
+        .context(h!())?;
     }
 
     Ok(())
 }
 
 async fn update_original_unit(
-    unit_original: Model,
-    unit_to_merge: &Model,
+    unit_original: sigint_unit::Model,
+    unit_to_merge: &sigint_unit::Model,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     let mut unit = unit_original.clone().into_active_model();

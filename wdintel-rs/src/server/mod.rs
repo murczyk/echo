@@ -1,8 +1,8 @@
 use crate::config::*;
 use crate::types::*;
-use crate::{mk_conn_string, new_redis};
+use crate::{mk_conn_string, new_redis, new_redisb};
 use actix_identity::IdentityMiddleware;
-use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
@@ -47,13 +47,12 @@ pub async fn main_server(
         warn!("Failed to ensure import group exists: {:?}", e);
     };
 
-    let redis = match new_redis(&config).await {
-        Ok(redis) => Some(redis),
-        Err(e) => {
-            error!("failed to establish Redis connection: {:?}", e);
-            None
-        }
-    };
+    let redis = new_redis(&config).await.unwrap();
+    let redisb = new_redisb(&config).await.unwrap();
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+            .await
+            .unwrap();
 
     if !ps.no_bgworker {
         if let Some(secret_config) = config.vault_config.clone() {
@@ -65,14 +64,13 @@ pub async fn main_server(
             healthcheck::healthcheck_worker(&dbx9, config1).await;
         });
         // Activity details worker
-        if let Some(redis_conn) = redis.clone() {
-            if let Some(greptimedb) = m_greptimedb.clone() {
-                tokio::spawn(async move {
-                    middleware::activity_details_worker(redis_conn, greptimedb)
-                        .await;
-                });
-            }
+        if let Some(greptimedb) = m_greptimedb.clone() {
+            let redis = redis.clone();
+            tokio::spawn(async move {
+                middleware::activity_details_worker(redis, greptimedb).await;
+            });
         }
+
         if !config.disable_cleanup_networks_worker.unwrap_or(false) {
             tokio::spawn(async move {
                 crate::sigint::network::cleanup_networks_worker(&dbx4).await;
@@ -146,6 +144,7 @@ pub async fn main_server(
         let env = Env {
             mode,
             redis: redis.clone(),
+            redisb: redisb.clone(),
             b2_cli,
             mil_geo: mil_geo.clone(),
             dbx: dbx.clone(),
@@ -167,11 +166,11 @@ pub async fn main_server(
                     ))).build(),
             )
             .wrap(SessionMiddleware::new(
-                CookieSessionStore::default(),
+                redis_session_store.clone(),
                 Key::from(config.cookie_session_secret.clone().as_bytes()),
             ))
             .wrap(
-                actix_web::middleware::from_fn(middleware::mk_activity_middleware(redis.clone()))
+                actix_web::middleware::from_fn(middleware::mk_activity_middleware(Some(redis.clone())))
             )
             .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)
@@ -197,6 +196,8 @@ pub async fn main_server(
             .service(crate::delta::import_map)
             .service(crate::delta::get_geojson)
             .service(crate::delta::get_kml)
+            .service(crate::delta::login::fetch_redirect_url)
+            .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::attachment)
             .service(crate::rer_importer::rer_importer_callsigns)
             .service(crate::rer_importer::callsigns_alchemy)
@@ -264,6 +265,7 @@ pub async fn main_server(
             .service(crate::rer_importer::callsigns::callsigns_graph)
             .service(crate::rer_importer::gdoc::rer_callsign_info)
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
+            .service(crate::rer_importer::reports::report_docx)
             .service(crate::location::find_locations)
             .service(crate::location::fetch_regions)
             .service(crate::users::user_login)
@@ -364,10 +366,8 @@ pub async fn main_server(
             .service(crate::tags::tags_list)
             .service(crate::tags::inbox_message_tags_add)
             .service(crate::tags::inbox_message_tags_rm)
-            .service(crate::rer_importer::reports::report_docx)
-            .service(crate::delta::login::fetch_redirect_url)
-            .service(crate::delta::login::handle_redirect)
             .service(crate::log_api::log_error)
+            .service(crate::event_stream::long_poll)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
     .bind((bind_ip, bind_port))?

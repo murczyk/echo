@@ -270,6 +270,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::FreqPelengsEntry,
             crate::delta::login::DeltaLoginUrl,
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
+            crate::event_stream::types::EventType,
+            crate::event_stream::types::EventMsg,
         ],
         decoders: [
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
@@ -533,7 +535,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::InboxByGroupDigestRsp,
             crate::delta::login::DeltaLoginUrl,
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
-
+            crate::event_stream::types::EventType,
+            crate::event_stream::types::EventMsg,
         ],
         queries: [],
         query_fields: [],

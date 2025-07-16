@@ -30,7 +30,9 @@ pub struct Env {
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,
     pub rq: reqwest::Client,
     pub mil_geo: MilGeo,
-    pub redis: Option<redis::aio::ConnectionManager>,
+    pub redis: redis::aio::ConnectionManager,
+    /// Used when you need to explicitly create a connection and block on it, like for streams.
+    pub redisb: redis::Client,
     pub settlements: Arc<RwLock<crate::location::SettlementsData>>,
 }
 

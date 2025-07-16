@@ -17,6 +17,7 @@ pub mod delta;
 pub mod elm;
 pub mod entities;
 pub mod error;
+pub mod event_stream;
 pub mod icons;
 pub mod importer;
 mod install;
@@ -372,7 +373,7 @@ fn mk_conn_string(config: &Config) -> String {
     conn_string
 }
 
-pub async fn new_redis(config: &Config) -> anyhow::Result<ConnectionManager> {
+pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {
     let host = match &config.redis_host {
         Some(host) => host.clone(),
         None => REDIS_HOST.to_string(),
@@ -382,7 +383,12 @@ pub async fn new_redis(config: &Config) -> anyhow::Result<ConnectionManager> {
         None => REDIS_PORT,
     };
     let redis_url = format!("redis://{}:{}/", host, port);
-    let mut redis_cli = redis::Client::open(redis_url)?;
+    Ok(redis_url)
+}
+
+pub async fn new_redis(config: &Config) -> anyhow::Result<ConnectionManager> {
+    let redis_url = redis_conn_string(config).context(h!())?;
+    let mut redis_cli = redis::Client::open(redis_url).context(h!())?;
     let is_ok = redis_cli.check_connection();
     if !is_ok {
         bail!("Redis connection failed");
@@ -390,6 +396,16 @@ pub async fn new_redis(config: &Config) -> anyhow::Result<ConnectionManager> {
     let conn_manager =
         redis_cli.get_connection_manager().await.context(h!())?;
     Ok(conn_manager)
+}
+
+pub async fn new_redisb(config: &Config) -> anyhow::Result<redis::Client> {
+    let redis_url = redis_conn_string(config).context(h!())?;
+    let mut redis_cli = redis::Client::open(redis_url).context(h!())?;
+    let is_ok = redis_cli.check_connection();
+    if !is_ok {
+        bail!("Redis connection failed");
+    }
+    Ok(redis_cli)
 }
 
 fn main() -> Result<(), AppError> {

@@ -1,6 +1,8 @@
 use self::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
@@ -148,7 +150,8 @@ pub async fn create_signal(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
 
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
@@ -165,7 +168,11 @@ pub async fn create_signal(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETSignalChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(Json(res.id))
 }
@@ -180,20 +187,23 @@ pub async fn update_signal(
     crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
 
     let mut signal: sigint_signal::ActiveModel =
-        find_signal(&env.dbx, req.id).await?.into();
+        find_signal(&env.dbx, req.id).await.context(h!())?.into();
 
     signal.text = Set(req.text.clone());
     signal.meaning = Set(req.meaning.clone());
     signal.coordinates = Set(req.coordinates.clone());
     signal.unit = if let Some(unit_id) = req.unit {
         Set(Some(
-            crate::sigint::unit::find_unit(&env.dbx, unit_id).await?.id,
+            crate::sigint::unit::find_unit(&env.dbx, unit_id)
+                .await
+                .context(h!())?
+                .id,
         ))
     } else {
         NotSet
     };
 
-    let res = signal.update(&env.dbx).await?;
+    let res = signal.update(&env.dbx).await.context(h!())?;
 
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
@@ -210,7 +220,11 @@ pub async fn update_signal(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETSignalChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(Json(res.id))
 }
@@ -225,11 +239,11 @@ pub async fn delete_signal(
     crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
 
     let mut signal: sigint_signal::ActiveModel =
-        find_signal(&env.dbx, req.0).await?.into();
+        find_signal(&env.dbx, req.0).await.context(h!())?.into();
 
     signal.deleted = Set(true);
 
-    let res_id = signal.update(&env.dbx).await?.id;
+    let res_id = signal.update(&env.dbx).await.context(h!())?.id;
 
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
@@ -246,7 +260,11 @@ pub async fn delete_signal(
         mothership_id: NotSet,
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETSignalChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(Json(res_id))
 }

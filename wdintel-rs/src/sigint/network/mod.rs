@@ -2,6 +2,8 @@ use super::sea_orm_active_enums::*;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
@@ -602,6 +604,9 @@ pub async fn create_network(
         .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(Json(Network {
         id: network.id,
@@ -1207,6 +1212,9 @@ pub async fn update_freq_networks(
 
     txn.commit().await.context(h!())?;
 
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
     Ok(result_json)
 }
 
@@ -1314,6 +1322,9 @@ pub async fn add_network_freq(
         .context(h!())?;
 
     txn.commit().await.context(h!())?;
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     if network_detail.is_empty() {
         return Err(AppError::NotFound);
@@ -2511,10 +2522,13 @@ pub async fn oneoff_merge_two_networks(
     mode: crate::types::Mode,
     ps: &crate::OneoffMergeNetworksPs,
 ) -> anyhow::Result<(), AppError> {
-    debug!("> oneoff_merge_networks");
+    debug!("oneoff_merge_networks");
 
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let txn = dbx.begin().await.context(h!())?;
+    let config = crate::config::read_config(mode).context(h!())?;
+    let mut redis = crate::new_redis(&config).await.context(h!())?;
+
     match merge_two_networks(
         &txn,
         MERGE_NETWORKS_API_LOGIN.to_string(),
@@ -2526,14 +2540,18 @@ pub async fn oneoff_merge_two_networks(
     {
         Ok(_) => {
             txn.commit().await.context(h!())?;
-            println!(
+
+            let event = EventMsg::new(EventType::ETNetworkChanged);
+            fanout(&mut redis, event).await.context(h!())?;
+
+            info!(
                 "✅ Merge successful! Merged network {} into {}",
                 ps.network_id_from, ps.network_id_to
             );
         }
         Err(e) => {
             txn.rollback().await.context(h!())?;
-            eprintln!("❌ Merge failed: {:?}", e);
+            error!("❌ Merge failed: {:?}", e);
         }
     }
 
