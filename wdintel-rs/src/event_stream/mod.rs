@@ -12,6 +12,11 @@ use redis::AsyncCommands;
 
 pub mod types;
 
+/// Sets the maximum number of elements to return per stream
+const REDIS_READ_STREAM_ELEMENTS_MAX: usize = 1000;
+/// Sets the block time in milliseconds
+const REDIS_READ_STREAM_BLOCK_MS: usize = 50000;
+
 pub fn session_stream_id(session_id: Uuid) -> String {
     format!("echo-stream:{}", session_id)
 }
@@ -104,7 +109,9 @@ async fn long_poll(
         .xread_options(
             &[srr_key.clone()],
             &[last_stream_id.clone()],
-            &StreamReadOptions::default().count(1000).block(50000),
+            &StreamReadOptions::default()
+                .count(REDIS_READ_STREAM_ELEMENTS_MAX)
+                .block(REDIS_READ_STREAM_BLOCK_MS),
         )
         .await
         .context(h!())?;
