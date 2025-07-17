@@ -1464,7 +1464,7 @@ contentBlock user shared network model =
                 )
             ]
         , div [ class "col-span-5 flex flex-col gap-[16px] h-full" ]
-            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+            [ div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col h-[250px]" ]
                 [ h4 [] [ text "Пеленги" ]
                 , let
                     mapPoints =
