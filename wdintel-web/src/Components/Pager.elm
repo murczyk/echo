@@ -1,20 +1,37 @@
-module Components.Pager exposing (Model, Msg(..), getPageData, init, update, view)
+module Components.Pager exposing
+    ( Model
+    , Msg(..)
+    , init
+    , update
+    , view
+    , getPageData
+    )
 
 {-| A reusable pagination component for tables and lists.
 
+
 # Model
+
 @docs Model
 
+
 # Messages
+
 @docs Msg
 
+
 # Initialization
+
 @docs init
 
+
 # Update
+
 @docs update
 
+
 # View
+
 @docs view
 
 -}
@@ -67,19 +84,21 @@ update msg model =
             in
             if model.currentPage < maxPage then
                 { model | currentPage = model.currentPage + 1 }
+
             else
                 model
 
         PreviousPage ->
             if model.currentPage > 1 then
                 { model | currentPage = model.currentPage - 1 }
+
             else
                 model
 
         ChangePageSize newSize ->
-            { model 
-            | pageSize = max 1 newSize
-            , currentPage = 1  -- Reset to first page when changing page size
+            { model
+                | pageSize = max 1 newSize
+                , currentPage = 1 -- Reset to first page when changing page size
             }
 
 
@@ -137,55 +156,37 @@ view model =
         pageNumbers =
             getPageNumbers model.currentPage info.totalPages
     in
-    div [ Attr.class "flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6" ]
-        [ div [ Attr.class "flex flex-1 justify-between sm:hidden" ]
-            [ button
-                [ Attr.class "relative inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                , onClick PreviousPage
-                , Attr.disabled (not info.hasPrevious)
-                ]
-                [ text "Попередня" ]
-            , button
-                [ Attr.class "relative inline-flex items-center px-4 py-2 ml-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                , onClick NextPage
-                , Attr.disabled (not info.hasNext)
-                ]
-                [ text "Наступна" ]
-            ]
-        , div [ Attr.class "hidden sm:flex sm:flex-1 sm:items-center sm:justify-between" ]
+    div [ Attr.class "pager-container" ]
+        [ div [ Attr.class "pager-nav" ]
             [ div []
-                [ p [ Attr.class "text-sm text-gray-700" ]
+                [ p [ Attr.class "pager-info" ]
                     [ text "Показано "
-                    , span [ Attr.class "font-medium" ] [ text (String.fromInt info.startItem) ]
+                    , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt info.startItem) ]
                     , text " до "
-                    , span [ Attr.class "font-medium" ] [ text (String.fromInt info.endItem) ]
+                    , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt info.endItem) ]
                     , text " з "
-                    , span [ Attr.class "font-medium" ] [ text (String.fromInt model.totalItems) ]
+                    , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt model.totalItems) ]
                     , text " результатів"
                     ]
                 ]
             , div []
-                [ nav [ Attr.class "isolate inline-flex -space-x-px rounded-md shadow-sm" ]
+                [ nav [ Attr.class "pager-nav-controls" ]
                     [ -- Previous button
                       button
-                        [ Attr.class "relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                        [ Attr.class "pager-nav-button pager-nav-button-prev"
                         , onClick PreviousPage
                         , Attr.disabled (not info.hasPrevious)
                         ]
-                        [ span [ Attr.class "sr-only" ] [ text "Попередня" ]
-                        , i [ Attr.class "bi bi-chevron-left" ] []
-                        ]
+                        [ i [ Attr.class "bi bi-chevron-left" ] [] ]
                     , -- Page numbers
                       div [] (List.map viewPageNumber pageNumbers)
                     , -- Next button
                       button
-                        [ Attr.class "relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                        [ Attr.class "pager-nav-button pager-nav-button-next"
                         , onClick NextPage
                         , Attr.disabled (not info.hasNext)
                         ]
-                        [ span [ Attr.class "sr-only" ] [ text "Наступна" ]
-                        , i [ Attr.class "bi bi-chevron-right" ] []
-                        ]
+                        [ i [ Attr.class "bi bi-chevron-right" ] [] ]
                     ]
                 ]
             ]
@@ -197,16 +198,18 @@ view model =
 viewPageNumber : { page : Int, isCurrent : Bool, isEllipsis : Bool } -> Html Msg
 viewPageNumber { page, isCurrent, isEllipsis } =
     if isEllipsis then
-        span [ Attr.class "relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0" ]
+        span [ Attr.class "pager-ellipsis" ]
             [ text "..." ]
+
     else
         button
             [ Attr.class <|
-                "relative inline-flex items-center px-4 py-2 text-sm font-semibold focus:z-20 focus:outline-offset-0 "
+                "pager-page-button "
                     ++ (if isCurrent then
-                            "z-10 bg-[var(--color-secondary-light-active)] text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-secondary-light-active)]"
+                            "pager-page-button-active"
+
                         else
-                            "text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                            "pager-page-button-default"
                        )
             , onClick (GoToPage page)
             ]
@@ -221,6 +224,7 @@ getPageNumbers currentPage totalPages =
         -- Show all pages if 7 or fewer
         List.range 1 totalPages
             |> List.map (\page -> { page = page, isCurrent = page == currentPage, isEllipsis = False })
+
     else
         -- Show current page with context and ellipsis
         let
@@ -239,6 +243,7 @@ getPageNumbers currentPage totalPages =
                     { page = 1, isCurrent = False, isEllipsis = False }
                         :: { page = 0, isCurrent = False, isEllipsis = True }
                         :: pages
+
                 else
                     pages
 
@@ -248,7 +253,9 @@ getPageNumbers currentPage totalPages =
                         ++ [ { page = 0, isCurrent = False, isEllipsis = True }
                            , { page = totalPages, isCurrent = False, isEllipsis = False }
                            ]
+
                 else
                     withStartEllipsis
         in
-        withEndEllipsis 
+        withEndEllipsis
+

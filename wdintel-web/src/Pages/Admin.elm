@@ -97,7 +97,7 @@ renderGroup model zoneId activeSourceId group =
                 Nothing ->
                     False
     in
-    div [ class "flex items-center border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
+    div [ class "flex items-center border rounded-lg mb-3 px-4 py-2 bg-[var(--bs-tertiary-bg)]" ]
         [ div [ class "w-1/4 flex items-center" ]
             [ span [ class "font-semibold mr-2" ] [ text groupName ]
             , if group.isGroupSecret then
@@ -1233,9 +1233,14 @@ findOrphanGroup model groupKey =
 renderOrphanGroupsTable : Model -> List B.OrphanSignalGroupEntry -> Html Msg
 renderOrphanGroupsTable model groups =
     let
-        pager = model.orphanGroupsPager
-        updatedPager = { pager | totalItems = List.length groups }
-        paginatedGroups = Pager.getPageData updatedPager groups
+        pager =
+            model.orphanGroupsPager
+
+        updatedPager =
+            { pager | totalItems = List.length groups }
+
+        paginatedGroups =
+            Pager.getPageData updatedPager groups
 
         tableConfig : Table.Config B.OrphanSignalGroupEntry Msg
         tableConfig =
@@ -1329,6 +1334,7 @@ renderOrphanGroupsTable model groups =
         getGroupDisplayName group =
             if String.isEmpty group.name then
                 String.right 5 group.masterKey
+
             else
                 group.name
 
@@ -1336,14 +1342,16 @@ renderOrphanGroupsTable model groups =
         formatCreatedAt group =
             let
                 timestamp : Int
-                timestamp = group.createdAt
+                timestamp =
+                    group.createdAt
 
                 date : String
-                date = 
+                date =
                     -- Convert milliseconds to date string
                     -- This is a simple implementation - in production you'd want a proper date library
                     if timestamp > 0 then
                         "2024-01-" ++ String.fromInt (modBy 31 (timestamp // 86400000) + 1)
+
                     else
                         "-"
             in
@@ -1358,6 +1366,7 @@ renderOrphanGroupsTable model groups =
                         (\( id, datasource ) ->
                             if id == datasourceId then
                                 Just datasource.displayName
+
                             else
                                 Nothing
                         )
@@ -1380,7 +1389,7 @@ renderOrphanGroupsTable model groups =
                     List.length currentModel.zones
             in
             { attributes = []
-            , children = 
+            , children =
                 [ if isAssigning then
                     div [ class "flex items-center gap-2" ]
                         [ Le.Block.Spinner.loadingSpinner2Sm
@@ -1415,6 +1424,7 @@ renderOrphanGroupsTable model groups =
                                 Just selector ->
                                     if selector.groupKey == group.masterKey then
                                         selector.selectedZones
+
                                     else
                                         []
 
@@ -1437,6 +1447,7 @@ renderOrphanGroupsTable model groups =
                                             "px-2 py-1 text-xs rounded-full transition-colors "
                                                 ++ (if isSelected then
                                                         "bg-blue-100 text-blue-700 border border-blue-300"
+
                                                     else
                                                         "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
                                                    )
@@ -1444,6 +1455,7 @@ renderOrphanGroupsTable model groups =
                                         , title <|
                                             if isSelected then
                                                 "Прибрати " ++ zone.name
+
                                             else
                                                 "Додати " ++ zone.name
                                         ]
@@ -1458,6 +1470,7 @@ renderOrphanGroupsTable model groups =
                                         ]
                                         [ i [ class "bi bi-plus text-sm" ] [] ]
                                     ]
+
                                 else
                                     []
                                )

@@ -13,6 +13,7 @@
 @import "styles/dialog/_dialog.css";
 @import "styles/scrollbar/_scrollbar.css";
 @import "styles/highlight/_highlight.css";
+@import "styles/pager/_pager.css";
 
 @custom-variant dark (&:where([data-bs-theme=dark], [data-bs-theme=dark] *));
 
