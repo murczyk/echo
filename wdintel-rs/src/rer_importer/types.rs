@@ -371,6 +371,8 @@ pub struct OrphanSignalGroupEntry {
     pub ignore_operativny: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
+    /// Час створення групи (в мілісекундах від epoch)
+    pub created_at: i64,
 }
 
 #[derive(

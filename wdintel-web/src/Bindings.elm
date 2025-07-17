@@ -1269,6 +1269,7 @@ type alias OrphanSignalGroupEntry =
     , name : String
     , ignoreOperativny : Bool
     , datasourceId : Maybe Int
+    , createdAt : Int
     }
 
 
@@ -6017,6 +6018,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState

@@ -387,6 +387,7 @@ pub async fn orphan_signal_groups(
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
                 datasource_id: g.datasource_id,
+                created_at: g.created_at.and_utc().timestamp_millis(),
             })
         })
         .collect();
