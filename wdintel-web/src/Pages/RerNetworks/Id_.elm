@@ -496,7 +496,7 @@ update shared msg model =
                     )
 
         NetworkEditPostsSelMsg imsg ->
-            case model.mode of
+            case model.missingFieldsMode of
                 Editing editNetworkState ->
                     let
                         ( mAct, imodel, icmd ) =
@@ -541,7 +541,7 @@ update shared msg model =
                     in
                     ( { model
                         | editPostsSelect = postsSelect2
-                        , mode = Editing editNetworkState
+                        , missingFieldsMode = Editing editNetworkState
                         , network = n2
                       }
                     , E.sendCmd <|
@@ -975,7 +975,7 @@ subscriptions model =
 missingFieldsBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
 missingFieldsBlock user network shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+        [ h5 [] [ text "Загальне" ]
         , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
             i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditStartedByUser ] []
 
@@ -2004,7 +2004,7 @@ view user shared model =
 missingFieldsEditBlock : Auth.User -> B.Network -> B.UpdateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
 missingFieldsEditBlock user network updNetworkReq shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
-        [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+        [ h5 [] [ text "Загальне" ]
         , div [ class "flex gap-[8px]" ]
             [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditCanceledByUser, title "Скасувати" ] []
             , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditSavedByUser, title "Зберегти" ] []
@@ -2042,33 +2042,35 @@ missingFieldsEditBlock user network updNetworkReq shared model =
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
-            , div [ class "col-span-2 h-[40px] w-full flex items-center" ]
-                [ let
-                    selectedItems =
-                        List.map
-                            (\postId ->
-                                Select.basicMenuItem
-                                    { item = postId
-                                    , label =
-                                        RD.withDefault Dict.empty shared.posts
-                                            |> Dict.get postId
-                                            |> Maybe.map .name
-                                            |> Maybe.withDefault ""
-                                    }
-                            )
-                            model.editPostsSelect.selected
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ div [ class "w-full" ]
+                    [ let
+                        selectedItems =
+                            List.map
+                                (\postId ->
+                                    Select.basicMenuItem
+                                        { item = postId
+                                        , label =
+                                            RD.withDefault Dict.empty shared.posts
+                                                |> Dict.get postId
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ""
+                                        }
+                                )
+                                model.editPostsSelect.selected
 
-                    defaultOptions =
-                        Le.Block.Select.defaultOptions shared.isDarkMode
-                  in
-                  Html.map NetworkEditPostsSelMsg <|
-                    Styled.toUnstyled <|
-                        Le.Block.Select.renderSelect
-                            selectedItems
-                            model.editPostsSelect.state
-                            model.editPostsSelect.items
-                            "виберіть пости"
-                            defaultOptions
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map NetworkEditPostsSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.editPostsSelect.state
+                                model.editPostsSelect.items
+                                "виберіть пости"
+                                defaultOptions
+                    ]
                 ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center mt-[24px]" ]

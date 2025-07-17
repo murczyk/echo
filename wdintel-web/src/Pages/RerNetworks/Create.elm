@@ -813,7 +813,7 @@ viewMissingFieldsBlock : Shared.Model -> Model -> Html Msg
 viewMissingFieldsBlock shared model =
     div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
-            [ h5 [] [ text "Поля відсутні в стандартній формі" ]
+            [ h5 [] [ text "Загальне" ]
             ]
         , div [ class "space-y-3" ]
             [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
