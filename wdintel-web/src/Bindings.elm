@@ -3221,6 +3221,18 @@ deleteUnitDuplicateReqEncoder struct =
         ]
 
 
+type alias UnitSearchReq =
+    { search : String
+    }
+
+
+unitSearchReqEncoder : UnitSearchReq -> Json.Encode.Value
+unitSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", Json.Encode.string struct.search )
+        ]
+
+
 type ListSignalsSortBy
     = SignalsCreatedAtAsc
     | SignalsCreatedAtDesc
@@ -6818,6 +6830,12 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
+
+
+unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
+unitSearchReqDecoder =
+    Json.Decode.succeed UnitSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" Json.Decode.string))
 
 
 listSignalsSortByDecoder : Json.Decode.Decoder ListSignalsSortBy

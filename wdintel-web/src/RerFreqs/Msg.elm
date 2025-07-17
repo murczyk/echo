@@ -36,16 +36,8 @@ type Msg
     | GotTime Time.Zone Posix
     | UnitsReturnedByApi (Result ApiError B.ListUnitsRsp)
     | NetworkAddUnitSelMsg (Select.Msg Int)
-    | NetworkAddKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
-    | NetworkAddModulationSelMsg (Select.Msg Int)
     | NetworkAddExistingKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkAddExistingModulationSelMsg (Select.Msg Int)
-    | NetworkAddPostsSelMsg (Select.Msg Int)
-    | NetworkEditPostsSelMsg (Select.Msg Int)
-    | NetworkEditKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
-    | NetworkEditModulationSelMsg (Select.Msg Int)
-    | NetworkAddMsg B.CreateNetworkReq
-    | NetworkEditMsg B.UpdateNetworkReq
     | NetworksReturnedByApi (Result ApiError (List B.Network))
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
@@ -65,17 +57,11 @@ type Msg
     | GotFilterCallsigns (Result ApiError B.CallsignsForFreqRsp)
     | OpenAddNetworkSidebar String
     | CloseAddNetworkSidebar
-    | NetworkCreate
-    | NetworkCreated String (Result ApiError B.Network)
-    | NetworkUpdate
-    | NetworkUpdated String (Result ApiError B.Network)
-    | NetworkStartCreatingFlow
     | FreqAddToExistingNetwork String Int
     | FreqRemoveFromExistingNetwork String B.Network
     | NetworkAddToggleExistingId Int
     | FreqAddedToNetwork String (Result ApiError B.Network)
     | FreqRemovedFromNetwork String (Result ApiError B.Network)
-    | NetworkStartEditingFlow B.Network
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
     | NetworkPostsUpdated String B.UpdateNetworkReq (Result ApiError B.Network)
@@ -97,3 +83,7 @@ type Msg
     | ToggleBattalionExpanded String String String String
     | FilterUnitMsg String
     | ClearAllFilters
+    | NetworkWorkflowTabClicked RerFreqs.Model.NetworkWorkflowTab
+    | NetworkUpdated String (Result ApiError B.Network)
+    | UnitsSearchReturned (Result ApiError B.ListUnitsByIdRsp)
+    | UnitsSearchDebounceTimerExpired String

@@ -1287,3 +1287,20 @@ check_if_freq_exist toMsg tracker req =
         , timeout = Nothing
         , tracker = Just tracker
         }
+
+
+units_search :
+    (Result ApiError ListUnitsByIdRsp -> msg)
+    -> String
+    -> UnitSearchReq
+    -> Cmd msg
+units_search toMsg tracker req =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/sigint/unit/search"
+        , body = Http.jsonBody (unitSearchReqEncoder req)
+        , expect = leExpectJson toMsg listUnitsByIdRspDecoder
+        , timeout = Nothing
+        , tracker = Just tracker
+        }

@@ -1,4 +1,4 @@
-module RerFreqs.Model exposing (FilterName(..), FilterState, FurtherInvestigationFilter(..), Model, NetworkSearchState, NetworkWorkflowStatus(..), ShowAllPopupFor(..), TextLocation(..))
+module RerFreqs.Model exposing (FilterName(..), FilterState, FurtherInvestigationFilter(..), Model, NetworkSearchState, NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 
 import Api
 import Bindings as B
@@ -78,7 +78,13 @@ type alias Model =
     , expandedRegiments : Set.Set String
     , expandedBattalions : Set.Set String
     , showOnlyInvestigating : Bool
+    , networkWorkflowTab : NetworkWorkflowTab
     }
+
+
+type NetworkWorkflowTab
+    = Search
+    | Manage
 
 
 type alias FilterState =
@@ -97,8 +103,6 @@ type alias NetworkSearchState =
 type NetworkWorkflowStatus
     = NotStarted
     | SelectingNetwork String (Maybe Int)
-    | EditingNetwork String B.UpdateNetworkReq
-    | CreateNewNetwork String B.CreateNetworkReq
 
 
 type TextLocation
