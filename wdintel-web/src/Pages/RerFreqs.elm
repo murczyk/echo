@@ -678,50 +678,84 @@ update shared msg model =
                 updatedUnitId =
                     Le.Block.Select.singleUpd mAct model.networkDialogUnitSelect.selected
 
-                networkWorkflowStatus =
-                    case ( model.networkWorkflowStatus, mAct ) of
-                        ( SelectingNetwork freq _, Just (Select.Select i) ) ->
+                -- Single pattern match handling all cases
+                ( m1, cmd1, networkWorkflowStatus ) =
+                    case mAct of
+                        Just (Select.InputChange query) ->
+                            if String.length query > 2 then
+                                ( model
+                                , Task.perform (\_ -> UnitsSearchDebounceTimerExpired query)
+                                    (Process.sleep 300)
+                                , model.networkWorkflowStatus
+                                )
+
+                            else
+                                let
+                                    us = model.networkDialogUnitSelect
+                                    us2 = { us | items = [] }
+                                in
+                                ( { model | networkDialogUnitSelect = us2 }
+                                , Cmd.none
+                                , model.networkWorkflowStatus
+                                )
+
+                        Just (Select.Select i) ->
                             let
                                 a =
                                     Utils.findConnectedNetworks (Just i) model.networks model.masterUnits
 
                                 -- Filter out networks already connected to this frequency
                                 alreadyConnectedNetworkIds =
-                                    ListX.find (\freq_ -> freq_.freq == freq) model.freqs
-                                        |> Maybe.map .networkIds
-                                        |> Maybe.withDefault []
+                                    case model.networkWorkflowStatus of
+                                        SelectingNetwork freq _ ->
+                                            ListX.find (\freq_ -> freq_.freq == freq) model.freqs
+                                                |> Maybe.map .networkIds
+                                                |> Maybe.withDefault []
+
+                                        _ ->
+                                            []
 
                                 availableNetworks =
                                     List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) a
+
+                                newWorkflowStatus =
+                                    case model.networkWorkflowStatus of
+                                        SelectingNetwork freq _ ->
+                                            case availableNetworks of
+                                                x :: xs ->
+                                                    SelectingNetwork freq (Just x.id)
+
+                                                _ ->
+                                                    SelectingNetwork freq Nothing
+
+                                        _ ->
+                                            model.networkWorkflowStatus
                             in
-                            case availableNetworks of
-                                x :: xs ->
-                                    SelectingNetwork freq (Just x.id)
+                            ( model, Cmd.none, newWorkflowStatus )
 
-                                _ ->
-                                    SelectingNetwork freq Nothing
+                        Just Select.Clear ->
+                            let
+                                us = model.networkDialogUnitSelect
+                                us2 = { us | items = [] }
 
-                        ( SelectingNetwork freq _, Just Select.Clear ) ->
-                            SelectingNetwork freq Nothing
+                                newWorkflowStatus =
+                                    case model.networkWorkflowStatus of
+                                        SelectingNetwork freq _ ->
+                                            SelectingNetwork freq Nothing
 
-                        _ ->
-                            model.networkWorkflowStatus
-
-                inputChangeCmd =
-                    case mAct of
-                        Just (Select.InputChange query) ->
-                            if String.length query > 2 then
-                                Task.perform (\_ -> UnitsSearchDebounceTimerExpired query)
-                                    (Process.sleep 300)
-
-                            else
-                                Cmd.none
+                                        _ ->
+                                            model.networkWorkflowStatus
+                            in
+                            ( { model | networkDialogUnitSelect = us2 }
+                            , Cmd.none
+                            , newWorkflowStatus
+                            )
 
                         _ ->
-                            Cmd.none
+                            ( model, Cmd.none, model.networkWorkflowStatus )
 
                 unitsSelect =
-                    model.networkDialogUnitSelect
+                    m1.networkDialogUnitSelect
 
                 unitsSelect2 =
                     { unitsSelect
@@ -729,7 +763,7 @@ update shared msg model =
                         , selected = updatedUnitId
                     }
             in
-            ( { model
+            ( { m1
                 | networkDialogUnitSelect = unitsSelect2
                 , networkWorkflowStatus = networkWorkflowStatus
               }
@@ -738,7 +772,7 @@ update shared msg model =
                     Cmd.map
                         NetworkAddUnitSelMsg
                         icmd
-                , E.sendCmd inputChangeCmd
+                , E.sendCmd cmd1
                 ]
             )
 
