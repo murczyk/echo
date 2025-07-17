@@ -1280,6 +1280,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "name", Json.Encode.string struct.name )
         , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.datasourceId )
+        , ( "created_at", Json.Encode.int struct.createdAt )
         ]
 
 
@@ -5114,6 +5115,53 @@ zoneDatasourceGroupAddRspEncoder struct =
         ]
 
 
+type EventType
+    = EtGeneric
+    | EtNetworkChanged
+    | EtCallsignChanged
+    | EtSignalChanged
+    | EtUnitChanged
+    | EtInboxChanged Int
+
+
+eventTypeEncoder : EventType -> Json.Encode.Value
+eventTypeEncoder enum =
+    case enum of
+        EtGeneric ->
+            Json.Encode.string "ETGeneric"
+
+        EtNetworkChanged ->
+            Json.Encode.string "ETNetworkChanged"
+
+        EtCallsignChanged ->
+            Json.Encode.string "ETCallsignChanged"
+
+        EtSignalChanged ->
+            Json.Encode.string "ETSignalChanged"
+
+        EtUnitChanged ->
+            Json.Encode.string "ETUnitChanged"
+
+        EtInboxChanged inner ->
+            Json.Encode.object [ ( "ETInboxChanged", Json.Encode.int inner ) ]
+
+
+type alias EventMsg =
+    { id : String
+    , eventType : EventType
+    , createdAt : Int
+    }
+
+
+eventMsgEncoder : EventMsg -> Json.Encode.Value
+eventMsgEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.string struct.id )
+        , ( "event_type", eventTypeEncoder struct.eventType )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -7911,3 +7959,68 @@ zoneDatasourceGroupAddRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_datasource_group" zoneDatasourceGroupDecoder))
+
+
+eventTypeDecoder : Json.Decode.Decoder EventType
+eventTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ETGeneric" ->
+                            Json.Decode.succeed EtGeneric
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ETNetworkChanged" ->
+                            Json.Decode.succeed EtNetworkChanged
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ETCallsignChanged" ->
+                            Json.Decode.succeed EtCallsignChanged
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ETSignalChanged" ->
+                            Json.Decode.succeed EtSignalChanged
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ETUnitChanged" ->
+                            Json.Decode.succeed EtUnitChanged
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.map EtInboxChanged (Json.Decode.field "ETInboxChanged" Json.Decode.int)
+        ]
+
+
+eventMsgDecoder : Json.Decode.Decoder EventMsg
+eventMsgDecoder =
+    Json.Decode.succeed EventMsg
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" eventTypeDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
