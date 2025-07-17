@@ -57,6 +57,17 @@ toLayout user model =
         }
 
 
+-- Navigation helper function
+createAnalysisUrl : String -> String
+createAnalysisUrl callsign =
+    -- Basic URL for now, will be enhanced in later steps
+    Route.toString 
+        { path = Route.Path.RerAnalysis
+        , query = Dict.empty
+        , hash = Nothing
+        }
+
+
 
 -- INIT
 
@@ -1741,7 +1752,18 @@ contentBlock user shared network model =
                             case callsign.knownCallsigns of
                                 x :: xs ->
                                     tr [ class "" ]
-                                        [ td [ rowspan rowCount ] [ text <| String.toUpper callsign.callsign ]
+                                        [ td [ rowspan rowCount ] 
+                                            [ a
+                                                [ class "text-action cursor-pointer"
+                                                , Route.href
+                                                    { path = Route.Path.RerAnalysis
+                                                    , query = Dict.empty
+                                                    , hash = Nothing
+                                                    }
+                                                , target "_blank"
+                                                ]
+                                                [ text <| String.toUpper callsign.callsign ]
+                                            ]
                                         , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
                                         , td [ rowspan rowCount ]
                                             [ case callsign.lastDatetime of
@@ -1799,7 +1821,18 @@ contentBlock user shared network model =
                             case callsign.knownCallsigns of
                                 x :: xs ->
                                     tr [ class "" ]
-                                        [ td [ rowspan rowCount ] [ text <| String.toUpper callsign.callsign ]
+                                        [ td [ rowspan rowCount ] 
+                                            [ a
+                                                [ class "text-action cursor-pointer"
+                                                , Route.href
+                                                    { path = Route.Path.RerAnalysis
+                                                    , query = Dict.empty
+                                                    , hash = Nothing
+                                                    }
+                                                , target "_blank"
+                                                ]
+                                                [ text <| String.toUpper callsign.callsign ]
+                                            ]
                                         , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
                                         , td [ rowspan rowCount ]
                                             [ case callsign.lastDatetime of
