@@ -1,40 +1,44 @@
-/* Dialog/Modal Styles */
 dialog {
+    padding: 1rem;
     border: none;
-    border-radius: 8px;
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.2);
-    padding: 0;
-    background: var(--bs-body-bg);
-    color: var(--bs-body-color);
-    min-width: 320px;
-    max-width: 90vw;
+    border-radius: 6px;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
 }
 
 dialog:modal>.modal-filler {
-    position: fixed;
+    opacity: 0;
+    position: absolute;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.2);
-    z-index: 1;
+    width: 100%;
+    height: 100%;
+    z-index: -10;
 }
 
 dialog::backdrop {
-    background: rgba(0, 0, 0, 0.2);
+    background: rgb(0 0 0 / 0.7);
 }
 
 dialog.large-modal {
-    width: 900px;
-    max-width: 98vw;
+    width: 800px;
+    max-width: 95vw;
+    max-height: 90vh;
 }
 
+/* Small modal for confirmations */
 dialog.small-modal {
-    width: 350px;
-    max-width: 98vw;
+    width: 400px;
+    max-width: 80vw;
+    max-height: 60vh;
 }
 
+/* Medium modal for user selection */
 dialog.medium-modal {
     width: 600px;
-    max-width: 98vw;
+    max-width: 90vw;
+    max-height: 80vh;
 }
