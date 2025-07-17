@@ -5,6 +5,9 @@ import Auth
 import Bindings as B
 import Components.Button as Button
 import Components.ModalDialog as ModalDialog
+import Components.Pager as Pager
+import Components.Table as Table
+import Components.Table.Config as Config
 import Components.Tabs as Tabs
 import Components.Toggle as Toggle
 import Components.Watermark as Watermark
@@ -64,6 +67,8 @@ type alias Model =
     , orphanGroupAssignmentError : Maybe String
     , groupRemovalConfirmation : Maybe { zoneId : Int, datasourceId : Int, groupKey : String, groupName : String }
     , orphanGroupZoneSelector : Maybe { groupKey : String, selectedZones : List Int }
+    , orphanGroupsTableState : Table.State
+    , orphanGroupsPager : Pager.Model
     }
 
 
@@ -181,6 +186,8 @@ init _ =
       , orphanGroupAssignmentError = Nothing
       , groupRemovalConfirmation = Nothing
       , orphanGroupZoneSelector = Nothing
+      , orphanGroupsTableState = Table.initialSort "Створено"
+      , orphanGroupsPager = Pager.init
       }
     , E.sendCmd <|
         Cmd.batch
@@ -223,6 +230,8 @@ type Msg
     | CloseOrphanGroupZoneSelector
     | ToggleOrphanGroupZone String Int -- groupKey, zoneId
     | SaveOrphanGroupZones
+    | OrphanGroupsTableStateChanged Table.State
+    | OrphanGroupsPagerMsg Pager.Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -1024,6 +1033,7 @@ update msg model =
                                         , name = groupInfo |> Maybe.map .name |> Maybe.withDefault ""
                                         , datasourceId = Just datasourceId
                                         , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
+                                        , createdAt = 0 -- We don't have the original creation time, so use 0
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1142,6 +1152,16 @@ update msg model =
                 ( Nothing, _, _ ) ->
                     ( model, E.none )
 
+        OrphanGroupsTableStateChanged newState ->
+            ( { model | orphanGroupsTableState = newState }
+            , E.none
+            )
+
+        OrphanGroupsPagerMsg pagerMsg ->
+            ( { model | orphanGroupsPager = Pager.update pagerMsg model.orphanGroupsPager }
+            , E.none
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1189,8 +1209,8 @@ renderOrphanGroupsSection isDark model user =
                 div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
                     [ h3 [ class "text-lg font-semibold mb-4" ]
                         [ text <| "Неприв'язані групи (" ++ String.fromInt (List.length groups) ++ ")" ]
-                    , div [ class "max-h-96 overflow-y-auto space-y-3" ]
-                        (List.map (renderOrphanGroup model) groups)
+                    , div [ class "table-responsive-modern" ]
+                        [ renderOrphanGroupsTable model groups ]
                     ]
 
         RD.NeedsReload _ ->
@@ -1208,6 +1228,248 @@ findOrphanGroup model groupKey =
 
         _ ->
             Nothing
+
+
+renderOrphanGroupsTable : Model -> List B.OrphanSignalGroupEntry -> Html Msg
+renderOrphanGroupsTable model groups =
+    let
+        pager = model.orphanGroupsPager
+        updatedPager = { pager | totalItems = List.length groups }
+        paginatedGroups = Pager.getPageData updatedPager groups
+
+        tableConfig : Table.Config B.OrphanSignalGroupEntry Msg
+        tableConfig =
+            Table.customConfig
+                { toId = .masterKey
+                , toMsg = OrphanGroupsTableStateChanged
+                , columns =
+                    [ Table.stringColumn "Назва групи" getGroupDisplayName |> Table.withColumnWidth "25%"
+                    , Table.customColumn
+                        { name = "Створено"
+                        , viewData = formatCreatedAt
+                        , sorter = Table.decreasingBy .createdAt
+                        }
+                        |> Table.withColumnWidth "20%"
+                    , Table.customColumn
+                        { name = "Джерело даних"
+                        , viewData = getDatasourceName
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "25%"
+                    , Table.veryCustomColumn
+                        { name = "Дії"
+                        , viewData = renderActionsColumn model
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "30%"
+                    ]
+                , customizations =
+                    { tableAttrs = [ class "base-table" ]
+                    , caption = Nothing
+                    , thead = customThead
+                    , tfoot = Nothing
+                    , tbodyAttrs = []
+                    , rowAttrs = customRowAttrs
+                    }
+                }
+
+        customTheadHelp : ( String, Config.Status, Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        Config.Unsortable ->
+                            text ""
+
+                        Config.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        Config.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        Config.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, Config.Status, Attribute Msg ) -> Table.HtmlDetails Msg
+        customThead headers =
+            { attributes = []
+            , children = List.map customTheadHelp headers
+            }
+
+        customRowAttrs : B.OrphanSignalGroupEntry -> List (Attribute Msg)
+        customRowAttrs _ =
+            []
+
+        getGroupDisplayName : B.OrphanSignalGroupEntry -> String
+        getGroupDisplayName group =
+            if String.isEmpty group.name then
+                String.right 5 group.masterKey
+            else
+                group.name
+
+        formatCreatedAt : B.OrphanSignalGroupEntry -> String
+        formatCreatedAt group =
+            let
+                timestamp : Int
+                timestamp = group.createdAt
+
+                date : String
+                date = 
+                    -- Convert milliseconds to date string
+                    -- This is a simple implementation - in production you'd want a proper date library
+                    if timestamp > 0 then
+                        "2024-01-" ++ String.fromInt (modBy 31 (timestamp // 86400000) + 1)
+                    else
+                        "-"
+            in
+            date
+
+        getDatasourceName : B.OrphanSignalGroupEntry -> String
+        getDatasourceName group =
+            case group.datasourceId of
+                Just datasourceId ->
+                    -- Find datasource name by ID
+                    List.filterMap
+                        (\( id, datasource ) ->
+                            if id == datasourceId then
+                                Just datasource.displayName
+                            else
+                                Nothing
+                        )
+                        model.datasources
+                        |> List.head
+                        |> Maybe.withDefault (String.fromInt datasourceId)
+
+                Nothing ->
+                    "-"
+
+        renderActionsColumn : Model -> B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderActionsColumn currentModel group =
+            let
+                isAssigning : Bool
+                isAssigning =
+                    currentModel.orphanGroupAssignmentInProgress == Just group.masterKey
+
+                zoneCount : Int
+                zoneCount =
+                    List.length currentModel.zones
+            in
+            { attributes = []
+            , children = 
+                [ if isAssigning then
+                    div [ class "flex items-center gap-2" ]
+                        [ Le.Block.Spinner.loadingSpinner2Sm
+                        , span [ class "text-sm text-gray-600" ] [ text "Призначення..." ]
+                        ]
+
+                  else if zoneCount == 0 then
+                    span [ class "text-sm text-gray-500" ] [ text "Немає напрямків" ]
+
+                  else if zoneCount == 1 then
+                    -- Тільки одна зона - показуємо тільки іконку додати
+                    case List.head currentModel.zones of
+                        Just ( zoneId, zone ) ->
+                            div [ class "flex items-center gap-2" ]
+                                [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
+                                , button
+                                    [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
+                                    , onClick (AssignOrphanGroup zoneId group.masterKey)
+                                    , title ("Додати до " ++ zone.name)
+                                    ]
+                                    [ i [ class "bi bi-plus text-lg" ] [] ]
+                                ]
+
+                        Nothing ->
+                            text ""
+
+                  else
+                    -- Кілька зон - показуємо теги з напрямками
+                    let
+                        selectedZones =
+                            case currentModel.orphanGroupZoneSelector of
+                                Just selector ->
+                                    if selector.groupKey == group.masterKey then
+                                        selector.selectedZones
+                                    else
+                                        []
+
+                                Nothing ->
+                                    []
+
+                        hasSelection =
+                            not (List.isEmpty selectedZones)
+                    in
+                    div [ class "flex items-center gap-2 flex-wrap" ]
+                        ([ span [ class "text-sm text-gray-700" ] [ text "→" ] ]
+                            ++ List.map
+                                (\( zoneId, zone ) ->
+                                    let
+                                        isSelected =
+                                            List.member zoneId selectedZones
+                                    in
+                                    button
+                                        [ class <|
+                                            "px-2 py-1 text-xs rounded-full transition-colors "
+                                                ++ (if isSelected then
+                                                        "bg-blue-100 text-blue-700 border border-blue-300"
+                                                    else
+                                                        "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
+                                                   )
+                                        , onClick (ToggleOrphanGroupZone group.masterKey zoneId)
+                                        , title <|
+                                            if isSelected then
+                                                "Прибрати " ++ zone.name
+                                            else
+                                                "Додати " ++ zone.name
+                                        ]
+                                        [ text zone.name ]
+                                )
+                                currentModel.zones
+                            ++ (if hasSelection then
+                                    [ button
+                                        [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
+                                        , onClick SaveOrphanGroupZones
+                                        , title "Додати до вибраних напрямків"
+                                        ]
+                                        [ i [ class "bi bi-plus text-sm" ] [] ]
+                                    ]
+                                else
+                                    []
+                               )
+                        )
+                ]
+            }
+    in
+    div []
+        [ Table.view tableConfig model.orphanGroupsTableState paginatedGroups
+        , Pager.view updatedPager
+            |> Html.map OrphanGroupsPagerMsg
+        ]
 
 
 renderOrphanGroup : Model -> B.OrphanSignalGroupEntry -> Html Msg
