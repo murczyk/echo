@@ -14,6 +14,7 @@ import Effect as E exposing (Effect)
 import Http
 import Json.Decode
 import Le.Block.Toast
+import Le.EventTypes
 import Le.RemoteData as RD exposing (RemoteData(..))
 import PagePorts.SharedPorts as Ports
 import Process
@@ -77,6 +78,15 @@ init flagsResult route =
       , posts = NotAsked
       , toasts = Le.Block.Toast.init
       , featureNavbarFrontOnly = flags.featureNavbarFrontOnly
+      , eventState = 
+            { isPolling = False
+            , lastEventId = Nothing
+            , error = Nothing
+            , retryCount = 0
+            , retryDelay = 1000
+            }
+      , pendingEvents = []
+      , eventSubscriptions = Dict.empty
       }
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
@@ -235,6 +245,28 @@ update req msg model =
         ShowToastWithDetails title content ->
             ( model
             , E.sendCmd <| Le.Block.Toast.addErrorV2 ToastMsg title content
+            )
+
+        EventServiceMsg _ ->
+            -- Will be handled by EventLayout
+            ( model, E.none )
+
+        EventReceived event ->
+            -- Add event to pending events for distribution
+            ( { model | pendingEvents = event :: model.pendingEvents }
+            , E.none
+            )
+
+        SubscribeToEvents pageId eventTypes ->
+            -- Add page subscription to event types
+            ( { model | eventSubscriptions = Le.EventTypes.subscribeToEvents pageId eventTypes model.eventSubscriptions }
+            , E.none
+            )
+
+        UnsubscribeFromEvents pageId ->
+            -- Remove page subscription
+            ( { model | eventSubscriptions = Le.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
+            , E.none
             )
 
 

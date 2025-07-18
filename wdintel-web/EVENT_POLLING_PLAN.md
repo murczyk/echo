@@ -77,10 +77,14 @@ type alias EventPollingState =
 ```
 
 **Acceptance Criteria**:
-- [ ] EventLayout polls for events successfully
-- [ ] Events are stored in Shared.Model
-- [ ] Session-level event ID persistence works
-- [ ] Layout integrates with existing app structure
+- [x] EventLayout polls for events successfully
+- [x] Events are stored in Shared.Model
+- [x] Session-level event ID persistence works
+- [x] Layout integrates with existing app structure
+- [x] Type-safe event subscriptions using Route.Path.Path
+- [x] Helper functions for easy page event subscription
+- [x] Simplified EventLayout that just renders children
+- [x] Removed keepAlive functionality (focuses only on event polling)
 
 ---
 
