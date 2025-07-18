@@ -111,8 +111,12 @@ type alias Model =
 
 
 type SortingOrder
-    = AscAlphabetically
-    | DescAlphabetically
+    = CallsignAsc
+    | CallsignDesc
+    | CreatedAtAsc
+    | CreatedAtDesc
+    | UnitAsc
+    | UnitDesc
     | Default
 
 
@@ -152,7 +156,7 @@ init req _ =
             , to = Le.Block.DateTime.init ()
             , now = Nothing
             , isIgnoringDateFilter = False
-            , sortingOrder = Default
+            , sortingOrder = UnitAsc
             , showLoadMore = False
             , loadingMore = False
             , inpSourceSelState = Select.initState (Select.selectIdentifier "inpSourceSelState")
@@ -214,6 +218,8 @@ type Msg
     | InitGotTime Time.Zone Time.Posix
     | ToggleIsIgnoringDateFilter Bool
     | SortByCallsignName
+    | SortByCreatedAt
+    | SortByUnit
     | LoadMore
     | InpSourceSelMsg (Select.Msg Int)
     | ToggleArmyExpanded String
@@ -254,6 +260,32 @@ type alias EditCallsignState =
 initAddState : Maybe String -> AddState
 initAddState mCallsignName =
     { inpCallsign = Maybe.withDefault "" mCallsignName, inpPosition = "", inpComment = "", inpDeveloping = False, inpRadioFreq = "" }
+
+
+-- Helper function to convert frontend sorting to backend sorting
+sortingOrderToBackendSort : SortingOrder -> List B.ListCallsignsSortBy
+sortingOrderToBackendSort order =
+    case order of
+        CallsignAsc ->
+            [ B.CallsignAsc ]
+        
+        CallsignDesc ->
+            [ B.CallsignDesc ]
+        
+        CreatedAtAsc ->
+            [ B.CallsignCreatedAtAsc ]
+        
+        CreatedAtDesc ->
+            [ B.CallsignCreatedAtDesc ]
+        
+        UnitAsc ->
+            [ B.UnitAsc ]
+        
+        UnitDesc ->
+            [ B.UnitDesc ]
+        
+        Default ->
+            [] -- Use backend default
 
 
 initLoad : Model -> Effect Msg
@@ -297,6 +329,7 @@ loadCallsignsCmd model =
             else
                 Maybe.map Time.posixToMillis model.to.datePosix
         , limit = Just 100
+        , sortBy = Just (sortingOrderToBackendSort model.sortingOrder)
         }
 
 
@@ -327,6 +360,7 @@ loadMoreCallsignsCmd model =
                     else
                         Maybe.map Time.posixToMillis model.to.datePosix
                 , limit = Just 100
+                , sortBy = Just (sortingOrderToBackendSort model.sortingOrder)
                 }
 
 
@@ -1059,19 +1093,24 @@ update req msg model =
             ( m2, loadCallsigns m2 )
 
         SortByCallsignName ->
-            ( { model
-                | sortingOrder =
+            let
+                newSortingOrder =
                     case model.sortingOrder of
-                        Default ->
-                            AscAlphabetically
+                        CallsignAsc ->
+                            CallsignDesc
+                        CallsignDesc ->
+                            UnitAsc
+                        _ ->
+                            CallsignAsc
 
-                        AscAlphabetically ->
-                            DescAlphabetically
-
-                        DescAlphabetically ->
-                            AscAlphabetically
-              }
-            , E.none
+                updatedModel =
+                    { model
+                        | sortingOrder = newSortingOrder
+                        , loading = True
+                    }
+            in
+            ( updatedModel
+            , loadCallsigns updatedModel
             )
 
         LoadMore ->
@@ -1232,6 +1271,48 @@ update req msg model =
         CancelEditSidebar ->
             ( { model | sidebarEditing = False, editingCallsign = Nothing, editState = Nothing }, E.none )
 
+        SortByCreatedAt ->
+            let
+                newSortingOrder =
+                    case model.sortingOrder of
+                        CreatedAtAsc ->
+                            CreatedAtDesc
+                        CreatedAtDesc ->
+                            CallsignAsc
+                        _ ->
+                            CreatedAtDesc
+
+                updatedModel =
+                    { model
+                        | sortingOrder = newSortingOrder
+                        , loading = True
+                    }
+            in
+            ( updatedModel
+            , loadCallsigns updatedModel
+            )
+
+        SortByUnit ->
+            let
+                newSortingOrder =
+                    case model.sortingOrder of
+                        UnitAsc ->
+                            UnitDesc
+                        UnitDesc ->
+                            CallsignAsc
+                        _ ->
+                            UnitAsc
+
+                updatedModel =
+                    { model
+                        | sortingOrder = newSortingOrder
+                        , loading = True
+                    }
+            in
+            ( updatedModel
+            , loadCallsigns updatedModel
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1250,36 +1331,50 @@ callsignsTableConfig shared model user =
         customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
         customTheadHelp ( name, status, click ) =
             let
-                sortIcon =
-                    case status of
-                        TableConfig.Unsortable ->
-                            text ""
-
-                        TableConfig.Sortable selected ->
-                            span
-                                [ style "color"
-                                    (if selected then
-                                        "var(--ochre-normal)"
-
-                                     else
-                                        "var(--color-text-muted)"
-                                    )
-                                ]
-                                [ text " ↓" ]
-
-                        TableConfig.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
-
-                        TableConfig.Reversible (Just isReversed) ->
-                            span [ style "color" "var(--ochre-normal)" ]
-                                [ text
-                                    (if isReversed then
-                                        " ↑"
-
-                                     else
-                                        " ↓"
-                                    )
-                                ]
+                -- Custom sorting logic for our backend sorting
+                ( sortIcon, sortClick ) =
+                    case name of
+                        "Позивний" ->
+                            let
+                                icon =
+                                    case model.sortingOrder of
+                                        CallsignAsc ->
+                                            span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+                                        CallsignDesc ->
+                                            span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+                                        _ ->
+                                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            in
+                            ( icon, onClick SortByCallsignName )
+                        
+                        "Створено" ->
+                            let
+                                icon =
+                                    case model.sortingOrder of
+                                        CreatedAtAsc ->
+                                            span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+                                        CreatedAtDesc ->
+                                            span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+                                        _ ->
+                                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            in
+                            ( icon, onClick SortByCreatedAt )
+                        
+                        "Підрозділ" ->
+                            let
+                                icon =
+                                    case model.sortingOrder of
+                                        UnitAsc ->
+                                            span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+                                        UnitDesc ->
+                                            span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+                                        _ ->
+                                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            in
+                            ( icon, onClick SortByUnit )
+                        
+                        _ ->
+                            ( text "", onClick SortByCallsignName )
 
                 headerContent =
                     div [ class "table-header-content", title name ]
@@ -1287,7 +1382,7 @@ callsignsTableConfig shared model user =
                         , sortIcon
                         ]
             in
-            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+            Html.th [ sortClick, style "padding" "1rem 1.5rem" ] [ headerContent ]
 
         customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
         customThead headers =
@@ -1319,10 +1414,18 @@ callsignsTableConfig shared model user =
                                 ]
                             ]
                         }
-                , sorter = Table.increasingOrDecreasingBy .callsign
+                , sorter = Table.unsortable
                 }
                 |> Table.withColumnWidth "12%"
-            , Table.stringColumn "Посада" .position
+            , Table.veryCustomColumn
+                { name = "Посада"
+                , viewData =
+                    \callsign ->
+                        { attributes = []
+                        , children = [ text callsign.position ]
+                        }
+                , sorter = Table.unsortable
+                }
                 |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
                 { name = "Коментар"
@@ -1445,7 +1548,7 @@ callsignsTableConfig shared model user =
                                             (Time.millisToPosix callsign.createdAt)
                             ]
                         }
-                , sorter = Table.increasingOrDecreasingBy .createdAt
+                , sorter = Table.unsortable
                 }
                 |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
@@ -1986,16 +2089,8 @@ contentBlock shared model user =
                     ]
                 ]
 
-        sortByName model_ callsigns_ =
-            case model_.sortingOrder of
-                Default ->
-                    callsigns_
-
-                AscAlphabetically ->
-                    callsigns_ |> List.sortBy .callsign
-
-                DescAlphabetically ->
-                    callsigns_ |> List.sortBy .callsign |> List.reverse
+        -- Remove frontend sorting since we're now doing it on the backend
+        -- sortByName model_ callsigns_ = callsigns_
 
         mainContent =
             div []
@@ -2072,7 +2167,7 @@ contentBlock shared model user =
                     [ filterPanel
                     ]
                 , div [ class "relative" ]
-                    [ Table.view (callsignsTableConfig shared model user) model.tableState (model.callsigns |> sortByName model)
+                    [ Table.view (callsignsTableConfig shared model user) model.tableState model.callsigns
                     , if model.loading then
                         div
                             [ class "absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
