@@ -6,6 +6,10 @@ import Bindings as B
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
+import Components.Sidebar as Sidebar
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -98,6 +102,9 @@ type alias Model =
     , expandedRegiments : Set.Set String
     , expandedBattalions : Set.Set String
     , showSidebar : Bool
+    , tableState : Table.State
+    , sidebarEditing : Bool
+    , editingCallsign : Maybe B.Callsign
     }
 
 
@@ -153,6 +160,9 @@ init req _ =
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
             , showSidebar = True
+            , tableState = Table.initialSort "Позивний"
+            , sidebarEditing = False
+            , editingCallsign = Nothing
             }
     in
     ( m2
@@ -209,6 +219,11 @@ type Msg
     | ToggleBattalionExpanded String String String String
     | ClearFilters
     | ToggleSidebar
+    | SetTableState Table.State
+    | OpenEditSidebar B.Callsign
+    | CloseEditSidebar
+    | SaveEditSidebar
+    | CancelEditSidebar
 
 
 type alias AddState =
@@ -682,6 +697,8 @@ update req msg model =
                                 , inpRadioFreq = callsign.radioFreq |> def ""
                                 }
                                 model.editCallsign
+                        , sidebarEditing = True
+                        , editingCallsign = Just callsign
                       }
                     , E.none
                     )
@@ -1071,10 +1088,430 @@ update req msg model =
         ToggleSidebar ->
             ( { model | showSidebar = not model.showSidebar }, E.none )
 
+        SetTableState newState ->
+            ( { model | tableState = newState }, E.none )
+
+        OpenEditSidebar callsign ->
+            ( { model | sidebarEditing = True, editingCallsign = Just callsign }, E.none )
+
+        CloseEditSidebar ->
+            ( { model | sidebarEditing = False, editingCallsign = Nothing }, E.none )
+
+        SaveEditSidebar ->
+            case model.editingCallsign of
+                Just callsign ->
+                    case Dict.get callsign.id model.editCallsign of
+                        Just editState ->
+                            ( model, E.sendCmd <| Api.sigint_callsign_update (EditCallsignDone callsign.id) { id = callsign.id, callsign = editState.inpCallsign, position = editState.inpPosition, comment = editState.inpComment, unitId = editState.inpUnitId, sourceId = editState.inpSourceId, createdAt = callsign.createdAt, developing = editState.inpDeveloping, radioFreq = Just editState.inpRadioFreq, active = True } )
+
+                        Nothing ->
+                            ( model, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        CancelEditSidebar ->
+            ( { model | sidebarEditing = False, editingCallsign = Nothing, editCallsign = Dict.empty }, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.none
+
+
+callsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.Callsign Msg
+callsignsTableConfig shared model user =
+    let
+        hasEditorRole =
+            Le.Auth.hasRole "CallsignsEditor" user || Le.Auth.hasRole "UnitsEditor" user
+
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
+        { toId = \callsign -> String.fromInt callsign.id
+        , toMsg = SetTableState
+        , columns =
+            [ Table.veryCustomColumn
+                { name = "Позивний"
+                , viewData =
+                    \callsign ->
+                        { attributes = []
+                        , children =
+                            [ div []
+                                [ div [ class "text-uppercase" ]
+                                    [ text callsign.callsign ]
+                                , HtmlX.viewIf callsign.developing
+                                    (div [ class "badge rounded-pill text-bg-warning" ]
+                                        [ text "в дорозвідці" ]
+                                    )
+                                ]
+                            ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy .callsign
+                }
+                |> Table.withColumnWidth "13%"
+            , Table.stringColumn "Посада" .position
+                |> Table.withColumnWidth "12%"
+            , Table.veryCustomColumn
+                { name = "Коментар"
+                , viewData =
+                    \callsign ->
+                        { attributes = [ class "relative" ]
+                        , children =
+                            [ text callsign.comment
+                            , Watermark.new user.name
+                                |> Watermark.withPositioning ( 5, 5 )
+                                |> Watermark.withRotate -10
+                                |> Watermark.withFontSize "1.3rem"
+                                |> Watermark.withOpacity 0.3
+                                |> Watermark.view
+                                |> HtmlX.viewIf (Basics.remainderBy 3 callsign.id == 0)
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "21%"
+            , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData =
+                    \callsign ->
+                        { attributes = []
+                        , children =
+                            [ case ListX.find (\u -> u.id == callsign.unitId) model.units of
+                                Nothing ->
+                                    text "<Виберіть підрозділ>"
+
+                                Just unit ->
+                                    text unit.name
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "16%"
+            , Table.veryCustomColumn
+                { name = "Зустрічається у підрозділах"
+                , viewData =
+                    \callsign ->
+                        { attributes = [ style "width" "210px" ]
+                        , children =
+                            case model.callsignsWithUnitsFromInbox of
+                                Loading ->
+                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                                Success callsignsWithUnitsFromInbox ->
+                                    let
+                                        unit =
+                                            ListX.find (\u -> u.id == callsign.unitId) model.units
+
+                                        callsignWithUnitsFromInbox =
+                                            ListX.find
+                                                (\callsignWithUnitsFromInbox_ ->
+                                                    String.contains (Tuple.first callsignWithUnitsFromInbox_) callsign.callsign
+                                                )
+                                                callsignsWithUnitsFromInbox
+                                    in
+                                    [ case callsignWithUnitsFromInbox of
+                                        Nothing ->
+                                            text ""
+
+                                        Just callsignWithUnitsFromInbox_ ->
+                                            text
+                                                (case unit of
+                                                    Nothing ->
+                                                        callsignWithUnitsFromInbox_
+                                                            |> Tuple.second
+                                                            |> String.join ", "
+
+                                                    Just unit_ ->
+                                                        callsignWithUnitsFromInbox_
+                                                            |> Tuple.second
+                                                            |> List.filter (\s -> not (String.contains s unit_.name))
+                                                            |> String.join ", "
+                                                )
+                                    ]
+
+                                _ ->
+                                    []
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "Джерело"
+                , viewData =
+                    \callsign ->
+                        { attributes = []
+                        , children =
+                            [ case ListX.find (\s -> s.id == callsign.sourceId) model.sources of
+                                Nothing ->
+                                    text "Loading..."
+
+                                Just source ->
+                                    if source.id == 2 && not (String.isEmpty (callsign.radioFreq |> def "")) then
+                                        text (source.name ++ " (" ++ def "" callsign.radioFreq ++ ")")
+
+                                    else
+                                        text source.name
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Створено"
+                , viewData =
+                    \callsign ->
+                        { attributes = []
+                        , children =
+                            [ case model.zone of
+                                Nothing ->
+                                    text "Loading..."
+
+                                Just zone ->
+                                    text <|
+                                        Le.Time.renderDateF6 zone
+                                            (Time.millisToPosix callsign.createdAt)
+                            ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Дії"
+                , viewData =
+                    \callsign ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            if hasEditorRole then
+                                [ div [ class "flex gap-[4px] text-sm" ]
+                                    [ button
+                                        [ title "Редагувати"
+                                        , class "icon-btn icon-btn-primary"
+                                        , onClick (OpenEditSidebar callsign)
+                                        ]
+                                        [ i [ class "bi bi-pencil-square" ] [] ]
+                                    , button
+                                        [ title "Видалити"
+                                        , class "icon-btn icon-btn-danger"
+                                        , onClick (DeleteCallsign callsign.id)
+                                        ]
+                                        [ i [ class "bi bi-trash" ] [] ]
+                                    ]
+                                ]
+
+                            else
+                                []
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "5%"
+            ]
+        , customizations = customizations
+        }
+
+
+editSidebarContent : Model -> Shared.Model -> Auth.User -> List (Html Msg)
+editSidebarContent model shared user =
+    case model.editingCallsign of
+        Just callsign ->
+            case Dict.get callsign.id model.editCallsign of
+                Just editState ->
+                    [ div [ class "p-6 flex flex-col gap-6 h-full" ]
+                        [ div [ class "flex justify-between items-center" ]
+                            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-gray-100" ]
+                                [ text "Редагування позивного" ]
+                            , button
+                                [ class "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                , onClick CloseEditSidebar
+                                ]
+                                [ i [ class "bi bi-x-lg text-xl" ] [] ]
+                            ]
+                        , div [ class "flex-1 space-y-4" ]
+                            [ div []
+                                [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
+                                    [ text "Позивний" ]
+                                , input
+                                    [ class "form-input uppercase w-full"
+                                    , type_ "text"
+                                    , placeholder "Позивний"
+                                    , value editState.inpCallsign
+                                    , onInput <|
+                                        EditCallsignMsg callsign.id
+                                            << (\v -> { editState | inpCallsign = v })
+                                    ]
+                                    []
+                                , div [ class "flex items-center gap-2 mt-2" ]
+                                    [ Checkbox.new
+                                        { isChecked = editState.inpDeveloping
+                                        , onToggle = \v -> EditCallsignMsg callsign.id { editState | inpDeveloping = v }
+                                        }
+                                        |> Checkbox.withContent [ text "в дорозвідці" ]
+                                        |> Checkbox.view
+                                    ]
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
+                                    [ text "Посада" ]
+                                , input
+                                    [ class "form-input w-full"
+                                    , type_ "text"
+                                    , placeholder "Посада"
+                                    , value editState.inpPosition
+                                    , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpPosition = v })
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
+                                    [ text "Коментар" ]
+                                , textarea
+                                    [ class "form-input w-full"
+                                    , rows 3
+                                    , placeholder "Коментар"
+                                    , onInput <|
+                                        EditCallsignMsg callsign.id
+                                            << (\v -> { editState | inpComment = v })
+                                    , value editState.inpComment
+                                    ]
+                                    []
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
+                                    [ text "Підрозділ" ]
+                                , let
+                                    selectItem : Maybe (Select.MenuItem Int)
+                                    selectItem =
+                                        ListX.find (\unit -> unit.id == editState.inpUnitId) model.units
+                                            |> Maybe.map
+                                                (\unit ->
+                                                    Select.basicMenuItem
+                                                        { item = unit.id, label = unit.name }
+                                                )
+                                  in
+                                  Html.map (EditUnitSelMsg callsign.id) <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            selectItem
+                                            editState.inpUnitSelState
+                                            editState.inpUnitSelMenu
+                                            "жоден"
+                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                ]
+                            , div []
+                                [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
+                                    [ text "Джерело" ]
+                                , div [ class "flex flex-col gap-2" ]
+                                    [ select
+                                        [ class "form-input w-full"
+                                        , onInput <|
+                                            EditCallsignMsg callsign.id
+                                                << (\v ->
+                                                        case String.toInt v of
+                                                            Nothing ->
+                                                                editState
+
+                                                            Just v2 ->
+                                                                { editState | inpSourceId = v2 }
+                                                   )
+                                        ]
+                                        (List.map
+                                            (\source ->
+                                                option
+                                                    [ value (String.fromInt source.id)
+                                                    , selected (editState.inpSourceId == source.id)
+                                                    ]
+                                                    [ text source.name ]
+                                            )
+                                            model.sources
+                                        )
+                                    , if editState.inpSourceId == 2 then
+                                        input
+                                            [ class "form-input w-full"
+                                            , type_ "text"
+                                            , placeholder "Частота"
+                                            , value editState.inpRadioFreq
+                                            , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpRadioFreq = v })
+                                            ]
+                                            []
+
+                                      else
+                                        text ""
+                                    ]
+                                ]
+                            ]
+                        , div [ class "flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
+                            [ Button.new { label = "Скасувати", onClick = CancelEditSidebar }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                            , Button.new { label = "Зберегти", onClick = SaveEditSidebar }
+                                |> Button.withPrimary
+                                |> Button.view
+                            ]
+                        ]
+                    ]
+
+                Nothing ->
+                    [ div [ class "p-6" ]
+                        [ text "Помилка: не знайдено дані для редагування" ]
+                    ]
+
+        Nothing ->
+            [ div [ class "p-6" ]
+                [ text "Помилка: не вибрано позивний для редагування" ]
+            ]
 
 
 contentBlock : Shared.Model -> Model -> Auth.User -> Html Msg
@@ -1116,282 +1553,6 @@ contentBlock shared model user =
                     ]
             in
             ModalDialog.modalDialog model.deleteDialogOpen DeleteCallsignCancel [] dialogContent
-
-        renderUnitsFromInboxTd : B.Callsign -> Html Msg
-        renderUnitsFromInboxTd callsign =
-            case model.callsignsWithUnitsFromInbox of
-                Loading ->
-                    td [ class "align-middle text-center", style "width" "210px" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
-
-                Success callsignsWithUnitsFromInbox ->
-                    let
-                        unit =
-                            ListX.find (\u -> u.id == callsign.unitId) model.units
-
-                        callsignWithUnitsFromInbox =
-                            ListX.find
-                                (\callsignWithUnitsFromInbox_ ->
-                                    String.contains (Tuple.first callsignWithUnitsFromInbox_) callsign.callsign
-                                )
-                                callsignsWithUnitsFromInbox
-                    in
-                    td [ style "width" "210px" ]
-                        [ case callsignWithUnitsFromInbox of
-                            Nothing ->
-                                text ""
-
-                            Just callsignWithUnitsFromInbox_ ->
-                                text
-                                    (case unit of
-                                        Nothing ->
-                                            callsignWithUnitsFromInbox_
-                                                |> Tuple.second
-                                                |> String.join ", "
-
-                                        Just unit_ ->
-                                            callsignWithUnitsFromInbox_
-                                                |> Tuple.second
-                                                |> List.filter (\s -> not (String.contains s unit_.name))
-                                                |> String.join ", "
-                                    )
-                        ]
-
-                _ ->
-                    td [ style "width" "210px" ] []
-
-        renderCallsignTrView : Int -> B.Callsign -> Html Msg
-        renderCallsignTrView rowIndex callsign =
-            tr
-                [ class <|
-                    if callsign.active then
-                        ""
-
-                    else
-                        "disabled"
-                ]
-                [ td
-                    [ title (String.fromInt callsign.id)
-                    ]
-                    [ div []
-                        [ div [ class "text-uppercase" ]
-                            [ text callsign.callsign ]
-                        , HtmlX.viewIf callsign.developing
-                            (div [ class "badge rounded-pill text-bg-warning" ]
-                                [ text "в дорозвідці" ]
-                            )
-                        ]
-                    ]
-                , td [] [ text callsign.position ]
-                , td [ class "relative" ]
-                    [ text callsign.comment
-                    , Watermark.new user.name
-                        |> Watermark.withPositioning ( 5, 5 )
-                        |> Watermark.withRotate -10
-                        |> Watermark.withFontSize "1.3rem"
-                        |> Watermark.withOpacity 0.3
-                        |> Watermark.view
-                        |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
-                    ]
-                , td []
-                    [ case ListX.find (\u -> u.id == callsign.unitId) model.units of
-                        Nothing ->
-                            text "<Виберіть підрозділ>"
-
-                        Just unit ->
-                            text unit.name
-                    ]
-                , renderUnitsFromInboxTd callsign
-                , td []
-                    [ case ListX.find (\s -> s.id == callsign.sourceId) model.sources of
-                        Nothing ->
-                            text "Loading..."
-
-                        Just source ->
-                            if source.id == 2 && not (String.isEmpty (callsign.radioFreq |> def "")) then
-                                text (source.name ++ " (" ++ def "" callsign.radioFreq ++ ")")
-
-                            else
-                                text source.name
-                    ]
-                , td []
-                    [ case model.zone of
-                        Nothing ->
-                            text "Loading..."
-
-                        Just zone ->
-                            text <|
-                                Le.Time.renderDateF6 zone
-                                    (Time.millisToPosix callsign.createdAt)
-                    ]
-                , if hasEditorRole then
-                    td []
-                        [ div [ class "text-sm" ]
-                            [ div [ class "flex gap-2" ]
-                                [ button
-                                    [ title "Редагувати"
-                                    , class "icon-btn icon-btn-primary"
-                                    , onClick (EditCallsign callsign.id)
-                                    ]
-                                    [ i [ class "bi bi-pencil-square" ] [] ]
-                                , button
-                                    [ title "Видалити"
-                                    , class "icon-btn icon-btn-danger"
-                                    , onClick (DeleteCallsign callsign.id)
-                                    ]
-                                    [ i [ class "bi bi-trash" ] [] ]
-                                ]
-                            ]
-                        ]
-
-                  else
-                    text ""
-                ]
-
-        renderCallsignTrEdit : B.Callsign -> EditCallsignState -> Html Msg
-        renderCallsignTrEdit callsign editState =
-            tr []
-                [ td []
-                    [ div [ class "flex flex-col gap-2 w-full" ]
-                        [ input
-                            [ class "form-input uppercase w-full"
-                            , type_ "text"
-                            , placeholder "Позивний"
-                            , value editState.inpCallsign
-                            , onInput <|
-                                EditCallsignMsg callsign.id
-                                    << (\v -> { editState | inpCallsign = v })
-                            ]
-                            []
-                        , div [ class "flex items-center gap-2 mt-1" ]
-                            [ Checkbox.new
-                                { isChecked = editState.inpDeveloping
-                                , onToggle = \v -> EditCallsignMsg callsign.id { editState | inpDeveloping = v }
-                                }
-                                |> Checkbox.withContent [ text "в дорозвідці" ]
-                                |> Checkbox.view
-                            ]
-                        ]
-                    ]
-                , td []
-                    [ input
-                        [ class "form-input w-full"
-                        , type_ "text"
-                        , placeholder "Посада"
-                        , value editState.inpPosition
-                        , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpPosition = v })
-                        ]
-                        []
-                    ]
-                , td []
-                    [ textarea
-                        [ class "form-input w-full"
-                        , rows 1
-                        , placeholder "Коментар"
-                        , onInput <|
-                            EditCallsignMsg callsign.id
-                                << (\v -> { editState | inpComment = v })
-                        , value editState.inpComment
-                        ]
-                        []
-                    ]
-                , td []
-                    [ div [ class "w-full" ]
-                        [ let
-                            selectItem : Maybe (Select.MenuItem Int)
-                            selectItem =
-                                ListX.find (\unit -> unit.id == editState.inpUnitId) model.units
-                                    |> Maybe.map
-                                        (\unit ->
-                                            Select.basicMenuItem
-                                                { item = unit.id, label = unit.name }
-                                        )
-                          in
-                          Html.map (EditUnitSelMsg callsign.id) <|
-                            Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
-                                    selectItem
-                                    editState.inpUnitSelState
-                                    editState.inpUnitSelMenu
-                                    "жоден"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
-                        ]
-                    ]
-                , renderUnitsFromInboxTd callsign
-                , td []
-                    [ div [ class "flex flex-col gap-2 w-full" ]
-                        [ select
-                            [ class "form-input w-full"
-                            , onInput <|
-                                EditCallsignMsg callsign.id
-                                    << (\v ->
-                                            case String.toInt v of
-                                                Nothing ->
-                                                    editState
-
-                                                Just v2 ->
-                                                    { editState | inpSourceId = v2 }
-                                       )
-                            ]
-                            (List.map
-                                (\source ->
-                                    option
-                                        [ value (String.fromInt source.id)
-                                        , selected (editState.inpSourceId == source.id)
-                                        ]
-                                        [ text source.name ]
-                                )
-                                model.sources
-                            )
-                        , if editState.inpSourceId == 2 then
-                            input
-                                [ class "form-input w-full"
-                                , type_ "text"
-                                , placeholder "Частота"
-                                , value editState.inpRadioFreq
-                                , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpRadioFreq = v })
-                                ]
-                                []
-
-                          else
-                            text ""
-                        ]
-                    ]
-                , td []
-                    [ case model.zone of
-                        Nothing ->
-                            text "Loading..."
-
-                        Just zone ->
-                            text <|
-                                Le.Time.renderDateF6 zone
-                                    (Time.millisToPosix callsign.createdAt)
-                    ]
-                , td []
-                    [ div [ class "flex gap-2" ]
-                        [ button
-                            [ title "Зберегти"
-                            , class "icon-btn icon-btn-primary"
-                            , onClick (EditCallsignSave callsign.id)
-                            ]
-                            [ i [ class "bi bi-check2" ] [] ]
-                        , button
-                            [ title "Відмінити"
-                            , class "icon-btn icon-btn-danger"
-                            , onClick (EditCallsignCancel callsign.id)
-                            ]
-                            [ i [ class "bi bi-x" ] [] ]
-                        ]
-                    ]
-                ]
-
-        renderCallsignTr : Int -> B.Callsign -> Html Msg
-        renderCallsignTr rowIndex callsign =
-            case Dict.get callsign.id model.editCallsign of
-                Nothing ->
-                    renderCallsignTrView rowIndex callsign
-
-                Just editState ->
-                    renderCallsignTrEdit callsign editState
 
         addCallsignPanel : ( Int, AddState ) -> Html Msg
         addCallsignPanel ( pos, addState ) =
@@ -1735,77 +1896,7 @@ contentBlock shared model user =
                     [ filterPanel
                     ]
                 , div [ class "relative" ]
-                    [ table
-                        [ class "table table-bordered table-sm"
-                        , style "font-size" ".85rem"
-                        ]
-                        [ thead []
-                            [ tr []
-                                [ th
-                                    [ scope "col"
-                                    , class "nowrap"
-                                    , style "width" "13%"
-                                    ]
-                                    [ text "Позивний "
-                                    , i
-                                        [ class
-                                            (case model.sortingOrder of
-                                                Default ->
-                                                    "bi bi-sort-alpha-down"
-
-                                                AscAlphabetically ->
-                                                    "bi bi-sort-alpha-up"
-
-                                                DescAlphabetically ->
-                                                    "bi bi-sort-alpha-down"
-                                            )
-                                        , style "cursor" "pointer"
-                                        , style "font-size" "16px"
-                                        , onClick SortByCallsignName
-                                        ]
-                                        []
-                                    ]
-                                , th
-                                    [ scope "col"
-                                    , class "nowrap"
-                                    , style "width" "10%"
-                                    ]
-                                    [ text "Посада" ]
-                                , th
-                                    [ scope "col"
-                                    , class "nowrap"
-                                    , style "width" "21%"
-                                    ]
-                                    [ text "Коментар" ]
-                                , th
-                                    [ scope "col"
-                                    , class "nowrap"
-                                    , style "width" "16%"
-                                    ]
-                                    [ text "Підрозділ" ]
-                                , th
-                                    [ scope "col"
-                                    , class "nowrap"
-                                    , style "width" "15%"
-                                    ]
-                                    [ text "Зустрічається у підрозділах" ]
-                                , th [ scope "col", class "nowrap", style "width" "10%" ] [ text "Джерело" ]
-                                , th [ scope "col", class "nowrap", style "width" "10%" ] [ text "Створено" ]
-                                , if hasEditorRole then
-                                    th
-                                        [ scope "col"
-                                        , class "nowrap"
-                                        , style "width" "5%"
-                                        ]
-                                        [ text "Дії" ]
-
-                                  else
-                                    text ""
-                                ]
-                            ]
-                        , tbody [] <|
-                            List.indexedMap renderCallsignTr (model.callsigns |> sortByName model)
-                        ]
+                    [ Table.view (callsignsTableConfig shared model user) model.tableState (model.callsigns |> sortByName model)
                     , if model.loading then
                         div
                             [ class "absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center"
@@ -1843,6 +1934,7 @@ contentBlock shared model user =
     div []
         [ deleteConfirmationModal
         , mainContent
+        , Sidebar.view model.sidebarEditing CloseEditSidebar (editSidebarContent model shared user)
         ]
 
 
