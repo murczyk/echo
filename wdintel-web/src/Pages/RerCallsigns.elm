@@ -72,7 +72,7 @@ type alias Model =
     , inpUnitSelState : Select.State
     , inpUnitSelMenu : List (Select.MenuItem Int)
     , inpUnit : Maybe Int
-    , editCallsign : Dict Int EditCallsignState
+    , editState : Maybe EditCallsignState
     , deleteCallsignConfirmation : Maybe Int
     , deleteDialogOpen : Bool
     , inpSource : Maybe Int
@@ -130,7 +130,7 @@ init req _ =
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
             , inpUnitSelMenu = []
             , inpUnit = Nothing
-            , editCallsign = Dict.empty
+            , editState = Nothing
             , deleteCallsignConfirmation = Nothing
             , deleteDialogOpen = False
             , inpSource = Nothing
@@ -181,11 +181,11 @@ type Msg
     | AddStateMsg Int AddState
     | InpSource String
     | AddUnitSelMsg (Select.Msg Int)
-    | EditUnitSelMsg Int (Select.Msg Int)
+    | EditUnitSelMsg (Select.Msg Int)
     | AddCallsign
     | AddCallsignDone (Result ApiError B.Callsign)
     | EditCallsign Int
-    | EditCallsignMsg Int EditCallsignState
+    | EditCallsignMsg EditCallsignState
     | EditCallsignSave Int
     | EditCallsignDone Int (Result ApiError B.Callsign)
     | EditCallsignCancel Int
@@ -596,8 +596,8 @@ update req msg model =
                 ]
             )
 
-        EditUnitSelMsg id selMsg ->
-            case Dict.get id model.editCallsign of
+        EditUnitSelMsg selMsg ->
+            case model.editState of
                 Nothing ->
                     ( model, E.none )
 
@@ -607,21 +607,19 @@ update req msg model =
                             Select.update selMsg editState.inpUnitSelState
                     in
                     ( { model
-                        | editCallsign =
+                        | editState =
                             case Le.Block.Select.singleUpd mAction (Just editState.inpUnitId) of
                                 Nothing ->
-                                    Dict.remove id model.editCallsign
+                                    Nothing
 
                                 Just unitId ->
-                                    Dict.insert id
+                                    Just
                                         { editState
                                             | inpUnitSelState = iState
-                                            , inpUnitId =
-                                                unitId
+                                            , inpUnitId = unitId
                                         }
-                                        model.editCallsign
                       }
-                    , E.sendCmd <| Cmd.map (EditUnitSelMsg id) iCmd
+                    , E.sendCmd <| Cmd.map EditUnitSelMsg iCmd
                     )
 
         -- adds many
@@ -663,13 +661,13 @@ update req msg model =
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення позивного" err
             )
 
-        AddCallsignDone (Ok _) ->
+        AddCallsignDone (Ok newCallsign) ->
             ( { model
-                | loading = True
-                , loadingUnitStats = True
+                | callsigns = newCallsign :: model.callsigns
                 , addState = EL.fromList [ initAddState Nothing ]
+                , loading = False
               }
-            , initLoad model
+            , E.none
             )
 
         EditCallsign id ->
@@ -679,8 +677,8 @@ update req msg model =
 
                 Just callsign ->
                     ( { model
-                        | editCallsign =
-                            Dict.insert id
+                        | editState =
+                            Just
                                 { inpCallsign = callsign.callsign
                                 , inpPosition = callsign.position
                                 , inpComment = callsign.comment
@@ -696,23 +694,19 @@ update req msg model =
                                 , inpDeveloping = callsign.developing
                                 , inpRadioFreq = callsign.radioFreq |> def ""
                                 }
-                                model.editCallsign
                         , sidebarEditing = True
                         , editingCallsign = Just callsign
                       }
                     , E.none
                     )
 
-        EditCallsignMsg id editState ->
-            ( { model
-                | editCallsign =
-                    Dict.insert id editState model.editCallsign
-              }
+        EditCallsignMsg editState ->
+            ( { model | editState = Just editState }
             , E.none
             )
 
         EditCallsignSave id ->
-            case Dict.get id model.editCallsign of
+            case model.editState of
                 Nothing ->
                     ( model, E.none )
 
@@ -744,16 +738,28 @@ update req msg model =
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення позивного" err
             )
 
-        EditCallsignDone id (Ok _) ->
+        EditCallsignDone id (Ok updatedCallsign) ->
             ( { model
-                | editCallsign = Dict.remove id model.editCallsign
-                , loading = True
+                | callsigns =
+                    List.map
+                        (\c ->
+                            if c.id == id then
+                                updatedCallsign
+
+                            else
+                                c
+                        )
+                        model.callsigns
+                , editState = Nothing
+                , sidebarEditing = False
+                , editingCallsign = Nothing
+                , loading = False
               }
-            , loadCallsigns model
+            , E.none
             )
 
         EditCallsignCancel id ->
-            ( { model | editCallsign = Dict.remove id model.editCallsign }, E.none )
+            ( { model | editState = Nothing }, E.none )
 
         DeleteCallsign id ->
             ( { model | deleteCallsignConfirmation = Just id, deleteDialogOpen = True }, E.none )
@@ -781,7 +787,7 @@ update req msg model =
         DeleteCallsignDone (Ok deletedCallsign) ->
             ( { model
                 | callsigns = List.filter (\c -> c.id /= deletedCallsign.id) model.callsigns
-                , editCallsign = Dict.remove deletedCallsign.id model.editCallsign
+                , editState = Nothing
                 , sidebarEditing = False
                 , editingCallsign = Nothing
                 , deleteCallsignConfirmation = Nothing
@@ -1100,7 +1106,24 @@ update req msg model =
             ( { model | tableState = newState }, E.none )
 
         OpenEditSidebar callsign ->
-            ( { model | sidebarEditing = True, editingCallsign = Just callsign }, E.none )
+            ( { model
+                | sidebarEditing = True
+                , editingCallsign = Just callsign
+                , editState =
+                    Just
+                        { inpCallsign = callsign.callsign
+                        , inpPosition = callsign.position
+                        , inpComment = callsign.comment
+                        , inpUnitId = callsign.unitId
+                        , inpSourceId = callsign.sourceId
+                        , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt callsign.id)
+                        , inpUnitSelMenu = List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) model.units
+                        , inpDeveloping = callsign.developing
+                        , inpRadioFreq = callsign.radioFreq |> def ""
+                        }
+              }
+            , E.none
+            )
 
         CloseEditSidebar ->
             ( { model | sidebarEditing = False, editingCallsign = Nothing }, E.none )
@@ -1108,7 +1131,7 @@ update req msg model =
         SaveEditSidebar ->
             case model.editingCallsign of
                 Just callsign ->
-                    case Dict.get callsign.id model.editCallsign of
+                    case model.editState of
                         Just editState ->
                             ( model, E.sendCmd <| Api.sigint_callsign_update (EditCallsignDone callsign.id) { id = callsign.id, callsign = editState.inpCallsign, position = editState.inpPosition, comment = editState.inpComment, unitId = editState.inpUnitId, sourceId = editState.inpSourceId, createdAt = callsign.createdAt, developing = editState.inpDeveloping, radioFreq = Just editState.inpRadioFreq, active = True } )
 
@@ -1119,7 +1142,7 @@ update req msg model =
                     ( model, E.none )
 
         CancelEditSidebar ->
-            ( { model | sidebarEditing = False, editingCallsign = Nothing, editCallsign = Dict.empty }, E.none )
+            ( { model | sidebarEditing = False, editingCallsign = Nothing, editState = Nothing }, E.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -1375,7 +1398,7 @@ editSidebarContent : Model -> Shared.Model -> Auth.User -> List (Html Msg)
 editSidebarContent model shared user =
     case model.editingCallsign of
         Just callsign ->
-            case Dict.get callsign.id model.editCallsign of
+            case model.editState of
                 Just editState ->
                     [ div [ class "p-6 flex flex-col gap-6 h-full" ]
                         [ div [ class "flex justify-between items-center" ]
@@ -1397,14 +1420,14 @@ editSidebarContent model shared user =
                                     , placeholder "Позивний"
                                     , value editState.inpCallsign
                                     , onInput <|
-                                        EditCallsignMsg callsign.id
+                                        EditCallsignMsg
                                             << (\v -> { editState | inpCallsign = v })
                                     ]
                                     []
                                 , div [ class "flex items-center gap-2 mt-2" ]
                                     [ Checkbox.new
                                         { isChecked = editState.inpDeveloping
-                                        , onToggle = \v -> EditCallsignMsg callsign.id { editState | inpDeveloping = v }
+                                        , onToggle = \v -> EditCallsignMsg { editState | inpDeveloping = v }
                                         }
                                         |> Checkbox.withContent [ text "в дорозвідці" ]
                                         |> Checkbox.view
@@ -1418,7 +1441,7 @@ editSidebarContent model shared user =
                                     , type_ "text"
                                     , placeholder "Посада"
                                     , value editState.inpPosition
-                                    , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpPosition = v })
+                                    , onInput <| EditCallsignMsg << (\v -> { editState | inpPosition = v })
                                     ]
                                     []
                                 ]
@@ -1430,7 +1453,7 @@ editSidebarContent model shared user =
                                     , rows 3
                                     , placeholder "Коментар"
                                     , onInput <|
-                                        EditCallsignMsg callsign.id
+                                        EditCallsignMsg
                                             << (\v -> { editState | inpComment = v })
                                     , value editState.inpComment
                                     ]
@@ -1449,7 +1472,7 @@ editSidebarContent model shared user =
                                                         { item = unit.id, label = unit.name }
                                                 )
                                   in
-                                  Html.map (EditUnitSelMsg callsign.id) <|
+                                  Html.map EditUnitSelMsg <|
                                     Styled.toUnstyled <|
                                         Le.Block.Select.renderSelectSingle
                                             selectItem
@@ -1465,7 +1488,7 @@ editSidebarContent model shared user =
                                     [ select
                                         [ class "form-input w-full"
                                         , onInput <|
-                                            EditCallsignMsg callsign.id
+                                            EditCallsignMsg
                                                 << (\v ->
                                                         case String.toInt v of
                                                             Nothing ->
@@ -1491,7 +1514,7 @@ editSidebarContent model shared user =
                                             , type_ "text"
                                             , placeholder "Частота"
                                             , value editState.inpRadioFreq
-                                            , onInput <| EditCallsignMsg callsign.id << (\v -> { editState | inpRadioFreq = v })
+                                            , onInput <| EditCallsignMsg << (\v -> { editState | inpRadioFreq = v })
                                             ]
                                             []
 
@@ -1500,7 +1523,7 @@ editSidebarContent model shared user =
                                     ]
                                 ]
                             ]
-                        , div [ class "flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
+                        , div [ class "w-full flex justifu-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
                             [ Button.new { label = "Скасувати", onClick = CancelEditSidebar }
                                 |> Button.withStyleSecondary
                                 |> Button.view
