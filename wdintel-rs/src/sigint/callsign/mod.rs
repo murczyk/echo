@@ -102,12 +102,53 @@ pub async fn list_callsigns(
                 .lte(dt_from_millis(till_date_inclusive_ms)?),
         );
     }
-    callsigns = callsigns.order_by_asc(sigint_unit::Column::Army);
-    callsigns = callsigns.order_by_asc(sigint_unit::Column::Division);
-    callsigns = callsigns.order_by_asc(sigint_unit::Column::Regiment);
-    callsigns = callsigns.order_by_asc(sigint_unit::Column::Battalion);
-    callsigns = callsigns.order_by_asc(sigint_unit::Column::Company);
-    callsigns = callsigns.order_by_asc(sigint_callsign::Column::Callsign);
+    
+    // Apply sorting based on request
+    callsigns = if let Some(sort_by) = &req.sort_by {
+        sort_by
+            .iter()
+            .fold(callsigns, |callsigns, sort_by| match sort_by {
+                ListCallsignsSortBy::CallsignAsc => {
+                    callsigns.order_by_asc(sigint_callsign::Column::Callsign)
+                }
+                ListCallsignsSortBy::CallsignDesc => {
+                    callsigns.order_by_desc(sigint_callsign::Column::Callsign)
+                }
+                ListCallsignsSortBy::CallsignCreatedAtAsc => {
+                    callsigns.order_by_asc(sigint_callsign::Column::CreatedAt)
+                }
+                ListCallsignsSortBy::CallsignCreatedAtDesc => {
+                    callsigns.order_by_desc(sigint_callsign::Column::CreatedAt)
+                }
+                ListCallsignsSortBy::UnitAsc => {
+                    callsigns
+                        .order_by_asc(sigint_unit::Column::Army)
+                        .order_by_asc(sigint_unit::Column::Division)
+                        .order_by_asc(sigint_unit::Column::Regiment)
+                        .order_by_asc(sigint_unit::Column::Battalion)
+                        .order_by_asc(sigint_unit::Column::Company)
+                        .order_by_asc(sigint_callsign::Column::Callsign)
+                }
+                ListCallsignsSortBy::UnitDesc => {
+                    callsigns
+                        .order_by_desc(sigint_unit::Column::Army)
+                        .order_by_desc(sigint_unit::Column::Division)
+                        .order_by_desc(sigint_unit::Column::Regiment)
+                        .order_by_desc(sigint_unit::Column::Battalion)
+                        .order_by_desc(sigint_unit::Column::Company)
+                        .order_by_desc(sigint_callsign::Column::Callsign)
+                }
+            })
+    } else {
+        // Default sorting (original behavior)
+        callsigns
+            .order_by_asc(sigint_unit::Column::Army)
+            .order_by_asc(sigint_unit::Column::Division)
+            .order_by_asc(sigint_unit::Column::Regiment)
+            .order_by_asc(sigint_unit::Column::Battalion)
+            .order_by_asc(sigint_unit::Column::Company)
+            .order_by_asc(sigint_callsign::Column::Callsign)
+    };
     // println!(
     //     "> callsigns sql: {}",
     //     callsigns.build(DbBackend::Postgres).to_string()
