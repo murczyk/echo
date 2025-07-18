@@ -1826,14 +1826,16 @@ contentBlock user shared network model =
                                 x :: xs ->
                                     tr [ class "" ]
                                         [ td [ rowspan rowCount ]
-                                            [ text <| String.toUpper callsign.callsign
-                                            , a
-                                                [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
-                                                , target "_blank"
-                                                , title "Відкрити позивний в аналізі"
-                                                , class "ml-2 align-middle"
+                                            [ div [ class "flex items-center flex-wrap" ]
+                                                [ text <| String.toUpper callsign.callsign
+                                                , a
+                                                    [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
+                                                    , target "_blank"
+                                                    , title "Відкрити позивний в аналізі"
+                                                    , class "ml-2"
+                                                    ]
+                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
                                                 ]
-                                                [ i [ class "bi bi-box-arrow-up-right text-action text-sm align-middle" ] [] ]
                                             ]
                                         , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
                                         , td [ rowspan rowCount ]
@@ -1895,14 +1897,16 @@ contentBlock user shared network model =
                                 x :: xs ->
                                     tr [ class "" ]
                                         [ td [ rowspan rowCount ]
-                                            [ text <| String.toUpper callsign.callsign
-                                            , a
-                                                [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
-                                                , target "_blank"
-                                                , title "Відкрити позивний в аналізі"
-                                                , class "ml-2 align-middle"
+                                            [ div [ class "flex items-center flex-wrap" ]
+                                                [ span [] [ text <| String.toUpper callsign.callsign ]
+                                                , a
+                                                    [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
+                                                    , target "_blank"
+                                                    , title "Відкрити позивний в аналізі"
+                                                    , class "ml-2"
+                                                    ]
+                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
                                                 ]
-                                                [ i [ class "bi bi-box-arrow-up-right text-action text-sm align-middle" ] [] ]
                                             ]
                                         , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
                                         , td [ rowspan rowCount ]
