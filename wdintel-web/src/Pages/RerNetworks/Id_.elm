@@ -35,6 +35,7 @@ import Set
 import Shared
 import Time
 import Time.Extra
+import Url.Builder
 import View exposing (View)
 
 
@@ -58,14 +59,78 @@ toLayout user model =
 
 
 -- Navigation helper function
-createAnalysisUrl : String -> String
-createAnalysisUrl callsign =
-    -- Basic URL for now, will be enhanced in later steps
-    Route.toString 
-        { path = Route.Path.RerAnalysis
-        , query = Dict.empty
-        , hash = Nothing
-        }
+createAnalysisUrl : Shared.Model -> Model -> String -> String
+createAnalysisUrl shared model callsign =
+    let
+        -- Generate query state with network date range and callsign filter
+        queryState =
+            createAnalysisQueryState shared model callsign
+
+        -- Encode the query state
+        encodedState =
+            Encode.encode 0 (B.rerAnalysisQueryStateEncoder queryState)
+
+        -- Create query parameters using Url.Builder
+        query =
+            [ Url.Builder.string "state" encodedState ]
+    in
+    Url.Builder.absolute [ "rer-analysis" ] query
+
+
+-- Generate query state for RER analysis with network date range and callsign filter
+createAnalysisQueryState : Shared.Model -> Model -> String -> B.RerAnalysisQueryState
+createAnalysisQueryState shared model callsign =
+    let
+        -- Get date range from network
+        ( dateFromStr, dateToStr ) =
+            case model.network of
+                Success network ->
+                    let
+                        fromDate =
+                            Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix network.activeFrom)
+                        
+                        toDate =
+                            case network.activeTo of
+                                Just activeTo ->
+                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeTo)
+                                
+                                Nothing ->
+                                    -- If no end date, use current date
+                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
+                    in
+                    ( fromDate, toDate )
+                
+                _ ->
+                    -- Fallback to empty strings if network not loaded
+                    ( "", "" )
+
+        -- Get frequencies from network for pre-selection
+        freqsSelected =
+            case model.network of
+                Success network ->
+                    List.map .freq network.freqs
+                
+                _ ->
+                    []
+    in
+    { dateFromStr = dateFromStr
+    , timeFromStr = ""
+    , dateToStr = dateToStr
+    , timeToStr = "00:00"
+    , groupsSelected = []
+    , sendersSelected = []
+    , freqsSelected = freqsSelected
+    , callsignsSelected = [ callsign ]
+    , unitsSelected = []
+    , locationsSelected = []
+    , includePelengLocations = True
+    , orWithExtendedForm = False
+    , orBookmarked = False
+    , orImportant = False
+    , orWithCoords = False
+    , search = ""
+    , tags = []
+    }
 
 
 
@@ -1742,9 +1807,9 @@ contentBlock user shared network model =
                 div [ class "overflow-y-auto  grow-1" ]
                     [ let
                         renderCallsignMainRow :
-                            CallsignResModified
+                            Shared.Model -> Model -> CallsignResModified
                             -> List (Html Msg)
-                        renderCallsignMainRow callsign =
+                        renderCallsignMainRow shared modelState callsign =
                             let
                                 rowCount =
                                     List.length callsign.knownCallsigns
@@ -1755,11 +1820,7 @@ contentBlock user shared network model =
                                         [ td [ rowspan rowCount ] 
                                             [ a
                                                 [ class "text-action cursor-pointer"
-                                                , Route.href
-                                                    { path = Route.Path.RerAnalysis
-                                                    , query = Dict.empty
-                                                    , hash = Nothing
-                                                    }
+                                                , href (createAnalysisUrl shared modelState callsign.callsign)
                                                 , target "_blank"
                                                 ]
                                                 [ text <| String.toUpper callsign.callsign ]
@@ -1806,10 +1867,10 @@ contentBlock user shared network model =
                                     [ text "" ]
 
                         renderCallsignEdit :
-                            Dict String Bool
+                            Shared.Model -> Model -> Dict String Bool
                             -> CallsignResModified
                             -> List (Html Msg)
-                        renderCallsignEdit editingDict callsign =
+                        renderCallsignEdit shared modelState editingDict callsign =
                             let
                                 rowCount =
                                     List.length callsign.knownCallsigns
@@ -1824,11 +1885,7 @@ contentBlock user shared network model =
                                         [ td [ rowspan rowCount ] 
                                             [ a
                                                 [ class "text-action cursor-pointer"
-                                                , Route.href
-                                                    { path = Route.Path.RerAnalysis
-                                                    , query = Dict.empty
-                                                    , hash = Nothing
-                                                    }
+                                                , href (createAnalysisUrl shared modelState callsign.callsign)
                                                 , target "_blank"
                                                 ]
                                                 [ text <| String.toUpper callsign.callsign ]
@@ -1942,10 +1999,10 @@ contentBlock user shared network model =
                                 (\callsign ->
                                     case model.callsignsEditingState of
                                         Readonly ->
-                                            renderCallsignMainRow callsign
+                                            renderCallsignMainRow shared model callsign
 
                                         Editing editingDict ->
-                                            renderCallsignEdit editingDict callsign
+                                            renderCallsignEdit shared model editingDict callsign
                                 )
                                 callsignsWithUnits2
                             )
