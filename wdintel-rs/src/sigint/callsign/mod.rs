@@ -120,7 +120,7 @@ pub async fn list_callsigns(
                 ListCallsignsSortBy::CallsignCreatedAtDesc => {
                     callsigns.order_by_desc(sigint_callsign::Column::CreatedAt)
                 }
-                ListCallsignsSortBy::UnitAsc => {
+                ListCallsignsSortBy::CallsignUnitAsc => {
                     callsigns
                         .order_by_asc(sigint_unit::Column::Army)
                         .order_by_asc(sigint_unit::Column::Division)
@@ -129,7 +129,7 @@ pub async fn list_callsigns(
                         .order_by_asc(sigint_unit::Column::Company)
                         .order_by_asc(sigint_callsign::Column::Callsign)
                 }
-                ListCallsignsSortBy::UnitDesc => {
+                ListCallsignsSortBy::CallsignUnitDesc => {
                     callsigns
                         .order_by_desc(sigint_unit::Column::Army)
                         .order_by_desc(sigint_unit::Column::Division)

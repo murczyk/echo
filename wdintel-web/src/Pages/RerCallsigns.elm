@@ -279,10 +279,10 @@ sortingOrderToBackendSort order =
             [ B.CallsignCreatedAtDesc ]
         
         UnitAsc ->
-            [ B.UnitAsc ]
+            [ B.CallsignUnitAsc ]
         
         UnitDesc ->
-            [ B.UnitDesc ]
+            [ B.CallsignUnitDesc ]
         
         Default ->
             [] -- Use backend default

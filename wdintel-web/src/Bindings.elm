@@ -3433,8 +3433,8 @@ type ListCallsignsSortBy
     | CallsignDesc
     | CallsignCreatedAtAsc
     | CallsignCreatedAtDesc
-    | UnitAsc
-    | UnitDesc
+    | CallsignUnitAsc
+    | CallsignUnitDesc
 
 
 listCallsignsSortByEncoder : ListCallsignsSortBy -> Json.Encode.Value
@@ -3452,11 +3452,11 @@ listCallsignsSortByEncoder enum =
         CallsignCreatedAtDesc ->
             Json.Encode.string "CallsignCreatedAtDesc"
 
-        UnitAsc ->
-            Json.Encode.string "UnitAsc"
+        CallsignUnitAsc ->
+            Json.Encode.string "CallsignUnitAsc"
 
-        UnitDesc ->
-            Json.Encode.string "UnitDesc"
+        CallsignUnitDesc ->
+            Json.Encode.string "CallsignUnitDesc"
 
 
 type alias ListCallsignsReq =
@@ -7069,8 +7069,8 @@ listCallsignsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
-                        "UnitAsc" ->
-                            Json.Decode.succeed UnitAsc
+                        "CallsignUnitAsc" ->
+                            Json.Decode.succeed CallsignUnitAsc
 
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
@@ -7079,8 +7079,8 @@ listCallsignsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
-                        "UnitDesc" ->
-                            Json.Decode.succeed UnitDesc
+                        "CallsignUnitDesc" ->
+                            Json.Decode.succeed CallsignUnitDesc
 
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected

@@ -26,8 +26,8 @@ pub enum ListCallsignsSortBy {
     CallsignDesc,
     CallsignCreatedAtAsc,
     CallsignCreatedAtDesc,
-    UnitAsc,
-    UnitDesc,
+    CallsignUnitAsc,
+    CallsignUnitDesc,
 }
 
 #[derive(
