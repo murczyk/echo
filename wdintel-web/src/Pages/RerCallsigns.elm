@@ -106,6 +106,7 @@ type alias Model =
     , tableState : Table.State
     , sidebarEditing : Bool
     , editingCallsign : Maybe B.Callsign
+    , validationError : Maybe String
     }
 
 
@@ -164,6 +165,7 @@ init req _ =
             , tableState = Table.initialSort "Позивний"
             , sidebarEditing = False
             , editingCallsign = Nothing
+            , validationError = Nothing
             }
     in
     ( m2
@@ -742,7 +744,7 @@ update req msg model =
                     )
 
         EditCallsignMsg editState ->
-            ( { model | editState = Just editState }
+            ( { model | editState = Just editState, validationError = Nothing }
             , E.none
             )
 
@@ -757,22 +759,35 @@ update req msg model =
                             ( model, E.none )
 
                         Just callsign ->
-                            ( model
-                            , E.sendCmd <|
-                                Api.sigint_callsign_update
-                                    (EditCallsignDone id)
-                                    { id = id
-                                    , callsign = editState.inpCallsign
-                                    , position = editState.inpPosition
-                                    , comment = editState.inpComment
-                                    , unitId = editState.inpUnitId
-                                    , sourceId = editState.inpSourceId
-                                    , createdAt = callsign.createdAt
-                                    , developing = editState.inpDeveloping
-                                    , radioFreq = Just editState.inpRadioFreq
-                                    , active = True
-                                    }
-                            )
+                            let
+                                -- Validate that if РО (source ID 2) is selected, frequency must be provided
+                                isValid =
+                                    if editState.inpSourceId == 2 then
+                                        not (String.isEmpty (String.trim editState.inpRadioFreq))
+                                    else
+                                        True
+                            in
+                            if isValid then
+                                ( { model | validationError = Nothing }
+                                , E.sendCmd <|
+                                    Api.sigint_callsign_update
+                                        (EditCallsignDone id)
+                                        { id = id
+                                        , callsign = editState.inpCallsign
+                                        , position = editState.inpPosition
+                                        , comment = editState.inpComment
+                                        , unitId = editState.inpUnitId
+                                        , sourceId = editState.inpSourceId
+                                        , createdAt = callsign.createdAt
+                                        , developing = editState.inpDeveloping
+                                        , radioFreq = Just editState.inpRadioFreq
+                                        , active = True
+                                        }
+                                )
+                            else
+                                ( { model | validationError = Just "При виборі джерела 'РО' необхідно вказати частоту" }
+                                , E.none
+                                )
 
         EditCallsignDone _ (Err err) ->
             ( model
@@ -1174,7 +1189,35 @@ update req msg model =
                 Just callsign ->
                     case model.editState of
                         Just editState ->
-                            ( model, E.sendCmd <| Api.sigint_callsign_update (EditCallsignDone callsign.id) { id = callsign.id, callsign = editState.inpCallsign, position = editState.inpPosition, comment = editState.inpComment, unitId = editState.inpUnitId, sourceId = editState.inpSourceId, createdAt = callsign.createdAt, developing = editState.inpDeveloping, radioFreq = Just editState.inpRadioFreq, active = True } )
+                            let
+                                -- Validate that if РО (source ID 2) is selected, frequency must be provided
+                                isValid =
+                                    if editState.inpSourceId == 2 then
+                                        not (String.isEmpty (String.trim editState.inpRadioFreq))
+                                    else
+                                        True
+                            in
+                            if isValid then
+                                ( { model | validationError = Nothing }
+                                , E.sendCmd <| 
+                                    Api.sigint_callsign_update 
+                                        (EditCallsignDone callsign.id) 
+                                        { id = callsign.id
+                                        , callsign = editState.inpCallsign
+                                        , position = editState.inpPosition
+                                        , comment = editState.inpComment
+                                        , unitId = editState.inpUnitId
+                                        , sourceId = editState.inpSourceId
+                                        , createdAt = callsign.createdAt
+                                        , developing = editState.inpDeveloping
+                                        , radioFreq = Just editState.inpRadioFreq
+                                        , active = True 
+                                        }
+                                )
+                            else
+                                ( { model | validationError = Just "При виборі джерела 'РО' необхідно вказати частоту" }
+                                , E.none
+                                )
 
                         Nothing ->
                             ( model, E.none )
@@ -1550,6 +1593,16 @@ editSidebarContent model shared user =
                                     text ""
                                 ]
                             ]
+                        , if model.validationError /= Nothing then
+                            div [ class "p-3 bg-red-50 border border-red-200 rounded-md" ]
+                                [ div [ class "flex items-center gap-2" ]
+                                    [ i [ class "bi bi-exclamation-triangle text-red-500" ] []
+                                    , span [ class "text-sm text-red-700" ]
+                                        [ text (Maybe.withDefault "" model.validationError) ]
+                                    ]
+                                ]
+                          else
+                            text ""
                         , div [ class "w-full flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
                             [ Button.new { label = "Скасувати", onClick = CancelEditSidebar }
                                 |> Button.withStyleSecondary
