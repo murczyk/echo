@@ -10,6 +10,7 @@ import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
+import Components.Tag as Tag
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -372,6 +373,45 @@ loadCallsigns model =
     E.sendCmd (loadCallsignsCmd model)
 
 
+potentialDuplicates : Model -> List B.Callsign
+potentialDuplicates model =
+    let
+        callsignInput =
+            String.toLower (String.trim (EL.toList model.addState |> List.head |> Maybe.map .inpCallsign |> Maybe.withDefault ""))
+
+        positionInput =
+            String.toLower (String.trim (EL.toList model.addState |> List.head |> Maybe.map .inpPosition |> Maybe.withDefault ""))
+
+        unitIdInput =
+            model.inpUnit
+
+        anyInput =
+            not (String.isEmpty callsignInput) || not (String.isEmpty positionInput) || unitIdInput /= Nothing
+
+        matchesCallsign userInput callsignField =
+            String.isEmpty userInput
+                || (not (String.isEmpty callsignField) && String.contains userInput (String.toLower callsignField))
+
+        matchesPosition userInput positionField =
+            String.isEmpty userInput
+                || (not (String.isEmpty positionField) && String.contains userInput (String.toLower positionField))
+
+        matchesUnit userUnitId callsignUnitId =
+            userUnitId == Nothing || userUnitId == Just callsignUnitId
+    in
+    if anyInput then
+        model.callsigns
+            |> List.filter
+                (\callsign ->
+                    matchesCallsign callsignInput callsign.callsign
+                        && matchesPosition positionInput callsign.position
+                        && matchesUnit unitIdInput callsign.unitId
+                )
+
+    else
+        []
+
+
 loadSources : Effect Msg
 loadSources =
     E.sendCmd <|
@@ -665,6 +705,7 @@ update req msg model =
             ( { model
                 | callsigns = newCallsign :: model.callsigns
                 , addState = EL.fromList [ initAddState Nothing ]
+                , inpUnit = Nothing
                 , loading = False
               }
             , E.none
@@ -1484,46 +1525,32 @@ editSidebarContent model shared user =
                             , div []
                                 [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
                                     [ text "Джерело" ]
-                                , div [ class "flex flex-col gap-2" ]
-                                    [ select
-                                        [ class "form-input w-full"
-                                        , onInput <|
-                                            EditCallsignMsg
-                                                << (\v ->
-                                                        case String.toInt v of
-                                                            Nothing ->
-                                                                editState
-
-                                                            Just v2 ->
-                                                                { editState | inpSourceId = v2 }
-                                                   )
-                                        ]
-                                        (List.map
-                                            (\source ->
-                                                option
-                                                    [ value (String.fromInt source.id)
-                                                    , selected (editState.inpSourceId == source.id)
-                                                    ]
-                                                    [ text source.name ]
-                                            )
-                                            model.sources
+                                , div [ class "flex flex-wrap gap-2" ]
+                                    (List.map
+                                        (\source ->
+                                            Tag.new
+                                                { isActive = editState.inpSourceId == source.id
+                                                , onToggle = EditCallsignMsg { editState | inpSourceId = source.id }
+                                                }
+                                                |> Tag.view source.name
                                         )
-                                    , if editState.inpSourceId == 2 then
-                                        input
-                                            [ class "form-input w-full"
-                                            , type_ "text"
-                                            , placeholder "Частота"
-                                            , value editState.inpRadioFreq
-                                            , onInput <| EditCallsignMsg << (\v -> { editState | inpRadioFreq = v })
-                                            ]
-                                            []
+                                        model.sources
+                                    )
+                                , if editState.inpSourceId == 2 then
+                                    input
+                                        [ class "form-input w-full mt-2"
+                                        , type_ "text"
+                                        , placeholder "Частота"
+                                        , value editState.inpRadioFreq
+                                        , onInput <| EditCallsignMsg << (\v -> { editState | inpRadioFreq = v })
+                                        ]
+                                        []
 
-                                      else
-                                        text ""
-                                    ]
+                                  else
+                                    text ""
                                 ]
                             ]
-                        , div [ class "w-full flex justifu-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
+                        , div [ class "w-full flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
                             [ Button.new { label = "Скасувати", onClick = CancelEditSidebar }
                                 |> Button.withStyleSecondary
                                 |> Button.view
@@ -1921,6 +1948,66 @@ contentBlock shared model user =
                         addCallsignPanel
                         model.addState
                     )
+                , let
+                    duplicates =
+                        potentialDuplicates model
+
+                    hasInput =
+                        let
+                            addStateList =
+                                EL.toList model.addState
+
+                            firstAddState =
+                                List.head addStateList
+                        in
+                        case firstAddState of
+                            Just addState ->
+                                not (String.isEmpty (String.trim addState.inpCallsign))
+                                    || not (String.isEmpty (String.trim addState.inpPosition))
+                                    || model.inpUnit
+                                    /= Nothing
+
+                            Nothing ->
+                                False
+                  in
+                  if hasInput && not (List.isEmpty duplicates) then
+                    div [ class "alert alert-warning mt-2 mb-4" ]
+                        [ text "Можливо, такий позивний вже існує:"
+                        , table [ class "table table-sm mt-2" ]
+                            [ thead []
+                                [ tr []
+                                    [ th [] [ text "Позивний" ]
+                                    , th [] [ text "Посада" ]
+                                    , th [] [ text "Підрозділ" ]
+                                    , th [] [ text "Коментар" ]
+                                    ]
+                                ]
+                            , tbody []
+                                (List.map
+                                    (\callsign ->
+                                        let
+                                            unitName =
+                                                case ListX.find (\u -> u.id == callsign.unitId) model.units of
+                                                    Nothing ->
+                                                        "<Виберіть підрозділ>"
+
+                                                    Just unit ->
+                                                        unit.name
+                                        in
+                                        tr []
+                                            [ td [] [ text (String.toUpper callsign.callsign) ]
+                                            , td [] [ text callsign.position ]
+                                            , td [] [ text unitName ]
+                                            , td [] [ text callsign.comment ]
+                                            ]
+                                    )
+                                    duplicates
+                                )
+                            ]
+                        ]
+
+                  else
+                    text ""
                 , div
                     [ class "border mb-4 p-2"
                     ]
