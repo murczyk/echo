@@ -2134,7 +2134,7 @@ dateAndPanelsBlock _ model =
 leftPanel : Shared.Model -> Model -> Html Msg
 leftPanel shared model =
     div
-        [ class "self-stretch max-h-full min-w-[300px]  w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
+        [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
         ]
         [ button
             [ class "absolute top-2 right-2 z-10 px-2 py-1 rounded border border-border bg-card hover:bg-gray-100 transition"
@@ -2143,7 +2143,6 @@ leftPanel shared model =
             ]
             [ i [ class "bi bi-chevron-left" ] [] ]
         , unitsBlock shared model
-        , div [ class "flex-grow-1" ] []
         ]
 
 
@@ -2212,14 +2211,14 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "частоти"
     , body =
-        [ div [ class "flex justify-start items-start page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
+        [ div [ class "flex page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
             [ if model.showSidebar then
                 leftPanel shared model
 
               else
                 text ""
             , div
-                [ class "grow-1 overflow-y-auto"
+                [ class "grow px-[32px] py-[16px] overflow-auto"
                 ]
                 [ div [ class "flex gap-[8px]" ]
                     [ h1 [ class "py-2 ps-4" ]
