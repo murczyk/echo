@@ -5,6 +5,7 @@ import Auth
 import Bindings as B
 import Components.Watermark as Watermark
 import Components.Sidebar as Sidebar
+import Components.Button as Button
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
@@ -174,7 +175,7 @@ init _ =
             , filterMeaningDebounce = Debounce.init
             , sortBy = []
             , unitStats = []
-            , tableState = Table.sortBy "Дата внесення" True
+            , tableState = Table.sortBy "Дата внесення" False
             }
     in
     ( m2
@@ -734,18 +735,16 @@ signalsTableConfig shared model user editingSignalId =
                         , children =
                             if hasEditorRole then
                                 [ div [ class "flex gap-2" ]
-                                    [ button
-                                        [ class "btn btn-outline-primary btn-sm"
-                                        , type_ "button"
+                                    [ button 
+                                        [ title "Редагувати"
+                                        , class "icon-btn icon-btn-primary"
                                         , onClick <| OpenEditSignalSidebar signal.id signal
                                         ]
                                         [ i [ class "bi bi-pencil-square" ] [] ]
-                                    , button
-                                        [ class "btn btn-outline-danger btn-sm"
-                                        , type_ "button"
+                                    , button 
+                                        [ title "Видалити"
+                                        , class "icon-btn icon-btn-danger"
                                         , onClick <| DeleteSignal signal.id
-                                        , attribute "data-bs-toggle" "modal"
-                                        , attribute "data-bs-target" "#deleteConfirmationModal"
                                         ]
                                         [ i [ class "bi bi-trash" ] [] ]
                                     ]
@@ -831,11 +830,11 @@ editSignalSidebarContent shared model user signal =
                                     (Le.Block.Select.defaultOptions shared.isDarkMode)
                         ]
                     , button
-                        [ class "btn btn-sm btn-outline-secondary ms-2"
-                        , type_ "button"
+                        [ Attr.title "Оновити список підрозділів"
+                        , class "icon-btn icon-btn-secondary"
                         , onClick <| ReloadUnits
                         ]
-                        [ i [ class "bi bi-arrow-clockwise" ] [] ]
+                        [ i [ class "bi bi-arrow-repeat" ] [] ]
                     ]
                 ]
             , div []
@@ -854,19 +853,12 @@ editSignalSidebarContent shared model user signal =
         ]
     , div [ class "p-6 border-t border-border bg-muted/30" ]
         [ div [ class "flex justify-end gap-3" ]
-            [ button
-                [ class "btn btn-outline-secondary"
-                , type_ "button"
-                , onClick CloseEditSignalSidebar
-                ]
-                [ text "Скасувати" ]
-            , button
-                [ class "btn btn-primary"
-                , type_ "button"
-                , onClick <| EditSignalSave signal.id
-                , Attr.disabled (not hasEditorRole)
-                ]
-                [ text "Зберегти" ]
+            [ Button.new { label = "Скасувати", onClick = CloseEditSignalSidebar }
+                |> Button.withStyleSecondary
+                |> Button.view
+            , Button.new { label = "Зберегти", onClick = EditSignalSave signal.id }
+                |> Button.withDisabled (not hasEditorRole)
+                |> Button.view
             ]
         ]
     ]
@@ -934,7 +926,7 @@ contentBlock shared model user =
                         Le.Block.Spinner.loadingSpinner2Sm
 
                       else
-                        i [ class "bi bi-filter" ] []
+                        i [ class "bi bi-filter text-[21px] text-action" ] []
                     ]
                 , input
                     [ class "form-control me-2 text-uppercase"
@@ -996,20 +988,12 @@ contentBlock shared model user =
                             ]
                         , div
                             [ class "modal-footer" ]
-                            [ button
-                                [ class "btn btn-secondary"
-                                , attribute "type" "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , onClick DeleteSignalCancel
-                                ]
-                                [ text "Відміна" ]
-                            , button
-                                [ class "btn btn-danger"
-                                , type_ "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , onClick <| DeleteSignalConfirm
-                                ]
-                                [ text "Видалити" ]
+                            [ Button.new { label = "Відміна", onClick = DeleteSignalCancel }
+                                |> Button.withSecondary
+                                |> Button.view
+                            , Button.new { label = "Видалити", onClick = DeleteSignalConfirm }
+                                |> Button.withSecondary
+                                |> Button.view
                             ]
                         ]
                     ]
@@ -1104,19 +1088,17 @@ contentBlock shared model user =
                 , td [ style "font-size" ".8rem" ]
                     [ div [ class "d-flex justify-content-start align-items-center" ]
                         [ button
-                            [ class "btn btn-sm btn-outline-primary"
-                            , type_ "button"
+                            [ Attr.title "Зберегти"
+                            , class "icon-btn icon-btn-primary"
                             , onClick <| EditSignalSave signal.id
                             ]
-                            [ i [ class "bi bi-check2" ] []
-                            ]
+                            [ i [ class "bi bi-check2" ] [] ]
                         , button
-                            [ class "btn btn-sm btn-outline-danger ms-2"
-                            , type_ "button"
+                            [ Attr.title "Скасувати"
+                            , class "icon-btn icon-btn-danger"
                             , onClick <| EditSignalCancel signal.id
                             ]
-                            [ i [ class "bi bi-x" ] []
-                            ]
+                            [ i [ class "bi bi-x" ] [] ]
                         ]
                     ]
                 ]
@@ -1175,13 +1157,11 @@ contentBlock shared model user =
                                         options2
                             ]
                         , button
-                            [ class "btn btn-sm btn-outline-secondary ms-2"
-                            , type_ "button"
+                            [ Attr.title "Оновити список підрозділів"
+                            , class "icon-btn icon-btn-secondary"
                             , onClick <| ReloadUnits
                             ]
-                            [ i [ class "bi bi-arrow-clockwise" ]
-                                []
-                            ]
+                            [ i [ class "bi bi-arrow-repeat" ] [] ]
                         ]
                     ]
                 , input
@@ -1193,19 +1173,12 @@ contentBlock shared model user =
                     , value model.inpCoordinates
                     ]
                     []
-                , button
-                    [ class "btn btn-primary"
-                    , Attr.disabled (not hasEditorRole)
-                    , type_ "button"
-                    , onClick AddSignal
-                    ]
-                    [ text "Додати" ]
-                , button
-                    [ class "btn btn-outline-secondary ms-2"
-                    , type_ "button"
-                    , onClick ClearInputs
-                    ]
-                    [ text "Очистити" ]
+                , Button.new { label = "Додати", onClick = AddSignal }
+                    |> Button.withDisabled (not hasEditorRole)
+                    |> Button.view
+                , Button.new { label = "Очистити", onClick = ClearInputs }
+                    |> Button.withStyleSecondary
+                    |> Button.view
                 ]
 
         mainContent =
@@ -1273,15 +1246,12 @@ view _ shared user model =
                 [ h1 [ class "py-2 ps-4" ]
                     [ span [ class "me-2" ] [ text "Сигнали" ]
                     , button
-                        [ type_ "button"
-                        , class "inline-block btn btn-outline-secondary me-2"
+                        [ Attr.title "Оновити"
+                        , class "btn btn-outline-secondary"
                         , onClick Refresh
-                        , attribute "data-tooltip" "оновити"
-                        , attribute "data-position" "bottom"
                         ]
                         (if model.loading then
                             [ Le.Block.Spinner.loadingSpinner2Sm ]
-
                          else
                             [ i [ class "bi bi-arrow-repeat" ] [] ]
                         )
