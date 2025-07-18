@@ -1,8 +1,6 @@
 use crate::error::AppError;
 use crate::types::*;
-use chrono::prelude::*;
 use echo_install_utils::tailscale::renew_cert;
-use xshell::{cmd, Shell};
 
 #[tokio::main]
 pub async fn renew_tailscale_cert(mode: Mode) -> Result<(), AppError> {
