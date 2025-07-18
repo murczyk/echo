@@ -778,9 +778,17 @@ update req msg model =
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного" err
             )
 
-        DeleteCallsignDone (Ok _) ->
-            ( { model | loading = True }
-            , loadCallsigns model
+        DeleteCallsignDone (Ok deletedCallsign) ->
+            ( { model
+                | callsigns = List.filter (\c -> c.id /= deletedCallsign.id) model.callsigns
+                , editCallsign = Dict.remove deletedCallsign.id model.editCallsign
+                , sidebarEditing = False
+                , editingCallsign = Nothing
+                , deleteCallsignConfirmation = Nothing
+                , deleteDialogOpen = False
+                , loading = False
+              }
+            , E.none
             )
 
         ClearInputs ->
