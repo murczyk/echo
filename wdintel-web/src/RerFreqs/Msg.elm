@@ -24,6 +24,7 @@ import Select
 import Time exposing (Posix)
 import TimeZone
 import View exposing (View)
+import Components.Table as Table
 
 
 type Msg
@@ -87,3 +88,4 @@ type Msg
     | NetworkUpdated String (Result ApiError B.Network)
     | UnitsSearchReturned (Result ApiError B.ListUnitsByIdRsp)
     | UnitsSearchDebounceTimerExpired String
+    | SetTableState Table.State

@@ -12,6 +12,7 @@ import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
 import Select
 import Set exposing (Set)
 import Time
+import Components.Table as Table
 
 
 type FurtherInvestigationFilter
@@ -79,6 +80,7 @@ type alias Model =
     , expandedBattalions : Set.Set String
     , showOnlyInvestigating : Bool
     , networkWorkflowTab : NetworkWorkflowTab
+    , tableState : Table.State
     }
 
 
