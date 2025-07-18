@@ -25,6 +25,7 @@ type alias Model =
     { zone : Maybe Time.Zone
     , now : Maybe Time.Posix
     , loading : Bool
+    , loadingMore : Bool
     , currentRequestTracker : Maybe String
     , requestCounter : Int
     , newOnly : Bool

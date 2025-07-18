@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Components.Button as Button
 import Components.Sidebar as Sidebar
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
@@ -73,6 +74,7 @@ init _ =
             { zone = Nothing
             , now = Nothing
             , loading = False
+            , loadingMore = False
             , currentRequestTracker = Nothing
             , requestCounter = 0
             , newOnly = False
@@ -524,7 +526,7 @@ update shared msg model =
             )
 
         GotFreqs _ (Err err) ->
-            ( { model | loading = False }
+            ( { model | loading = False, loadingMore = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" err
             )
 
@@ -541,6 +543,7 @@ update shared msg model =
                     else
                         rsp.freqs
                 , loading = False
+                , loadingMore = False
                 , currentRequestTracker = Nothing
                 , noMoreToLoad = not rsp.showLoadMore
               }
@@ -586,7 +589,7 @@ update shared msg model =
             )
 
         GroupsMessageCountByDayReturnedByApi (Ok r) ->
-            ( { model | groupsMessageCountByDay = r }, E.none )
+            ( { model | groupsMessageCountByDay = Dict.union model.groupsMessageCountByDay r }, E.none )
 
         GroupsMessageCountByDayReturnedByApi (Err err) ->
             ( model
@@ -1058,7 +1061,7 @@ update shared msg model =
             )
 
         AltUnitsByFreqReturnedByApi (Ok rsp) ->
-            ( { model | altUnitsByFreq = rsp }
+            ( { model | altUnitsByFreq = Dict.union model.altUnitsByFreq rsp }
             , E.none
             )
 
@@ -1081,7 +1084,7 @@ update shared msg model =
                                 callsignRes.res
                                 acc
                         )
-                        Dict.empty
+                        model.callsignsInfo
                         callsignsRes
             in
             ( { model | callsignsInfo = updatedCallsignsInfo }, E.none )
@@ -1100,7 +1103,7 @@ update shared msg model =
             )
 
         FreqsLoadMore ->
-            ( model
+            ( { model | loadingMore = True }
             , E.sendCmd <| loadFreqs model True
             )
 
@@ -1725,7 +1728,7 @@ freqsTableConfig shared model user =
                         ]
                     ]
                 ]
-            ]
+                            ]
 
         in
     Table.customConfig
@@ -2262,6 +2265,23 @@ view dark shared user model =
                             [ FilterPanel.view shared model
                             ]
                         , Table.view (freqsTableConfig shared model user) model.tableState model.freqs
+                        , div [ class "flex justify-center mt-3 mb-3" ] <|
+                            if not model.noMoreToLoad then
+                                [ Button.new { label = "Завантажити ще", onClick = FreqsLoadMore }
+                                    |> Button.withStyleSecondary
+                                    |> Button.withDisabled model.loadingMore
+                                    |> Button.withIcon
+                                        (if model.loadingMore then
+                                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                                         else
+                                            []
+                                        )
+                                    |> Button.view
+                                ]
+
+                            else
+                                []
                         ]
                     ]
                 ]
