@@ -18,7 +18,8 @@ pub async fn receive_thread_nofail(
     }
     loop {
         if let Err(e) =
-            receive_thread(settlements.clone(), config, dbx, redis, datasource).await
+            receive_thread(settlements.clone(), config, dbx, redis, datasource)
+                .await
         {
             println!("> whatsapp::receive_thread_nofail error: {e:?}");
         }
@@ -41,7 +42,8 @@ async fn receive_thread(
     let mut last_groups_sync_t = std::time::SystemTime::now();
 
     loop {
-        receive_once(settlements.clone(), config, dbx, &rq, redis, datasource).await?;
+        receive_once(settlements.clone(), config, dbx, &rq, redis, datasource)
+            .await?;
 
         if last_groups_sync_t.elapsed().unwrap().as_secs() > 60 {
             sync_groups(dbx, datasource).await?;
