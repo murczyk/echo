@@ -2273,9 +2273,10 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ca7501a3b640ff2f4eb463
 [[package]]
 name = "echo-install-utils"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-install-utils.git?rev=dbd41364acc23ea96d793ba2cc92943915116fcd#dbd41364acc23ea96d793ba2cc92943915116fcd"
+source = "git+ssh://git@github.com/echoua/echo-install-utils.git?rev=1a1faf6dcdc2022f2c3ee8dceb576c1df328ff79#1a1faf6dcdc2022f2c3ee8dceb576c1df328ff79"
 dependencies = [
  "anyhow",
+ "chrono",
  "cmd_lib",
  "dialoguer",
  "network-interface",
@@ -2289,6 +2290,7 @@ dependencies = [
  "tokio",
  "toml",
  "walkdir",
+ "xshell",
 ]
 
 [[package]]
