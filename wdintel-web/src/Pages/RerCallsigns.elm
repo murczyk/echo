@@ -30,6 +30,7 @@ import Le.ErrorHandling
 import Le.RemoteData exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError)
+import Le.EventHelpers
 import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
@@ -38,6 +39,7 @@ import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Msg
 import Task
 import Time
 import TimeZone
@@ -233,6 +235,7 @@ type Msg
     | CloseEditSidebar
     | SaveEditSidebar
     | CancelEditSidebar
+    | UnitChangedEvent B.EventMsg
 
 
 type alias AddState =
@@ -1312,6 +1315,17 @@ update req msg model =
             ( updatedModel
             , loadCallsigns updatedModel
             )
+
+        UnitChangedEvent event ->
+            case event.eventType of
+                B.EtUnitChanged ->
+                    -- Refresh units data when unit changes occur
+                    ( model
+                    , loadUnits
+                    )
+                
+                _ ->
+                    ( model, E.none )
 
 
 subscriptions : Model -> Sub Msg
