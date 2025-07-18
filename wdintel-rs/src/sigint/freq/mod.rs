@@ -1384,6 +1384,85 @@ pub async fn freq_exists(
     Ok(Json(()))
 }
 
+/// АПІ ендпоінт повертає список частот активний за період починаючи з `since_date_inclusive_ms`по `till_date_noninclusive_ms`.
+///
+/// # API URL
+/// - POST: /api/sigint/freqs-for-period
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<ListFreqForPeriodReq>`] - де [`ListFreqForPeriodReq`] Тіло запиту, що містить параметри для фільтрації частот.
+///
+/// # Тіло запиту
+///
+/// Запит використовує структуру [`ListFreqForPeriodReq`], яка має наступні поля:
+///
+///
+/// * `since_date_inclusive_ms`: `i64` - Пошук частот за датою, починаючи з вказаної (включно, в мілісекундах).
+/// * `till_date_noninclusive_ms`: `i64` - Пошук частот за датою, закінчуючи вказаною (не включно, в мілісекундах).
+///
+/// # Повертає
+///
+/// У випадку успішного виконання, функція повертає `Json<ListFreqsForPeriodRsp>`, де [`ListFreqsForPeriodRsp`] - це масив частот.
+///
+/// # Помилки
+///
+/// Функція повертає [`AppError`] у випадку виникнення помилок, таких як:
+/// * Помилка 404 Not Found, якщо частота не знайдена в базі даних.
+/// * Помилки під час взаємодії з базою даних.
+/// * Недостатньо прав доступу у користувача для виконання цієї операції.
+///
+/// # Дозволи
+///
+/// Для доступу до цього ендпоінту користувач повинен мати одну з наступних ролей: "Rer", "Api".
+#[post("/api/sigint/freqs-for-period")]
+pub async fn list_freqs_for_period(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListFreqsForPeriodReq>,
+) -> Result<Json<ListFreqsForPeriodRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
+        .await?;
+    let login = user.id()?;
+
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+
+    let mut q = signal_message::Entity::find()
+        .join_as(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+            Alias::new("sigint_inbox_item"),
+        )
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(sigint_inbox_item::Column::Freq.is_not_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .group_by(Expr::cust("1"))
+        .order_by(Expr::cust("1"), Order::Asc);
+
+    if let Some(dt_till) = req.till_date_noninclusive_ms {
+        let dt_till = dt_from_millis(dt_till)?;
+        q = q.filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    }
+
+    let freqs: Vec<String> = q
+        .into_tuple::<(String,)>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|(freq,)| freq)
+        .collect();
+
+    Ok(Json(ListFreqsForPeriodRsp { freqs }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

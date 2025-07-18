@@ -318,6 +318,7 @@ pub async fn main_server(
             .service(crate::sigint::freq::freq_exists)
             .service(crate::sigint::freq::list_freqs)
             .service(crate::sigint::freq::list_freqs_v2)
+            .service(crate::sigint::freq::list_freqs_for_period)
             .service(crate::sigint::freq::list_callsigns_by_freqs)
             .service(crate::sigint::freq::list_points_by_freq)
             .service(crate::sigint::freq::list_groups_by_freqs_per_day)

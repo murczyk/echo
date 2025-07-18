@@ -257,3 +257,18 @@ pub struct FreqExistsReq {
     pub freq: String,
     pub since_date_inclusive_ms: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListFreqsForPeriodReq {
+    pub since_date_inclusive_ms: i64,
+    pub till_date_noninclusive_ms: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListFreqsForPeriodRsp {
+    pub freqs: Vec<String>,
+}

@@ -452,6 +452,37 @@
 			"response": []
 		},
 		{
+			"name": "sigint/freqs-for-period",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\"since_date_inclusive_ms\":1751317200000,\n\"till_date_noninclusive_ms\":1752699600000\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/freqs-for-period",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"freqs-for-period"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/unit/search",
 			"request": {
 				"auth": {
