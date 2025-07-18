@@ -506,14 +506,12 @@ migrate-down:
 #     ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
 #     ssh jvln '(cd /fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp && go build)'
 #     scp jvln:/fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/
-
 # # builds signal-cli-rest-api on jvln and puts into current repo for an update
 # _jvln-build-signal-cli-rest-api:
 #     BRANCH=main
 #     ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
 #     ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && go build)'
 #     rsync --progress jvln:/fast/kon/workspace/signal-cli-rest-api/src/signal-cli-rest-api signal-cli-native/deploy/signal-cli/signal-cli-rest-api
-
 # # builds signal-cli-native on jvln and puts into current repo for an update
 # _jvln-build-signal-cli-native:
 #     BRANCH=master

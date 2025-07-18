@@ -108,3 +108,42 @@ async fn do_fetch_config(
     info!("successfully fetched secret");
     Ok(response.data.data)
 }
+
+#[tokio::main]
+pub async fn oneoff_backup_vault_secrets_to_bitwarden(
+    _mode: Mode,
+) -> Result<(), AppError> {
+    echo_install_utils::secret::backup_vault_secrets_to_bitwarden(
+        "echo",
+        &list_server(),
+    )
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn oneoff_restore_vault_secrets_from_bitwarden(
+    _mode: Mode,
+) -> Result<(), AppError> {
+    echo_install_utils::secret::restore_vault_secrets_from_bitwarden(
+        "echo",
+        &list_server(),
+    )
+    .await
+    .context(h!())?;
+    Ok(())
+}
+
+fn list_server<'a>() -> [&'a str; 8] {
+    [
+        "echo-luhansk/config",
+        "echo-donetsk2/config",
+        "echo-volyn2/config",
+        "echo-zaporizhzha2/config",
+        "echo-kherson2/config",
+        "echo-kharkiv2/config",
+        "echo-siversk/config",
+        "echo-lyman/config",
+    ]
+}

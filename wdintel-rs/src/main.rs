@@ -289,6 +289,8 @@ enum Cmd {
     OneoffImportMothershipIds(OneoffImportMothershipIdsPs),
     OneoffClearMothershipIds,
     OneoffExportEtalonData(OneoffExportEtalonDataPs),
+    OneoffBackupVaultSecretsToBitwarden,
+    OneoffRestoreVaultSecretsFromBitwarden,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -545,6 +547,12 @@ fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffClearMothershipIds => {
             crate::sigint::import::oneoff_clear_mothership_ids(mode)
+        }
+        Cmd::OneoffBackupVaultSecretsToBitwarden => {
+            crate::secret::oneoff_backup_vault_secrets_to_bitwarden(mode)
+        }
+        Cmd::OneoffRestoreVaultSecretsFromBitwarden => {
+            crate::secret::oneoff_restore_vault_secrets_from_bitwarden(mode)
         }
     }
 }
