@@ -4,6 +4,9 @@ import Api
 import Auth
 import Bindings as B
 import Components.Watermark as Watermark
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -62,6 +65,7 @@ type alias Model =
     , inpUnit : Maybe Int
     , inpCoordinates : String
     , editSignal : Dict Int EditSignalState
+    , editSignalSidebar : Maybe B.Signal
     , loading : Bool
     , loadingUnitStats : Bool
     , filterUnit : Maybe String
@@ -72,6 +76,7 @@ type alias Model =
     , filterMeaningDebounce : Debounce String
     , unitStats : List B.SignalUnitStatRow
     , sortBy : List B.ListSignalsSortBy
+    , tableState : Table.State
     }
 
 
@@ -105,6 +110,9 @@ type Msg
     | Refresh
     | ClearInputs
     | GotUnitStats (Result ApiError B.SignalUnitStatsRsp)
+    | SetTableState Table.State
+    | OpenEditSignalSidebar B.Signal
+    | CloseEditSignalSidebar
 
 
 type alias EditSignalState =
@@ -154,6 +162,7 @@ init _ =
             , inpUnit = Nothing
             , inpCoordinates = ""
             , editSignal = Dict.empty
+            , editSignalSidebar = Nothing
             , loading = True
             , loadingUnitStats = True
             , filterUnitDebounce = Debounce.init
@@ -164,6 +173,7 @@ init _ =
             , filterMeaningDebounce = Debounce.init
             , sortBy = []
             , unitStats = []
+            , tableState = Table.sortBy "Дата внесення" True
             }
     in
     ( m2
@@ -549,6 +559,21 @@ update msg model =
             , E.none
             )
 
+        SetTableState tableState ->
+            ( { model | tableState = tableState }
+            , E.none
+            )
+
+        OpenEditSignalSidebar signal ->
+            ( { model | editSignalSidebar = Just signal }
+            , E.none
+            )
+
+        CloseEditSignalSidebar ->
+            ( { model | editSignalSidebar = Nothing }
+            , E.none
+            )
+
 
 initLoad : Model -> Effect Msg
 initLoad model =
@@ -603,6 +628,110 @@ filteredSignals model =
             )
 
 
+signalsTableConfig : Shared.Model -> Model -> B.User -> Table.Config B.Signal Msg
+signalsTableConfig shared model user =
+    let
+        hasEditorRole =
+            Le.Auth.hasRole "UnitsEditor" user
+
+        getUnitName : Maybe Int -> String
+        getUnitName unitId =
+            case unitId of
+                Nothing ->
+                    ""
+                Just id ->
+                    case ListX.find (\u -> u.id == id) model.units of
+                        Nothing -> "<НВ ID=" ++ String.fromInt id ++ ">"
+                        Just unit -> unit.name
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable -> text ""
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then "var(--ochre-normal)" else "var(--color-text-muted)")
+                                ]
+                                [ text " ↓" ]
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↓" ]
+                        TableConfig.Reversible (Just True) ->
+                            span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+                        TableConfig.Reversible (Just False) ->
+                            span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+                headerContent =
+                    span [] [ text name, sortIcon ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+    in
+    Table.customConfig
+        { toId = \signal -> String.fromInt signal.id
+        , toMsg = SetTableState
+        , columns =
+            [ Table.stringColumn "Позиція/Сигнал" .text
+                |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Значення" (\signal -> Maybe.withDefault "" signal.meaning)
+                |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Підрозділ" (\signal -> getUnitName signal.unit)
+                |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Координати" (\signal -> Maybe.withDefault "" signal.coordinates)
+                |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Дата внесення" 
+                (\signal -> 
+                    case model.zone of
+                        Nothing -> "Loading..."
+                        Just zone -> Le.Time.renderDateTimeF1 zone (Time.millisToPosix signal.createdAt)
+                )
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "Дії"
+                , viewData =
+                    \signal ->
+                        { attributes = []
+                        , children =
+                            if hasEditorRole then
+                                [ div [ class "flex gap-2" ]
+                                    [ button
+                                        [ class "btn btn-outline-primary btn-sm"
+                                        , type_ "button"
+                                        , onClick <| OpenEditSignalSidebar signal
+                                        ]
+                                        [ i [ class "bi bi-pencil-square" ] [] ]
+                                    , button
+                                        [ class "btn btn-outline-danger btn-sm"
+                                        , type_ "button"
+                                        , onClick <| DeleteSignal signal.id
+                                        , attribute "data-bs-toggle" "modal"
+                                        , attribute "data-bs-target" "#deleteConfirmationModal"
+                                        ]
+                                        [ i [ class "bi bi-trash" ] [] ]
+                                    ]
+                                ]
+                            else
+                                []
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "10%"
+            ]
+        , customizations =
+            { tableAttrs = [ class "base-table table table-bordered table-sm", style "font-size" ".85rem" ]
+            , caption = Nothing
+            , thead = customThead
+            , tfoot = Nothing
+            , tbodyAttrs = []
+            , rowAttrs = \signal -> [ class <| if signal.active then "" else "disabled" ]
+            }
+        }
+
+
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock _ model =
     let
@@ -653,64 +782,7 @@ contentBlock shared model user =
         hasEditorRole =
             Le.Auth.hasRole "UnitsEditor" user
 
-        renderSignalTrView : Int -> B.Signal -> Html Msg
-        renderSignalTrView rowIndex signal =
-            tr
-                [ class <|
-                    if signal.active then
-                        ""
 
-                    else
-                        "disabled"
-                ]
-                [ td [ title (String.fromInt signal.id) ] [ text signal.text ]
-                , td [ class "relative" ]
-                    [ text <| Maybe.withDefault "" signal.meaning
-                    , Watermark.new user.name
-                        |> Watermark.withRotate -10
-                        |> Watermark.withPositioning ( 1, 1 )
-                        |> Watermark.withFontSize "2rem"
-                        |> Watermark.withOpacity 0.3
-                        |> Watermark.view
-                        |> HtmlX.viewIf (Basics.remainderBy 3 rowIndex == 0)
-                    ]
-                , td [] [ text <| Maybe.withDefault "" <| Maybe.map .name <| ListX.find (\u -> u.id == Maybe.withDefault 0 signal.unit) model.units ]
-                , td []
-                    [ text <| Maybe.withDefault "" signal.coordinates
-                    ]
-                , td []
-                    [ case model.zone of
-                        Nothing ->
-                            text "Loading..."
-
-                        Just zone ->
-                            text <|
-                                Le.Time.renderDateTimeF1 zone
-                                    (Time.millisToPosix signal.createdAt)
-                    ]
-                , if hasEditorRole then
-                    td []
-                        [ button
-                            [ class "btn btn-outline-primary btn-sm me-2"
-                            , type_ "button"
-                            , onClick <| EditSignal signal.id
-                            ]
-                            [ i [ class "bi bi-pencil-square" ] []
-                            ]
-                        , button
-                            [ class "btn btn-outline-danger btn-sm"
-                            , type_ "button"
-                            , onClick <| DeleteSignal signal.id
-                            , attribute "data-bs-toggle" "modal"
-                            , attribute "data-bs-target" "#deleteConfirmationModal"
-                            ]
-                            [ i [ class "bi bi-trash" ] []
-                            ]
-                        ]
-
-                  else
-                    text ""
-                ]
 
         filterPanel =
             div
@@ -996,15 +1068,6 @@ contentBlock shared model user =
                     [ text "Очистити" ]
                 ]
 
-        renderSignalTr : Int -> B.Signal -> Html Msg
-        renderSignalTr rowIndex signal =
-            case Dict.get signal.id model.editSignal of
-                Nothing ->
-                    renderSignalTrView rowIndex signal
-
-                Just editState ->
-                    renderSignalTrEdit signal editState
-
         mainContent =
             div []
                 [ div [] []
@@ -1016,29 +1079,7 @@ contentBlock shared model user =
                 , div
                     [ class "border mb-4 p-2" ]
                     [ filterPanel ]
-                , table
-                    [ class "table table-bordered table-sm"
-                    , style "font-size" ".85rem"
-                    ]
-                    [ thead []
-                        [ tr []
-                            [ th [ scope "col", class "nowrap" ] [ text "Позиція/Сигнал" ]
-                            , th [ scope "col", class "nowrap" ] [ text "Значення" ]
-                            , th [ scope "col", class "nowrap" ] [ text "Підрозділ" ]
-                            , th [ scope "col", class "nowrap" ] [ text "Координати" ]
-                            , th [ scope "col", class "nowrap" ] [ text "Дата внесення" ]
-                            , if hasEditorRole then
-                                th [ scope "col", class "nowrap" ] [ text "Дії" ]
-
-                              else
-                                text ""
-                            ]
-                        ]
-                    , tbody [] <|
-                        List.indexedMap
-                            renderSignalTr
-                            (filteredSignals model)
-                    ]
+                , Table.view (signalsTableConfig shared model user) model.tableState (filteredSignals model)
                 ]
     in
     div []
