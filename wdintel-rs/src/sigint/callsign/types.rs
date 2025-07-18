@@ -21,6 +21,18 @@ pub struct Callsign {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum ListCallsignsSortBy {
+    CallsignAsc,
+    CallsignDesc,
+    CallsignCreatedAtAsc,
+    CallsignCreatedAtDesc,
+    CallsignUnitAsc,
+    CallsignUnitDesc,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListCallsignsReq {
     pub after_id: Option<i64>,
     pub before_id: Option<i64>,
@@ -31,6 +43,7 @@ pub struct ListCallsignsReq {
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
     pub limit: Option<i64>,
+    pub sort_by: Option<Vec<ListCallsignsSortBy>>,
 }
 
 #[derive(

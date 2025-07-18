@@ -3428,6 +3428,37 @@ getCallsignsWithUnitsFromInboxRspEncoder struct =
         ]
 
 
+type ListCallsignsSortBy
+    = CallsignAsc
+    | CallsignDesc
+    | CallsignCreatedAtAsc
+    | CallsignCreatedAtDesc
+    | CallsignUnitAsc
+    | CallsignUnitDesc
+
+
+listCallsignsSortByEncoder : ListCallsignsSortBy -> Json.Encode.Value
+listCallsignsSortByEncoder enum =
+    case enum of
+        CallsignAsc ->
+            Json.Encode.string "CallsignAsc"
+
+        CallsignDesc ->
+            Json.Encode.string "CallsignDesc"
+
+        CallsignCreatedAtAsc ->
+            Json.Encode.string "CallsignCreatedAtAsc"
+
+        CallsignCreatedAtDesc ->
+            Json.Encode.string "CallsignCreatedAtDesc"
+
+        CallsignUnitAsc ->
+            Json.Encode.string "CallsignUnitAsc"
+
+        CallsignUnitDesc ->
+            Json.Encode.string "CallsignUnitDesc"
+
+
 type alias ListCallsignsReq =
     { afterId : Maybe Int
     , beforeId : Maybe Int
@@ -3438,6 +3469,7 @@ type alias ListCallsignsReq =
     , sinceDateInclusiveMs : Maybe Int
     , tillDateInclusiveMs : Maybe Int
     , limit : Maybe Int
+    , sortBy : Maybe (List ListCallsignsSortBy)
     }
 
 
@@ -3453,6 +3485,7 @@ listCallsignsReqEncoder struct =
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateInclusiveMs )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.limit )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listCallsignsSortByEncoder)) struct.sortBy )
         ]
 
 
@@ -6989,6 +7022,72 @@ callsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
 
 
+listCallsignsSortByDecoder : Json.Decode.Decoder ListCallsignsSortBy
+listCallsignsSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignAsc" ->
+                            Json.Decode.succeed CallsignAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignDesc" ->
+                            Json.Decode.succeed CallsignDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignCreatedAtAsc" ->
+                            Json.Decode.succeed CallsignCreatedAtAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignCreatedAtDesc" ->
+                            Json.Decode.succeed CallsignCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignUnitAsc" ->
+                            Json.Decode.succeed CallsignUnitAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "CallsignUnitDesc" ->
+                            Json.Decode.succeed CallsignUnitDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
 listCallsignsReqDecoder : Json.Decode.Decoder ListCallsignsReq
 listCallsignsReqDecoder =
     Json.Decode.succeed ListCallsignsReq
@@ -7001,6 +7100,7 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listCallsignsSortByDecoder))))
 
 
 listCallsignsRspDecoder : Json.Decode.Decoder ListCallsignsRsp

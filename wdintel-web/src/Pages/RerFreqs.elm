@@ -4,7 +4,11 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Components.Button as Button
 import Components.Sidebar as Sidebar
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -13,10 +17,15 @@ import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
+import Html.Extra as HtmlX
 import Http
+import Json.Encode as Encode
 import Layouts
+import Le.Auth
+import Le.Block.ActionMenu
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.DateTime
+import Le.Block.Popup
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
@@ -30,10 +39,9 @@ import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import Process
 import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.NetworkWorkflow as NetworkWorkflow
-import RerFreqs.Table as Table
 import RerFreqs.UnitsFilterSidebar
 import RerFreqs.Utils as Utils
 import Route exposing (Route)
@@ -45,6 +53,7 @@ import Task
 import Time exposing (Posix)
 import Time.Extra
 import UnitHierarchy
+import Url.Builder
 import View exposing (View)
 
 
@@ -64,6 +73,7 @@ init _ =
             { zone = Nothing
             , now = Nothing
             , loading = False
+            , loadingMore = False
             , currentRequestTracker = Nothing
             , requestCounter = 0
             , newOnly = False
@@ -184,6 +194,7 @@ init _ =
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
             , networkWorkflowTab = RerFreqs.Model.Search
+            , tableState = Table.sortBy "Частота" True
             }
     in
     ( m2
@@ -514,7 +525,7 @@ update shared msg model =
             )
 
         GotFreqs _ (Err err) ->
-            ( { model | loading = False }
+            ( { model | loading = False, loadingMore = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" err
             )
 
@@ -531,6 +542,7 @@ update shared msg model =
                     else
                         rsp.freqs
                 , loading = False
+                , loadingMore = False
                 , currentRequestTracker = Nothing
                 , noMoreToLoad = not rsp.showLoadMore
               }
@@ -576,7 +588,7 @@ update shared msg model =
             )
 
         GroupsMessageCountByDayReturnedByApi (Ok r) ->
-            ( { model | groupsMessageCountByDay = r }, E.none )
+            ( { model | groupsMessageCountByDay = Dict.union model.groupsMessageCountByDay r }, E.none )
 
         GroupsMessageCountByDayReturnedByApi (Err err) ->
             ( model
@@ -691,8 +703,11 @@ update shared msg model =
 
                             else
                                 let
-                                    us = model.networkDialogUnitSelect
-                                    us2 = { us | items = [] }
+                                    us =
+                                        model.networkDialogUnitSelect
+
+                                    us2 =
+                                        { us | items = [] }
                                 in
                                 ( { model | networkDialogUnitSelect = us2 }
                                 , Cmd.none
@@ -735,8 +750,11 @@ update shared msg model =
 
                         Just Select.Clear ->
                             let
-                                us = model.networkDialogUnitSelect
-                                us2 = { us | items = [] }
+                                us =
+                                    model.networkDialogUnitSelect
+
+                                us2 =
+                                    { us | items = [] }
 
                                 newWorkflowStatus =
                                     case model.networkWorkflowStatus of
@@ -1048,7 +1066,7 @@ update shared msg model =
             )
 
         AltUnitsByFreqReturnedByApi (Ok rsp) ->
-            ( { model | altUnitsByFreq = rsp }
+            ( { model | altUnitsByFreq = Dict.union model.altUnitsByFreq rsp }
             , E.none
             )
 
@@ -1071,7 +1089,7 @@ update shared msg model =
                                 callsignRes.res
                                 acc
                         )
-                        Dict.empty
+                        model.callsignsInfo
                         callsignsRes
             in
             ( { model | callsignsInfo = updatedCallsignsInfo }, E.none )
@@ -1090,7 +1108,7 @@ update shared msg model =
             )
 
         FreqsLoadMore ->
-            ( model
+            ( { model | loadingMore = True }
             , E.sendCmd <| loadFreqs model True
             )
 
@@ -1590,6 +1608,485 @@ update shared msg model =
         NetworkWorkflowTabClicked tab ->
             ( { model | networkWorkflowTab = tab }, E.none )
 
+        SetTableState newState ->
+            ( { model | tableState = newState }, E.none )
+
+
+freqsTableConfig : Shared.Model -> Model -> B.User -> Table.Config B.Freq Msg
+freqsTableConfig shared model user =
+    let
+        tableAttrs =
+            [ class "base-table" ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↓" ]
+
+                        TableConfig.Reversible (Just True) ->
+                            span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
+                        TableConfig.Reversible (Just False) ->
+                            span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+
+        actionMenuBody : B.Freq -> List (Html Msg)
+        actionMenuBody freq =
+            let
+                analysisHref withMap =
+                    let
+                        dateFromStr =
+                            case ( model.zone, model.now ) of
+                                ( Just zone, Just time ) ->
+                                    Le.Time.renderDateF4 zone (Le.Time.xDaysAgo 15 time)
+
+                                _ ->
+                                    ""
+
+                        dateToStr =
+                            case ( model.zone, model.now ) of
+                                ( Just zone, Just time ) ->
+                                    Le.Time.renderDateF4 zone (Le.Time.xDaysAgo -1 time)
+
+                                _ ->
+                                    ""
+
+                        stateS =
+                            Encode.encode 0
+                                (B.rerAnalysisQueryStateEncoder
+                                    { dateFromStr = dateFromStr
+                                    , timeFromStr = ""
+                                    , dateToStr = dateToStr
+                                    , timeToStr = "00:00"
+                                    , groupsSelected = []
+                                    , sendersSelected = []
+                                    , freqsSelected = [ freq.freq ]
+                                    , callsignsSelected = []
+                                    , unitsSelected = []
+                                    , locationsSelected = []
+                                    , includePelengLocations = False
+                                    , orWithExtendedForm = False
+                                    , orBookmarked = False
+                                    , orImportant = False
+                                    , orWithCoords = False
+                                    , search = ""
+                                    , tags = []
+                                    }
+                                )
+
+                        query =
+                            if withMap then
+                                [ Url.Builder.string "state" stateS, Url.Builder.string "showMap" "true" ]
+
+                            else
+                                [ Url.Builder.string "state" stateS ]
+                    in
+                    Url.Builder.relative [ "rer-analysis" ] query
+            in
+            [ span []
+                [ i [ class "bi me-1 bi-bar-chart" ] []
+                , a [ href <| analysisHref False, target "_blank" ]
+                    [ text "аналіз "
+                    , sup []
+                        [ i
+                            [ class "bi bi-box-arrow-up-right"
+                            ]
+                            []
+                        ]
+                    ]
+                ]
+            , span []
+                [ i [ class "bi me-1 bi-pin-map" ] []
+                , a [ href <| analysisHref True, target "_blank" ]
+                    [ text "на мапі "
+                    , sup []
+                        [ i
+                            [ class "bi bi-box-arrow-up-right"
+                            ]
+                            []
+                        ]
+                    ]
+                ]
+            ]
+    in
+    Table.customConfig
+        { toId = \freq -> freq.freq
+        , toMsg = SetTableState
+        , columns =
+            [ Table.veryCustomColumn
+                { name = "Частота"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "relative" ]
+                                [ div [] [ text freq.freq ]
+                                , div [ class "" ]
+                                    [ span
+                                        [ class "badge badge-sm rounded-pill text-bg-secondary"
+                                        , style "font-size" "0.6rem"
+                                        ]
+                                        [ text <| String.fromInt freq.messageCount
+                                        ]
+                                    , Le.Block.ActionMenu.actionMenu (actionMenuBody freq) "bi-three-dots-vertical"
+                                    ]
+                                , Watermark.new user.name
+                                    |> Watermark.withPositioning ( 30, 10 )
+                                    |> Watermark.withFontSize "1.5rem"
+                                    |> Watermark.view
+                                    |> HtmlX.viewIf (Basics.remainderBy 2 (ListX.elemIndex freq model.freqs |> Maybe.withDefault 0) == 0)
+                                ]
+                            ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\freq -> freq.messageCount)
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Позивні"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            [ let
+                                callsigns =
+                                    case Dict.get freq.freq model.callsignsByFreq of
+                                        Nothing ->
+                                            []
+
+                                        Just v ->
+                                            v
+
+                                isOpen =
+                                    case model.rowShowAllPopupStatus of
+                                        Just ( freq_, ShowAllCallsigns ) ->
+                                            freq_ == freq.freq
+
+                                        _ ->
+                                            False
+                              in
+                              CallsignsPopup.view
+                                { isOpened = isOpen
+                                , onClose = RowShowAllPopupChanged Nothing
+                                , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllCallsigns )
+                                , callsigns = callsigns
+                                , callsignsInfo = model.callsignsInfo
+                                , masterUnits = model.masterUnits
+                                }
+                                (FreqsPage
+                                    freq.freq
+                                    model.networks
+                                )
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Пеленги"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            [ div []
+                                [ case ( Dict.get freq.freq model.locationTexts, model.openMapRowId == Just freq.freq ) of
+                                    ( Just LocationText, True ) ->
+                                        div [ id ("map-container-" ++ freq.freq) ]
+                                            []
+
+                                    ( Just NoCoords, _ ) ->
+                                        p []
+                                            [ text "Немає координат" ]
+
+                                    _ ->
+                                        p [ class "flex gap-[4px] flex-col" ]
+                                            (if List.isEmpty freq.locations then
+                                                [ span [] [ text "Текстова локація" ] ]
+
+                                             else
+                                                (List.map (\location -> span [ class "cursor-pointer underline ", onClick <| SwitchFromTextToMap freq.freq ] [ text location ]) freq.locations
+                                                    |> List.take 3
+                                                )
+                                                    ++ (if List.length freq.locations > 3 then
+                                                            let
+                                                                body =
+                                                                    span
+                                                                        [ style "font-size" "12px"
+                                                                        , style "font-weight" "300"
+                                                                        , style "cursor" "pointer"
+                                                                        , style "display" "block"
+                                                                        , style "padding-right" "6px"
+                                                                        , style "text-decoration" "underline"
+                                                                        ]
+                                                                        [ text ("Показати всі " ++ (freq.locations |> List.length |> String.fromInt)) ]
+
+                                                                popupBody =
+                                                                    div [ class "d-flex flex-column", style "gap" "20px" ]
+                                                                        (List.map (\location -> span [] [ text location ]) freq.locations)
+
+                                                                isOpen =
+                                                                    case model.rowShowAllPopupStatus of
+                                                                        Just ( freq_, ShowAllLocations ) ->
+                                                                            freq_ == freq.freq
+
+                                                                        _ ->
+                                                                            False
+                                                            in
+                                                            [ Le.Block.Popup.new
+                                                                { body = body
+                                                                , popupBody = popupBody
+                                                                , isOpen = isOpen
+                                                                , onClose = RowShowAllPopupChanged Nothing
+                                                                , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllLocations )
+                                                                , disabled = False
+                                                                }
+                                                                |> Le.Block.Popup.withFakeAnchor
+                                                                |> Le.Block.Popup.withCloseButton
+                                                                |> Le.Block.Popup.view
+                                                            ]
+
+                                                        else
+                                                            [ text "" ]
+                                                       )
+                                            )
+                                ]
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Привʼязки"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children = viewFreqBlock shared.user model freq
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "26%"
+            , Table.veryCustomColumn
+                { name = "Альтернативні Привʼязки"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-col gap-[4px]" ]
+                                (case Dict.get freq.freq model.altUnitsByFreq of
+                                    Just units ->
+                                        (List.map (\u -> span [] [ text u.unit ]) units
+                                            |> List.take 3
+                                        )
+                                            ++ (if List.length units > 3 then
+                                                    let
+                                                        body =
+                                                            span
+                                                                [ style "font-size" "12px"
+                                                                , style "font-weight" "300"
+                                                                , style "cursor" "pointer"
+                                                                , style "display" "block"
+                                                                , style "padding-right" "6px"
+                                                                , style "text-decoration" "underline"
+                                                                ]
+                                                                [ text ("Показати всі " ++ (units |> List.length |> String.fromInt)) ]
+
+                                                        popupBody =
+                                                            div [ class "d-flex flex-column", style "gap" "20px" ]
+                                                                (List.map (\unit -> span [] [ text unit.unit ]) units)
+
+                                                        isOpen =
+                                                            case model.rowShowAllPopupStatus of
+                                                                Just ( freq_, ShowAllAltUnits ) ->
+                                                                    freq_ == freq.freq
+
+                                                                _ ->
+                                                                    False
+                                                    in
+                                                    [ Le.Block.Popup.new
+                                                        { body = body
+                                                        , popupBody = popupBody
+                                                        , isOpen = isOpen
+                                                        , onClose = RowShowAllPopupChanged Nothing
+                                                        , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllAltUnits )
+                                                        , disabled = False
+                                                        }
+                                                        |> Le.Block.Popup.withFakeAnchor
+                                                        |> Le.Block.Popup.withCloseButton
+                                                        |> Le.Block.Popup.view
+                                                    ]
+
+                                                else
+                                                    [ text "" ]
+                                               )
+
+                                    Nothing ->
+                                        [ text "" ]
+                                )
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Активність р/м"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            [ case Dict.get freq.freq model.groupsMessageCountByDay |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int)) of
+                                Just g ->
+                                    div [ class "w-full", style "height" "90px" ]
+                                        [ Html.node "bar-chart"
+                                            [ Attr.property "data" <| g
+                                            , Attr.property "lastDay" <| Encode.string model.to.dateStr
+                                            ]
+                                            []
+                                        ]
+
+                                Nothing ->
+                                    text "Не активні останні 10 днів"
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "Останнє оновлення"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children =
+                            case ( freq.lastUpdatedAt, model.zone ) of
+                                ( Just updatedAt, Just zone ) ->
+                                    let
+                                        updatedAtString =
+                                            Le.Time.renderDateF6 zone
+                                                (Time.millisToPosix updatedAt)
+
+                                        updatedByString =
+                                            Maybe.withDefault "невідомий" freq.lastUpdatedBy
+
+                                        createdAtString =
+                                            case freq.createdAt of
+                                                Just createdAt ->
+                                                    Le.Time.renderDateF6 zone
+                                                        (Time.millisToPosix createdAt)
+
+                                                Nothing ->
+                                                    "невідомо"
+                                    in
+                                    [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
+                                        [ i [ class "bi bi-calendar-date" ]
+                                            []
+                                        , text <|
+                                            " "
+                                                ++ createdAtString
+                                        ]
+                                    , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
+                                        [ i [ class "bi bi-pencil-square" ] []
+                                        , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
+                                        ]
+                                    ]
+
+                                _ ->
+                                    [ text "" ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\freq -> Maybe.withDefault 0 freq.lastUpdatedAt)
+                }
+                |> Table.withColumnWidth "9%"
+            ]
+        , customizations =
+            { tableAttrs = tableAttrs
+            , caption = Nothing
+            , thead = customThead
+            , tfoot = Nothing
+            , tbodyAttrs = []
+            , rowAttrs = \_ -> []
+            }
+        }
+
+
+viewFreqBlock : Maybe B.User -> Model -> B.Freq -> List (Html Msg)
+viewFreqBlock mUser model freq =
+    let
+        editBlock =
+            case mUser of
+                Just user ->
+                    if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                        div []
+                            [ div [ style "font-size" ".8rem" ]
+                                [ button
+                                    [ title "Редагувати прив'язки"
+                                    , class "outline-0! px-[4px] border-1! border-border rounded-sm! bg-transparent text-action text-[16px]! transition-colors duration-350 hover:bg-action! hover:text-bw"
+                                    , onClick <| OpenAddNetworkSidebar freq.freq
+                                    ]
+                                    [ i [ class "bi bi-pencil" ] []
+                                    ]
+                                ]
+                            ]
+
+                    else
+                        text ""
+
+                Nothing ->
+                    text ""
+    in
+    [ div [ class "d-flex justify-content-between" ]
+        [ div [ class "d-flex" ]
+            [ div [] <|
+                for_ freq.networkIds <|
+                    \networkId ->
+                        case Dict.get networkId model.networks of
+                            Just network ->
+                                span [ class "inline-flex items-center gap-1" ]
+                                    [ NetworksUtils.renderNetwork network model.masterUnits
+                                    , case network.unitIds of
+                                        Nothing ->
+                                            span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+
+                                        Just ids ->
+                                            if List.isEmpty ids then
+                                                span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+
+                                            else
+                                                text ""
+                                    ]
+
+                            _ ->
+                                text "Невідома мережа"
+            ]
+        , editBlock
+        ]
+    ]
+
 
 changeSortOrder : B.ListFreqsSortBy -> B.ListFreqsSortBy
 changeSortOrder order =
@@ -1644,7 +2141,7 @@ dateAndPanelsBlock _ model =
 leftPanel : Shared.Model -> Model -> Html Msg
 leftPanel shared model =
     div
-        [ class "self-stretch max-h-full min-w-[300px]  w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
+        [ class "self-stretch max-h-full min-w-[260px] max-w-[340px] w-[22vw] overflow-y-auto border-r border-border bg-card relative transition-all duration-300"
         ]
         [ button
             [ class "absolute top-2 right-2 z-10 px-2 py-1 rounded border border-border bg-card hover:bg-gray-100 transition"
@@ -1653,7 +2150,6 @@ leftPanel shared model =
             ]
             [ i [ class "bi bi-chevron-left" ] [] ]
         , unitsBlock shared model
-        , div [ class "flex-grow-1" ] []
         ]
 
 
@@ -1722,14 +2218,14 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "частоти"
     , body =
-        [ div [ class "flex justify-start items-start page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
+        [ div [ class "flex page-rer-freqs", style "height" "calc(-50px + 100vh)" ]
             [ if model.showSidebar then
                 leftPanel shared model
 
               else
                 text ""
             , div
-                [ class "grow-1 overflow-y-auto"
+                [ class "grow px-[32px] py-[16px] overflow-auto"
                 ]
                 [ div [ class "flex gap-[8px]" ]
                     [ h1 [ class "py-2 ps-4" ]
@@ -1774,7 +2270,24 @@ view dark shared user model =
                             ]
                             [ FilterPanel.view shared model
                             ]
-                        , Table.view shared model user
+                        , Table.view (freqsTableConfig shared model user) model.tableState model.freqs
+                        , div [ class "flex justify-center mt-3 mb-3" ] <|
+                            if not model.noMoreToLoad then
+                                [ Button.new { label = "Завантажити ще", onClick = FreqsLoadMore }
+                                    |> Button.withStyleSecondary
+                                    |> Button.withDisabled model.loadingMore
+                                    |> Button.withIcon
+                                        (if model.loadingMore then
+                                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                                         else
+                                            []
+                                        )
+                                    |> Button.view
+                                ]
+
+                            else
+                                []
                         ]
                     ]
                 ]

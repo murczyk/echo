@@ -9,6 +9,9 @@ import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Components.RadioGroup as RadioGroup
 import Components.Sidebar as Sidebar
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -92,6 +95,7 @@ type alias Model =
     , showOnlyInvestigating : Bool
     , units : List B.Unit
     , loadingUnitStats : Bool
+    , tableState : Table.State
     }
 
 
@@ -150,6 +154,7 @@ init _ =
             , showOnlyInvestigating = False
             , units = []
             , loadingUnitStats = True
+            , tableState = Table.initialSort "Мережа"
             }
     in
     ( m2
@@ -282,6 +287,7 @@ type Msg
     | ToggleSidebar
     | ClearAllFilters
     | CreateNewNetworkClicked
+    | SetTableState Table.State
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -960,6 +966,267 @@ update shared msg model =
         CreateNewNetworkClicked ->
             ( model, E.pushRoutePath Route.Path.RerNetworks_Create )
 
+        SetTableState newState ->
+            ( { model | tableState = newState }, E.none )
+
+
+networksTableConfig : Shared.Model -> Model -> Table.Config B.Network Msg
+networksTableConfig shared model =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
+        { toId = \network -> String.fromInt network.id
+        , toMsg = SetTableState
+        , columns =
+            [ Table.veryCustomColumn
+                { name = "Мережа"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            [ a
+                                [ class "cursor-pointer"
+                                , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                                , target "_blank"
+                                ]
+                                [ EUtils.renderNetworkNameWithoutType network model.masterUnits ]
+                            ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\network -> network.location)
+                }
+                |> Table.withColumnWidth "27%"
+            , Table.veryCustomColumn
+                { name = "Частоти"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-col" ] (List.map (\freq -> span [] [ text freq.freq ]) network.freqs)
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Локації"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            [ div [ style "overflow-wrap" "anywhere" ] [ text network.location ]
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "11%"
+            , Table.veryCustomColumn
+                { name = "Пеленги"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            [ case model.map of
+                                Closed ->
+                                    span [ class " cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
+                                        [ text "відкрити мапу "
+                                        , i [ class "bi bi-map text-sm mr-2" ]
+                                            []
+                                        ]
+
+                                Opened networkId points ->
+                                    if networkId == network.id then
+                                        Html.node "small-map"
+                                            [ property "points" (Encode.list B.networkPointEncoder points)
+                                            , Html.Events.on "close-map" (Decode.succeed MapClosedByUser)
+                                            , class "block w-full h-[90px]"
+                                            ]
+                                            []
+
+                                    else
+                                        span [ class "cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
+                                            [ text "відкрити мапу "
+                                            , i [ class "bi bi-map text-sm mr-2" ]
+                                                []
+                                            ]
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "18%"
+            , Table.veryCustomColumn
+                { name = "Позивні"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            [ case model.callsignsByNetwork of
+                                Success cbn ->
+                                    let
+                                        callsigns =
+                                            case Dict.get (String.fromInt network.id) cbn of
+                                                Nothing ->
+                                                    []
+
+                                                Just v ->
+                                                    v
+
+                                        isOpen =
+                                            case model.callsignsOpenedPopupId of
+                                                Just openCallsignsPopup ->
+                                                    openCallsignsPopup == network.id
+
+                                                Nothing ->
+                                                    False
+                                    in
+                                    CallsignsPopup.view
+                                        { isOpened = isOpen
+                                        , onClose = CallsignsPopupClosedByUser
+                                        , onOpen = CallsignsPopupOpenedByUser network.id
+                                        , callsigns = callsigns
+                                        , callsignsInfo = model.callsignsInfo
+                                        , masterUnits = model.masterUnits
+                                        }
+                                        (NetworksPage
+                                            network
+                                        )
+
+                                _ ->
+                                    Le.Block.Spinner.loadingSpinnerSm
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "9%"
+            , Table.veryCustomColumn
+                { name = "Активність"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            [ case model.networksGroupsActivity of
+                                Success data ->
+                                    let
+                                        groupsMessageCountByDayJson =
+                                            Dict.get (String.fromInt network.id) data |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
+                                    in
+                                    case groupsMessageCountByDayJson of
+                                        Just g ->
+                                            div [ style "width" "200px", style "height" "90px" ]
+                                                [ Html.node "bar-chart"
+                                                    [ Attr.property "data" <| g
+                                                    , Attr.property "last-day" <| Encode.string model.to.dateStr
+                                                    , style "display" "block"
+                                                    ]
+                                                    []
+                                                ]
+
+                                        Nothing ->
+                                            text "Не активні останні 10 днів"
+
+                                _ ->
+                                    Le.Block.Spinner.loadingSpinnerSm
+                            ]
+                        }
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "18%"
+            , Table.veryCustomColumn
+                { name = "Останнє оновлення"
+                , viewData =
+                    \network ->
+                        { attributes = []
+                        , children =
+                            case ( network.lastUpdatedAt, model.zone ) of
+                                ( updatedAt, Just zone ) ->
+                                    let
+                                        updatedAtString =
+                                            Le.Time.renderDateF6 zone
+                                                (Time.millisToPosix updatedAt)
+
+                                        updatedByString =
+                                            Maybe.withDefault "невідомий" network.lastUpdatedBy
+
+                                        createdAtString =
+                                            Le.Time.renderDateF6 zone
+                                                (Time.millisToPosix network.createdAt)
+                                    in
+                                    [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
+                                        [ i [ class "bi bi-calendar-date" ]
+                                            []
+                                        , text <|
+                                            " "
+                                                ++ createdAtString
+                                        ]
+                                    , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
+                                        [ i [ class "bi bi-pencil-square" ] []
+                                        , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
+                                        ]
+                                    ]
+
+                                _ ->
+                                    [ text "" ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\network -> String.fromInt network.lastUpdatedAt)
+                }
+                |> Table.withColumnWidth "9%"
+            ]
+        , customizations = customizations
+        }
+
 
 findSuggestedToMergeNetworks : List B.Network -> List ( B.Network, B.Network )
 findSuggestedToMergeNetworks networks_ =
@@ -995,191 +1262,16 @@ subscriptions _ =
 mainContent : List B.Network -> Shared.Model -> Model -> Html Msg
 mainContent networks shared model =
     section []
-        [ table
-            [ class "table-fixed w-full"
-            , style "font-size" ".85rem"
-            ]
-            [ thead [ class "" ]
-                [ tr [ class "" ]
-                    [ th
-                        [ scope "col"
-                        , class "w-[27%]"
-                        ]
-                        [ text "Мережа" ]
-                    , th
-                        [ scope "col"
-                        , class "w-[8%]"
-                        ]
-                        [ text "Частоти" ]
-                    , th
-                        [ scope "col"
-                        , class "w-[11%] "
-                        ]
-                        [ text "Локації" ]
-                    , th
-                        [ scope "col"
-                        , class "w-[18%]"
-                        ]
-                        [ text "Пеленги" ]
-                    , th
-                        [ scope "col"
-                        , class "w-[9%]"
-                        ]
-                        [ text "Позивні" ]
-                    , th
-                        [ scope "col"
-                        , class " w-[18%]"
-                        ]
-                        [ text "Активність" ]
-                    , th
-                        [ scope "col"
-                        , class "w-[9%]"
-                        ]
-                        [ text "Останнє оновлення" ]
-                    ]
-                ]
-            , Html.Keyed.node "tbody" [] <|
-                List.map (\network -> ( String.fromInt network.id, renderNetworkTr shared model network )) networks
+        [ div [ class "table-responsive-modern" ]
+            [ Table.view
+                (networksTableConfig shared model)
+                model.tableState
+                networks
             ]
         ]
 
 
-renderNetworkTr : Shared.Model -> Model -> B.Network -> Html Msg
-renderNetworkTr shared model network =
-    let
-        networkTd =
-            td []
-                [ a
-                    [ class "cursor-pointer"
-                    , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
-                    , target "_blank"
-                    ]
-                    [ EUtils.renderNetworkNameWithoutType network model.masterUnits ]
-                ]
 
-        freqsTd =
-            td []
-                [ div [ class "flex flex-col" ] (List.map (\freq -> span [] [ text freq.freq ]) network.freqs)
-                ]
-    in
-    tr [ class "" ]
-        [ networkTd
-        , freqsTd
-        , td [] [ div [ style "overflow-wrap" "anywhere" ] [ text network.location ] ]
-        , td []
-            [ case model.map of
-                Closed ->
-                    span [ class " cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
-                        [ text "відкрити мапу "
-                        , i [ class "bi bi-map text-sm mr-2" ]
-                            []
-                        ]
-
-                Opened networkId points ->
-                    if networkId == network.id then
-                        Html.node "small-map"
-                            [ property "points" (Encode.list B.networkPointEncoder points)
-                            , Html.Events.on "close-map" (Decode.succeed MapClosedByUser)
-                            , class "block w-full h-[90px]"
-                            ]
-                            []
-
-                    else
-                        span [ class "cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
-                            [ text "відкрити мапу "
-                            , i [ class "bi bi-map text-sm mr-2" ]
-                                []
-                            ]
-            ]
-        , case model.callsignsByNetwork of
-            Success cbn ->
-                let
-                    callsigns =
-                        case Dict.get (String.fromInt network.id) cbn of
-                            Nothing ->
-                                []
-
-                            Just v ->
-                                v
-
-                    isOpen =
-                        case model.callsignsOpenedPopupId of
-                            Just openCallsignsPopup ->
-                                openCallsignsPopup == network.id
-
-                            Nothing ->
-                                False
-                in
-                CallsignsPopup.view
-                    { isOpened = isOpen
-                    , onClose = CallsignsPopupClosedByUser
-                    , onOpen = CallsignsPopupOpenedByUser network.id
-                    , callsigns = callsigns
-                    , callsignsInfo = model.callsignsInfo
-                    , masterUnits = model.masterUnits
-                    }
-                    (NetworksPage
-                        network
-                    )
-
-            _ ->
-                Le.Block.Spinner.loadingSpinnerSm
-        , td []
-            [ case model.networksGroupsActivity of
-                Success data ->
-                    let
-                        groupsMessageCountByDayJson =
-                            Dict.get (String.fromInt network.id) data |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
-                    in
-                    case groupsMessageCountByDayJson of
-                        Just g ->
-                            div [ style "width" "200px", style "height" "90px" ]
-                                [ Html.node "bar-chart"
-                                    [ Attr.property "data" <| g
-                                    , Attr.property "last-day" <| Encode.string model.to.dateStr
-                                    , style "display" "block"
-                                    ]
-                                    []
-                                ]
-
-                        Nothing ->
-                            text "Не активні останні 10 днів"
-
-                _ ->
-                    Le.Block.Spinner.loadingSpinnerSm
-            ]
-        , td []
-            (case ( network.lastUpdatedAt, model.zone ) of
-                ( updatedAt, Just zone ) ->
-                    let
-                        updatedAtString =
-                            Le.Time.renderDateF6 zone
-                                (Time.millisToPosix updatedAt)
-
-                        updatedByString =
-                            Maybe.withDefault "невідомий" network.lastUpdatedBy
-
-                        createdAtString =
-                            Le.Time.renderDateF6 zone
-                                (Time.millisToPosix network.createdAt)
-                    in
-                    [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
-                        [ i [ class "bi bi-calendar-date" ]
-                            []
-                        , text <|
-                            " "
-                                ++ createdAtString
-                        ]
-                    , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
-                        [ i [ class "bi bi-pencil-square" ] []
-                        , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
-                        ]
-                    ]
-
-                _ ->
-                    [ text "" ]
-            )
-        ]
 
 
 filterPanel : Shared.Model -> Model -> Html Msg
