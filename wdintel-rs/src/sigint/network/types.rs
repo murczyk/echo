@@ -425,3 +425,14 @@ pub struct UpdateNetworkFreqReq {
     pub active_from: i64,
     pub active_to: Option<i64>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+/// Параметри для оновлення списку підрозділів мережі
+pub struct UpdateNetworkUnitsReq {
+    /// відповідає `id` полю в [`crate::entities::sigint_network::Model::id`]
+    pub network_id: i64,
+    /// Список ітентифікаторів підрозділів мережі [`crate::entities::sigint_unit::Model`]
+    pub unit_ids: Vec<i64>,
+}

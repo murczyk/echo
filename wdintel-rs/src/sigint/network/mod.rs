@@ -30,7 +30,7 @@ pub mod types;
 
 const MERGE_NETWORKS_API_LOGIN: &str = "merge_networks_api";
 
-/// АПІ ендпоінт для отримання списку мереж
+/// Отримання списку мереж
 ///
 /// # API URL
 /// - POST: /api/sigint/network-list
@@ -41,30 +41,11 @@ const MERGE_NETWORKS_API_LOGIN: &str = "merge_networks_api";
 /// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
 /// * `req`: [`Json<ListNetworksReq>`] - де [`ListNetworksReq`] Тіло запиту, що містить параметри для фільтрації та сортування списку мереж.
 ///
-/// # Тіло запиту
-///
-/// Запит використовує структуру [`ListNetworksReq`], яка має наступні поля:
-///
-/// * `since_date_inclusive_ms`: `Option<i64>` - Фільтрувати мережі за датою, починаючи з вказаної (включно, в мілісекундах).
-/// * `till_date_noninclusive_ms`: `Option<i64>` - Фільтрувати мережі за датою, до вказаної (не включно, в мілісекундах).
-/// * `filter_freq`: `Option<String>` - Фільтрувати мережі за частотою.
-/// * `filter_unit`: `Option<String>` - Фільтрувати мережі за назвою підрозділу.
-/// * `filter_further_investigation`: `Option<bool>` - Якщо `true`, повертає мережі, що потребують подальшого дослідження (тобто, ті, що не мають прив'язаних підрозділів).
-/// * `sort_by`: `Option<Vec<ListNetworksSortBy>>` - де [`ListNetworksSortBy`] Вказує параметри сортування результатів.
-///
 /// # Повертає
 ///
-/// У випадку успішного виконання, функція повертає `Json<Vec<Network>>`, де [`Network`] - це структура, що представляє одну мережу.
+/// [`Json<Vec<Network>>`], де [`Network`] - це структура, що представляє одну мережу.
 ///
-/// # Помилки
-///
-/// Функція повертає [`AppError`] у випадку виникнення помилок, таких як:
-/// * Помилки під час взаємодії з базою даних.
-/// * Недостатньо прав доступу у користувача для виконання цієї операції.
-///
-/// # Дозволи
-///
-/// Для доступу до цього ендпоінту користувач повинен мати одну з наступних ролей: "Rer" або "Api".
+
 #[post("/api/sigint/network-list")]
 pub async fn network_list(
     user: actix_identity::Identity,
@@ -2112,7 +2093,7 @@ pub async fn update_network_posts(
         .context(h!())?;
     let user_login = user.id()?.to_string();
 
-    info!(
+    debug!(
         "Update {} posts for network {}; user={}",
         req.post_ids.len(),
         req.network_id,
@@ -2189,6 +2170,127 @@ pub async fn update_network_posts(
     }
 
     // Now fetch the updated network with all posts to return
+    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    if network_detail.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(network_detail[0].clone()))
+}
+
+/// Редагування списку підрозділів, які належать до мережі
+///
+/// # API URL
+/// - POST: /api/sigint/network/update-units
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<UpdateNetworkUnitsReq>`] - тіло запиту,  де [`UpdateNetworkUnitsReq`] параметри для оновлення списку підрозділів мережі.
+///
+/// # Повертає
+///
+/// Функція повертає [`Json<Vec<Network>>`] , де [`Network`] - це структура, що представляє одну мережу.
+///
+#[post("/api/sigint/network/update-units")]
+pub async fn update_network_units(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateNetworkUnitsReq>,
+) -> Result<Json<Network>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
+        .await
+        .context(h!())?;
+    let user_login = user.id()?.to_string();
+
+    debug!(
+        "Update {} units for network {}; user={}",
+        req.unit_ids.len(),
+        req.network_id,
+        user_login
+    );
+
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    // 1. Check if network exists
+    let network = sigint_network::Entity::find_by_id(req.network_id)
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    // 2. Fetch current non-deleted unit_ids for the network
+    let existing_units = sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
+        .filter(sigint_network_unit::Column::NetworkId.eq(req.network_id))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(&txn)
+        .await
+        .context(h!())?;
+    let existing_unit_ids: Vec<i64> =
+        existing_units.iter().map(|nu| nu.unit_id).collect();
+
+    // 3. Determine units to delete and insert
+    let to_delete: Vec<i64> = existing_unit_ids
+        .iter()
+        .filter(|id| !req.unit_ids.contains(id))
+        .copied()
+        .collect();
+
+    let to_insert: Vec<i64> = req
+        .unit_ids
+        .iter()
+        .filter(|id| !existing_unit_ids.contains(id))
+        .copied()
+        .collect();
+
+    let is_network_updated = !to_delete.is_empty() || !to_insert.is_empty();
+
+    // 4. Delete units
+    if !to_delete.is_empty() {
+        sigint_network_unit::Entity::delete_many()
+            .filter(sigint_network_unit::Column::NetworkId.eq(req.network_id))
+            .filter(sigint_network_unit::Column::UnitId.is_in(to_delete))
+            .exec(&txn)
+            .await
+            .context(h!())?;
+    }
+
+    // 5. Insert missing ones
+    for unit_id in to_insert {
+        let network_unit = sigint_network_unit::ActiveModel {
+            id: NotSet,
+            network_id: Set(req.network_id),
+            unit_id: Set(unit_id.clone()),
+            created_at: NotSet,
+            sigint_origin_id: NotSet,
+            mothership_id: NotSet,
+        };
+        network_unit.insert(&txn).await.context(h!())?;
+    }
+
+    // 6. Update the network's updated_at timestamp()
+    if is_network_updated {
+        let mut network_model = network.into_active_model();
+        network_model.updated_at = Set(Utc::now().naive_utc());
+        network_model.updated_by = Set(Some(user.id()?.to_string()));
+        network_model.update(&txn).await.context(h!())?;
+    }
+
+    // Now fetch the updated network with all units to return
     let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
         .await
         .context(h!())?;

@@ -345,6 +345,7 @@ pub async fn main_server(
             .service(crate::sigint::network::merge_network)
             .service(crate::sigint::network::modulations_list)
             .service(crate::sigint::network::update_network_posts)
+            .service(crate::sigint::network::update_network_units)
             .service(crate::sigint::post::post_list)
             .service(crate::sigint::post::create_post)
             .service(crate::sigint::post::update_post)
