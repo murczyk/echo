@@ -58,7 +58,10 @@ toLayout user model =
         }
 
 
+
 -- Navigation helper function
+
+
 createAnalysisUrl : Shared.Model -> Model -> String -> String
 createAnalysisUrl shared model callsign =
     let
@@ -77,7 +80,10 @@ createAnalysisUrl shared model callsign =
     Url.Builder.absolute [ "rer-analysis" ] query
 
 
+
 -- Generate query state for RER analysis with network date range and callsign filter
+
+
 createAnalysisQueryState : Shared.Model -> Model -> String -> B.RerAnalysisQueryState
 createAnalysisQueryState shared model callsign =
     let
@@ -88,18 +94,18 @@ createAnalysisQueryState shared model callsign =
                     let
                         fromDate =
                             Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix network.activeFrom)
-                        
+
                         toDate =
                             case network.activeTo of
                                 Just activeTo ->
                                     Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeTo)
-                                
+
                                 Nothing ->
                                     -- If no end date, use current date
                                     Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
                     in
                     ( fromDate, toDate )
-                
+
                 _ ->
                     -- Fallback to empty strings if network not loaded
                     ( "", "" )
@@ -109,7 +115,7 @@ createAnalysisQueryState shared model callsign =
             case model.network of
                 Success network ->
                     List.map .freq network.freqs
-                
+
                 _ ->
                     []
     in
@@ -1807,9 +1813,11 @@ contentBlock user shared network model =
                 div [ class "overflow-y-auto  grow-1" ]
                     [ let
                         renderCallsignMainRow :
-                            Shared.Model -> Model -> CallsignResModified
+                            Shared.Model
+                            -> Model
+                            -> CallsignResModified
                             -> List (Html Msg)
-                        renderCallsignMainRow shared modelState callsign =
+                        renderCallsignMainRow sharedModel modelState callsign =
                             let
                                 rowCount =
                                     List.length callsign.knownCallsigns
@@ -1817,10 +1825,10 @@ contentBlock user shared network model =
                             case callsign.knownCallsigns of
                                 x :: xs ->
                                     tr [ class "" ]
-                                        [ td [ rowspan rowCount ] 
+                                        [ td [ rowspan rowCount ]
                                             [ a
                                                 [ class "text-action cursor-pointer"
-                                                , href (createAnalysisUrl shared modelState callsign.callsign)
+                                                , href (createAnalysisUrl sharedModel modelState callsign.callsign)
                                                 , target "_blank"
                                                 ]
                                                 [ text <| String.toUpper callsign.callsign ]
@@ -1830,7 +1838,7 @@ contentBlock user shared network model =
                                             [ case callsign.lastDatetime of
                                                 Just lastDatetime ->
                                                     text <|
-                                                        Le.Time.renderDateF6 shared.timeZone
+                                                        Le.Time.renderDateF6 sharedModel.timeZone
                                                             (Time.millisToPosix lastDatetime)
 
                                                 Nothing ->
@@ -1867,10 +1875,12 @@ contentBlock user shared network model =
                                     [ text "" ]
 
                         renderCallsignEdit :
-                            Shared.Model -> Model -> Dict String Bool
+                            Shared.Model
+                            -> Model
+                            -> Dict String Bool
                             -> CallsignResModified
                             -> List (Html Msg)
-                        renderCallsignEdit shared modelState editingDict callsign =
+                        renderCallsignEdit sharedModel modelState editingDict callsign =
                             let
                                 rowCount =
                                     List.length callsign.knownCallsigns
@@ -1882,10 +1892,10 @@ contentBlock user shared network model =
                             case callsign.knownCallsigns of
                                 x :: xs ->
                                     tr [ class "" ]
-                                        [ td [ rowspan rowCount ] 
+                                        [ td [ rowspan rowCount ]
                                             [ a
                                                 [ class "text-action cursor-pointer"
-                                                , href (createAnalysisUrl shared modelState callsign.callsign)
+                                                , href (createAnalysisUrl sharedModel modelState callsign.callsign)
                                                 , target "_blank"
                                                 ]
                                                 [ text <| String.toUpper callsign.callsign ]
@@ -1895,7 +1905,7 @@ contentBlock user shared network model =
                                             [ case callsign.lastDatetime of
                                                 Just lastDatetime ->
                                                     text <|
-                                                        Le.Time.renderDateF6 shared.timeZone
+                                                        Le.Time.renderDateF6 sharedModel.timeZone
                                                             (Time.millisToPosix lastDatetime)
 
                                                 Nothing ->
