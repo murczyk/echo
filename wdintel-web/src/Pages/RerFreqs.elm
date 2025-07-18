@@ -6,6 +6,9 @@ import Bindings as B
 import Bytes exposing (Bytes)
 import Components.Button as Button
 import Components.Sidebar as Sidebar
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
 import Components.Watermark as Watermark exposing (Watermark)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -14,10 +17,15 @@ import File.Download as Download
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
+import Html.Extra as HtmlX
 import Http
+import Json.Encode as Encode
 import Layouts
+import Le.Auth
+import Le.Block.ActionMenu
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.DateTime
+import Le.Block.Popup
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
@@ -31,21 +39,11 @@ import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
 import Process
 import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), TextLocation(..))
+import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
 import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.NetworkWorkflow as NetworkWorkflow
 import RerFreqs.UnitsFilterSidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
 import RerFreqs.Utils as Utils
-import Html.Extra as HtmlX
-import Json.Encode as Encode
-import Url.Builder
-import Le.Block.ActionMenu
-import Le.Block.Popup
-import Le.Auth
-import RerFreqs.Model exposing (ShowAllPopupFor(..))
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -55,6 +53,7 @@ import Task
 import Time exposing (Posix)
 import Time.Extra
 import UnitHierarchy
+import Url.Builder
 import View exposing (View)
 
 
@@ -704,8 +703,11 @@ update shared msg model =
 
                             else
                                 let
-                                    us = model.networkDialogUnitSelect
-                                    us2 = { us | items = [] }
+                                    us =
+                                        model.networkDialogUnitSelect
+
+                                    us2 =
+                                        { us | items = [] }
                                 in
                                 ( { model | networkDialogUnitSelect = us2 }
                                 , Cmd.none
@@ -748,8 +750,11 @@ update shared msg model =
 
                         Just Select.Clear ->
                             let
-                                us = model.networkDialogUnitSelect
-                                us2 = { us | items = [] }
+                                us =
+                                    model.networkDialogUnitSelect
+
+                                us2 =
+                                    { us | items = [] }
 
                                 newWorkflowStatus =
                                     case model.networkWorkflowStatus of
@@ -1647,7 +1652,10 @@ freqsTableConfig shared model user =
                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
 
                 headerContent =
-                    span [] [ text name, sortIcon ]
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
             in
             Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
 
@@ -1728,9 +1736,8 @@ freqsTableConfig shared model user =
                         ]
                     ]
                 ]
-                            ]
-
-        in
+            ]
+    in
     Table.customConfig
         { toId = \freq -> freq.freq
         , toMsg = SetTableState
@@ -1941,7 +1948,7 @@ freqsTableConfig shared model user =
                                                )
 
                                     Nothing ->
-                                        [ text ""                                                     ]
+                                        [ text "" ]
                                 )
                             ]
                         }
@@ -1956,7 +1963,7 @@ freqsTableConfig shared model user =
                         , children =
                             [ case Dict.get freq.freq model.groupsMessageCountByDay |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int)) of
                                 Just g ->
-                                    div [ style "width" "200px", style "height" "90px" ]
+                                    div [ class "w-full", style "height" "90px" ]
                                         [ Html.node "bar-chart"
                                             [ Attr.property "data" <| g
                                             , Attr.property "lastDay" <| Encode.string model.to.dateStr

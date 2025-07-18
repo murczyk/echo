@@ -764,6 +764,7 @@ update req msg model =
                                 isValid =
                                     if editState.inpSourceId == 2 then
                                         not (String.isEmpty (String.trim editState.inpRadioFreq))
+
                                     else
                                         True
                             in
@@ -784,6 +785,7 @@ update req msg model =
                                         , active = True
                                         }
                                 )
+
                             else
                                 ( { model | validationError = Just "При виборі джерела 'РО' необхідно вказати частоту" }
                                 , E.none
@@ -1194,14 +1196,15 @@ update req msg model =
                                 isValid =
                                     if editState.inpSourceId == 2 then
                                         not (String.isEmpty (String.trim editState.inpRadioFreq))
+
                                     else
                                         True
                             in
                             if isValid then
                                 ( { model | validationError = Nothing }
-                                , E.sendCmd <| 
-                                    Api.sigint_callsign_update 
-                                        (EditCallsignDone callsign.id) 
+                                , E.sendCmd <|
+                                    Api.sigint_callsign_update
+                                        (EditCallsignDone callsign.id)
                                         { id = callsign.id
                                         , callsign = editState.inpCallsign
                                         , position = editState.inpPosition
@@ -1211,9 +1214,10 @@ update req msg model =
                                         , createdAt = callsign.createdAt
                                         , developing = editState.inpDeveloping
                                         , radioFreq = Just editState.inpRadioFreq
-                                        , active = True 
+                                        , active = True
                                         }
                                 )
+
                             else
                                 ( { model | validationError = Just "При виборі джерела 'РО' необхідно вказати частоту" }
                                 , E.none
@@ -1317,7 +1321,7 @@ callsignsTableConfig shared model user =
                         }
                 , sorter = Table.increasingOrDecreasingBy .callsign
                 }
-                |> Table.withColumnWidth "13%"
+                |> Table.withColumnWidth "12%"
             , Table.stringColumn "Посада" .position
                 |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
@@ -1424,7 +1428,7 @@ callsignsTableConfig shared model user =
                         }
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "9%"
             , Table.veryCustomColumn
                 { name = "Створено"
                 , viewData =
@@ -1472,7 +1476,7 @@ callsignsTableConfig shared model user =
                         }
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "5%"
+                |> Table.withColumnWidth "7%"
             ]
         , customizations = customizations
         }
@@ -1601,6 +1605,7 @@ editSidebarContent model shared user =
                                         [ text (Maybe.withDefault "" model.validationError) ]
                                     ]
                                 ]
+
                           else
                             text ""
                         , div [ class "w-full flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700" ]
