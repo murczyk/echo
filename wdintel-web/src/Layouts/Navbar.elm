@@ -9,7 +9,7 @@ import Html.Attributes exposing (class, classList)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
 import Le.Block.Toast as Toast
-import Le.EventService
+
 import Le.Types exposing (ApiError)
 import Process
 import Route exposing (Route)
@@ -41,18 +41,15 @@ layout props shared route =
 
 type alias Model =
     { isNavbarVisible : Bool
-    , eventServiceState : Le.EventService.EventState
     }
 
 
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { isNavbarVisible = True
-      , eventServiceState = Le.EventService.init
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
-        , E.sendCmd <| Task.perform (\_ -> StartEventPolling) (Task.succeed ())
         ]
     )
 
@@ -72,9 +69,6 @@ type Msg
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
     | ToastMsg Toast.Msg
-    | EventServiceMsg Le.EventService.Msg
-    | StartEventPolling
-    | StopEventPolling
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
@@ -105,24 +99,7 @@ update route msg model =
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
 
-        EventServiceMsg eventServiceMsg ->
-            let
-                ( newEventServiceState, effect ) =
-                    Le.EventService.update eventServiceMsg model.eventServiceState
-            in
-            ( { model | eventServiceState = newEventServiceState }
-            , E.map EventServiceMsg effect
-            )
-
-        StartEventPolling ->
-            ( model
-            , E.sendCmd <| Task.perform (\_ -> EventServiceMsg Le.EventService.StartPolling) (Task.succeed ())
-            )
-
-        StopEventPolling ->
-            ( model
-            , E.sendCmd <| Task.perform (\_ -> EventServiceMsg Le.EventService.StopPolling) (Task.succeed ())
-            )
+       
 
 
 subscriptions : Model -> Sub Msg

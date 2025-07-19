@@ -5195,7 +5195,7 @@ type EventType
     | EtNetworkChanged
     | EtCallsignChanged
     | EtSignalChanged
-    | EtUnitChanged
+    | EtUnitChanged Int
     | EtInboxChanged Int
 
 
@@ -5214,8 +5214,8 @@ eventTypeEncoder enum =
         EtSignalChanged ->
             Json.Encode.string "ETSignalChanged"
 
-        EtUnitChanged ->
-            Json.Encode.string "ETUnitChanged"
+        EtUnitChanged inner ->
+            Json.Encode.object [ ( "ETUnitChanged", Json.Encode.int inner ) ]
 
         EtInboxChanged inner ->
             Json.Encode.object [ ( "ETInboxChanged", Json.Encode.int inner ) ]
@@ -8195,16 +8195,7 @@ eventTypeDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "ETUnitChanged" ->
-                            Json.Decode.succeed EtUnitChanged
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
+        , Json.Decode.map EtUnitChanged (Json.Decode.field "ETUnitChanged" Json.Decode.int)
         , Json.Decode.map EtInboxChanged (Json.Decode.field "ETInboxChanged" Json.Decode.int)
         ]
 

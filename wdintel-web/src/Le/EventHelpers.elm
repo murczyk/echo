@@ -1,4 +1,4 @@
-module Le.EventHelpers exposing (subscribeToEvent, subscribeToEvents, unsubscribeFromEvents, subscribeToUnitChanges, subscribeToNetworkChanges, subscribeToCallsignChanges, subscribeToSignalChanges, subscribeToInboxChanges)
+module Le.EventHelpers exposing (subscribeToEvent, subscribeToEvents, unsubscribeFromEvents, subscribeToNetworkChanges, subscribeToCallsignChanges, subscribeToSignalChanges, subscribeToInboxChanges)
 
 import Bindings as B
 import Effect as E exposing (Effect)
@@ -25,11 +25,6 @@ unsubscribeFromEvents pageId =
 
 
 -- Convenience functions for common event subscriptions
-
-subscribeToUnitChanges : Route.Path.Path -> Effect Msg
-subscribeToUnitChanges pageId =
-    subscribeToEvent pageId B.EtUnitChanged
-
 
 subscribeToNetworkChanges : Route.Path.Path -> Effect Msg
 subscribeToNetworkChanges pageId =

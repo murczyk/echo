@@ -16,6 +16,7 @@ type Msg
     | ToggleDarkMode
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
+    | MasterUnitsByIdLoadedByApi (Result ApiError B.ListUnitsByIdRsp)
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | CallsignsInfoAskedByPage (List String)
     | PostLoadAll B.ListPostsReq
@@ -24,7 +25,12 @@ type Msg
     | ToastMsg Le.Block.Toast.Msg
     | ShowToast String
     | ShowToastWithDetails String String
-    | EventServiceMsg String -- EventService message (will be handled by EventLayout)
+    | EventServiceStartPolling
+    | EventServiceStopPolling
+    | EventServicePollEvents  
+    | EventServiceEventsReceived (Result ApiError B.LongPollRsp)
+    | EventServiceRetryPolling
+    | EventServiceResetRetryCount
     | EventReceived B.EventMsg -- Event received from backend
     | SubscribeToEvents Route.Path.Path (List B.EventType) -- Page subscribes to event types
     | UnsubscribeFromEvents Route.Path.Path -- Page unsubscribes from all events

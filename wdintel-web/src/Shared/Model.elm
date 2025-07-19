@@ -21,7 +21,7 @@ type alias Model =
     , posts : RemoteData ApiError (Dict Int B.Post)
     , toasts : Le.Block.Toast.Model
     , featureNavbarFrontOnly : Bool
-    , eventState : Le.EventTypes.EventState
+    , eventService : Le.EventTypes.EventState
     , pendingEvents : List B.EventMsg
     , eventSubscriptions : Le.EventTypes.EventSubscriptions
     }

@@ -4,6 +4,8 @@ module Le.EventService exposing
     , init
     , update
     , view
+    , formatError
+    , pollEvents
     )
 
 import Bindings as B
