@@ -33,7 +33,7 @@ type alias Model =
     , freqs : List B.Freq
     , from : Le.Block.DateTime.Model
     , to : Le.Block.DateTime.Model
-    , masterUnits : Dict Int B.Unit
+
     , networks : Dict Int B.Network
     , filterState : FilterState
     , filterStateDebounce : Debounce FilterState

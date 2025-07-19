@@ -35,7 +35,7 @@ type Msg
     | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
     | GotZone (Result TimeZone.Error ( String, Time.Zone ))
     | GotTime Time.Zone Posix
-    | UnitsReturnedByApi (Result ApiError B.ListUnitsRsp)
+
     | NetworkAddUnitSelMsg (Select.Msg Int)
     | NetworkAddExistingKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkAddExistingModulationSelMsg (Select.Msg Int)
@@ -43,7 +43,6 @@ type Msg
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
     | UnitStatsReturnedByApi (Result ApiError B.FreqUnitStatsRsp)
-    | UnitsReload
     | SwitchFromTextToMap String
     | MapClose String
     | PointsByFreqReturnedByApi String (Result ApiError B.ListPointsByFreqRsp)
@@ -70,7 +69,6 @@ type Msg
     | ConfirmationInputChangedByUser String
     | Confirmation2InputChangedByUser String
     | NetworkConfirmationAdded (Result ApiError B.Network)
-    | UnitsReloadClickedByUser
     | NetworkAddExistingActiveFromChanged String
     | NetworkAddExistingActiveToChanged String
     | NetworkSearchWithoutUnitToggled Bool

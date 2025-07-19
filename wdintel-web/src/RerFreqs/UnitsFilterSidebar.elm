@@ -6,6 +6,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Le.Block.Spinner
 import Le.Block.Unit as Unit
+import Le.RemoteData as RD exposing (RemoteData(..))
 import RerFreqs.Model exposing (Model)
 import RerFreqs.Msg exposing (Msg(..))
 import Shared
@@ -30,7 +31,7 @@ view shared model =
 
 
 unitStatsBlock : Shared.Model -> Model -> Html Msg
-unitStatsBlock _ model =
+unitStatsBlock shared model =
     let
         filterState =
             model.filterState
@@ -39,9 +40,15 @@ unitStatsBlock _ model =
         renderUnitStat stat =
             [ div
                 [ class "d-flex justify-content-between align-items-between p-2 pointer"
-                , onClick <| FilterStateMsg { filterState | unit = Unit.unitName model.masterUnits stat.unitId }
+                , onClick <| FilterStateMsg { filterState | unit = case shared.masterUnits of
+                    Success units -> Unit.unitName units stat.unitId
+                    _ -> String.fromInt stat.unitId
+                }
                 ]
-                [ div [ class "flex-grow-1 text-end me-2" ] [ text <| Unit.unitName model.masterUnits stat.unitId ]
+                [ div [ class "flex-grow-1 text-end me-2" ] [ text <| case shared.masterUnits of
+                    Success units -> Unit.unitName units stat.unitId
+                    _ -> String.fromInt stat.unitId
+                ]
                 , div [ class "me-2" ]
                     [ div
                         [ style "min-width" "30px"
