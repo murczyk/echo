@@ -30,7 +30,6 @@ import Le.ErrorHandling
 import Le.RemoteData exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError)
-
 import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
@@ -39,7 +38,6 @@ import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
-
 import Task
 import Time
 import TimeZone
@@ -184,7 +182,6 @@ init req _ =
 
 type Msg
     = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotUnits (Result ApiError B.ListUnitsRsp)
     | GotCallsigns (Result ApiError B.ListCallsignsRsp)
     | GotCallsignsWithUnitsFromInbox (Result ApiError B.GetCallsignsWithUnitsFromInboxRsp)
     | AddStateMsg Int AddState
@@ -204,7 +201,6 @@ type Msg
     | DeleteCallsignDone (Result ApiError B.Callsign)
     | ClearInputs
     | GotSources (Result ApiError B.ListSourcesRsp)
-    | ReloadUnits
     | FilterCallsignMsg String
     | FilterPositionMsg String
     | FilterCommentMsg String
@@ -264,49 +260,46 @@ initAddState mCallsignName =
     { inpCallsign = Maybe.withDefault "" mCallsignName, inpPosition = "", inpComment = "", inpDeveloping = False, inpRadioFreq = "" }
 
 
+
 -- Helper function to convert frontend sorting to backend sorting
+
+
 sortingOrderToBackendSort : SortingOrder -> List B.ListCallsignsSortBy
 sortingOrderToBackendSort order =
     case order of
         CallsignAsc ->
             [ B.CallsignAsc ]
-        
+
         CallsignDesc ->
             [ B.CallsignDesc ]
-        
+
         CreatedAtAsc ->
             [ B.CallsignCreatedAtAsc ]
-        
+
         CreatedAtDesc ->
             [ B.CallsignCreatedAtDesc ]
-        
+
         UnitAsc ->
             [ B.CallsignUnitAsc ]
-        
+
         UnitDesc ->
             [ B.CallsignUnitDesc ]
-        
+
         Default ->
-            [] -- Use backend default
+            []
+
+
+
+-- Use backend default
 
 
 initLoad : Model -> Effect Msg
 initLoad model =
     E.batch
-        [ loadUnits
-        , loadCallsigns model
+        [ loadCallsigns model
         , loadSources
         , loadUnitStats
         ]
-
-
-loadUnits : Effect Msg
-loadUnits =
-    E.getUnits GotUnits
-        { sortBy = Nothing
-        , afterUnitId = Nothing
-        , beforeUnitId = Nothing
-        }
 
 
 loadCallsignsCmd : Model -> Cmd Msg
@@ -523,36 +516,6 @@ update req msg model =
             ( m2
             , initLoad m2
             )
-
-        GotUnits (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
-            )
-
-        GotUnits (Ok rsp) ->
-            case Dict.get "unitId" req.query |> Maybe.andThen String.toInt of
-                Just unitId ->
-                    ( { model
-                        | units = rsp.units
-                        , inpUnitSelMenu =
-                            List.map
-                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                                rsp.units
-                        , inpUnit = List.filter (\x -> x.id == unitId) rsp.units |> List.head |> Maybe.map .id
-                      }
-                    , E.replaceRoute { path = Route.Path.RerCallsigns, hash = Nothing, query = Dict.remove "unitId" req.query }
-                    )
-
-                Nothing ->
-                    ( { model
-                        | units = rsp.units
-                        , inpUnitSelMenu =
-                            List.map
-                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                                rsp.units
-                      }
-                    , E.none
-                    )
 
         GotCallsigns (Err err) ->
             ( { model | loading = False, loadingMore = False }
@@ -918,9 +881,6 @@ update req msg model =
             , E.none
             )
 
-        ReloadUnits ->
-            ( model, loadUnits )
-
         FilterCallsignMsg v ->
             let
                 ( debounce, cmd ) =
@@ -1100,8 +1060,10 @@ update req msg model =
                     case model.sortingOrder of
                         CallsignAsc ->
                             CallsignDesc
+
                         CallsignDesc ->
                             UnitAsc
+
                         _ ->
                             CallsignAsc
 
@@ -1279,8 +1241,10 @@ update req msg model =
                     case model.sortingOrder of
                         CreatedAtAsc ->
                             CreatedAtDesc
+
                         CreatedAtDesc ->
                             CallsignAsc
+
                         _ ->
                             CreatedAtDesc
 
@@ -1300,8 +1264,10 @@ update req msg model =
                     case model.sortingOrder of
                         UnitAsc ->
                             UnitDesc
+
                         UnitDesc ->
                             CallsignAsc
+
                         _ ->
                             UnitAsc
 
@@ -1314,8 +1280,6 @@ update req msg model =
             ( updatedModel
             , loadCallsigns updatedModel
             )
-
-
 
 
 subscriptions : Model -> Sub Msg
@@ -1344,39 +1308,45 @@ callsignsTableConfig shared model user =
                                     case model.sortingOrder of
                                         CallsignAsc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                                         CallsignDesc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                                         _ ->
                                             span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
                             in
                             ( icon, onClick SortByCallsignName )
-                        
+
                         "Створено" ->
                             let
                                 icon =
                                     case model.sortingOrder of
                                         CreatedAtAsc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                                         CreatedAtDesc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                                         _ ->
                                             span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
                             in
                             ( icon, onClick SortByCreatedAt )
-                        
+
                         "Підрозділ" ->
                             let
                                 icon =
                                     case model.sortingOrder of
                                         UnitAsc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                                         UnitDesc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                                         _ ->
                                             span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
                             in
                             ( icon, onClick SortByUnit )
-                        
+
                         _ ->
                             ( text "", onClick SortByCallsignName )
 
@@ -1856,13 +1826,6 @@ contentBlock shared model user =
                                             "жоден"
                                             options2
                                 ]
-                            , button
-                                [ title "Оновити підрозділи"
-                                , class "icon-btn icon-btn-secondary"
-                                , onClick ReloadUnits
-                                , Attr.disabled (not hasEditorRole)
-                                ]
-                                [ i [ class "bi bi-arrow-repeat" ] [] ]
                             ]
                     ]
                 , div [ class "col-span-2" ]
@@ -2095,7 +2058,6 @@ contentBlock shared model user =
 
         -- Remove frontend sorting since we're now doing it on the backend
         -- sortByName model_ callsigns_ = callsigns_
-
         mainContent =
             div []
                 [ div
