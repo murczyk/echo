@@ -26,6 +26,7 @@ import Le.Time
 import Le.Types exposing (ApiError)
 import Le.Utils exposing (..)
 import List.Extra as ListX
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
@@ -40,7 +41,7 @@ page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared _ =
     Page.new
         { init = init
-        , update = update
+        , update = update shared
         , view = view shared.isDarkMode shared user
         , subscriptions = subscriptions
         }
@@ -58,8 +59,6 @@ toLayout user model =
 type alias Model =
     { zone : Maybe Time.Zone
     , inpUnitSelState : Select.State
-    , inpUnitSelMenu : List (Select.MenuItem Int)
-    , units : List B.Unit
     , signals : List B.Signal
     , deleteSignalConfirmation : Maybe Int
     , inpText : String
@@ -84,11 +83,9 @@ type alias Model =
 
 type Msg
     = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotUnits (Result ApiError B.ListUnitsRsp)
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | AddUnitSelMsg (Select.Msg Int)
     | EditUnitSelMsg (Select.Msg Int)
-    | ReloadUnits
     | InpText String
     | InpMeaning String
     | InpCoordinates String
@@ -123,7 +120,6 @@ type alias EditSignalState =
     , inpUnit : Int
     , inpCoordinates : String
     , inpUnitSelState : Select.State
-    , inpUnitSelMenu : List (Select.MenuItem Int)
     }
 
 
@@ -155,8 +151,6 @@ init _ =
         m2 =
             { zone = Nothing
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
-            , inpUnitSelMenu = []
-            , units = []
             , signals = []
             , deleteSignalConfirmation = Nothing
             , inpText = ""
@@ -181,20 +175,13 @@ init _ =
     ( m2
     , E.batch
         [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
-        , loadUnits
         , loadSignals m2
         , loadUnitStats
         ]
     )
 
 
-loadUnits : Effect Msg
-loadUnits =
-    E.getUnits GotUnits
-        { sortBy = Nothing
-        , afterUnitId = Nothing
-        , beforeUnitId = Nothing
-        }
+
 
 
 subscriptions : Model -> Sub Msg
@@ -202,8 +189,8 @@ subscriptions _ =
     Sub.none
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
     case msg of
         InitGotZone (Err e) ->
             ( model
@@ -226,31 +213,7 @@ update msg model =
             , E.none
             )
 
-        ReloadUnits ->
-            ( model, loadUnits )
 
-        GotUnits (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
-            )
-
-        GotUnits (Ok rsp) ->
-            let
-                newUnitMenu =
-                    List.map
-                        (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                        rsp.units
-                
-                updatedEditSignalState =
-                    Maybe.map (\editState -> { editState | inpUnitSelMenu = newUnitMenu }) model.editSignalState
-            in
-            ( { model
-                | units = rsp.units
-                , inpUnitSelMenu = newUnitMenu
-                , editSignalState = updatedEditSignalState
-              }
-            , E.none
-            )
 
         EditUnitSelMsg selMsg ->
             case model.editSignalState of
@@ -345,10 +308,6 @@ update msg model =
                             , inpUnitSelState =
                                 Select.initState
                                     (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt id)
-                            , inpUnitSelMenu =
-                                List.map
-                                    (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                                    model.units
                             }
                       }
                     , E.none
@@ -388,7 +347,11 @@ update msg model =
                                         else
                                             Just editState.inpCoordinates
                                     , unit =
-                                        Maybe.map (\u -> u.id) (ListX.find (\u -> u.id == editState.inpUnit) model.units)
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Maybe.map (\u -> u.id) (Dict.get editState.inpUnit units)
+                                            _ ->
+                                                Nothing
                                     }
                             )
 
@@ -579,7 +542,6 @@ update msg model =
                     , inpUnit = Maybe.withDefault 0 signal.unit
                     , inpCoordinates = Maybe.withDefault "" signal.coordinates
                     , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt signalId)
-                    , inpUnitSelMenu = List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) model.units
                     }
               }
             , E.none
@@ -597,10 +559,18 @@ update msg model =
 initLoad : Model -> Effect Msg
 initLoad model =
     E.batch
-        [ loadUnits
-        , loadSignals model
+        [ loadSignals model
         , loadUnitStats
         ]
+
+
+-- Helper function to populate unit menu from shared masterUnits
+populateUnitMenu : Shared.Model -> List (Select.MenuItem Int)
+populateUnitMenu shared =
+    case shared.masterUnits of
+        Success units -> 
+            List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
+        _ -> []
 
 
 loadUnitStats : Effect Msg
@@ -659,9 +629,13 @@ signalsTableConfig shared model user editingSignalId =
                 Nothing ->
                     ""
                 Just id ->
-                    case ListX.find (\u -> u.id == id) model.units of
-                        Nothing -> "<НВ ID=" ++ String.fromInt id ++ ">"
-                        Just unit -> unit.name
+                    case shared.masterUnits of
+                        Success units ->
+                            case Dict.get id units of
+                                Nothing -> "<НВ ID=" ++ String.fromInt id ++ ">"
+                                Just unit -> unit.name
+                        _ ->
+                            "<НВ ID=" ++ String.fromInt id ++ ">"
 
         customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
         customThead headers =
@@ -784,7 +758,6 @@ editSignalSidebarContent shared model user signal =
                     , inpUnit = Maybe.withDefault 0 signal.unit
                     , inpCoordinates = Maybe.withDefault "" signal.coordinates
                     , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt signal.id)
-                    , inpUnitSelMenu = List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) model.units
                     }
     in
     [ div [ class "p-6" ]
@@ -821,20 +794,18 @@ editSignalSidebarContent shared model user signal =
                         [ Html.map EditUnitSelMsg <|
                             Styled.toUnstyled <|
                                 Le.Block.Select.renderSelectSingle
-                                    (ListX.find (\unit -> unit.id == currentEditState.inpUnit) model.units
-                                        |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                    (case shared.masterUnits of
+                                        Success units -> 
+                                            Dict.get currentEditState.inpUnit units
+                                                |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                        _ -> Nothing
                                     )
                                     currentEditState.inpUnitSelState
-                                    currentEditState.inpUnitSelMenu
+                                    (populateUnitMenu shared)
                                     "підрозділ"
                                     (Le.Block.Select.defaultOptions shared.isDarkMode)
                         ]
-                    , button
-                        [ Attr.title "Оновити список підрозділів"
-                        , class "icon-btn icon-btn-secondary"
-                        , onClick <| ReloadUnits
-                        ]
-                        [ i [ class "bi bi-arrow-repeat" ] [] ]
+
                     ]
                 ]
             , div []
@@ -865,18 +836,21 @@ editSignalSidebarContent shared model user signal =
 
 
 unitsBlock : Shared.Model -> Model -> Html Msg
-unitsBlock _ model =
+unitsBlock shared model =
     let
         renderUnitStat : B.SignalUnitStatRow -> List (Html Msg)
         renderUnitStat stat =
             let
                 unitName =
-                    case ListX.find (\u -> u.id == stat.unitId) model.units of
-                        Nothing ->
+                    case shared.masterUnits of
+                        Success units ->
+                            case Dict.get stat.unitId units of
+                                Nothing ->
+                                    "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
+                                Just unit ->
+                                    unit.name
+                        _ ->
                             "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
-
-                        Just unit ->
-                            unit.name
             in
             [ div
                 [ class "d-flex justify-content-between align-items-between p-2 pointer"
@@ -1026,12 +1000,16 @@ contentBlock shared model user =
                     [ let
                         selectItem : Maybe (Select.MenuItem Int)
                         selectItem =
-                            ListX.find (\unit -> unit.id == editState.inpUnit) model.units
-                                |> Maybe.map
-                                    (\unit ->
-                                        Select.basicMenuItem
-                                            { item = unit.id, label = unit.name }
-                                    )
+                            case shared.masterUnits of
+                                Success units ->
+                                    Dict.get editState.inpUnit units
+                                        |> Maybe.map
+                                            (\unit ->
+                                                Select.basicMenuItem
+                                                    { item = unit.id, label = unit.name }
+                                            )
+                                _ ->
+                                    Nothing
                       in
                       div
                         [ class "d-flex justify-content-between align-items-center"
@@ -1051,18 +1029,11 @@ contentBlock shared model user =
                                     Le.Block.Select.renderSelectSingle
                                         selectItem
                                         editState.inpUnitSelState
-                                        editState.inpUnitSelMenu
+                                        (populateUnitMenu shared)
                                         "підрозділ"
                                         options2
                             ]
-                        , button
-                            [ class "btn btn-sm btn-outline-secondary ms-2"
-                            , type_ "button"
-                            , onClick <| ReloadUnits
-                            ]
-                            [ i [ class "bi bi-arrow-clockwise" ]
-                                []
-                            ]
+
                         ]
                     ]
                 , td []
@@ -1131,7 +1102,11 @@ contentBlock shared model user =
                     [ let
                         selectItem =
                             model.inpUnit
-                                |> Maybe.andThen (\unitId -> ListX.find (\u -> u.id == unitId) model.units)
+                                |> Maybe.andThen (\unitId -> 
+                                    case shared.masterUnits of
+                                        Success units -> Dict.get unitId units
+                                        _ -> Nothing
+                                )
                                 |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                       in
                       div
@@ -1152,16 +1127,11 @@ contentBlock shared model user =
                                     Le.Block.Select.renderSelectSingle
                                         selectItem
                                         model.inpUnitSelState
-                                        model.inpUnitSelMenu
+                                        (populateUnitMenu shared)
                                         "підрозділ"
                                         options2
                             ]
-                        , button
-                            [ Attr.title "Оновити список підрозділів"
-                            , class "icon-btn icon-btn-secondary"
-                            , onClick <| ReloadUnits
-                            ]
-                            [ i [ class "bi bi-arrow-repeat" ] [] ]
+
                         ]
                     ]
                 , input
