@@ -65,7 +65,7 @@ type alias Model =
     , now : Maybe Time.Posix
     , from : Le.Block.DateTime.Model
     , to : Le.Block.DateTime.Model
-    , masterUnits : Dict Int B.Unit
+
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
     , networks : RemoteData ApiError (List B.Network)
     , currentRequestTracker : Maybe String
@@ -93,7 +93,7 @@ type alias Model =
     , expandedRegiments : Set.Set String
     , expandedBattalions : Set.Set String
     , showOnlyInvestigating : Bool
-    , units : List B.Unit
+
     , loadingUnitStats : Bool
     , tableState : Table.State
     }
@@ -120,7 +120,7 @@ init _ =
             , now = Nothing
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
-            , masterUnits = Dict.empty
+
             , networks = NotAsked
             , currentRequestTracker = Nothing
             , requestCounter = 0
@@ -152,7 +152,7 @@ init _ =
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
-            , units = []
+
             , loadingUnitStats = True
             , tableState = Table.initialSort "Мережа"
             }
@@ -160,11 +160,6 @@ init _ =
     ( m2
     , E.batch
         [ E.sendCmd <| Task.attempt GotZone Le.Time.getZone
-        , E.getUnits UnitsReturnedByApi
-            { sortBy = Nothing
-            , afterUnitId = Nothing
-            , beforeUnitId = Nothing
-            }
         , E.getUnitStatsForNetworks UnitStatsReturnedByApi
         ]
     )
@@ -267,7 +262,7 @@ type Msg
     | FilterStateDebounceMsg Debounce.Msg
     | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)
     | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
-    | UnitsReturnedByApi (Result ApiError B.ListUnitsRsp)
+
     | UnitStatsReturnedByApi (Result ApiError B.NetworkUnitStatsRsp)
     | ReportModalOpenedByUser
     | ReportModalClosedByUser
@@ -450,22 +445,7 @@ update shared msg model =
                     E.none
             )
 
-        UnitsReturnedByApi (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
-            )
 
-        UnitsReturnedByApi (Ok rsp) ->
-            ( { model
-                | masterUnits =
-                    rsp.units
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-                , units = rsp.units
-                , loadingUnitStats = False
-              }
-            , E.none
-            )
 
         NetworksGroupsActivityReturnedByApi (Err err) ->
             ( { model | networksGroupsActivity = Failure err }
@@ -1043,7 +1023,13 @@ networksTableConfig shared model =
                                 , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
                                 , target "_blank"
                                 ]
-                                [ EUtils.renderNetworkNameWithoutType network model.masterUnits ]
+                                (case shared.masterUnits of
+                                    Success units ->
+                                        [ EUtils.renderNetworkNameWithoutType network units ]
+                                    
+                                    _ ->
+                                        [ text "Loading..." ]
+                                )
                             ]
                         }
                 , sorter = Table.increasingOrDecreasingBy (\network -> network.location)
@@ -1132,17 +1118,22 @@ networksTableConfig shared model =
                                                 Nothing ->
                                                     False
                                     in
-                                    CallsignsPopup.view
-                                        { isOpened = isOpen
-                                        , onClose = CallsignsPopupClosedByUser
-                                        , onOpen = CallsignsPopupOpenedByUser network.id
-                                        , callsigns = callsigns
-                                        , callsignsInfo = model.callsignsInfo
-                                        , masterUnits = model.masterUnits
-                                        }
-                                        (NetworksPage
-                                            network
-                                        )
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            CallsignsPopup.view
+                                                { isOpened = isOpen
+                                                , onClose = CallsignsPopupClosedByUser
+                                                , onOpen = CallsignsPopupOpenedByUser network.id
+                                                , callsigns = callsigns
+                                                , callsignsInfo = model.callsignsInfo
+                                                , masterUnits = units
+                                                }
+                                                (NetworksPage
+                                                    network
+                                                )
+                                        
+                                        _ ->
+                                            Le.Block.Spinner.loadingSpinnerSm
 
                                 _ ->
                                     Le.Block.Spinner.loadingSpinnerSm
@@ -1539,7 +1530,13 @@ unitsBlock shared model =
                 ]
             , investigatingFilter
             , div [ class "overflow-y-auto grow-1" ]
-                [ UnitHierarchy.view config model.units (RD.withDefault [] model.unitStats) ]
+                (case shared.masterUnits of
+                    Success units ->
+                        [ UnitHierarchy.view config (Dict.values units) (RD.withDefault [] model.unitStats) ]
+                    
+                    _ ->
+                        [ Le.Block.Spinner.loadingSpinner ]
+                )
             ]
 
 
@@ -1590,14 +1587,14 @@ view dark shared user model =
               Sidebar.view
                 isOpen
                 NetworksMergeFinish
-                (networksMergeSidebarContent model)
+                (networksMergeSidebarContent shared model)
             ]
         ]
     }
 
 
-networksMergeSidebarContent : Model -> List (Html Msg)
-networksMergeSidebarContent model =
+networksMergeSidebarContent : Shared.Model -> Model -> List (Html Msg)
+networksMergeSidebarContent shared model =
     case model.networksMergeStatus of
         Merging ( networkA, networkB ) preview remaining ->
             [ div [ class "p-[24px] flex flex-col gap-[24px]" ]
@@ -1632,15 +1629,25 @@ networksMergeSidebarContent model =
                         [ div [ class "flex gap-[8px] items-center mb-[8px]" ]
                             [ span [ class "basis-[80px]" ] [ text "залишаємо" ]
                             , span [ class "border-1 border-border p-[8px] rounded-lg font-medium" ]
-                                [ EUtils.renderNetworkNameWithoutType networkA model.masterUnits
-                                ]
+                                (case shared.masterUnits of
+                                    Success units ->
+                                        [ EUtils.renderNetworkNameWithoutType networkA units ]
+                                    
+                                    _ ->
+                                        [ text "Loading..." ]
+                                )
                             ]
                         , span [ onClick NetworksMergeSwapOrder, class "text-action cursor-pointer font-medium" ] [ text "змінити місцями" ]
                         , div [ class "flex gap-[8px] items-center mt-[8px]" ]
                             [ span [ class "basis-[80px]" ] [ text "вливаємо" ]
                             , span [ class "border-1 border-border p-[8px] rounded-lg font-medium" ]
-                                [ EUtils.renderNetworkNameWithoutType networkB model.masterUnits
-                                ]
+                                (case shared.masterUnits of
+                                    Success units ->
+                                        [ EUtils.renderNetworkNameWithoutType networkB units ]
+                                    
+                                    _ ->
+                                        [ text "Loading..." ]
+                                )
                             ]
                         ]
                     ]
@@ -1650,8 +1657,13 @@ networksMergeSidebarContent model =
                         [ li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
                             [ span [ class "text-sm font-medium  basis-1/3 shrink-0" ] [ text "Назва мережі" ]
                             , span []
-                                [ EUtils.renderNetworkNameWithoutType preview model.masterUnits
-                                ]
+                                (case shared.masterUnits of
+                                    Success units ->
+                                        [ EUtils.renderNetworkNameWithoutType preview units ]
+                                    
+                                    _ ->
+                                        [ text "Loading..." ]
+                                )
                             ]
                         , li [ class "flex gap-[4px] border-b-1 border-border py-[8px]" ]
                             [ span [ class "text-sm font-medium basis-1/3 shrink-0" ] [ text "Район функціонування/розгортання:" ]
