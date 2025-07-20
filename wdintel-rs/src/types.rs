@@ -34,6 +34,7 @@ pub struct Env {
     /// Used when you need to explicitly create a connection and block on it, like for streams.
     pub redisb: redis::Client,
     pub settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    pub version: String,
 }
 
 impl ToString for Mode {

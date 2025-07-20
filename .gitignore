@@ -16,6 +16,7 @@ deploy/config-backup.toml
 docs/public
 dosc/static/processed_images
 docs/echo-docs/target
+wdintel-rs/version.txt
 
 deploy/kibana/env-*
 deploy/vector/env-*

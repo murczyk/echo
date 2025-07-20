@@ -22,6 +22,15 @@ pub async fn main_server(
 
     let config = crate::config::read_config(mode).unwrap();
 
+    let version_file = match mode {
+        Mode::Debug => PathBuf::from(std::env::current_dir().unwrap()).to_path_buf(),
+        Mode::Live => PathBuf::from("usr/share/echo"),
+    }
+        .join("version.txt");
+    info!("version file: {}", version_file.display());
+
+    let version = tokio::fs::read_to_string(version_file).await.unwrap();
+
     let config1 = config.clone();
     let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
     let dbx4 = dbx.clone();
@@ -42,7 +51,7 @@ pub async fn main_server(
     if let Err(e) = crate::rer_importer::import_csv::ensure_import_group_exists(
         &dbx, &config,
     )
-    .await
+        .await
     {
         warn!("Failed to ensure import group exists: {:?}", e);
     };
@@ -92,7 +101,7 @@ pub async fn main_server(
                 crate::location::worker::process_location_v2_coords_worker(
                     &dbx8, mil_geo2,
                 )
-                .await;
+                    .await;
             });
         }
     }
@@ -152,6 +161,7 @@ pub async fn main_server(
             config: config.clone(),
             greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
             settlements: settlements.clone(),
+            version: version.clone(),
         };
         App::new()
             .wrap(actix_web::middleware::Compress::default())
@@ -372,7 +382,7 @@ pub async fn main_server(
             .service(crate::event_stream::long_poll)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
-    .bind((bind_ip, bind_port))?
-    .run()
-    .await
+        .bind((bind_ip, bind_port))?
+        .run()
+        .await
 }

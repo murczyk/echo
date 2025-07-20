@@ -778,6 +778,7 @@ type alias ServerInfo =
     , grafanaAddress : String
     , featureDelta : Bool
     , featureAnalysisMap : Bool
+    , version : String
     }
 
 
@@ -789,6 +790,7 @@ serverInfoEncoder struct =
         , ( "grafana_address", Json.Encode.string struct.grafanaAddress )
         , ( "feature_delta", Json.Encode.bool struct.featureDelta )
         , ( "feature_analysis_map", Json.Encode.bool struct.featureAnalysisMap )
+        , ( "version", Json.Encode.string struct.version )
         ]
 
 
@@ -4035,6 +4037,32 @@ freqPointEncoder struct =
         ]
 
 
+type alias ListFreqsForPeriodReq =
+    { sinceDateInclusiveMs : Int
+    , tillDateNoninclusiveMs : Maybe Int
+    }
+
+
+listFreqsForPeriodReqEncoder : ListFreqsForPeriodReq -> Json.Encode.Value
+listFreqsForPeriodReqEncoder struct =
+    Json.Encode.object
+        [ ( "since_date_inclusive_ms", Json.Encode.int struct.sinceDateInclusiveMs )
+        , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateNoninclusiveMs )
+        ]
+
+
+type alias ListFreqsForPeriodRsp =
+    { freqs : List String
+    }
+
+
+listFreqsForPeriodRspEncoder : ListFreqsForPeriodRsp -> Json.Encode.Value
+listFreqsForPeriodRspEncoder struct =
+    Json.Encode.object
+        [ ( "freqs", Json.Encode.list Json.Encode.string struct.freqs )
+        ]
+
+
 type alias ListPointsByFreqReq =
     { freq : String
     , sinceDateInclusiveMs : Int
@@ -4669,6 +4697,20 @@ updateNetworkPostsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", Json.Encode.int struct.networkId )
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
+        ]
+
+
+type alias UpdateNetworkUnitsReq =
+    { networkId : Int
+    , unitIds : List Int
+    }
+
+
+updateNetworkUnitsReqEncoder : UpdateNetworkUnitsReq -> Json.Encode.Value
+updateNetworkUnitsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "unit_ids", Json.Encode.list Json.Encode.int struct.unitIds )
         ]
 
 
@@ -5569,6 +5611,7 @@ serverInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grafana_address" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_delta" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_analysis_map" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" Json.Decode.string))
 
 
 uploadScreenshotResDecoder : Json.Decode.Decoder UploadScreenshotRes
@@ -7443,6 +7486,19 @@ freqPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
 
 
+listFreqsForPeriodReqDecoder : Json.Decode.Decoder ListFreqsForPeriodReq
+listFreqsForPeriodReqDecoder =
+    Json.Decode.succeed ListFreqsForPeriodReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable Json.Decode.int)))
+
+
+listFreqsForPeriodRspDecoder : Json.Decode.Decoder ListFreqsForPeriodRsp
+listFreqsForPeriodRspDecoder =
+    Json.Decode.succeed ListFreqsForPeriodRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list Json.Decode.string)))
+
+
 listPointsByFreqReqDecoder : Json.Decode.Decoder ListPointsByFreqReq
 listPointsByFreqReqDecoder =
     Json.Decode.succeed ListPointsByFreqReq
@@ -7770,6 +7826,13 @@ updateNetworkPostsReqDecoder =
     Json.Decode.succeed UpdateNetworkPostsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
+
+
+updateNetworkUnitsReqDecoder : Json.Decode.Decoder UpdateNetworkUnitsReq
+updateNetworkUnitsReqDecoder =
+    Json.Decode.succeed UpdateNetworkUnitsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list Json.Decode.int)))
 
 
 addNetworkDescriptionDecoder : Json.Decode.Decoder AddNetworkDescription

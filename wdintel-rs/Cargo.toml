@@ -125,6 +125,9 @@ features = [
 ]
 optional = true
 
+[build-dependencies]
+chrono = "0.4.41"
+
 [features]
 default = []
 opencv = ["dep:opencv"]
@@ -145,6 +148,7 @@ systemd-units = [
 depends = ""
 assets = [
 	[ "target/release/wdintel-rs", "usr/bin/", "755", ],
+	[ "version.txt", "usr/share/echo/", "755", ],
 	[ "../deploy/echo-whatsapp/echo-whatsapp", "usr/bin/", "755", ],
 	[ "../deploy/empty.txt", "etc/echo/echo-whatsapp/", "755", ],
     [ "../deploy/greptimedb/vector.yaml", "etc/echo/vector.yaml", "755", ],
