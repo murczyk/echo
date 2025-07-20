@@ -31,7 +31,7 @@ sudo tailscale up
 <details>
 
 ```
-sudo apt-get install nginx python3-pip gdal-data libopencv-dev libproj22 libprotobuf23 poppler-data proj-bin proj-data redis-server libxkbcommon-x11-0
+sudo apt-get install -y nginx python3-pip gdal-data libopencv-dev libproj22 libprotobuf23 poppler-data proj-bin proj-data redis-server libxkbcommon-x11-0
 ```
 
 </details>
@@ -41,7 +41,7 @@ sudo apt-get install nginx python3-pip gdal-data libopencv-dev libproj22 libprot
 <details>
 
 ```
-sudo apt-get install llvm libclang-dev clang poppler-utils ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
+sudo apt-get install -y llvm libclang-dev clang poppler-utils ffmpeg libssl-dev pkgconf cmake libopencv-dev libproj-dev sqlite3
 wget https://github.com/pdf2htmlEX/pdf2htmlEX/releases/download/v0.18.8.rc1/pdf2htmlEX-0.18.8.rc1-master-20200630-Ubuntu-focal-x86_64.deb
 sudo apt install ./pdf2htmlEX-0.18.8.rc1-master-20200630-Ubuntu-focal-x86_64.deb
 ```
@@ -109,7 +109,9 @@ local   all             all                                     md5
 </details>
 
 #### fix 'time zone "Europe/Kiev" not recognized' error
-`cd /usr/share/zoneinfo/Europe && sudo cp Kyiv Kiev && sudo systemctl restart postgresql`
+```
+cd /usr/share/zoneinfo/Europe && sudo cp Kyiv Kiev && sudo systemctl restart postgresql
+```
 
 ## Install python worker with NLP
 
