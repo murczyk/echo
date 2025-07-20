@@ -2024,7 +2024,7 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, &filter, true)
+    let freqs = load_freqs(&env.dbx, &groups, &filter, false)
         .await
         .context(h!())?;
 

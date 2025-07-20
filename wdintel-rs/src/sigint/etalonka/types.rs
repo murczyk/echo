@@ -65,20 +65,6 @@ pub struct FreqStatsRes {
     pub message_count: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct NetworkFreqsQueryRes {
-    pub network_freq_id: i64,
-    pub freq: String,
-    pub modulation: Option<String>,
-    pub message_count: i64,
-    pub callsigns: Option<Vec<String>>,
-    pub last_datetime: Option<i64>,
-    pub created_at: i64,
-    pub is_active: bool,
-    pub active_from: i64,
-    pub active_to: Option<i64>,
-}
-
 #[derive(
     Debug, Elm, ElmEncode, ElmDecode, Serialize, Deserialize, PartialEq, Clone,
 )]

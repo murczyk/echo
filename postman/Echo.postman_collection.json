@@ -390,6 +390,37 @@
 			"response": []
 		},
 		{
+			"name": "sigint/network-freqs-list",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"network_id\": 2415\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/network-freqs-list",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"network-freqs-list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/network-callsigns-list",
 			"request": {
 				"auth": {
