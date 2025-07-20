@@ -190,6 +190,12 @@ just server=echo-gpu deploy-rustdocs
 ## Delta integration
 [Delta.md](DELTA.md)
 
+Config with access details for delta is being stored in Hashicorp Vault. 
+Vault secrets are backed up in Bitwarden.
+One-off commands for backup Vault secrets:
+- backup: OneoffBackupVaultSecretsToBitwarden
+- restore: OneoffRestoreVaultSecretsFromBitwarden
+
 ## Wipe DB
 in order to erase data from db you may just run [clear_db.sql](deploy/clear_db.sql).
 it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
