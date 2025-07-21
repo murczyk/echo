@@ -176,34 +176,6 @@ update req msg model =
             , E.none
             )
 
-        MasterUnitsByIdLoadedByApi (Err err) ->
-            ( { model | masterUnits = Failure err }, E.none )
-
-        MasterUnitsByIdLoadedByApi (Ok rsp) ->
-            -- Update specific units in the masterUnits dict
-            let
-                updatedMasterUnits =
-                    case model.masterUnits of
-                        Success currentUnits ->
-                            List.foldl
-                                (\newUnit units ->
-                                    Dict.insert newUnit.id newUnit units
-                                )
-                                currentUnits
-                                rsp.units
-                                |> Success
-                        
-                        _ ->
-                            -- If masterUnits is not loaded yet, just use the new units
-                            rsp.units
-                                |> List.map (\x -> ( x.id, x ))
-                                |> Dict.fromList
-                                |> Success
-            in
-            ( { model | masterUnits = updatedMasterUnits }
-            , E.none
-            )
-
         CallsignsInfoReturnedByApi (Err e) ->
             ( model, E.none )
 
@@ -276,8 +248,11 @@ update req msg model =
 
         EventServiceStartPolling ->
             let
-                eventService = model.eventService
-                newEventService = { eventService | isPolling = True, error = Nothing, retryCount = 0, retryDelay = 1000 }
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService | isPolling = True, error = Nothing, retryCount = 0, retryDelay = 1000 }
             in
             ( { model | eventService = newEventService }
             , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Task.succeed ())
@@ -285,20 +260,26 @@ update req msg model =
 
         EventServiceStopPolling ->
             let
-                eventService = model.eventService
-                newEventService = { eventService | isPolling = False, error = Nothing }
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService | isPolling = False, error = Nothing }
             in
             ( { model | eventService = newEventService }, E.none )
 
         EventServicePollEvents ->
             if model.eventService.isPolling then
                 ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+
             else
                 ( model, E.none )
 
         EventServiceEventsReceived (Ok response) ->
             let
-                eventService = model.eventService
+                eventService =
+                    model.eventService
+
                 newEventService =
                     { eventService
                         | lastEventId = response.lastEventId
@@ -306,7 +287,7 @@ update req msg model =
                         , retryCount = 0
                         , retryDelay = 1000
                     }
-                
+
                 -- Process each event received
                 processEventsEffect =
                     List.map EventReceived response.events
@@ -322,10 +303,18 @@ update req msg model =
 
         EventServiceEventsReceived (Err error) ->
             let
-                newRetryCount = model.eventService.retryCount + 1
-                newRetryDelay = min 30000 (model.eventService.retryDelay * 2)
-                shouldRetry = newRetryCount <= 5 && model.eventService.isPolling
-                eventService = model.eventService
+                newRetryCount =
+                    model.eventService.retryCount + 1
+
+                newRetryDelay =
+                    min 30000 (model.eventService.retryDelay * 2)
+
+                shouldRetry =
+                    newRetryCount <= 5 && model.eventService.isPolling
+
+                eventService =
+                    model.eventService
+
                 newEventService =
                     { eventService
                         | error = Just (formatError error)
@@ -337,30 +326,38 @@ update req msg model =
                 ( { model | eventService = newEventService }
                 , E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
                 )
+
             else
                 ( { model | eventService = { newEventService | isPolling = False } }, E.none )
 
         EventServiceRetryPolling ->
             if model.eventService.isPolling then
                 ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+
             else
                 ( model, E.none )
 
         EventServiceResetRetryCount ->
             let
-                eventService = model.eventService
-                newEventService = { eventService | retryCount = 0, retryDelay = 1000 }
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService | retryCount = 0, retryDelay = 1000 }
             in
             ( { model | eventService = newEventService }, E.none )
 
         EventReceived event ->
             case event.eventType of
-                B.EtUnitChanged unitId ->
-                    -- Fetch specific unit by ID (no more hack with 0)
+                B.EtUnitChanged ->
                     ( { model | pendingEvents = event :: model.pendingEvents }
-                    , E.getUnitsById MasterUnitsByIdLoadedByApi { ids = Just [ unitId ] }
+                    , E.getUnits MasterUnitsLoadedByApi
+                        { sortBy = Nothing
+                        , afterUnitId = Nothing
+                        , beforeUnitId = Nothing
+                        }
                     )
-                
+
                 _ ->
                     -- Add event to pending events for distribution
                     ( { model | pendingEvents = event :: model.pendingEvents }
@@ -385,6 +382,7 @@ subscriptions _ _ =
     Ports.shared_getLocationRes GotLocation
 
 
+
 -- HTTP REQUESTS
 
 
@@ -402,6 +400,7 @@ pollEvents lastEventId =
         , body = Http.jsonBody (B.longPollReqEncoder request)
         , expect = leExpectJson EventServiceEventsReceived B.longPollRspDecoder
         }
+
 
 
 -- HELPERS
@@ -424,6 +423,3 @@ formatError error =
 
         Http.BadUrl url ->
             "Invalid URL: " ++ url
-
-
-

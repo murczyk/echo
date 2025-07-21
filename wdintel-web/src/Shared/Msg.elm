@@ -16,7 +16,6 @@ type Msg
     | ToggleDarkMode
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
-    | MasterUnitsByIdLoadedByApi (Result ApiError B.ListUnitsByIdRsp)
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | CallsignsInfoAskedByPage (List String)
     | PostLoadAll B.ListPostsReq
@@ -27,7 +26,7 @@ type Msg
     | ShowToastWithDetails String String
     | EventServiceStartPolling
     | EventServiceStopPolling
-    | EventServicePollEvents  
+    | EventServicePollEvents
     | EventServiceEventsReceived (Result ApiError B.LongPollRsp)
     | EventServiceRetryPolling
     | EventServiceResetRetryCount
