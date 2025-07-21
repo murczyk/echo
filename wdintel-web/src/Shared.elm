@@ -9,12 +9,16 @@ module Shared exposing
     )
 
 import Api
+import Bindings as B
 import Dict
 import Effect as E exposing (Effect)
 import Http
 import Json.Decode
 import Le.Block.Toast
+import Le.EventService
+import Le.EventTypes
 import Le.RemoteData as RD exposing (RemoteData(..))
+import Le.Types exposing (ApiError)
 import PagePorts.SharedPorts as Ports
 import Process
 import Route exposing (Route)
@@ -22,6 +26,7 @@ import Route.Path
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Task
+import Temp exposing (leExpectJson)
 import TimeZone
 import Url
 
@@ -77,6 +82,9 @@ init flagsResult route =
       , posts = NotAsked
       , toasts = Le.Block.Toast.init
       , featureNavbarFrontOnly = flags.featureNavbarFrontOnly
+      , eventService = Le.EventService.init
+      , pendingEvents = []
+      , eventSubscriptions = Dict.empty
       }
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
@@ -86,6 +94,7 @@ init flagsResult route =
             , afterUnitId = Nothing
             , beforeUnitId = Nothing
             }
+        , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         ]
     )
 
@@ -237,7 +246,180 @@ update req msg model =
             , E.sendCmd <| Le.Block.Toast.addErrorV2 ToastMsg title content
             )
 
+        EventServiceStartPolling ->
+            let
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService | isPolling = True, error = Nothing, retryCount = 0, retryDelay = 1000 }
+            in
+            ( { model | eventService = newEventService }
+            , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Task.succeed ())
+            )
+
+        EventServiceStopPolling ->
+            let
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService | isPolling = False, error = Nothing }
+            in
+            ( { model | eventService = newEventService }, E.none )
+
+        EventServicePollEvents ->
+            if model.eventService.isPolling then
+                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+
+            else
+                ( model, E.none )
+
+        EventServiceEventsReceived (Ok response) ->
+            let
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService
+                        | lastEventId = response.lastEventId
+                        , error = Nothing
+                        , retryCount = 0
+                        , retryDelay = 1000
+                    }
+
+                -- Process each event received
+                processEventsEffect =
+                    List.map EventReceived response.events
+                        |> List.map (\eventMsg -> E.sendCmd <| Task.perform (\_ -> eventMsg) (Task.succeed ()))
+                        |> E.batch
+            in
+            ( { model | eventService = newEventService }
+            , E.batch
+                [ processEventsEffect
+                , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
+                ]
+            )
+
+        EventServiceEventsReceived (Err error) ->
+            let
+                newRetryCount =
+                    model.eventService.retryCount + 1
+
+                newRetryDelay =
+                    min 30000 (model.eventService.retryDelay * 2)
+
+                shouldRetry =
+                    newRetryCount <= 5 && model.eventService.isPolling
+
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService
+                        | error = Just (formatError error)
+                        , retryCount = newRetryCount
+                        , retryDelay = newRetryDelay
+                    }
+            in
+            if shouldRetry then
+                ( { model | eventService = newEventService }
+                , E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling) (Process.sleep (toFloat newRetryDelay))
+                )
+
+            else
+                ( { model | eventService = { newEventService | isPolling = False } }, E.none )
+
+        EventServiceRetryPolling ->
+            if model.eventService.isPolling then
+                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+
+            else
+                ( model, E.none )
+
+        EventServiceResetRetryCount ->
+            let
+                eventService =
+                    model.eventService
+
+                newEventService =
+                    { eventService | retryCount = 0, retryDelay = 1000 }
+            in
+            ( { model | eventService = newEventService }, E.none )
+
+        EventReceived event ->
+            case event.eventType of
+                B.EtUnitChanged ->
+                    ( { model | pendingEvents = event :: model.pendingEvents }
+                    , E.getUnits MasterUnitsLoadedByApi
+                        { sortBy = Nothing
+                        , afterUnitId = Nothing
+                        , beforeUnitId = Nothing
+                        }
+                    )
+
+                _ ->
+                    -- Add event to pending events for distribution
+                    ( { model | pendingEvents = event :: model.pendingEvents }
+                    , E.none
+                    )
+
+        SubscribeToEvents pageId eventTypes ->
+            -- Add page subscription to event types
+            ( { model | eventSubscriptions = Le.EventTypes.subscribeToEvents pageId eventTypes model.eventSubscriptions }
+            , E.none
+            )
+
+        UnsubscribeFromEvents pageId ->
+            -- Remove page subscription
+            ( { model | eventSubscriptions = Le.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
+            , E.none
+            )
+
 
 subscriptions : Route () -> Model -> Sub Msg
 subscriptions _ _ =
     Ports.shared_getLocationRes GotLocation
+
+
+
+-- HTTP REQUESTS
+
+
+pollEvents : Maybe String -> Cmd Msg
+pollEvents lastEventId =
+    let
+        request : B.LongPollReq
+        request =
+            { sessionId = "current" -- We'll get this from session later
+            , lastEventId = lastEventId
+            }
+    in
+    Http.post
+        { url = "/api/event-stream/long-poll"
+        , body = Http.jsonBody (B.longPollReqEncoder request)
+        , expect = leExpectJson EventServiceEventsReceived B.longPollRspDecoder
+        }
+
+
+
+-- HELPERS
+
+
+formatError : ApiError -> String
+formatError error =
+    case error.httpError of
+        Http.BadStatus code ->
+            "HTTP Error: " ++ String.fromInt code
+
+        Http.BadBody message ->
+            "Invalid response: " ++ message
+
+        Http.NetworkError ->
+            "Network error - please check your connection"
+
+        Http.Timeout ->
+            "Request timed out"
+
+        Http.BadUrl url ->
+            "Invalid URL: " ++ url

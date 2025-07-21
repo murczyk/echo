@@ -276,6 +276,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
             crate::event_stream::types::EventMsg,
+            crate::event_stream::types::LongPollReq,
+            crate::event_stream::types::LongPollRsp,
         ],
         decoders: [
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
@@ -545,6 +547,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
             crate::event_stream::types::EventMsg,
+            crate::event_stream::types::LongPollReq,
+            crate::event_stream::types::LongPollRsp,
         ],
         queries: [],
         query_fields: [],

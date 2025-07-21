@@ -108,7 +108,11 @@ viewManagingLinks freq model shared =
                         div
                             [ class "w-full p-2  border border-border rounded-sm text-text flex justify-between items-center"
                             ]
-                            [ NetworksUtils.renderNetwork network_ model.masterUnits
+                            [ case shared.masterUnits of
+                                Success units ->
+                                    NetworksUtils.renderNetwork network_ units
+                                _ ->
+                                    text "Завантаження..."
                             , div [ class "flex gap-2" ]
                                 [ a [ class "text-blue-500 hover:underline", Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network_.id }, query = Dict.empty, hash = Nothing }, target "_blank" ] [ i [ class "bi bi-pencil" ] [] ]
                                 , button [ class "text-red-500 hover:underline", onClick (FreqRemoveFromExistingNetwork freq network_) ] [ i [ class "bi bi-trash" ] [] ]
@@ -164,7 +168,11 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                             (\unitId ->
                                 Select.basicMenuItem
                                     { item = unitId
-                                    , label = Unit.unitName model.masterUnits unitId
+                                    , label = case shared.masterUnits of
+                                        Success units ->
+                                            Unit.unitName units unitId
+                                        _ ->
+                                            "Завантаження..."
                                     }
                             )
 
@@ -192,13 +200,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                         ]
                         [ i [ class "bi bi-plus-lg" ] []
                         ]
-                    , button
-                        [ Attr.title "Оновити список підрозділів"
-                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-action text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw  py-[1px] px-[6px]"
-                        , onClick UnitsReloadClickedByUser
-                        ]
-                        [ i [ class "bi bi-arrow-clockwise" ] []
-                        ]
+
                     ]
                 ]
             , div [ class "flex items-center gap-2 mb-4 mt-2" ]
@@ -213,7 +215,12 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                 (if List.length networksToShow > 0 then
                     [ span [ class "text-[var(--neutral-600)]" ] [ text <| String.fromInt (List.length networksToShow) ++ " мереж знайдено" ]
                     , div [ class "flex flex-col gap-[4px] mt-2" ]
-                        (List.map (\network -> renderNetworkSelectionItem network selectedNetworkId model.masterUnits) networksToShow)
+                        (case shared.masterUnits of
+                            Success units ->
+                                List.map (\network -> renderNetworkSelectionItem network selectedNetworkId units) networksToShow
+                            _ ->
+                                []
+                        )
                     ]
 
                  else

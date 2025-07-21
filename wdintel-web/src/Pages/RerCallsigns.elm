@@ -49,7 +49,7 @@ page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared req =
     Page.new
         { init = init req
-        , update = update req
+        , update = update req shared
         , view = view shared.isDarkMode shared user
         , subscriptions = subscriptions
         }
@@ -66,12 +66,10 @@ toLayout user model =
 
 type alias Model =
     { zone : Maybe Time.Zone
-    , units : List B.Unit
     , callsigns : List B.Callsign
     , callsignsWithUnitsFromInbox : RemoteData ApiError (List ( String, List String ))
     , addState : EnumeratedList AddState
     , inpUnitSelState : Select.State
-    , inpUnitSelMenu : List (Select.MenuItem Int)
     , inpUnit : Maybe Int
     , editState : Maybe EditCallsignState
     , deleteCallsignConfirmation : Maybe Int
@@ -129,12 +127,10 @@ init req _ =
         m2 : Model
         m2 =
             { zone = Nothing
-            , units = []
             , callsigns = []
             , callsignsWithUnitsFromInbox = NotAsked
             , addState = EL.fromList [ initAddState mCallsignName ]
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
-            , inpUnitSelMenu = []
             , inpUnit = Nothing
             , editState = Nothing
             , deleteCallsignConfirmation = Nothing
@@ -182,7 +178,6 @@ init req _ =
 
 type Msg
     = InitGotZone (Result TimeZone.Error ( String, Time.Zone ))
-    | GotUnits (Result ApiError B.ListUnitsRsp)
     | GotCallsigns (Result ApiError B.ListCallsignsRsp)
     | GotCallsignsWithUnitsFromInbox (Result ApiError B.GetCallsignsWithUnitsFromInboxRsp)
     | AddStateMsg Int AddState
@@ -202,7 +197,6 @@ type Msg
     | DeleteCallsignDone (Result ApiError B.Callsign)
     | ClearInputs
     | GotSources (Result ApiError B.ListSourcesRsp)
-    | ReloadUnits
     | FilterCallsignMsg String
     | FilterPositionMsg String
     | FilterCommentMsg String
@@ -262,49 +256,55 @@ initAddState mCallsignName =
     { inpCallsign = Maybe.withDefault "" mCallsignName, inpPosition = "", inpComment = "", inpDeveloping = False, inpRadioFreq = "" }
 
 
+
 -- Helper function to convert frontend sorting to backend sorting
+
+
 sortingOrderToBackendSort : SortingOrder -> List B.ListCallsignsSortBy
 sortingOrderToBackendSort order =
     case order of
         CallsignAsc ->
             [ B.CallsignAsc ]
-        
+
         CallsignDesc ->
             [ B.CallsignDesc ]
-        
+
         CreatedAtAsc ->
             [ B.CallsignCreatedAtAsc ]
-        
+
         CreatedAtDesc ->
             [ B.CallsignCreatedAtDesc ]
-        
+
         UnitAsc ->
             [ B.CallsignUnitAsc ]
-        
+
         UnitDesc ->
             [ B.CallsignUnitDesc ]
-        
+
         Default ->
-            [] -- Use backend default
+            []
+
+
+
+-- Use backend default
 
 
 initLoad : Model -> Effect Msg
 initLoad model =
     E.batch
-        [ loadUnits
-        , loadCallsigns model
+        [ loadCallsigns model
         , loadSources
         , loadUnitStats
         ]
 
 
-loadUnits : Effect Msg
-loadUnits =
-    E.getUnits GotUnits
-        { sortBy = Nothing
-        , afterUnitId = Nothing
-        , beforeUnitId = Nothing
-        }
+-- Helper function to populate unit menu from shared masterUnits
+populateUnitMenu : Shared.Model -> List (Select.MenuItem Int)
+populateUnitMenu shared =
+    case shared.masterUnits of
+        Success units -> 
+            List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
+        _ -> []
 
 
 loadCallsignsCmd : Model -> Cmd Msg
@@ -488,8 +488,8 @@ filterUnitDebounceConfig =
     }
 
 
-update : Route () -> Msg -> Model -> ( Model, Effect Msg )
-update req msg model =
+update : Route () -> Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update req shared msg model =
     case msg of
         InitGotZone (Err e) ->
             ( model
@@ -521,36 +521,6 @@ update req msg model =
             ( m2
             , initLoad m2
             )
-
-        GotUnits (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
-            )
-
-        GotUnits (Ok rsp) ->
-            case Dict.get "unitId" req.query |> Maybe.andThen String.toInt of
-                Just unitId ->
-                    ( { model
-                        | units = rsp.units
-                        , inpUnitSelMenu =
-                            List.map
-                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                                rsp.units
-                        , inpUnit = List.filter (\x -> x.id == unitId) rsp.units |> List.head |> Maybe.map .id
-                      }
-                    , E.replaceRoute { path = Route.Path.RerCallsigns, hash = Nothing, query = Dict.remove "unitId" req.query }
-                    )
-
-                Nothing ->
-                    ( { model
-                        | units = rsp.units
-                        , inpUnitSelMenu =
-                            List.map
-                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                                rsp.units
-                      }
-                    , E.none
-                    )
 
         GotCallsigns (Err err) ->
             ( { model | loading = False, loadingMore = False }
@@ -633,7 +603,11 @@ update req msg model =
                     Le.Block.Select.singleUpd mAction model.inpUnit
 
                 mUnit =
-                    mUnitId |> andThen (\unitId -> ListX.find (\y -> y.id == unitId) model.units)
+                    mUnitId |> andThen (\unitId -> 
+                        case shared.masterUnits of
+                            Success units -> ListX.find (\y -> y.id == unitId) (Dict.values units)
+                            _ -> Nothing
+                    )
 
                 -- Only update filterUnit if there's an actual selection change
                 shouldUpdateFilter =
@@ -765,9 +739,12 @@ update req msg model =
                                     Select.initState
                                         (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt id)
                                 , inpUnitSelMenu =
-                                    List.map
-                                        (\u -> Select.basicMenuItem { item = u.id, label = u.name })
-                                        model.units
+                                    case shared.masterUnits of
+                                        Success units -> 
+                                            List.map
+                                                (\u -> Select.basicMenuItem { item = u.id, label = u.name })
+                                                (Dict.values units)
+                                        _ -> []
                                 , inpDeveloping = callsign.developing
                                 , inpRadioFreq = callsign.radioFreq |> def ""
                                 }
@@ -915,9 +892,6 @@ update req msg model =
               }
             , E.none
             )
-
-        ReloadUnits ->
-            ( model, loadUnits )
 
         FilterCallsignMsg v ->
             let
@@ -1098,8 +1072,10 @@ update req msg model =
                     case model.sortingOrder of
                         CallsignAsc ->
                             CallsignDesc
+
                         CallsignDesc ->
                             UnitAsc
+
                         _ ->
                             CallsignAsc
 
@@ -1214,7 +1190,11 @@ update req msg model =
                         , inpUnitId = callsign.unitId
                         , inpSourceId = callsign.sourceId
                         , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt callsign.id)
-                        , inpUnitSelMenu = List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) model.units
+                        , inpUnitSelMenu = 
+                            case shared.masterUnits of
+                                Success units -> 
+                                    List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
+                                _ -> []
                         , inpDeveloping = callsign.developing
                         , inpRadioFreq = callsign.radioFreq |> def ""
                         }
@@ -1277,8 +1257,10 @@ update req msg model =
                     case model.sortingOrder of
                         CreatedAtAsc ->
                             CreatedAtDesc
+
                         CreatedAtDesc ->
                             CallsignAsc
+
                         _ ->
                             CreatedAtDesc
 
@@ -1298,8 +1280,10 @@ update req msg model =
                     case model.sortingOrder of
                         UnitAsc ->
                             UnitDesc
+
                         UnitDesc ->
                             CallsignAsc
+
                         _ ->
                             UnitAsc
 
@@ -1340,39 +1324,45 @@ callsignsTableConfig shared model user =
                                     case model.sortingOrder of
                                         CallsignAsc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                                         CallsignDesc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                                         _ ->
                                             span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
                             in
                             ( icon, onClick SortByCallsignName )
-                        
+
                         "Створено" ->
                             let
                                 icon =
                                     case model.sortingOrder of
                                         CreatedAtAsc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                                         CreatedAtDesc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                                         _ ->
                                             span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
                             in
                             ( icon, onClick SortByCreatedAt )
-                        
+
                         "Підрозділ" ->
                             let
                                 icon =
                                     case model.sortingOrder of
                                         UnitAsc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                                         UnitDesc ->
                                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                                         _ ->
                                             span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
                             in
                             ( icon, onClick SortByUnit )
-                        
+
                         _ ->
                             ( text "", onClick SortByCallsignName )
 
@@ -1452,7 +1442,11 @@ callsignsTableConfig shared model user =
                     \callsign ->
                         { attributes = []
                         , children =
-                            [ case ListX.find (\u -> u.id == callsign.unitId) model.units of
+                            [ case 
+                                case shared.masterUnits of
+                                    Success units -> ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+                                    _ -> Nothing
+                              of
                                 Nothing ->
                                     text "<Виберіть підрозділ>"
 
@@ -1476,7 +1470,9 @@ callsignsTableConfig shared model user =
                                 Success callsignsWithUnitsFromInbox ->
                                     let
                                         unit =
-                                            ListX.find (\u -> u.id == callsign.unitId) model.units
+                                            case shared.masterUnits of
+                                                Success units -> ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+                                                _ -> Nothing
 
                                         callsignWithUnitsFromInbox =
                                             ListX.find
@@ -1656,7 +1652,9 @@ editSidebarContent model shared user =
                                 , let
                                     selectItem : Maybe (Select.MenuItem Int)
                                     selectItem =
-                                        ListX.find (\unit -> unit.id == editState.inpUnitId) model.units
+                                        (case shared.masterUnits of
+                                            Success units -> ListX.find (\unit -> unit.id == editState.inpUnitId) (Dict.values units)
+                                            _ -> Nothing)
                                             |> Maybe.map
                                                 (\unit ->
                                                     Select.basicMenuItem
@@ -1831,7 +1829,11 @@ contentBlock shared model user =
                         let
                             selectItem =
                                 model.inpUnit
-                                    |> Maybe.andThen (\unitId -> ListX.find (\u -> u.id == unitId) model.units)
+                                    |> Maybe.andThen (\unitId -> 
+                                        case shared.masterUnits of
+                                            Success units -> ListX.find (\u -> u.id == unitId) (Dict.values units)
+                                            _ -> Nothing
+                                    )
                                     |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                         in
                         div [ class "flex items-center gap-2" ]
@@ -1848,17 +1850,10 @@ contentBlock shared model user =
                                         Le.Block.Select.renderSelectSingle
                                             selectItem
                                             model.inpUnitSelState
-                                            model.inpUnitSelMenu
+                                            (populateUnitMenu shared)
                                             "жоден"
                                             options2
                                 ]
-                            , button
-                                [ title "Оновити підрозділи"
-                                , class "icon-btn icon-btn-secondary"
-                                , onClick ReloadUnits
-                                , Attr.disabled (not hasEditorRole)
-                                ]
-                                [ i [ class "bi bi-arrow-repeat" ] [] ]
                             ]
                     ]
                 , div [ class "col-span-2" ]
@@ -2091,7 +2086,6 @@ contentBlock shared model user =
 
         -- Remove frontend sorting since we're now doing it on the backend
         -- sortByName model_ callsigns_ = callsigns_
-
         mainContent =
             div []
                 [ div
@@ -2140,7 +2134,11 @@ contentBlock shared model user =
                                     (\callsign ->
                                         let
                                             unitName =
-                                                case ListX.find (\u -> u.id == callsign.unitId) model.units of
+                                                case 
+                                                    case shared.masterUnits of
+                                                        Success units -> ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+                                                        _ -> Nothing
+                                                  of
                                                     Nothing ->
                                                         "<Виберіть підрозділ>"
 
@@ -2241,7 +2239,11 @@ unitsBlock shared model =
                 , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
                     [ Html.text "Оберіть підрозділ для фільтрації" ]
                 ]
-            , UnitHierarchy.view config model.units model.unitStats
+            , UnitHierarchy.view config 
+                (case shared.masterUnits of
+                    Success units -> Dict.values units
+                    _ -> []) 
+                model.unitStats
             ]
 
 

@@ -81,7 +81,7 @@ init _ =
             , freqs = []
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
-            , masterUnits = Dict.empty
+
             , networks = Dict.empty
             , filterState =
                 { freq = ""
@@ -207,13 +207,7 @@ init _ =
     )
 
 
-loadUnits : Effect Msg
-loadUnits =
-    E.getUnits UnitsReturnedByApi
-        { sortBy = Nothing
-        , afterUnitId = Nothing
-        , beforeUnitId = Nothing
-        }
+
 
 
 filterStateDebounceConfig : Debounce.Config Msg
@@ -226,8 +220,7 @@ filterStateDebounceConfig =
 initLoad : Model -> Effect Msg
 initLoad model =
     E.batch <|
-        [ loadUnits
-        , E.sendCmd <| loadFreqs model False
+        [ E.sendCmd <| loadFreqs model False
         , E.sendCmd <|
             Api.sigint_freq_unit_stats UnitStatsReturnedByApi
         ]
@@ -664,23 +657,7 @@ update shared msg model =
             in
             ( m2, initLoad m2 )
 
-        UnitsReturnedByApi (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
-            )
 
-        UnitsReturnedByApi (Ok rsp) ->
-            ( { model
-                | masterUnits =
-                    rsp.units
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-              }
-            , E.none
-            )
-
-        UnitsReload ->
-            ( model, loadUnits )
 
         NetworkAddUnitSelMsg imsg ->
             let
@@ -717,7 +694,11 @@ update shared msg model =
                         Just (Select.Select i) ->
                             let
                                 a =
-                                    Utils.findConnectedNetworks (Just i) model.networks model.masterUnits
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Utils.findConnectedNetworks (Just i) model.networks units
+                                        _ ->
+                                            []
 
                                 -- Filter out networks already connected to this frequency
                                 alreadyConnectedNetworkIds =
@@ -1456,8 +1437,7 @@ update shared msg model =
         Confirmation2InputChangedByUser val ->
             ( { model | addConfirmationInp = Just val }, E.none )
 
-        UnitsReloadClickedByUser ->
-            ( model, loadUnits )
+
 
         NetworkAddExistingActiveFromChanged x ->
             ( { model
@@ -1793,18 +1773,22 @@ freqsTableConfig shared model user =
                                         _ ->
                                             False
                               in
-                              CallsignsPopup.view
-                                { isOpened = isOpen
-                                , onClose = RowShowAllPopupChanged Nothing
-                                , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllCallsigns )
-                                , callsigns = callsigns
-                                , callsignsInfo = model.callsignsInfo
-                                , masterUnits = model.masterUnits
-                                }
-                                (FreqsPage
-                                    freq.freq
-                                    model.networks
-                                )
+                              case shared.masterUnits of
+                                Success units ->
+                                    CallsignsPopup.view
+                                        { isOpened = isOpen
+                                        , onClose = RowShowAllPopupChanged Nothing
+                                        , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllCallsigns )
+                                        , callsigns = callsigns
+                                        , callsignsInfo = model.callsignsInfo
+                                        , masterUnits = units
+                                        }
+                                        (FreqsPage
+                                            freq.freq
+                                            model.networks
+                                        )
+                                _ ->
+                                    div [] [ text "Завантаження..." ]
                             ]
                         }
                 , sorter = Table.unsortable
@@ -1888,7 +1872,7 @@ freqsTableConfig shared model user =
                 , viewData =
                     \freq ->
                         { attributes = []
-                        , children = viewFreqBlock shared.user model freq
+                        , children = viewFreqBlock shared.user shared model freq
                         }
                 , sorter = Table.unsortable
                 }
@@ -2034,8 +2018,8 @@ freqsTableConfig shared model user =
         }
 
 
-viewFreqBlock : Maybe B.User -> Model -> B.Freq -> List (Html Msg)
-viewFreqBlock mUser model freq =
+viewFreqBlock : Maybe B.User -> Shared.Model -> Model -> B.Freq -> List (Html Msg)
+viewFreqBlock mUser shared model freq =
     let
         editBlock =
             case mUser of
@@ -2067,7 +2051,11 @@ viewFreqBlock mUser model freq =
                         case Dict.get networkId model.networks of
                             Just network ->
                                 span [ class "inline-flex items-center gap-1" ]
-                                    [ NetworksUtils.renderNetwork network model.masterUnits
+                                    [ case shared.masterUnits of
+                                        Success units ->
+                                            NetworksUtils.renderNetwork network units
+                                        _ ->
+                                            text "Завантаження..."
                                     , case network.unitIds of
                                         Nothing ->
                                             span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
@@ -2210,7 +2198,12 @@ unitsBlock shared model =
                 ]
             , investigatingFilter
             , div [ class "overflow-y-auto grow-1" ]
-                [ UnitHierarchy.view config (Dict.toList model.masterUnits |> List.map Tuple.second) model.unitStats ]
+                [ case shared.masterUnits of
+                    Success units ->
+                        UnitHierarchy.view config (Dict.toList units |> List.map Tuple.second) model.unitStats
+                    _ ->
+                        div [] [ text "Завантаження підрозділів..." ]
+                ]
             ]
 
 

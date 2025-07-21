@@ -5237,6 +5237,34 @@ eventMsgEncoder struct =
         ]
 
 
+type alias LongPollReq =
+    { sessionId : String
+    , lastEventId : Maybe String
+    }
+
+
+longPollReqEncoder : LongPollReq -> Json.Encode.Value
+longPollReqEncoder struct =
+    Json.Encode.object
+        [ ( "session_id", Json.Encode.string struct.sessionId )
+        , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.lastEventId )
+        ]
+
+
+type alias LongPollRsp =
+    { events : List EventMsg
+    , lastEventId : Maybe String
+    }
+
+
+longPollRspEncoder : LongPollRsp -> Json.Encode.Value
+longPollRspEncoder struct =
+    Json.Encode.object
+        [ ( "events", Json.Encode.list eventMsgEncoder struct.events )
+        , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.lastEventId )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -8187,3 +8215,17 @@ eventMsgDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" eventTypeDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+
+
+longPollReqDecoder : Json.Decode.Decoder LongPollReq
+longPollReqDecoder =
+    Json.Decode.succeed LongPollReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "session_id" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable Json.Decode.string)))
+
+
+longPollRspDecoder : Json.Decode.Decoder LongPollRsp
+longPollRspDecoder =
+    Json.Decode.succeed LongPollRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list eventMsgDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable Json.Decode.string)))

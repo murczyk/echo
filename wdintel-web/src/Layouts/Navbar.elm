@@ -9,6 +9,7 @@ import Html.Attributes exposing (class, classList)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
 import Le.Block.Toast as Toast
+
 import Le.Types exposing (ApiError)
 import Process
 import Route exposing (Route)
@@ -47,7 +48,9 @@ init : () -> ( Model, Effect Msg )
 init _ =
     ( { isNavbarVisible = True
       }
-    , E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
+    , E.batch
+        [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
+        ]
     )
 
 
@@ -95,6 +98,8 @@ update route msg model =
 
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
+
+       
 
 
 subscriptions : Model -> Sub Msg
