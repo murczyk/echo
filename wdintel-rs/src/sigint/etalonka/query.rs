@@ -215,7 +215,10 @@ pub async fn load_freqs(
             Alias::new("created_at"),
         )
         .expr_as(
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveFrom)),
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ActiveFrom,
+            )),
             Alias::new("active_from"),
         )
         .expr_as(
@@ -255,7 +258,7 @@ pub async fn load_freqs(
             .equals((Modulation::Table, Modulation::Id)),
         )
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             Alias::new("agg"),
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id))
                 .equals((Alias::new("agg"), Alias::new("network_freq_id"))),
@@ -291,10 +294,14 @@ pub async fn load_freqs(
         .context(h!())?
         .iter()
         .map(|row| -> Result<NetworkFreqsRes, AppError> {
-            let row_callsigns = row.try_get("", "callsigns").context(h!())?;
-            let row_callsigns =
-                serde_json::from_value::<Vec<Vec<String>>>(row_callsigns)
-                    .context(h!())?;
+            let row_callsigns: Option<serde_json::Value> =
+                row.try_get("", "callsigns").ok();
+            let row_callsigns = row_callsigns
+                .map(|val| serde_json::from_value::<Vec<Vec<String>>>(val))
+                .transpose()
+                .context(h!())?
+                .map(flatten_and_dedup);
+
             let created_at: NaiveDateTime =
                 row.try_get("", "created_at").context(h!())?;
             let active_from: NaiveDateTime =
@@ -312,12 +319,12 @@ pub async fn load_freqs(
                 freq: row.try_get("", "freq").unwrap_or_default(),
                 modulation: row.try_get("", "modulation_name").ok(),
                 message_count: row.try_get("", "message_count").unwrap_or(0),
-                callsigns: (!row_callsigns.is_empty())
-                    .then(|| flatten_and_dedup(row_callsigns)),
+                callsigns: row_callsigns,
                 last_datetime: row
                     .try_get("", "last_datetime")
-                    .map(|dt: NaiveDateTime| dt.and_utc().timestamp_millis())
-                    .ok(),
+                    .ok()
+                    .map(|dt: NaiveDateTime| dt.and_utc().timestamp_millis()),
+
                 created_at: created_at.and_utc().timestamp_millis(),
                 is_active: active_to.is_none(),
                 active_from,
@@ -706,6 +713,11 @@ pub async fn get_active_callsigns(
         .cte(unique_callsigns_cte)
         .clone()
         .query(main_query);
+
+    // debug!(
+    //     "> active callsigns query: {}",
+    //     combined_query.to_string(PostgresQueryBuilder)
+    // );
 
     let records: Vec<CallsignQueryResult> = db
         .query_all(Statement::from_string(
