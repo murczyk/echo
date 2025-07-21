@@ -1654,7 +1654,7 @@ update shared user msg model =
 
         GotInboxMessagesDigest (Err e) ->
             ( { model | loadingInboxDigest = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статусу повідомлень" e
+            , E.none
             )
 
         InboxLoopSleptBeforeLoadNewer ->
