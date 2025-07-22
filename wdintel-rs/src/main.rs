@@ -25,6 +25,7 @@ pub mod kml;
 pub mod kv;
 mod location;
 pub mod log_api;
+pub mod messenger;
 pub mod migration;
 pub mod ml;
 pub mod nlp;
