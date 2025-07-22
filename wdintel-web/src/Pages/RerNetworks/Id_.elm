@@ -28,11 +28,13 @@ import Le.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
 import Le.Utils exposing (networkKindVHFMapping)
 import List.Extra as ListX
 import Page exposing (Page)
+import Process
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set
 import Shared
+import Task
 import Time
 import Time.Extra
 import Url.Builder
@@ -172,8 +174,10 @@ type alias Model =
     , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode B.UpdateNetworkReq
     , missingFieldsMode : Mode B.UpdateNetworkReq
+    , missingFieldsEditLoading : Bool
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
+    , editUnitsSelect : Le.Block.Select.SelectType Int
     , addConfirmationInp : String
     , addConfirmationFreqSelect : Le.Block.Select.SelectTypeSingle String
     , addSignsInp : String
@@ -202,6 +206,7 @@ init route shared () =
       , networks = NotAsked
       , mode = Readonly
       , missingFieldsMode = Readonly
+      , missingFieldsEditLoading = False
       , editKindSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
             , items =
@@ -217,6 +222,11 @@ init route shared () =
             }
       , editPostsSelect =
             { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
+            , items = []
+            , selected = []
+            }
+      , editUnitsSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-units-state")
             , items = []
             , selected = []
             }
@@ -278,8 +288,12 @@ type Msg
     | FreqUpdatedByApi (Result ApiError B.Network)
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
+    | NetworkUnitsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
+    | NetworkEditUnitsSelMsg (Select.Msg Int)
+    | UnitsSearchDebounceTimerExpired String
+    | UnitsSearchReturned (Result ApiError B.ListUnitsByIdRsp)
     | DescriptionAddClickedByUser Int B.NetworkDescrType
     | NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
     | ConfirmationInputChangedByUser String
@@ -329,15 +343,22 @@ update shared msg model =
                 postsSelect =
                     model.editPostsSelect
 
+                unitsSelect =
+                    model.editUnitsSelect
+
                 --kindSelect2 =
                 --TODO{ kindSelect | selected = EUtils.networkKindFromString res.kind }
                 postsSelect2 =
                     { postsSelect | selected = res.postIds }
+
+                unitsSelect2 =
+                    { unitsSelect | selected = Maybe.withDefault [] res.unitIds }
             in
             ( { model
                 | network = Success res
                 , editKindSelect = kindSelect
                 , editPostsSelect = postsSelect2
+                , editUnitsSelect = unitsSelect2
               }
             , E.batch
                 [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = res.id }
@@ -498,7 +519,7 @@ update shared msg model =
         MissingFieldsEditSavedByUser ->
             case model.missingFieldsMode of
                 Editing edit ->
-                    ( model, E.updateNetwork MissingFieldsUpdatedByApi edit )
+                    ( { model | missingFieldsEditLoading = True }, E.updateNetworkPosts (NetworkPostsUpdatedByApi edit) { networkId = edit.id, postIds = model.editPostsSelect.selected } )
 
                 Readonly ->
                     ( model, E.none )
@@ -520,20 +541,28 @@ update shared msg model =
             )
 
         NetworkPostsUpdatedByApi _ (Err e) ->
-            ( model
+            ( { model | missingFieldsEditLoading = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
             )
 
         NetworkPostsUpdatedByApi editState (Ok _) ->
+            ( model, E.updateNetworkUnits (NetworkUnitsUpdatedByApi editState) { networkId = editState.id, unitIds = model.editUnitsSelect.selected } )
+
+        NetworkUnitsUpdatedByApi editState (Ok _) ->
             ( model, E.updateNetwork NetworkUpdatedByApi editState )
 
+        NetworkUnitsUpdatedByApi editState (Err e) ->
+            ( { model | missingFieldsEditLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів мережі" e
+            )
+
         NetworkUpdatedByApi (Err e) ->
-            ( model
+            ( { model | missingFieldsEditLoading = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
             )
 
         NetworkUpdatedByApi (Ok network) ->
-            ( { model | network = Success network, mode = Readonly }, E.none )
+            ( { model | network = Success network, mode = Readonly, missingFieldsMode = Readonly, missingFieldsEditLoading = False }, E.none )
 
         MissingFieldsUpdatedByApi (Err e) ->
             ( model
@@ -610,21 +639,10 @@ update shared msg model =
                                 , items = items
                             }
 
-                        network =
-                            model.network
-
-                        n2 =
-                            case network of
-                                Success n ->
-                                    Success { n | postIds = updatedNetworkPosts }
-
-                                _ ->
-                                    network
                     in
                     ( { model
                         | editPostsSelect = postsSelect2
                         , missingFieldsMode = Editing editNetworkState
-                        , network = n2
                       }
                     , E.sendCmd <|
                         Cmd.map
@@ -634,6 +652,96 @@ update shared msg model =
 
                 _ ->
                     ( model, E.none )
+
+        NetworkEditUnitsSelMsg imsg ->
+            case model.missingFieldsMode of
+                Editing editNetworkState ->
+                    let
+                        ( mAct, imodel, icmd ) =
+                            Select.update imsg model.editUnitsSelect.state
+
+                        updatedNetworkUnits =
+                            Le.Block.Select.multiUpdI mAct model.editUnitsSelect.selected
+
+                        -- Single pattern match handling all cases
+                        ( m1, cmd1 ) =
+                            case mAct of
+                                Just (Select.InputChange query) ->
+                                    if String.length query > 2 then
+                                        ( model
+                                        , Task.perform (\_ -> UnitsSearchDebounceTimerExpired query)
+                                            (Process.sleep 300)
+                                        )
+
+                                    else
+                                        let
+                                            us =
+                                                model.editUnitsSelect
+
+                                            us2 =
+                                                { us | items = [] }
+                                        in
+                                        ( { model | editUnitsSelect = us2 }
+                                        , Cmd.none
+                                        )
+
+                                _ ->
+                                    ( model, Cmd.none )
+
+                        unitsSelect =
+                            m1.editUnitsSelect
+
+                        --TODO: remove this hack
+                        items =
+                            case ( unitsSelect.items, shared.masterUnits ) of
+                                ( [], Success units ) ->
+                                    if List.length (Dict.toList units) > 0 then
+                                        List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) (Dict.values units)
+
+                                    else
+                                        unitsSelect.items
+
+                                _ ->
+                                    unitsSelect.items
+
+                        unitsSelect2 =
+                            { unitsSelect
+                                | state = imodel
+                                , selected = updatedNetworkUnits
+                                , items = items
+                            }
+                    in
+                    ( { m1
+                        | editUnitsSelect = unitsSelect2
+                        , missingFieldsMode = Editing editNetworkState
+                      }
+                    , E.batch
+                        [ E.sendCmd <|
+                            Cmd.map
+                                NetworkEditUnitsSelMsg
+                                icmd
+                        , E.sendCmd cmd1
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        UnitsSearchDebounceTimerExpired search ->
+            ( model, E.sendCmd <| Api.units_search UnitsSearchReturned "units-search" { search = search } )
+
+        UnitsSearchReturned (Err e) ->
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження одиниць" e )
+
+        UnitsSearchReturned (Ok res) ->
+            let
+                unitsSelect =
+                    model.editUnitsSelect
+
+                unitsSelect2 =
+                    { unitsSelect | items = List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) res.units }
+            in
+            ( { model | editUnitsSelect = unitsSelect2 }, E.none )
 
         DescriptionAddClickedByUser networkId descType ->
             let
@@ -2114,8 +2222,14 @@ missingFieldsEditBlock user network updNetworkReq shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 [] [ text "Загальне" ]
         , div [ class "flex gap-[8px]" ]
-            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditCanceledByUser, title "Скасувати" ] []
-            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditSavedByUser, title "Зберегти" ] []
+            [ if model.missingFieldsEditLoading then
+                i [ class "bi bi-x-square text-gray-400 text-[20px]", title "Скасувати" ] []
+              else
+                i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditCanceledByUser, title "Скасувати" ] []
+            , if model.missingFieldsEditLoading then
+                i [ class "text-[20px]" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
+              else
+                i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditSavedByUser, title "Зберегти" ] []
             ]
         ]
     , div [ class "space-y-3" ]
@@ -2146,7 +2260,35 @@ missingFieldsEditBlock user network updNetworkReq shared model =
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text "Редагування підрозділів поки недоступне" ]
+                [ div [ class "w-full" ]
+                    [ let
+                        selectedItems =
+                            List.map
+                                (\unitId ->
+                                    Select.basicMenuItem
+                                        { item = unitId
+                                        , label =
+                                            RD.withDefault Dict.empty shared.masterUnits
+                                                |> Dict.get unitId
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ""
+                                        }
+                                )
+                                model.editUnitsSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map NetworkEditUnitsSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.editUnitsSelect.state
+                                model.editUnitsSelect.items
+                                "почніть вводити назву підрозділу"
+                                defaultOptions
+                    ]
+                ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Пости:" ]
