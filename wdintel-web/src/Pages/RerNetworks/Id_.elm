@@ -28,13 +28,11 @@ import Le.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
 import Le.Utils exposing (networkKindVHFMapping)
 import List.Extra as ListX
 import Page exposing (Page)
-import Process
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set
 import Shared
-import Task
 import Time
 import Time.Extra
 import Url.Builder
@@ -292,8 +290,6 @@ type Msg
     | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
     | NetworkEditUnitsSelMsg (Select.Msg Int)
-    | UnitsSearchDebounceTimerExpired String
-    | UnitsSearchReturned (Result ApiError B.ListUnitsByIdRsp)
     | DescriptionAddClickedByUser Int B.NetworkDescrType
     | NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
     | ConfirmationInputChangedByUser String
@@ -663,46 +659,17 @@ update shared msg model =
                         updatedNetworkUnits =
                             Le.Block.Select.multiUpdI mAct model.editUnitsSelect.selected
 
-                        -- Single pattern match handling all cases
-                        ( m1, cmd1 ) =
-                            case mAct of
-                                Just (Select.InputChange query) ->
-                                    if String.length query > 2 then
-                                        ( model
-                                        , Task.perform (\_ -> UnitsSearchDebounceTimerExpired query)
-                                            (Process.sleep 300)
-                                        )
-
-                                    else
-                                        let
-                                            us =
-                                                model.editUnitsSelect
-
-                                            us2 =
-                                                { us | items = [] }
-                                        in
-                                        ( { model | editUnitsSelect = us2 }
-                                        , Cmd.none
-                                        )
-
-                                _ ->
-                                    ( model, Cmd.none )
-
                         unitsSelect =
-                            m1.editUnitsSelect
+                            model.editUnitsSelect
 
-                        --TODO: remove this hack
+                        -- Always use shared.masterUnits for local filtering
                         items =
-                            case ( unitsSelect.items, shared.masterUnits ) of
-                                ( [], Success units ) ->
-                                    if List.length (Dict.toList units) > 0 then
-                                        List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) (Dict.values units)
-
-                                    else
-                                        unitsSelect.items
+                            case shared.masterUnits of
+                                Success units ->
+                                    List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) (Dict.values units)
 
                                 _ ->
-                                    unitsSelect.items
+                                    []
 
                         unitsSelect2 =
                             { unitsSelect
@@ -711,37 +678,20 @@ update shared msg model =
                                 , items = items
                             }
                     in
-                    ( { m1
+                    ( { model
                         | editUnitsSelect = unitsSelect2
                         , missingFieldsMode = Editing editNetworkState
                       }
-                    , E.batch
-                        [ E.sendCmd <|
-                            Cmd.map
-                                NetworkEditUnitsSelMsg
-                                icmd
-                        , E.sendCmd cmd1
-                        ]
+                    , E.sendCmd <|
+                        Cmd.map
+                            NetworkEditUnitsSelMsg
+                            icmd
                     )
 
                 _ ->
                     ( model, E.none )
 
-        UnitsSearchDebounceTimerExpired search ->
-            ( model, E.sendCmd <| Api.units_search UnitsSearchReturned "units-search" { search = search } )
 
-        UnitsSearchReturned (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження одиниць" e )
-
-        UnitsSearchReturned (Ok res) ->
-            let
-                unitsSelect =
-                    model.editUnitsSelect
-
-                unitsSelect2 =
-                    { unitsSelect | items = List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) res.units }
-            in
-            ( { model | editUnitsSelect = unitsSelect2 }, E.none )
 
         DescriptionAddClickedByUser networkId descType ->
             let
