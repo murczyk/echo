@@ -1,4 +1,5 @@
 ## NEXT
+- [#964](https://github.com/echoua/echo/issues/964) Звіт "бабак". Виправлено помилку з дублюванням повідомлень
 - [#1055](https://github.com/echoua/echo/issues/1055) Оперативний. Покращено парсинг постів
 - [#934](https://github.com/echoua/echo/issues/943) Додано новий АРІ для кращого пошуку підрозділів та мереж. **УВАГА! Після деплою потрібно запустити oneoff-reprocess-units-search-index**
 - [#1029](https://github.com/echoua/echo/issues/1029) Мережа. Покращено продуктивність запиту позивних для мережі
