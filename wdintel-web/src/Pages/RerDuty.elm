@@ -18,6 +18,7 @@ import Le.ErrorHandling
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Le.Waterfall exposing (Msg(..), waterfallDivId)
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Waterfall.Messages as Messages
 import Le.Waterfall.Utils as Utils
 import Maybe.Extra as MaybeX exposing (isJust)
@@ -419,6 +420,9 @@ body isDarkMode shared user model =
                             , serverInfo = shared.serverInfo
                             , user = user
                             , waterfallsAmount = List.length model.waterfalls
+                            , masterUnits = case shared.masterUnits of
+                                Success units -> units
+                                _ -> Dict.empty
                             }
                             wf
                         )
