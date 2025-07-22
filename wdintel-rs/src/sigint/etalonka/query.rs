@@ -10,7 +10,7 @@ use log::*;
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{
     Alias, CommonTableExpression, Expr, Iden, Query, SelectStatement,
-    SimpleExpr,
+    SimpleExpr, WithClause,
 };
 use serde::Serialize;
 use std::cmp::Ordering;
@@ -382,10 +382,10 @@ pub async fn find_all_known_callsigns(
         .filter(sigint_callsign::Column::Callsign.ne(""))
         .order_by_asc(sigint_callsign::Column::Callsign);
 
-    trace!(
-        "> known callsings sql: {}",
-        q.build(DbBackend::Postgres).to_string()
-    );
+    // debug!(
+    //     "> known callsings sql: {}",
+    //     q.build(DbBackend::Postgres).to_string()
+    // );
 
     let res = q
         .into_model::<KnownCallsignRes>()
@@ -414,17 +414,14 @@ pub async fn load_callsigns(
 
     trace!("> load_callsigns for network: {:?}", filter.network_id);
 
-    let (callsigns_select, unique_callsigns_select) =
+    let (base_with, callsigns_select) =
         build_callsigns_queries(groups, filter).context(h!())?;
 
     // Step 1. Get all active callsigns for the given network
-    let active_callsigns = get_active_callsigns(
-        &db,
-        callsigns_select.clone(),
-        unique_callsigns_select.clone(),
-    )
-    .await
-    .context(h!())?;
+    let active_callsigns =
+        get_active_callsigns(&db, base_with.clone(), callsigns_select.clone())
+            .await
+            .context(h!())?;
 
     let mut res: Vec<CallsignRes> = active_callsigns
         .iter()
@@ -502,7 +499,8 @@ pub async fn load_callsigns(
 
     let known_callsigns_comm_info = get_communication_info_for_callsigns(
         &db,
-        callsigns_select,
+        base_with.clone(),
+        callsigns_select.clone(),
         &res_known_callsigns,
     )
     .await
@@ -537,23 +535,126 @@ pub async fn load_callsigns(
 fn build_callsigns_queries(
     groups: &Vec<String>,
     filter: &EtalonkaFilter,
-) -> Result<(SelectStatement, SelectStatement), AppError> {
+) -> Result<(WithClause, SelectStatement), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
+            Expr::cust("jsonb_array_elements_text(network_messages.callsigns)"),
             Alias::new("callsign"),
         )
         .to_owned();
 
-    let mut callsigns_select = Query::select();
-    callsigns_select.expr_as(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
-        Alias::new("freq"),
-    )
+    let network_freqs_select = Query::select()
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
+            Alias::new("id"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
+            Alias::new("network_id"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
+            Alias::new("freq"),
+        )
+        .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ActiveFrom,
+            )),
+            Alias::new("active_from"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
+            Alias::new("active_to"),
+        )
+        .from(SigintNetworkFreq::Table)
+        .join(
+            JoinType::InnerJoin,
+            SigintNetwork::Table,
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
+                .equals((SigintNetwork::Table, SigintNetwork::Id)),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
+                .eq(filter.network_id),
+        )
+        .to_owned();
+
+    let network_freqs_cte = CommonTableExpression::new()
+        .query(network_freqs_select)
+        .table_name(Alias::new("network_freqs"))
+        .to_owned();
+
+    let network_messages_select = Query::select()
+        .expr_as(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns)),
+            Alias::new("callsigns"),
+        )
+        .expr_as(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
+                Alias::new("freq"),
+            )
         .expr_as(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)),
+            Alias::new("datetime"),
+        )
+        .expr_as(
+            Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))),
+            Alias::new("network_id"),
+        )
+        .from(SignalMessage::Table)
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItem::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::Id))
+                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
+        )
+		        .join(
+            JoinType::InnerJoin,
+            Alias::new("network_freqs"),
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+                .equals((Alias::new("network_freqs"), Alias::new("freq")))
+                .and(Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .gte(Expr::col((Alias::new("network_freqs"), Alias::new("active_from"))))
+                    .and(Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                        .lt(Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")))),
+        )
+    .and_where(
+        Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
+            .is_in(groups),
+    )
+    .and_where(
+        Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+    )
+    .to_owned();
+
+    let network_messages_cte = CommonTableExpression::new()
+        .query(network_messages_select)
+        .table_name(Alias::new("network_messages"))
+        .to_owned();
+
+    let callsigns_select = Query::select()
+        .expr_as(
+            Expr::cust("c.callsign"),
+            Alias::new("callsign"),
+        )
+        .expr_as(
+            Expr::cust(r#"CASE
+                WHEN ("sigint_network"."name" IS NOT NULL) AND ("sigint_network"."name" <> '')
+                THEN CONCAT('р/м ', "sigint_network"."name")
+                ELSE NULL
+            END"#.to_string()),
+            Alias::new("network_name"),
+        )
+        .expr_as(
+            Expr::col((Alias::new("network_messages"), Alias::new("freq"))),
+            Alias::new("freq"),
+        )
+        .expr_as(
+            Expr::col((Alias::new("network_messages"), Alias::new("datetime"))),
             Alias::new("datetime"),
         )
         .expr_as(
@@ -576,39 +677,11 @@ fn build_callsigns_queries(
             Expr::col((SigintUnit::Table, SigintUnit::Army)),
             Alias::new("army"),
         )
-        .expr_as(
-            Expr::cust("c.callsign"),
-            Alias::new("callsign"),
-        )
-        .expr_as(
-            Expr::cust(r#"CASE
-                WHEN ("sigint_network"."name" IS NOT NULL) AND ("sigint_network"."name" <> '')
-                THEN CONCAT('р/м ', "sigint_network"."name")
-                ELSE NULL
-            END"#.to_string()),
-            Alias::new("network_name"),
-        );
-    callsigns_select
-        .from(SignalMessage::Table)
-        .join(
-            JoinType::InnerJoin,
-            SigintInboxItem::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::Id))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            SigintNetworkFreq::Table,
-            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Freq)),
-        )
+        .from(Alias::new("network_messages"))
         .join(
             JoinType::InnerJoin,
             SigintNetwork::Table,
-            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).equals((
-                SigintNetworkFreq::Table,
-                SigintNetworkFreq::NetworkId,
-            )),
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(Expr::col((Alias::new("network_messages"), Alias::new("network_id")))),
         )
         .join(
             JoinType::LeftJoin,
@@ -627,14 +700,6 @@ fn build_callsigns_queries(
             callsigns_lateral_sub_query,
             Alias::new("c"),
             Expr::cust("true"),
-        );
-    callsigns_select
-        .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
-                .is_in(groups),
-        )
-        .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
@@ -647,29 +712,28 @@ fn build_callsigns_queries(
         .and_where(
             Expr::col((SigintNetwork::Table, SigintUnit::Id))
                 .eq(filter.network_id),
-        );
+        )
+        .to_owned();
 
-    if let Some(date_since) = filter.since_date_inclusive_ms {
-        callsigns_select.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .gte(dt_from_millis(date_since)?),
-        );
-    }
-    if let Some(date_till) = filter.till_date_noninclusive_ms {
-        callsigns_select.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .lt(dt_from_millis(date_till)?),
-        );
-    }
+    let base_with = Query::with()
+        .cte(network_freqs_cte)
+        .cte(network_messages_cte)
+        .clone();
 
-    let callsigns_select = callsigns_select.to_owned();
+    Ok((base_with, callsigns_select))
+}
 
-    // debug!(
-    //     "> callsigns_select: {}",
-    //     callsigns_select.to_string(PostgresQueryBuilder)
-    // );
+pub async fn get_active_callsigns(
+    db: &DatabaseConnection,
+    base_with: WithClause,
+    callsigns_select: SelectStatement,
+) -> Result<Vec<CallsignQueryResult>, AppError> {
+    let callsigns_cte = CommonTableExpression::new()
+        .query(callsigns_select)
+        .table_name(Alias::new("callsigns"))
+        .to_owned();
 
-    let unique_callsigns_select = Query::select()
+    let active_callsigns_select = Query::select()
         .expr_as(Expr::cust("DISTINCT callsign"), Alias::new("callsign"))
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
@@ -677,42 +741,14 @@ fn build_callsigns_queries(
         .expr_as(Expr::cust("division"), Alias::new("division"))
         .expr_as(Expr::cust("army"), Alias::new("army"))
         .from(Alias::new("callsigns"))
-        .to_owned();
-
-    Ok((callsigns_select, unique_callsigns_select))
-}
-
-pub async fn get_active_callsigns(
-    db: &DatabaseConnection,
-    callsigns_select: SelectStatement,
-    unique_callsigns_select: SelectStatement,
-) -> Result<Vec<CallsignQueryResult>, AppError> {
-    let callsigns_cte = CommonTableExpression::new()
-        .query(callsigns_select)
-        .table_name(Alias::new("callsigns"))
-        .to_owned();
-
-    let unique_callsigns_cte = CommonTableExpression::new()
-        .query(unique_callsigns_select)
-        .table_name(Alias::new("unique_callsigns"))
-        .to_owned();
-
-    let main_query: sea_query::SelectStatement = Query::select()
-        .expr_as(Expr::cust("callsign"), Alias::new("callsign"))
-        .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
-        .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
-        .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
-        .expr_as(Expr::cust("division"), Alias::new("division"))
-        .expr_as(Expr::cust("army"), Alias::new("army"))
-        .from(Alias::new("unique_callsigns"))
         .order_by_expr(Expr::cust("callsign"), Order::Asc)
         .to_owned();
 
-    let combined_query = Query::with()
-        .cte(callsigns_cte)
-        .cte(unique_callsigns_cte)
+    let combined_query = base_with
         .clone()
-        .query(main_query);
+        .cte(callsigns_cte)
+        .clone()
+        .query(active_callsigns_select);
 
     // debug!(
     //     "> active callsigns query: {}",
@@ -742,6 +778,7 @@ pub async fn get_active_callsigns(
 
 async fn get_communication_info_for_callsigns(
     db: &DatabaseConnection,
+    base_with: WithClause,
     callsigns_select: SelectStatement,
     callsigns: &[String],
 ) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError> {
@@ -775,7 +812,7 @@ async fn get_communication_info_for_callsigns(
         .add_group_by(vec![Expr::cust("callsign")])
         .to_owned();
 
-    let combined_query = Query::with().cte(callsigns_cte).clone().query(q);
+    let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
 
     let rows = db
         .query_all(Statement::from_string(
