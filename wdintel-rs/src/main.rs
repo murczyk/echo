@@ -36,7 +36,6 @@ pub mod server;
 pub mod session;
 pub mod sigint;
 pub mod tags;
-pub mod tailscale;
 pub mod terminal;
 pub mod types;
 pub mod unit;
@@ -50,6 +49,23 @@ macro_rules! h {
     () => {
         concat!("at ", file!(), " line ", line!(), " column ", column!())
     };
+}
+
+#[actix_web::main]
+pub async fn renew_tailscale_cert(
+    mode: Mode,
+    force: Option<bool>,
+) -> Result<(), AppError> {
+    let config = crate::config::read_config(mode)?;
+    echo_install_utils::tailscale::renew_cert(
+        &config.public_host,
+        "echo",
+        "echo",
+        force,
+    )
+    .await
+    .context(h!())?;
+    Ok(())
 }
 
 #[derive(clap::Parser, Debug)]
@@ -243,6 +259,12 @@ pub struct OneoffExportEtalonDataPs {
     pub destination_path: String,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct RenewTailscaleCertPs {
+    #[arg(long, value_enum)]
+    pub force: Option<bool>,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -252,7 +274,7 @@ enum Cmd {
     Migration,
     ExportUnit(ExportUnitPs),
     ImportUnit(ImportUnitPs),
-    RenewTailscaleCert,
+    RenewTailscaleCert(RenewTailscaleCertPs),
     Backup,
     OneoffSigintImportMouse(OneoffSigintImportMousePs),
     OneoffTestKml,
@@ -451,7 +473,7 @@ fn main() -> Result<(), AppError> {
         Cmd::OneoffFixKmz(ps) => crate::kml::oneoff_fix_kml_main(mode, &ps),
         Cmd::SigintWorker => crate::sigint::worker::sigint_worker(mode),
         Cmd::Migration => crate::migration::run_migration(mode),
-        Cmd::RenewTailscaleCert => crate::tailscale::renew_tailscale_cert(mode),
+        Cmd::RenewTailscaleCert(ps) => renew_tailscale_cert(mode, ps.force),
         Cmd::Backup => crate::backup::backup(mode),
         Cmd::OneoffSigintImportMouse(ps) => {
             crate::sigint::oneoff_sigint_import_mouse(mode, &ps)

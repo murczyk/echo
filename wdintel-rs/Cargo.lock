@@ -2339,7 +2339,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=ca7501a3b640ff2f4eb463
 [[package]]
 name = "echo-install-utils"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-install-utils.git?rev=10e645c25613201a78692041bf4bbb1f15052883#10e645c25613201a78692041bf4bbb1f15052883"
+source = "git+ssh://git@github.com/echoua/echo-install-utils.git?rev=a041de10c7da99e7c791951c7a425d3937c11669#a041de10c7da99e7c791951c7a425d3937c11669"
 dependencies = [
  "anyhow",
  "chrono",

@@ -1,12 +1,11 @@
+use chrono::offset::Local;
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
-use chrono::offset::Local;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let path = PathBuf::from(env::current_dir()?).join("version.txt");
 
     let file = File::create(path)?;
@@ -29,11 +28,6 @@ fn get_git_hash() -> Result<String, String> {
 
     String::from_utf8(output.stdout)
         .map(|s| s.trim().to_string())
-        .map(|s| {
-            format!(
-                "{s} ({})",
-                Local::now().format("%d.%b %H:%M")
-            )
-        })
+        .map(|s| format!("{s} ({})", Local::now().format("%d.%b %H:%M")))
         .map_err(|e| format!("Failed to parse git hash: {}", e))
 }
