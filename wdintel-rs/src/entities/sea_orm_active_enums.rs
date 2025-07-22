@@ -62,6 +62,73 @@ pub enum DeactivationReasonEnum {
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
+    enum_name = "echo_api_command_type"
+)]
+pub enum EchoApiCommandType {
+    #[sea_orm(string_value = "mk_qr")]
+    MkQr,
+    #[sea_orm(string_value = "unlink")]
+    Unlink,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "echo_message_delivery_status"
+)]
+pub enum EchoMessageDeliveryStatus {
+    #[sea_orm(string_value = "scheduled")]
+    Scheduled,
+    #[sea_orm(string_value = "sent")]
+    Sent,
+    #[sea_orm(string_value = "received")]
+    Received,
+    #[sea_orm(string_value = "error")]
+    Error,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "echo_message_source"
+)]
+pub enum EchoMessageSource {
+    #[sea_orm(string_value = "whatsapp")]
+    Whatsapp,
+    #[sea_orm(string_value = "signal")]
+    Signal,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
     enum_name = "network_description_type"
 )]
 pub enum NetworkDescriptionType {
