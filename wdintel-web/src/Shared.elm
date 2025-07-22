@@ -85,6 +85,7 @@ init flagsResult route =
       , eventService = Le.EventService.init
       , pendingEvents = []
       , eventSubscriptions = Dict.empty
+      , networks = NotAsked
       }
     , E.batch
         [ E.sendCmd <| Ports.shared_getLocation ()
@@ -126,11 +127,20 @@ update req msg model =
 
         GotUser (Ok user) ->
             ( { model | user = Just user }
-            , if req.path == Route.Path.Login then
-                E.replaceRoutePath Route.Path.Home_
-
-              else
-                E.none
+            , E.batch
+                [ if req.path == Route.Path.Login then
+                    E.replaceRoutePath Route.Path.Home_
+                  else
+                    E.none
+                , E.getNetworksList NetworksLoadedByApi
+                    { sortBy = Nothing
+                    , sinceDateInclusiveMs = Nothing
+                    , tillDateNoninclusiveMs = Nothing
+                    , filterFreq = Nothing
+                    , filterUnit = Nothing
+                    , filterFurtherInvestigation = Nothing
+                    }
+                ]
             )
 
         ToggleDarkMode ->
@@ -169,6 +179,20 @@ update req msg model =
             ( { model
                 | masterUnits =
                     rsp.units
+                        |> List.map (\x -> ( x.id, x ))
+                        |> Dict.fromList
+                        |> Success
+              }
+            , E.none
+            )
+
+        NetworksLoadedByApi (Err err) ->
+            ( { model | networks = Failure err }, E.none )
+
+        NetworksLoadedByApi (Ok rsp) ->
+            ( { model
+                | networks =
+                    rsp
                         |> List.map (\x -> ( x.id, x ))
                         |> Dict.fromList
                         |> Success

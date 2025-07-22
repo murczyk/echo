@@ -423,7 +423,11 @@ body isDarkMode shared user model =
                             , masterUnits = case shared.masterUnits of
                                 Success units -> units
                                 _ -> Dict.empty
+                            , networks = case shared.networks of
+                                Success networks -> networks
+                                _ -> Dict.empty
                             }
+                            shared
                             wf
                         )
                 )

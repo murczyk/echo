@@ -15,6 +15,7 @@ type alias Model =
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)
+    , networks : RemoteData ApiError (Dict Int B.Network)
     , now : Int
     , timeZone : Zone
     , callsignsInfo : Dict String (List B.CallsignInfo)
