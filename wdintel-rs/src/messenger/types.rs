@@ -45,6 +45,11 @@ pub struct QrCodeRsp {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct AccountsRsp {
+    pub accounts: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GroupF1 {
     pub id: i32,
     pub name: String,

@@ -21,6 +21,21 @@ pub mod types;
 pub mod utils;
 pub mod worker;
 
+#[post("/api/messenger/list")]
+pub async fn list_linked_accounts(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<AccountsRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
+        .await
+        .cae(h!())?;
+    debug!("list_linked_accounts: {user:?}; req = {req:?}");
+    let txn = env.dbx.begin().await.context(h!())?;
+    let accounts = bl::list_linked_accounts(&txn).await.cae(h!())?;
+    txn.commit().await.context(h!())?;
+    Ok(Json(AccountsRsp { accounts }))
+}
+
 #[post("/api/messenger/qr")]
 pub async fn get_qr(
     user: actix_identity::Identity,

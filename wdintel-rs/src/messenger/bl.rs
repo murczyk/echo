@@ -480,3 +480,7 @@ pub async fn save_bot_inbox_message(
            .await
            .cae(h!())?;)
 }
+
+pub async fn list_linked_accounts(p0: &DatabaseTransaction) -> anyhow::Result<Vec<String>> {
+    let accounts = vec![];
+}
