@@ -281,7 +281,7 @@ pub async fn report_docx_kind_babak(
         )
         .add_paragraph(Paragraph::new());
 
-    #[derive(Clone, Deserialize)]
+    #[derive(Clone, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
     pub struct Comment {
         datetime: Option<chrono::NaiveDateTime>,
         comment: Option<String>,
@@ -293,6 +293,7 @@ pub async fn report_docx_kind_babak(
             unit.comments.clone().unwrap_or(Vec::<Value>::new().into()),
         )
         .unwrap_or(vec![]);
+        let comments = uniq_via_btreeset(&comments);
 
         if comments
             .clone()
@@ -356,6 +357,7 @@ pub async fn report_docx_kind_babak(
                 .unwrap_or(Vec::<Value>::new().into()),
         )
         .unwrap_or(vec![]);
+        let losses_comments = uniq_via_btreeset(&losses_comments);
 
         if losses_comments
             .clone()
@@ -436,6 +438,7 @@ pub async fn report_docx_kind_babak(
                 .unwrap_or(Vec::<Value>::new().into()),
         )
         .unwrap_or(vec![]);
+        let others_comments = uniq_via_btreeset(&others_comments);
 
         if others_comments
             .clone()
@@ -571,6 +574,8 @@ pub async fn get_inbox_messages_report_unit(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(signal_message::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
