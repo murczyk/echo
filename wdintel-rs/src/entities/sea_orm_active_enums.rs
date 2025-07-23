@@ -13,6 +13,25 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
 )]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "account_status")]
+pub enum AccountStatus {
+    #[sea_orm(string_value = "ready")]
+    Ready,
+    #[sea_orm(string_value = "paused")]
+    Paused,
+    #[sea_orm(string_value = "active")]
+    Active,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
@@ -48,6 +67,73 @@ pub enum DeactivationReasonEnum {
     Admin,
     #[sea_orm(string_value = "inactive")]
     Inactive,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "echo_api_command_type"
+)]
+pub enum EchoApiCommandType {
+    #[sea_orm(string_value = "mk_qr")]
+    MkQr,
+    #[sea_orm(string_value = "unlink")]
+    Unlink,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "echo_message_delivery_status"
+)]
+pub enum EchoMessageDeliveryStatus {
+    #[sea_orm(string_value = "scheduled")]
+    Scheduled,
+    #[sea_orm(string_value = "sent")]
+    Sent,
+    #[sea_orm(string_value = "received")]
+    Received,
+    #[sea_orm(string_value = "error")]
+    Error,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "echo_message_source"
+)]
+pub enum EchoMessageSource {
+    #[sea_orm(string_value = "whatsapp")]
+    Whatsapp,
+    #[sea_orm(string_value = "signal")]
+    Signal,
 }
 #[derive(
     Debug,
@@ -155,6 +241,23 @@ pub enum SigintSignalChangelogActionEnum {
     Update,
     #[sea_orm(string_value = "delete")]
     Delete,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "signal_cli_mode")]
+pub enum SignalCliMode {
+    #[sea_orm(string_value = "native")]
+    Native,
+    #[sea_orm(string_value = "normal")]
+    Normal,
 }
 #[derive(
     Debug,

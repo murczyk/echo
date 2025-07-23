@@ -18,6 +18,7 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
     println!("Running migration");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
+    echo_im::run_migration(&dbx).await.context(h!())?;
     cli::run_migrate(echo_migration::Migrator, &dbx, None, false)
         .await
         .unwrap();

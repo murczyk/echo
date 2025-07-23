@@ -1,3 +1,4 @@
+use anyhow::Context;
 use aws_sdk_s3::error::SdkError;
 use log::error;
 use std::collections::BTreeMap;
@@ -268,5 +269,23 @@ impl actix_web::error::ResponseError for AppError {
 impl From<&str> for AppError {
     fn from(v: &str) -> Self {
         AppError::BL { msg: v.to_string() }
+    }
+}
+
+/// Trait that combines context addition and error conversion to AppError
+pub trait ContextAndError<T, E> {
+    /// Add context to an error and convert it to AppError
+    ///
+    /// cae stands for "Context and Error"
+    fn cae(self, ctx: impl Into<String>) -> Result<T, AppError>;
+}
+
+// Implementation for any Result with an error that can be converted to anyhow::Error
+impl<T, E> ContextAndError<T, E> for Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn cae(self, ctx: impl Into<String>) -> Result<T, AppError> {
+        self.context(ctx.into()).map_err(Into::<AppError>::into)
     }
 }
