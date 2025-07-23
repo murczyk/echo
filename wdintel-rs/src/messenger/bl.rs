@@ -9,11 +9,11 @@ use echo_im::entities::sea_orm_active_enums::{
     EchoMessageSource, SignalCliMode,
 };
 use echo_im::os_specific;
+use echo_im::types::MessageSource;
 use echo_migration::Expr;
 use sea_orm::prelude::DateTime;
 use sea_orm::*;
 use std::net::TcpListener;
-use echo_im::types::MessageSource;
 
 pub async fn load_echo_account(
     id: i64,
@@ -201,8 +201,7 @@ pub async fn get_qr_code(
         .next()
         .context(h!())?;
 
-    let messenger = parse_message_source(&account)
-        .context(h!())?;
+    let messenger = parse_message_source(&account).context(h!())?;
 
     let code = echo_im::link_account(&account.name, messenger, txn)
         .await
@@ -297,7 +296,9 @@ fn is_valid_display_name(s: &str) -> bool {
     })
 }
 
-fn parse_message_source(account: &EchoAccountF1) -> anyhow::Result<MessageSource> {
+fn parse_message_source(
+    account: &EchoAccountF1,
+) -> anyhow::Result<MessageSource> {
     let messenger = account.messenger.to_lowercase();
     match messenger.as_str() {
         "signal" => Ok(MessageSource::Signal),
