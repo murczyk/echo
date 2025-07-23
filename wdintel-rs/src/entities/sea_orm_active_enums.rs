@@ -13,6 +13,25 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
 )]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "account_status")]
+pub enum AccountStatus {
+    #[sea_orm(string_value = "ready")]
+    Ready,
+    #[sea_orm(string_value = "paused")]
+    Paused,
+    #[sea_orm(string_value = "active")]
+    Active,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
@@ -222,6 +241,23 @@ pub enum SigintSignalChangelogActionEnum {
     Update,
     #[sea_orm(string_value = "delete")]
     Delete,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "signal_cli_mode")]
+pub enum SignalCliMode {
+    #[sea_orm(string_value = "native")]
+    Native,
+    #[sea_orm(string_value = "normal")]
+    Normal,
 }
 #[derive(
     Debug,

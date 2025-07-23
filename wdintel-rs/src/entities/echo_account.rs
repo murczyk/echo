@@ -16,6 +16,7 @@ pub struct Model {
     pub is_linked: bool,
     pub created_at: DateTime,
     pub synced_at: Option<DateTime>,
+    pub last_trusted_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

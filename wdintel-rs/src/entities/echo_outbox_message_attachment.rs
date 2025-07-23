@@ -11,9 +11,11 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub message_id: i32,
-    #[sea_orm(column_type = "Text")]
-    pub content_base64: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub content_base64: Option<String>,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub path: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
