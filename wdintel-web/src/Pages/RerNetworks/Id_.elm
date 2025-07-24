@@ -183,7 +183,6 @@ type alias Model =
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
-    , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode B.UpdateNetworkReq
     , missingFieldsMode : Mode B.UpdateNetworkReq
     , missingFieldsEditLoading : Bool
@@ -225,7 +224,6 @@ init route shared () =
       , freqsEditingState = Readonly
       , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
-      , networks = NotAsked
       , mode = Readonly
       , missingFieldsMode = Readonly
       , missingFieldsEditLoading = False
@@ -319,7 +317,6 @@ type Msg
     | FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
     | CallsignsPopupOpenedByUser String
     | CallsignsPopupClosedByUser
-    | NetworksReturnedByApi (Result ApiError (List B.Network))
     | NetworkEditStartedByUser
     | NetworkEditingSavedByUser
     | NetworkEditingCanceledByUser
@@ -431,14 +428,6 @@ update shared msg model =
                 , E.getSingleNetworkGroupsActivity GroupsActivityReturnedByApi { networkId = res.id, tillDateNoninclusiveMs = Nothing }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = res.id }
                 , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = res.id }
-                , E.getNetworksList NetworksReturnedByApi
-                    { sinceDateInclusiveMs = Just res.activeFrom
-                    , tillDateNoninclusiveMs = res.activeTo
-                    , filterFreq = Nothing
-                    , filterUnit = Nothing
-                    , sortBy = Nothing
-                    , filterFurtherInvestigation = Nothing
-                    }
 
                 --TODO: do not load if loaded already
                 , E.loadPostsFromShared { sortBy = Nothing }
@@ -494,21 +483,6 @@ update shared msg model =
 
         CallsignsPopupClosedByUser ->
             ( { model | callsignsOpenedPopupId = Nothing }, E.none )
-
-        NetworksReturnedByApi (Err err) ->
-            ( model, E.none )
-
-        NetworksReturnedByApi (Ok networks) ->
-            ( { model
-                | networks =
-                    Success
-                        (networks
-                            |> List.map (\x -> ( x.id, x ))
-                            |> Dict.fromList
-                        )
-              }
-            , E.none
-            )
 
         NetworkEditStartedByUser ->
             case model.network of
@@ -2115,7 +2089,7 @@ freqsTable freq model shared =
                         }
                         (FreqsPage
                             freq.freq
-                            (RD.withDefault Dict.empty model.networks)
+                            (RD.withDefault Dict.empty shared.networks)
                         )
 
                 _ ->
@@ -2212,7 +2186,7 @@ freqsTableEditing updateFreqReq freq model shared =
                     }
                     (FreqsPage
                         freq.freq
-                        (RD.withDefault Dict.empty model.networks)
+                        (RD.withDefault Dict.empty shared.networks)
                     )
 
             _ ->
