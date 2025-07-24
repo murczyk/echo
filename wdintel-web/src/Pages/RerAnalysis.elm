@@ -158,10 +158,6 @@ init route _ =
             , callsignsInfoSumTable = Dict.empty
             , messageComments = Dict.empty
             , users = Dict.empty
-            , networks = Dict.empty
-            , networksSumTable = Dict.empty
-            , freqNetworkIds = Dict.empty
-            , freqNetworkIdsSumTable = Dict.empty
             , sendersSelectedNames = []
             , postsSelected = []
             , deleteMessageModalId = Nothing
@@ -561,25 +557,13 @@ extractMetaInfo inboxRsp model =
                 , groupInfos = inboxRsp.signalGroups |> List.foldl (\group acc -> Dict.insert group.masterKey group acc) model.groupInfos
             }
 
-        freqNetworkIds2 =
-            inboxRsp.networks
-                |> List.concatMap (\x -> List.map (\freq -> ( freq.freq, Set.singleton x.id )) x.freqs)
-                |> (\v -> v ++ Dict.toList model.freqNetworkIds)
-                |> DE.fromListDedupe Set.union
-
         m3 =
             { m2
                 | sendersSelectedNames = Le.Waterfall.Filters.ensureAllSendersNamed m2.profiles m2.sendersSelected m2.sendersSelectedNames
             }
     in
     { m3
-        | networks =
-            inboxRsp.networks
-                |> List.map (\x -> ( x.id, x ))
-                |> Dict.fromList
-                |> (\v -> Dict.union v model.networks)
-        , freqNetworkIds = freqNetworkIds2
-        , callsignsInfo =
+        | callsignsInfo =
             inboxRsp.callsigns
                 |> List.foldl (\{ callsign, res } dict -> Dict.insert callsign res dict) model.callsignsInfo
     }
@@ -1094,9 +1078,19 @@ update user shared route msg model =
                     , user = user
                     , users = model.users
                     , serverInfo = shared.serverInfo
-                    , networks = model.networks
+                    , networks = case shared.networks of
+                        Success networks -> networks
+                        _ -> Dict.empty
                     , masterUnits = masterUnitsDict
-                    , freqNetworkIds = model.freqNetworkIds
+                    , freqNetworkIds = case shared.networks of
+                        Success networks ->
+                            networks
+                                |> Dict.values
+                                |> List.concatMap (\network -> 
+                                    List.map (\freq -> (freq.freq, Set.singleton network.id)) network.freqs
+                                )
+                                |> DE.fromListDedupe Set.union
+                        _ -> Dict.empty
                     , currentRoute = Just route
                     }
 
@@ -1563,11 +1557,7 @@ update user shared route msg model =
                     }
             in
             ( m2
-            , E.batch
-                [ E.getCallsignsInfo GotGdocCallsignsForSumTable { callsigns = sumTable.rows |> List.concatMap (\row -> row.callsigns) }
-                , E.getNetworksInfoByFreqs GotNetworksForSumTable
-                    (sumTable.rows |> List.map .freq)
-                ]
+            , E.getCallsignsInfo GotGdocCallsignsForSumTable { callsigns = sumTable.rows |> List.concatMap (\row -> row.callsigns) }
             )
 
         DownloadXlsx ->
@@ -2662,30 +2652,6 @@ update user shared route msg model =
                         callsigns
             in
             ( m2, E.none )
-
-        GotNetworksForSumTable (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації мереж" err
-            )
-
-        GotNetworksForSumTable (Ok networks) ->
-            let
-                freqNetworkIds2 =
-                    networks
-                        |> List.concatMap (\x -> List.map (\freq -> ( freq.freq, Set.singleton x.id )) x.freqs)
-                        |> (\v -> v ++ Dict.toList model.freqNetworkIdsSumTable)
-                        |> DE.fromListDedupe Set.union
-            in
-            ( { model
-                | networksSumTable =
-                    networks
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-                        |> (\v -> Dict.union v model.networksSumTable)
-                , freqNetworkIdsSumTable = freqNetworkIds2
-              }
-            , E.none
-            )
 
         GotMapPoints (Ok res) ->
             ( { model | mapPoints = Success res.points, mapNetworkUnits = res.networkUnits }

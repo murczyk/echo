@@ -122,7 +122,6 @@ type Msg
     | GotStatsUnits (Result ApiError B.UnitStatsRsp)
     | GotStatsSenders (Result ApiError B.SenderStatsRsp)
     | GotGdocCallsignsForSumTable (Result ApiError (List B.CallsignInfoRes))
-    | GotNetworksForSumTable (Result ApiError (List B.Network))
     | GotStatsGroups (Result ApiError B.GroupStatsRsp)
     | GotMapPoints (Result ApiError B.MapPointsRsp)
     | MapClosed

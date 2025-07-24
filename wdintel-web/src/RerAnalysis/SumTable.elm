@@ -11,7 +11,7 @@ import Le.Block.Callsign
 import Le.Block.Spinner
 import Le.Block.Unit
 import Le.Callsign
-import Le.RemoteData exposing (RemoteData(..))
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (..)
 import RerAnalysis.Model exposing (..)
 import RerAnalysis.Msg exposing (..)
@@ -136,6 +136,9 @@ sumTableBlock2 model shared route sumTable =
 
         renderRow row =
             let
+                sharedNetworks =
+                    RD.withDefault Dict.empty shared.networks
+
                 actionMenuBody =
                     [ span []
                         [ i [ class "bi me-1 bi-pin-map" ] []
@@ -157,20 +160,31 @@ sumTableBlock2 model shared route sumTable =
                     ]
 
                 networkBlock =
-                    case Dict.get row.freq model.freqNetworkIdsSumTable of
-                        Just networkIds ->
-                            div [] <|
-                                for_ (Set.toList networkIds) <|
-                                    \networkId ->
-                                        case Dict.get networkId model.networksSumTable of
-                                            Just network ->
-                                                Le.Block.Unit.boldMasterUnit masterUnitsDict network
+                    let
+                        freqNetworkIds =
+                            sharedNetworks
+                                |> Dict.values
+                                |> List.concatMap
+                                    (\network ->
+                                        List.map (\freq -> ( freq.freq, network.id )) network.freqs
+                                    )
+                                |> List.filter (\( freq, _ ) -> freq == row.freq)
+                                |> List.map Tuple.second
+                                |> Set.fromList
+                    in
+                    if Set.isEmpty freqNetworkIds then
+                        text ""
 
-                                            _ ->
-                                                text "Невідома мережа"
+                    else
+                        div [] <|
+                            for_ (Set.toList freqNetworkIds) <|
+                                \networkId ->
+                                    case Dict.get networkId sharedNetworks of
+                                        Just network ->
+                                            Le.Block.Unit.boldMasterUnit masterUnitsDict network
 
-                        Nothing ->
-                            text ""
+                                        _ ->
+                                            text "Невідома мережа"
             in
             tr [ style "font-size" ".9rem" ]
                 [ td
@@ -207,7 +221,7 @@ sumTableBlock2 model shared route sumTable =
                                 (\callsign ->
                                     let
                                         networksWithMessageFreq =
-                                            Le.Callsign.filterNetworksByFreq model.networksSumTable (Just row.freq)
+                                            Le.Callsign.filterNetworksByFreq sharedNetworks (Just row.freq)
 
                                         networksUnitIds =
                                             Le.Callsign.getAllUnitsIdsForNetworks networksWithMessageFreq
