@@ -43,10 +43,11 @@ async fn receive_thread(
 
     loop {
         receive_once(settlements.clone(), config, dbx, &rq, redis, datasource)
-            .await?;
+            .await
+            .context(h!())?;
 
         if last_groups_sync_t.elapsed().unwrap().as_secs() > 60 {
-            sync_groups(dbx, datasource).await?;
+            sync_groups(dbx, datasource).await.context(h!())?;
             last_groups_sync_t = std::time::SystemTime::now();
         }
 
@@ -72,16 +73,19 @@ async fn receive_once(
         .order_by_asc(whatsapp_queue::Column::Id)
         .limit(50)
         .all(dbx)
-        .await?;
+        .await
+        .context(h!())?;
     for wq in whatsapp_queue {
         if wq.group_jid.is_empty() {
             continue;
         }
-        let txn = dbx.begin().await?;
+        let txn = dbx.begin().await.context(h!())?;
         let body = wq.body.clone();
         // Normalize body
         let body = body.replace("\r\n", "\n");
-        let m_duplicate = crate::sigint::find_duplicate(&txn, &body).await?;
+        let m_duplicate = crate::sigint::find_duplicate(&txn, &body)
+            .await
+            .context(h!())?;
         let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
         let signal_message = signal_message::ActiveModel {
             id: NotSet,
@@ -96,7 +100,8 @@ async fn receive_once(
             deleted: NotSet,
         }
         .insert(&txn)
-        .await?;
+        .await
+        .context(h!())?;
 
         if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
             // attachments if any
@@ -106,7 +111,8 @@ async fn receive_once(
                         .eq(whatsapp_id),
                 )
                 .all(&txn)
-                .await?;
+                .await
+                .context(h!())?;
             for a in attachments {
                 let _signal_attachment = signal_attachment::ActiveModel {
                     id: NotSet,
@@ -115,12 +121,13 @@ async fn receive_once(
                     created_at: NotSet,
                 }
                 .insert(&txn)
-                .await?;
-                a.delete(&txn).await?;
+                .await
+                .context(h!())?;
+                a.delete(&txn).await.context(h!())?;
             }
         }
 
-        wq.delete(&txn).await?;
+        wq.delete(&txn).await.context(h!())?;
 
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
@@ -136,8 +143,9 @@ async fn receive_once(
             &txn,
             signal_message.id,
         )
-        .await?;
-        txn.commit().await?;
+        .await
+        .context(h!())?;
+        txn.commit().await.context(h!())?;
     }
     Ok(())
 }
@@ -146,13 +154,17 @@ pub async fn sync_groups(
     dbx: &sea_orm::DatabaseConnection,
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
-    let whatsapp_groups = whatsapp_group::Entity::find().all(dbx).await?;
+    let whatsapp_groups = whatsapp_group::Entity::find()
+        .all(dbx)
+        .await
+        .context(h!())?;
 
     for wg in whatsapp_groups {
         let signal_group = signal_group::Entity::find()
             .filter(signal_group::Column::MasterKey.eq(wg.jid.clone()))
             .one(dbx)
-            .await?;
+            .await
+            .context(h!())?;
         match signal_group {
             Some(signal_group) => {
                 // update name
@@ -167,7 +179,7 @@ pub async fn sync_groups(
                     );
                     let mut signal_group = signal_group.into_active_model();
                     signal_group.name = Set(Some(wg.name.clone()));
-                    signal_group.update(dbx).await?;
+                    signal_group.update(dbx).await.context(h!())?;
                 }
             }
             None => {
@@ -180,7 +192,8 @@ pub async fn sync_groups(
                     ignore_operativny: Default::default(),
                 }
                 .insert(dbx)
-                .await?;
+                .await
+                .context(h!())?;
                 println!(
                     "> whatsapp::sync_groups: created signal_group master_key={}, name={}",
                     signal_group.master_key, wg.name
