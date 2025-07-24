@@ -1,29 +1,35 @@
+use crate::config::{read_config, Config};
+use crate::entities::datasource::Model;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
-use crate::h;
+use crate::location::SettlementsData;
 use crate::messenger::bl::list_linked_accounts;
 use crate::messenger::types::EchoAccountF1;
-use crate::types::Env;
+use crate::types::Mode;
+use crate::{h, new_redis};
 use anyhow::Context;
 use chrono::*;
-use echo_im::types::{MessageF1, MessageSource, SendMessageReq};
+use echo_im::types::{MessageF1, MessageSource};
 use log::*;
+use redis::aio::ConnectionManager;
+use reqwest::Client;
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
-pub async fn receive_thread_nofail(
-    env: Arc<Env>,
-) {
+pub async fn receive_thread_nofail(mode: Mode) {
+    let (config, settlements, rq, mut redis, dbx) =
+        setup_worker(mode).await.unwrap();
+    info!("started receive_thread_nofail");
     if let Err(e) =
-        echo_im::enable_verbose_logging_for_all_signal_clients(&env.dbx).await
+        echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
     {
         error!("failed to enable verbose logging: {:?}", e);
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
     loop {
-        let clients = match list_clients(&env.dbx).await {
+        let clients = match list_clients(&dbx).await {
             Ok(txn) => txn,
             Err(e) => {
                 error!("failed to load clients: {e:?}");
@@ -33,9 +39,13 @@ pub async fn receive_thread_nofail(
         for cli in clients {
             let client_name = cli.name;
             if let Err(e) = receive_thread(
-               env.clone(),
                 &client_name,
                 &mut client_groups_sync_ts_map,
+                &dbx,
+                &mut redis,
+                &config,
+                &rq,
+                settlements.clone(),
             )
             .await
             {
@@ -46,23 +56,52 @@ pub async fn receive_thread_nofail(
     }
 }
 
+async fn setup_worker(
+    mode: Mode,
+) -> anyhow::Result<(
+    Config,
+    Arc<RwLock<SettlementsData>>,
+    Client,
+    ConnectionManager,
+    DatabaseConnection,
+)> {
+    let config = read_config(mode).context(h!())?;
+    let db = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    let settlement_paths = config.settlement_paths().context(h!())?;
+    let settlements = Arc::new(RwLock::new(
+        crate::location::load_from_file(settlement_paths).context(h!())?,
+    ));
+    let rq: reqwest::Client = reqwest::Client::builder()
+        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
+        .build()
+        .context(h!())?;
+    let redis = new_redis(&config).await.context(h!())?;
+    Ok((config, settlements, rq, redis, db))
+}
+
 async fn receive_thread(
-    env: Arc<Env>,
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
+    dbx: &DatabaseConnection,
+    redis: &mut ConnectionManager,
+    config: &Config,
+    rq: &Client,
+    settlements: Arc<RwLock<SettlementsData>>,
 ) -> Result<(), AppError> {
-    echo_im::worker::signal_worker_tick_once(client_name, &env.dbx)
+    echo_im::worker::signal_worker_tick_once(client_name, dbx)
         .await
         .context(h!())?;
-    echo_im::worker::whatsapp_worker_tick_once(client_name, &env.dbx)
+    echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .context(h!())?;
-    let txn = (&env.dbx).begin().await.context(h!())?;
+    let txn = dbx.begin().await.context(h!())?;
     sync_groups(&txn, client_name, client_groups_sync_ts_map)
         .await
         .context(h!())?;
     txn.commit().await.context(h!())?;
-    sync_inbox(Utc::now(), &env.dbx, client_name, env.clone())
+    sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
         .await
         .context(h!())?;
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -103,18 +142,16 @@ async fn sync_groups(
         .await
         .cae(h!())?;
     for g in groups_raw {
-        if let Some(master_key) = &g.master_key {
-            let key = master_key.clone();
-            match existing_groups.get(master_key) {
-                None => {
+        let key = g.master_key.clone();
+        match existing_groups.get(&key) {
+            None => {
+                existing_groups.insert(key, g);
+            }
+            Some(g2) => {
+                if g.created_at > g2.created_at {
                     existing_groups.insert(key, g);
-                }
-                Some(g2) => {
-                    if g.created_at > g2.created_at {
-                        existing_groups.insert(key, g);
-                    } else {
-                        existing_groups.insert(key, g2.clone());
-                    }
+                } else {
+                    existing_groups.insert(key, g2.clone());
                 }
             }
         }
@@ -125,11 +162,11 @@ async fn sync_groups(
             None => match g.message_source {
                 MessageSource::Signal => {
                     signal_group::ActiveModel {
-                        name: Set(g.name),
+                        name: Set(Some(g.name)),
                         datasource_id: NotSet,
                         created_at: NotSet,
                         ignore_operativny: NotSet,
-                        master_key: Set(Some(g.id.clone())),
+                        master_key: Set(g.id),
                         is_secret: NotSet,
                     }
                     .insert(txn)
@@ -140,7 +177,7 @@ async fn sync_groups(
                     whatsapp_group::ActiveModel {
                         name: Set(g.name),
                         created_at: NotSet,
-                        jid: Set(Some(g.id.clone())),
+                        jid: Set(g.id),
                         owner_jid: NotSet,
                     }
                     .insert(txn)
@@ -149,9 +186,10 @@ async fn sync_groups(
                 }
             },
             Some(group_model) => {
-                if group_model.name != g.name {
+                let name = Some(g.name);
+                if group_model.name != name {
                     let mut model = group_model.into_active_model();
-                    model.name = Set(g.name.clone());
+                    model.name = Set(name);
                     model.update(txn).await.context(h!())?;
                 }
             }
@@ -189,11 +227,15 @@ async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
-    env: Arc<Env>,
+    redis: &mut redis::aio::ConnectionManager,
+    config: &crate::config::Config,
+    rq: &reqwest::Client,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
 ) -> anyhow::Result<()> {
     debug!("syncing inbox for client_name={client_name}");
     // let time = inbox_sync_at;
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
+    let datasources = collect_datasources(db).await.context(h!())?;
     let txn = db.begin().await.context(h!())?;
     let inbox_messages =
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
@@ -210,13 +252,32 @@ async fn sync_inbox(
                 m.id.clone().unwrap_or("".to_string())
             );
             let txn = db.begin().await.context(h!())?;
-            process_inbox_message_nofail(
-                &txn,
+            debug!(
+                "process_inbox_message_nofail client_name={}; message_id={}",
                 client_name,
-                env.clone(),
-                m.clone(),
+                m.id.clone().unwrap_or("".to_string())
+            );
+            // let current_time = Utc::now().naive_utc();
+            // if m.timestamp < current_time - TimeDelta::minutes(15) {
+            //     warn!(
+            //         "[{}] message is too old: created at {}, current time: {}; skipping: [{}] {}",
+            //         client_name, m.timestamp, current_time, m.internal_id, m.text
+            //     );
+            //     return;
+            // }
+            if let Err(e) = receive_once(
+                &m,
+                &txn,
+                &datasources,
+                redis,
+                config,
+                rq,
+                settlements.clone(),
             )
-            .await;
+            .await
+            {
+                warn!("bot failed to process a message: {:?}", e);
+            }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
                 .await
                 .context(h!())?;
@@ -226,81 +287,24 @@ async fn sync_inbox(
     Ok(())
 }
 
-async fn process_inbox_message_nofail(
-    txn: &DatabaseTransaction,
-    client_name: &str,
-    env: Arc<Env>,
-    m: MessageF1,
-) {
-    debug!(
-        "process_inbox_message_nofail client_name={}; message_id={}",
-        client_name,
-        m.id.clone().unwrap_or("".to_string())
-    );
-    // let current_time = Utc::now().naive_utc();
-    // if m.timestamp < current_time - TimeDelta::minutes(15) {
-    //     warn!(
-    //         "[{}] message is too old: created at {}, current time: {}; skipping: [{}] {}",
-    //         client_name, m.timestamp, current_time, m.internal_id, m.text
-    //     );
-    //     return;
-    // }
-    let process_result =
-        try_process_message(&m, client_name, txn, env.clone()).await;
-    match process_result {
-        Err(e) => {
-            warn!("bot failed to process a message: {:?}", e)
-        }
-        Ok(result) => {
-            if result {
-                return;
-            } else {
-                if let Some(phone_number) = &m.sender_phone_number {
-                    if let Err(e) = maybe_respond_plusplus(
-                        txn,
-                        phone_number,
-                        &m,
-                        client_name,
-                        env.clone(),
-                    )
-                    .await
-                    .context(h!())
-                    {
-                        error!("failed to exchange ++: {:?}", e);
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub async fn maybe_respond_plusplus(
-    txn: &DatabaseTransaction,
-    phone: &String,
-    message: &MessageF1,
-    client_name: &str,
-    env: Arc<Env>,
-) -> Result<(), AppError> {
-    if message.text.trim() == "+" && message.group_id.is_none() {
-        let recipient_phone_numbers = vec![phone.to_string()];
-        let req = SendMessageReq {
-            source: message.message_source.clone(),
-            text: String::from("+"),
-            recipient_phone_numbers,
-            group_ids: vec![],
-            attachments: vec![],
-        };
-        echo_im::send_message(
-            req,
-            client_name,
-            txn,
-            env.config.echo_im_config.clone(),
-        )
+async fn collect_datasources(
+    db: &DatabaseConnection,
+) -> anyhow::Result<BTreeMap<MessageSource, Model>> {
+    let mut all_data_sources = datasource::Entity::find()
+        .all(db)
         .await
-        .map_err(Into::<AppError>::into)
-        .context(h!())?;
+        .context(h!())?
+        .into_iter()
+        .map(|s| (s.kind.clone(), s))
+        .collect::<BTreeMap<_, _>>();
+    let mut result = BTreeMap::new();
+    if let Some(source) = all_data_sources.remove("signal") {
+        result.insert(MessageSource::Signal, source);
     }
-    Ok(())
+    if let Some(source) = all_data_sources.remove("whatsapp") {
+        result.insert(MessageSource::Whatsapp, source);
+    }
+    Ok(result)
 }
 
 async fn list_clients(
@@ -310,4 +314,69 @@ async fn list_clients(
     let live_clients = list_linked_accounts(&txn).await.context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(live_clients)
+}
+
+async fn receive_once(
+    m: &MessageF1,
+    txn: &DatabaseTransaction,
+    datasources: &BTreeMap<MessageSource, Model>,
+    redis: &mut redis::aio::ConnectionManager,
+    config: &crate::config::Config,
+    rq: &reqwest::Client,
+    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+) -> Result<(), AppError> {
+    let datasource_id =
+        datasources.get(&m.message_source).map(|m| m.id.clone());
+    let body = m.text.clone();
+    // Normalize body
+    let body = body.replace("\r\n", "\n");
+    let m_duplicate = crate::sigint::find_duplicate(txn, &body)
+        .await
+        .context(h!())?;
+    let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
+    let signal_message = signal_message::ActiveModel {
+        id: NotSet,
+        body: Set(Some(body.clone())),
+        created_at: NotSet,
+        group_master_key: Set(m.group_id.clone()),
+        timestamp: Set(Some(m.timestamp.clone())),
+        sender: Set(m.sender.clone().map(|s| s.uuid)),
+        duplicate_of: Set(m_duplicate_id),
+        format: NotSet,
+        datasource_id: Set(datasource_id),
+        deleted: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    for a in &m.attachments {
+        let _signal_attachment = signal_attachment::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(signal_message.id),
+            path: Set(a.path.clone()),
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .context(h!())?;
+    }
+
+    crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        settlements.clone(),
+        txn,
+        rq,
+        config,
+        redis,
+        signal_message.id,
+    )
+    .await;
+
+    crate::sigint::worker::incoming_message_after_insert(
+        txn,
+        signal_message.id,
+    )
+    .await
+    .context(h!())?;
+    Ok(())
 }

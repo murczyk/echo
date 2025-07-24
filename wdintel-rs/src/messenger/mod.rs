@@ -11,7 +11,7 @@ use sea_orm::*;
 
 pub mod bl;
 pub mod types;
-mod worker;
+pub mod worker;
 
 #[post("/api/messenger/list")]
 pub async fn list_linked_accounts(
