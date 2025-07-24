@@ -144,6 +144,8 @@ systemd-units = [
 	{ unit-name = "echo-signal-cli" },
 	{ unit-name = "echo-whatsapp" },
 	{ unit-name = "echo-vector" },
+	{ unit-name = "echo-signal-bot@" },
+	{ unit-name = "echo-whatsapp-bot@" },
 ]
 depends = ""
 assets = [

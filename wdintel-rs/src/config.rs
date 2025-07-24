@@ -55,9 +55,9 @@ pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 pub const SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
-pub const WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-li-data";
-pub const SIGNAL_UNIT_NAME: &str = "signal-unit";
-pub const WHATSAPP_UNIT_NAME: &str = "whatsapp-unit";
+pub const WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
+pub const SIGNAL_UNIT_NAME: &str = "echo-signal-bot";
+pub const WHATSAPP_UNIT_NAME: &str = "echo-whatsapp-bot";
 pub const CLIENT_DATA_DIR_NAME: &str = "client_data";
 pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
 

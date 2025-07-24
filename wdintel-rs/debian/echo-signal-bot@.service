@@ -1,0 +1,19 @@
+[Unit] 
+Description=Signal Bot service for %i 
+
+[Service] 
+ExecStart=/usr/bin/signal-cli-rest-api -signal-cli-config /etc/echo/signal-cli-data/%i/signal-cli/ -attachment-tmp-dir /etc/echo/signal-cli-data/%i/bot_data/
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+EnvironmentFile=/etc/echo/signal-cli-data/%i/%i.env
+Environment=MODE=$MODE
+Environment=PORT=$PORT
+Environment=SIGNAL_CLI_VERBOSE=true
+Environment=BIND_IP=127.0.0.1
+Environment=TRUSTED_PROXIES=127.0.0.1
+
+[Install]
+WantedBy=multi-user.target
+

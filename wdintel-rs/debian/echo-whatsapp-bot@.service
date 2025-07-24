@@ -1,0 +1,16 @@
+[Unit]
+Description=WhatsApp Bot service for %i
+
+[Service]
+ExecStart=/usr/bin/whatsapp-cli -client-name $CLIENT_NAME -config-path $CONFIG_PATH
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+WorkingDirectory=/etc/echo/whatsapp-cli-data/%i/bot_data/
+EnvironmentFile=/etc/echo/whatsapp-cli-data/%i/%i.env
+Environment=CLIENT_NAME=$CLIENT_NAME
+Environment=CONFIG_PATH=$CONFIG_PATH
+
+[Install]
+WantedBy=multi-user.target
