@@ -73,7 +73,7 @@ async fn setup_worker(
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(settlement_paths).context(h!())?,
     ));
-    let rq: reqwest::Client = reqwest::Client::builder()
+    let rq = Client::builder()
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
         .build()
         .context(h!())?;
@@ -96,11 +96,13 @@ async fn receive_thread(
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .context(h!())?;
-    let txn = dbx.begin().await.context(h!())?;
-    sync_groups(&txn, client_name, client_groups_sync_ts_map)
-        .await
-        .context(h!())?;
-    txn.commit().await.context(h!())?;
+    if !config.read_from_legacy_data_sources.unwrap_or(true) {
+        let txn = dbx.begin().await.context(h!())?;
+        sync_groups(&txn, client_name, client_groups_sync_ts_map)
+            .await
+            .context(h!())?;
+        txn.commit().await.context(h!())?;
+    }
     sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
         .await
         .context(h!())?;
@@ -227,13 +229,12 @@ async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
-    redis: &mut redis::aio::ConnectionManager,
-    config: &crate::config::Config,
-    rq: &reqwest::Client,
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
+    redis: &mut ConnectionManager,
+    config: &Config,
+    rq: &Client,
+    settlements: Arc<RwLock<SettlementsData>>,
 ) -> anyhow::Result<()> {
     debug!("syncing inbox for client_name={client_name}");
-    // let time = inbox_sync_at;
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
     let datasources = collect_datasources(db).await.context(h!())?;
     let txn = db.begin().await.context(h!())?;
@@ -265,18 +266,20 @@ async fn sync_inbox(
             //     );
             //     return;
             // }
-            if let Err(e) = receive_once(
-                &m,
-                &txn,
-                &datasources,
-                redis,
-                config,
-                rq,
-                settlements.clone(),
-            )
-            .await
-            {
-                warn!("bot failed to process a message: {:?}", e);
+            if !config.read_from_legacy_data_sources.unwrap_or(true) {
+                if let Err(e) = receive_once(
+                    &m,
+                    &txn,
+                    &datasources,
+                    redis,
+                    config,
+                    rq,
+                    settlements.clone(),
+                )
+                .await
+                {
+                    warn!("bot failed to process a message: {:?}", e);
+                }
             }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
                 .await
@@ -320,9 +323,9 @@ async fn receive_once(
     m: &MessageF1,
     txn: &DatabaseTransaction,
     datasources: &BTreeMap<MessageSource, Model>,
-    redis: &mut redis::aio::ConnectionManager,
-    config: &crate::config::Config,
-    rq: &reqwest::Client,
+    redis: &mut ConnectionManager,
+    config: &Config,
+    rq: &Client,
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
 ) -> Result<(), AppError> {
     let datasource_id =

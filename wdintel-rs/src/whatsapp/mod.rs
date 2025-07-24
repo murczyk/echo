@@ -87,64 +87,65 @@ async fn receive_once(
             .await
             .context(h!())?;
         let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
-        let signal_message = signal_message::ActiveModel {
-            id: NotSet,
-            body: Set(Some(body.clone())),
-            created_at: NotSet,
-            group_master_key: Set(Some(wq.group_jid.clone())),
-            timestamp: Set(Some(wq.timestamp.clone())),
-            sender: Set(Some(wq.from_jid.clone())),
-            duplicate_of: Set(m_duplicate_id),
-            format: NotSet,
-            datasource_id: Set(Some(datasource.id)),
-            deleted: NotSet,
-        }
-        .insert(&txn)
-        .await
-        .context(h!())?;
-
-        if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
-            // attachments if any
-            let attachments = whatsapp_queue_attachment::Entity::find()
-                .filter(
-                    whatsapp_queue_attachment::Column::WhatsappId
-                        .eq(whatsapp_id),
-                )
-                .all(&txn)
-                .await
-                .context(h!())?;
-            for a in attachments {
-                let _signal_attachment = signal_attachment::ActiveModel {
-                    id: NotSet,
-                    signal_message_id: Set(signal_message.id),
-                    path: Set(a.path.clone()),
-                    created_at: NotSet,
-                }
-                .insert(&txn)
-                .await
-                .context(h!())?;
-                a.delete(&txn).await.context(h!())?;
+        if config.read_from_legacy_data_sources.unwrap_or(true) {
+            let signal_message = signal_message::ActiveModel {
+                id: NotSet,
+                body: Set(Some(body.clone())),
+                created_at: NotSet,
+                group_master_key: Set(Some(wq.group_jid.clone())),
+                timestamp: Set(Some(wq.timestamp.clone())),
+                sender: Set(Some(wq.from_jid.clone())),
+                duplicate_of: Set(m_duplicate_id),
+                format: NotSet,
+                datasource_id: Set(Some(datasource.id)),
+                deleted: NotSet,
             }
+            .insert(&txn)
+            .await
+            .context(h!())?;
+
+            if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
+                // attachments if any
+                let attachments = whatsapp_queue_attachment::Entity::find()
+                    .filter(
+                        whatsapp_queue_attachment::Column::WhatsappId
+                            .eq(whatsapp_id),
+                    )
+                    .all(&txn)
+                    .await
+                    .context(h!())?;
+                for a in attachments {
+                    let _signal_attachment = signal_attachment::ActiveModel {
+                        id: NotSet,
+                        signal_message_id: Set(signal_message.id),
+                        path: Set(a.path.clone()),
+                        created_at: NotSet,
+                    }
+                    .insert(&txn)
+                    .await
+                    .context(h!())?;
+                    a.delete(&txn).await.context(h!())?;
+                }
+            }
+
+            crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+                settlements.clone(),
+                &txn,
+                &rq,
+                &config,
+                redis,
+                signal_message.id,
+            )
+            .await;
+
+            crate::sigint::worker::incoming_message_after_insert(
+                &txn,
+                signal_message.id,
+            )
+            .await
+            .context(h!())?;
         }
-
         wq.delete(&txn).await.context(h!())?;
-
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
-            settlements.clone(),
-            &txn,
-            &rq,
-            &config,
-            redis,
-            signal_message.id,
-        )
-        .await;
-
-        crate::sigint::worker::incoming_message_after_insert(
-            &txn,
-            signal_message.id,
-        )
-        .await
-        .context(h!())?;
         txn.commit().await.context(h!())?;
     }
     Ok(())

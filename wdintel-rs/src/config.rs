@@ -107,7 +107,7 @@ pub struct Config {
     pub feature_tmp_in_memory: Option<bool>,
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
-    pub echo_im_config: Option<echo_im::types::Config>,
+    pub read_from_legacy_data_sources: Option<bool>,
 }
 
 impl Config {
