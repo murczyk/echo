@@ -3,7 +3,9 @@ use log::*;
 
 #[tokio::main]
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
-    crate::migration::run_migration_1(mode).await?;
+    crate::migration::run_migration_1(mode)
+        .await
+        .context(h!())?;
 
     let config = crate::config::read_config(mode.clone())?;
 
@@ -18,7 +20,8 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
         .filter(datasource::Column::Enabled.eq(true))
         .order_by_asc(datasource::Column::Id)
         .all(&dbx)
-        .await?;
+        .await
+        .context(h!())?;
     let jset = tokio::task::LocalSet::new();
     info!("found enabled datasources: {}", datasources.len());
     for datasource in datasources {
@@ -38,7 +41,7 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
                 .await
             });
         } else if datasource.kind == "api" {
-            log::warn!("> buran api disabled datasource id={}", datasource.id);
+            warn!("> buran api disabled datasource id={}", datasource.id);
         } else if datasource.kind == "whatsapp" {
             let dbx2 = dbx.clone();
             let config5 = config.clone();
@@ -107,7 +110,9 @@ async fn receive_thread_signal_restapi(
     loop {
         // println!("> receiving messages...");
         let mut messages =
-            crate::sigint::restapi::receive_messages(config, &rq, &dbx).await?;
+            crate::sigint::restapi::receive_messages(config, &rq, &dbx)
+                .await
+                .context(h!())?;
         if messages.len() > 0 {
             println!("> received {} messages", messages.len());
         }
@@ -131,7 +136,8 @@ async fn receive_thread_signal_restapi(
                     &message,
                     &mut sync_state,
                 )
-                .await?;
+                .await
+                .context(h!())?;
             }
         }
 
@@ -143,8 +149,9 @@ async fn receive_thread_signal_restapi(
             > std::time::Duration::from_secs(SYNC_SECS)
         {
             println!("> syncing accumulated group names and profiles");
-            let groups =
-                crate::sigint::restapi::receive_groups(config, &rq).await?;
+            let groups = crate::sigint::restapi::receive_groups(config, &rq)
+                .await
+                .context(h!())?;
             for group in groups {
                 sync_state.groups.insert(SyncStateGroup {
                     master_key: group.internal_id.clone(),
@@ -180,7 +187,8 @@ pub async fn do_sync_state(
         let m_exising_signal_group = SignalGroup::find()
             .filter(signal_group::Column::MasterKey.eq(&group.master_key))
             .one(dbx)
-            .await?;
+            .await
+            .context(h!())?;
         match m_exising_signal_group {
             Some(existing) => {
                 if existing.name.as_ref() != Some(&group.name)
@@ -195,7 +203,7 @@ pub async fn do_sync_state(
                     let mut existing: signal_group::ActiveModel =
                         existing.into();
                     existing.name = Set(Some(group.name.clone()));
-                    existing.update(dbx).await?;
+                    existing.update(dbx).await.context(h!())?;
                 }
             }
             None => {
@@ -208,7 +216,8 @@ pub async fn do_sync_state(
                     ignore_operativny: Default::default(),
                 }
                 .insert(dbx)
-                .await?;
+                .await
+                .context(h!())?;
             }
         }
     }
@@ -220,7 +229,8 @@ pub async fn do_sync_state(
                     signal_profile::Column::Uuid.eq(format!("{}", sender.uuid)),
                 )
                 .one(dbx)
-                .await?;
+                .await
+                .context(h!())?;
             match m_existing_profile {
                 Some(existing) => {
                     let prof_name = Some((Some(name.clone()), None));
@@ -233,7 +243,7 @@ pub async fn do_sync_state(
                             existing.into();
                         existing.given_name = Set(Some(name.clone()));
                         existing.family_name = Set(None);
-                        existing.update(dbx).await?;
+                        existing.update(dbx).await.context(h!())?;
                     }
                 }
                 None => {
@@ -244,7 +254,8 @@ pub async fn do_sync_state(
                         created_at: NotSet,
                     }
                     .insert(dbx)
-                    .await?;
+                    .await
+                    .context(h!())?;
                 }
             }
         }
@@ -324,7 +335,7 @@ pub async fn process_incoming_message_restapi(
     }
     // Normalize body
     let body = body.replace("\r\n", "\n");
-    let m_duplicate = find_duplicate(dbx, &body).await?;
+    let m_duplicate = find_duplicate(dbx, &body).await.context(h!())?;
     let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
     // skip if this is same-group duplicate
     if let Some(ref duplicate) = m_duplicate {
@@ -342,62 +353,68 @@ pub async fn process_incoming_message_restapi(
         return Ok(());
     };
 
-    let message = signal_message::ActiveModel {
-        id: NotSet,
-        body: Set(Some(body.clone())),
-        created_at: NotSet,
-        group_master_key: Set(Some(group_info.group_id.clone())),
-        timestamp: Set(timestamp),
-        sender: Set(Some(format!("{}", source_uuid.clone()))),
-        duplicate_of: Set(m_duplicate_id),
-        format: Set(Some(2)),
-        datasource_id: Set(Some(datasource_id)),
-        deleted: NotSet,
-    };
-    let db_message_id: i64 = SignalMessage::insert(message)
-        .exec(dbx)
-        .await?
-        .last_insert_id;
+    if config.read_from_legacy_data_sources.unwrap_or(true) {
+        let message = signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some(body.clone())),
+            created_at: NotSet,
+            group_master_key: Set(Some(group_info.group_id.clone())),
+            timestamp: Set(timestamp),
+            sender: Set(Some(format!("{}", source_uuid.clone()))),
+            duplicate_of: Set(m_duplicate_id),
+            format: Set(Some(2)),
+            datasource_id: Set(Some(datasource_id)),
+            deleted: NotSet,
+        };
+        let db_message_id: i64 = SignalMessage::insert(message)
+            .exec(dbx)
+            .await
+            .context(h!())?
+            .last_insert_id;
 
-    if let Some(ref attachments) = data_message.attachments {
-        for attachment in attachments.iter() {
-            save_attachment_restapi(
-                config,
-                &dbx,
-                attachment,
-                Some(db_message_id),
-            )
-            .await?;
+        if let Some(ref attachments) = data_message.attachments {
+            for attachment in attachments.iter() {
+                save_attachment_restapi(
+                    config,
+                    &dbx,
+                    attachment,
+                    Some(db_message_id),
+                )
+                .await
+                .context(h!())?;
+            }
         }
-    }
-    if let Some(ref quote) = data_message.quote {
-        for attachment in quote.attachments.iter() {
-            save_attachment_restapi(
-                config,
-                &dbx,
-                attachment,
-                Some(db_message_id),
-            )
-            .await?;
+        if let Some(ref quote) = data_message.quote {
+            for attachment in quote.attachments.iter() {
+                save_attachment_restapi(
+                    config,
+                    &dbx,
+                    attachment,
+                    Some(db_message_id),
+                )
+                .await
+                .context(h!())?;
+            }
         }
+
+        // println!("> before inbox_item_oneoff_nofail");
+
+        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+            settlements.clone(),
+            dbx,
+            &rq,
+            &config,
+            redis,
+            db_message_id,
+        )
+        .await;
+
+        // println!("> before incoming_message_after_insert");
+
+        incoming_message_after_insert(dbx, db_message_id)
+            .await
+            .context(h!())?;
     }
-
-    // println!("> before inbox_item_oneoff_nofail");
-
-    crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
-        settlements.clone(),
-        dbx,
-        &rq,
-        &config,
-        redis,
-        db_message_id,
-    )
-    .await;
-
-    // println!("> before incoming_message_after_insert");
-
-    incoming_message_after_insert(dbx, db_message_id).await?;
-
     sync_state.senders.insert(SyncStateSender {
         uuid: Uuid::parse_str(&source_uuid)?,
         name: Some(source_name.clone()),

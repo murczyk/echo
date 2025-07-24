@@ -106,6 +106,9 @@ pub async fn main_server(
                 .await;
             });
         }
+        tokio::spawn(async move {
+            crate::messenger::worker::receive_thread_nofail(mode.clone()).await;
+        });
     }
 
     if let Err(e) =
