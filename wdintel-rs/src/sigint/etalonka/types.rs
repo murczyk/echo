@@ -21,6 +21,7 @@ pub struct EtalonkaJimForksReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct EtalonkaSettings {
+    /// Ознака імпорту лише тих атрибутів мережі, що відповідають формі
     pub networks_only: bool,
     pub active_freqs_only: bool,
     pub include_pelengs_map: bool,
