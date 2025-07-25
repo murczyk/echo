@@ -24,7 +24,7 @@ use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
     QuerySelect,
 };
-use sea_query::{Expr, Query};
+use sea_query::{Alias, Expr, Query};
 
 pub mod types;
 
@@ -970,6 +970,149 @@ async fn network_group_activity_bl(
     }
 
     Ok(res)
+}
+
+/// Статистика активності мережі за частотами по днях
+///
+/// # API URL
+/// - POST: /api/sigint/network-freqs-activity-one
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<NetworkFreqsActivityReq>`] - де [`NetworkFreqsActivityReq`] Тіло запиту, що містить параметри для фільтрації мереж.
+///
+/// # Повертає
+///
+/// [`Json<HashMap<String, HashMap<String, i64>>>`], це структура, що представляє статистичну інформацію по днях та частотах мережі.
+///
+#[post("/api/sigint/network-freqs-activity-one")]
+pub async fn network_freqs_activity_one(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkFreqsActivityReq>,
+) -> Result<Json<HashMap<String, HashMap<String, i64>>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+
+    let groups = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+
+    let network_freqs_cte = Query::select()
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id)),
+            Alias::new("id"),
+        )
+        // .expr_as(
+        //     Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
+        //     Alias::new("network_id"),
+        // )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
+            Alias::new("freq"),
+        )
+        .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ActiveFrom,
+            )),
+            Alias::new("active_from"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
+            Alias::new("active_to"),
+        )
+        .from(SigintNetworkFreq::Table)
+        .and_where(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
+                .eq(req.network_id),
+        )
+        .to_owned();
+
+    let network_freqs_cte = sea_orm::sea_query::CommonTableExpression::new()
+        .query(network_freqs_cte)
+        .table_name(Alias::new("network_freqs"))
+        .to_owned();
+
+    let main_query = Query::select()
+    .expr_as(
+        Expr::cust("(EXTRACT(EPOCH FROM DATE_TRUNC('day', sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')) * 1000)::BIGINT"),
+        Alias::new("day"),
+    )
+    // .expr_as(Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))), Alias::new("network_id"))
+    .expr_as(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)), Alias::new("freq"))
+    .expr_as(Expr::cust("COUNT(*)"), Alias::new("message_count"))
+    .from(SignalMessage::Table)
+    .join(
+        JoinType::InnerJoin,
+        SigintInboxItem::Table,
+        Expr::col((SignalMessage::Table, SignalMessage::Id))
+            .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
+    )
+    .join(
+        JoinType::InnerJoin,
+        Alias::new("network_freqs"),
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+            .equals((Alias::new("network_freqs"), Alias::new("freq")))
+            .and(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .gte(Expr::col((Alias::new("network_freqs"), Alias::new("active_from"))))
+            )
+            .and(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                    .lte(Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
+            ),
+    )
+    .and_where(Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false))
+    .and_where(Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey)).is_in(groups))
+    .add_group_by([
+        // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
+        Expr::cust("day"),        
+    ])
+    .order_by_expr(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(), Order::Asc)
+    .order_by_expr(Expr::cust("day"), Order::Asc)
+    .to_owned();
+
+    let combined_query = Query::with()
+        .cte(network_freqs_cte)
+        .clone()
+        .query(main_query);
+
+    let combined_query: String = combined_query.to_string(PostgresQueryBuilder);
+
+    // debug!(">  network_freqs_activity query: {}", combined_query);
+
+    let rows = env
+        .dbx
+        .query_all(Statement::from_string(
+            DatabaseBackend::Postgres,
+            combined_query,
+        ))
+        .await
+        .context(h!())?;
+
+    let mut res: HashMap<String, HashMap<String, i64>> = HashMap::new();
+
+    for row in rows {
+        let freq = row.try_get::<String>("", "freq").unwrap_or_default();
+        let day = row
+            .try_get::<i64>("", "day")
+            .unwrap_or_default()
+            .to_string();
+        let count = row.try_get::<i64>("", "message_count").unwrap_or(0);
+
+        res.entry(freq).or_default().insert(day, count);
+    }
+
+    Ok(Json(res))
 }
 
 #[post("/api/sigint/network-points")]

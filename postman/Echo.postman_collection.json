@@ -421,6 +421,37 @@
 			"response": []
 		},
 		{
+			"name": "sigint/network-freqs-activity-one",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"network_id\": 2844\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/sigint/network-freqs-activity-one",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"sigint",
+						"network-freqs-activity-one"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/network-callsigns-list",
 			"request": {
 				"auth": {
