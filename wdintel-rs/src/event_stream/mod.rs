@@ -208,10 +208,10 @@ pub async fn create_redis_stream(
         ))
         .await
         .context(h!())?;
-    redis
-        .xadd::<String, &str, &str, Vec<u8>, redis::Value>(
+    let xadd_reply = redis
+        .xadd::<String, &str, &str, Vec<u8>, String>(
             crate::event_stream::session_stream_id(session_id),
-            "1-1",
+            "*",
             &[("v", val.clone())],
         )
         .await
@@ -226,7 +226,7 @@ pub async fn create_redis_stream(
     redis
         .xdel::<String, &str, redis::Value>(
             crate::event_stream::session_stream_id(session_id),
-            &["1-1"],
+            &[&xadd_reply],
         )
         .await
         .context(h!())?;

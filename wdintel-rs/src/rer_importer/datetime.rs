@@ -427,7 +427,7 @@ mod tests {
 — Да, все живы, машине пизда."#;
         let res = extract_datetime(input).unwrap();
         let expected = Some(
-            NaiveDate::from_ymd_opt(2025, 07,24)
+            NaiveDate::from_ymd_opt(2025, 07, 24)
                 .unwrap()
                 .and_hms_opt(08, 05, 21)
                 .unwrap(),
