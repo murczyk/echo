@@ -436,3 +436,10 @@ pub struct UpdateNetworkUnitsReq {
     /// Список ітентифікаторів підрозділів мережі [`crate::entities::sigint_unit::Model`]
     pub unit_ids: Vec<i64>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkFreqsActivityReq {
+    pub network_id: i64,
+}
