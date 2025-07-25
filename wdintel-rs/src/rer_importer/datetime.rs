@@ -14,6 +14,11 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
                 r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})",
                 |capts| { parse_datetime(capts, true, true, true, false) },
             ),
+            // Work with formats like DD.MM.YYYY, HH:MI:SS
+            (
+                r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4}), (?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2})",
+                |capts| { parse_datetime(capts, true, true, true, true) },
+            ),
             // Work with formats like YYYY-MM-DD_HH:MI
             (
                 r"(?P<year>\d{4})-(?P<mon>\d{2})-(?P<day>\d{2})_(?P<hour>\d{2})\s*:(?P<minute>\d{2})",
@@ -405,6 +410,26 @@ mod tests {
             NaiveDate::from_ymd_opt(2025, 01, 13)
                 .unwrap()
                 .and_hms_opt(17, 02, 34)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_test10() {
+        let input = r#"24.07.2025, 08:05:21
+149.7300
+УКХ р/м 60 омсб "Сомалі" 9 омсбр (ЗАТИШОК - сх НОВЕ ШАХОВЕ)
+ТРАКТОР
+НВ
+
+— Депутат, Депутат Трактору.
+— Да, все живы, машине пизда."#;
+        let res = extract_datetime(input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2025, 07,24)
+                .unwrap()
+                .and_hms_opt(08, 05, 21)
                 .unwrap(),
         );
         assert_eq!(res, expected);
