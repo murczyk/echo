@@ -25,6 +25,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Time
 import View exposing (View)
 import Views
 
@@ -56,6 +57,22 @@ type alias Model =
     { accounts : RemoteData ApiError (List B.EchoAccountF1)
     , sidebarOpen : Bool
     , formErrors : Dict String String
+    , tableState : Table.State
+    , linkFlow : LinkFlow
+    }
+
+
+type LinkFlow
+    = LinkFormState LinkForm
+    | LinkQrCode { accountId : Int, qrCode : String, account : B.EchoAccountF1 }
+    | LinkSuccess B.EchoAccountF1
+    | LinkError String
+
+
+type alias LinkForm =
+    { messengerType : String
+    , phoneNumber : String
+    , name : String
     }
 
 
@@ -64,8 +81,10 @@ init () =
     ( { accounts = RD.NotAsked
       , sidebarOpen = False
       , formErrors = Dict.empty
+      , tableState = Table.initialSort "Створено"
+      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
       }
-    , E.none
+    , E.sendCmd (Api.messenger_list_accounts GotAccounts)
     )
 
 
@@ -79,6 +98,16 @@ type Msg
     | GotAccounts (Result ApiError B.AccountsRsp)
     | OpenLinkSidebar
     | CloseLinkSidebar
+    | SetTableState Table.State
+    | SetLinkMessengerType String
+    | SetLinkPhoneNumber String
+    | SetLinkName String
+    | SubmitLinkForm
+    | GotLinkResult (Result ApiError B.LinkAccountRsp)
+    | GotQrCode (Result ApiError B.QrCodeRsp)
+    | CheckIsLinked
+    | GotIsLinked (Result ApiError B.IsAccountLinkedRsp)
+    | LinkTimeout
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -111,9 +140,127 @@ update msg model =
             )
 
         CloseLinkSidebar ->
-            ( { model | sidebarOpen = False }
+            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
             , E.none
             )
+
+        SetTableState newTableState ->
+            ( { model | tableState = newTableState }
+            , E.none
+            )
+
+        SetLinkMessengerType value ->
+            case model.linkFlow of
+                LinkFormState linkForm ->
+                    let
+                        updatedForm = { linkForm | messengerType = value }
+                    in
+                    ( { model | linkFlow = LinkFormState updatedForm }
+                    , E.none
+                    )
+                
+                _ ->
+                    ( model, E.none )
+
+        SetLinkPhoneNumber value ->
+            case model.linkFlow of
+                LinkFormState linkForm ->
+                    let
+                        updatedForm = { linkForm | phoneNumber = value }
+                    in
+                    ( { model | linkFlow = LinkFormState updatedForm }
+                    , E.none
+                    )
+                
+                _ ->
+                    ( model, E.none )
+
+        SetLinkName value ->
+            case model.linkFlow of
+                LinkFormState linkForm ->
+                    let
+                        updatedForm = { linkForm | name = value }
+                    in
+                    ( { model | linkFlow = LinkFormState updatedForm }
+                    , E.none
+                    )
+                
+                _ ->
+                    ( model, E.none )
+
+        SubmitLinkForm ->
+            case model.linkFlow of
+                LinkFormState linkForm ->
+                    let
+                        request = 
+                            { messenger = linkForm.messengerType
+                            , phone = linkForm.phoneNumber
+                            , displayName = linkForm.name
+                            }
+                    in
+                    ( model
+                    , E.sendCmd (Api.messenger_link_account GotLinkResult request)
+                    )
+                
+                _ ->
+                    ( model, E.none )
+
+        GotLinkResult result ->
+            case result of
+                Ok linkRsp ->
+                    ( { model | linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account } }
+                    , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = linkRsp.account.id })
+                    )
+
+                Err _ ->
+                    ( { model | linkFlow = LinkError "Помилка створення акаунту" }
+                    , E.none
+                    )
+
+        GotQrCode result ->
+            case result of
+                Ok qrRsp ->
+                    case model.linkFlow of
+                        LinkQrCode qrData ->
+                            ( { model | linkFlow = LinkQrCode { qrData | qrCode = qrRsp.qrCodeBase64 } }
+                            , E.none
+                            )
+                        _ ->
+                            ( model, E.none )
+                
+                Err _ ->
+                    ( { model | linkFlow = LinkError "Помилка отримання QR коду" }
+                    , E.none
+                    )
+
+        CheckIsLinked ->
+            case model.linkFlow of
+                LinkQrCode qrData ->
+                    ( model
+                    , E.sendCmd (Api.messenger_is_linked GotIsLinked { accountId = qrData.accountId })
+                    )
+                _ ->
+                    ( model, E.none )
+
+        GotIsLinked result ->
+            case result of
+                Ok isLinkedRsp ->
+                    if isLinkedRsp.isLinked then
+                        case model.linkFlow of
+                            LinkQrCode qrData ->
+                                ( { model | linkFlow = LinkSuccess qrData.account }
+                                , E.none
+                                )
+                            _ ->
+                                ( model, E.none )
+                    else
+                        ( model, E.none )
+                
+                Err _ ->
+                    ( model, E.none )
+
+        LinkTimeout ->
+            ( model, E.none )
 
 
 
@@ -122,7 +269,12 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.none
+    case model.linkFlow of
+        LinkQrCode _ ->
+            Time.every 3000 (\_ -> CheckIsLinked)
+        
+        _ ->
+            Sub.none
 
 
 
@@ -140,7 +292,7 @@ body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
     let
         sidebarContent =
-            []
+            linkAccountSidebarContent model
     in
     [ div
         [ classList [ ( "overflow-hidden", model.sidebarOpen ) ]
@@ -166,7 +318,212 @@ mainBlock isDark model =
                     |> Button.view
                 ]
             ]
-        , div [ class "text-center py-8" ]
-            [ text "Тут буде таблиця з акаунтами" ]
+        , case model.accounts of
+            RD.Loading ->
+                div [ class "text-center py-8" ]
+                    [ text "Завантаження..." ]
+
+            RD.Failure error ->
+                div [ class "text-center py-8 text-red-600" ]
+                    [ text "Помилка завантаження" ]
+
+            RD.Success accounts ->
+                div [ class "table-responsive-modern" ]
+                    [ Table.view
+                        (messengerAccountsTableConfig)
+                        model.tableState
+                        accounts
+                    ]
+
+            RD.NotAsked ->
+                div [ class "text-center py-8" ]
+                    [ text "Завантаження..." ]
+
+            RD.NeedsReload _ ->
+                div [ class "text-center py-8" ]
+                    [ text "Потрібно перезавантажити" ]
         ]
     ]
+
+
+linkAccountSidebarContent : Model -> List (Html Msg)
+linkAccountSidebarContent model =
+    case model.linkFlow of
+        LinkFormState linkForm ->
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Введіть дані для прив'язування акаунту месенджера" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6" ]
+                        [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип месенджера" ]
+                            , select
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , value linkForm.messengerType
+                                , onInput SetLinkMessengerType
+                                ]
+                                [ option [ value "signal" ] [ text "Signal" ]
+                                , option [ value "whatsapp" ] [ text "WhatsApp" ]
+                                ]
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Номер телефону" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "tel"
+                                , placeholder "+380XXXXXXXXX"
+                                , value linkForm.phoneNumber
+                                , onInput SetLinkPhoneNumber
+                                ]
+                                []
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва акаунту" ]
+                            , input
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                , type_ "text"
+                                , placeholder "Мій Signal акаунт"
+                                , value linkForm.name
+                                , onInput SetLinkName
+                                ]
+                                []
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border" ]
+                    [ div [ class "flex gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        , Button.new { label = "Прив'язати", onClick = SubmitLinkForm }
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+        LinkQrCode qrData ->
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                    , p [ class "text-sm text-muted-foreground" ] 
+                        [ text (qrData.account.messenger ++ ": " ++ qrData.account.phoneNumber) ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6 text-center" ]
+                        [ if qrData.qrCode /= "" then
+                            div [ class "space-y-4" ]
+                                [ img [ src ("data:image/png;base64," ++ qrData.qrCode), class "mx-auto max-w-xs" ] []
+                                , p [ class "text-sm text-muted-foreground" ] 
+                                    [ text "Відскануйте QR код вашим месенджером" ]
+                                ]
+                          else
+                            div [ class "py-8" ]
+                                [ text "Завантаження QR коду..." ]
+                        , div [ class "flex items-center justify-center space-x-2" ]
+                            [ div [ class "w-2 h-2 bg-blue-500 rounded-full animate-pulse" ] []
+                            , span [ class "text-sm text-muted-foreground" ] [ text "Очікування підключення..." ]
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border" ]
+                    [ div [ class "flex gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+        LinkSuccess account ->
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Акаунт успішно прив'язано!" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6 text-center" ]
+                        [ div [ class "text-green-600 text-6xl" ] [ text "✅" ]
+                        , div [ class "space-y-2" ]
+                            [ h3 [ class "text-lg font-medium" ] [ text "Акаунт підключено!" ]
+                            , p [ class "text-sm text-muted-foreground" ] 
+                                [ text (account.messenger ++ ": " ++ account.phoneNumber) ]
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border" ]
+                    [ div [ class "flex gap-3" ]
+                        [ Button.new { label = "Закрити", onClick = CloseLinkSidebar }
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+        LinkError error ->
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Сталася помилка" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6 text-center" ]
+                        [ div [ class "text-red-600 text-6xl" ] [ text "❌" ]
+                        , div [ class "space-y-2" ]
+                            [ h3 [ class "text-lg font-medium" ] [ text "Помилка" ]
+                            , p [ class "text-sm text-muted-foreground" ] [ text error ]
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border" ]
+                    [ div [ class "flex gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        , Button.new { label = "Спробувати знову", onClick = OpenLinkSidebar }
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+
+messengerAccountsTableConfig : Table.Config B.EchoAccountF1 Msg
+messengerAccountsTableConfig =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+            }
+    in
+    Table.customConfig
+        { toId = \account -> String.fromInt account.id
+        , toMsg = SetTableState
+        , columns =
+            [ Table.stringColumn "Статус" .status |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Назва" .name |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Дії"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails [] 
+                            [ div [ class "flex gap-2" ]
+                                [ Button.new { label = "Відв'язати", onClick = NoOp }
+                                    |> Button.withStyleSecondary
+                                    |> Button.view
+                                ]
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "30%"
+            ]
+        , customizations = customizations
+        }

@@ -1326,6 +1326,15 @@ messenger_get_qr toMsg req =
         }
 
 
+messenger_is_linked : (Result ApiError IsAccountLinkedRsp -> msg) -> IsAccountLinkedReq -> Cmd msg
+messenger_is_linked toMsg req =
+    Http.post
+        { url = "/api/messenger/is-linked"
+        , body = Http.jsonBody (isAccountLinkedReqEncoder req)
+        , expect = leExpectJson toMsg isAccountLinkedRspDecoder
+        }
+
+
 messenger_edit_account : (Result ApiError () -> msg) -> AccountStatusReq -> Cmd msg
 messenger_edit_account toMsg req =
     Http.post
