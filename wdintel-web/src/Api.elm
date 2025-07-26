@@ -1304,3 +1304,50 @@ units_search toMsg tracker req =
         , timeout = Nothing
         , tracker = Just tracker
         }
+
+
+-- Messenger API functions
+
+messenger_list_accounts : (Result ApiError AccountsRsp -> msg) -> Cmd msg
+messenger_list_accounts toMsg =
+    Http.post
+        { url = "/api/messenger/list"
+        , body = Http.jsonBody Encode.null
+        , expect = leExpectJson toMsg accountsRspDecoder
+        }
+
+
+messenger_get_qr : (Result ApiError QrCodeRsp -> msg) -> QrCodeReq -> Cmd msg
+messenger_get_qr toMsg req =
+    Http.post
+        { url = "/api/messenger/qr"
+        , body = Http.jsonBody (qrCodeReqEncoder req)
+        , expect = leExpectJson toMsg qrCodeRspDecoder
+        }
+
+
+messenger_edit_account : (Result ApiError () -> msg) -> AccountStatusReq -> Cmd msg
+messenger_edit_account toMsg req =
+    Http.post
+        { url = "/api/messenger/edit"
+        , body = Http.jsonBody (accountStatusReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
+messenger_unlink_account : (Result ApiError () -> msg) -> DeleteAccountReq -> Cmd msg
+messenger_unlink_account toMsg req =
+    Http.post
+        { url = "/api/messenger/unlink"
+        , body = Http.jsonBody (deleteAccountReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
+messenger_link_account : (Result ApiError LinkAccountRsp -> msg) -> LinkAccountReq -> Cmd msg
+messenger_link_account toMsg req =
+    Http.post
+        { url = "/api/messenger/link"
+        , body = Http.jsonBody (linkAccountReqEncoder req)
+        , expect = leExpectJson toMsg linkAccountRspDecoder
+        }
