@@ -6,6 +6,9 @@ use regex::{Captures, Regex};
 
 type ProcessorFn = fn(&Captures) -> Result<NaiveDateTime, AppError>;
 
+/// Витягує дату та час з тіла повідомлення.  
+/// ***ВАЖЛИВО:*** при додаванні нових форматів дати та часу
+/// потрібно також додати їх у rer_importer::body_noheader::extract_text для коректного виділення тіла повідомлення.
 pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
     lazy_static! {
         static ref REGEX_PATTERNS: Vec<(&'static str, ProcessorFn)> = vec![

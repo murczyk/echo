@@ -24,7 +24,7 @@ pub struct NoHeadersBody {
     pub end: usize,
 }
 
-pub fn extract_text(inp: &str) -> Result<NoHeadersBody, AppError> {
+pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
     lazy_static! {
         // Remove data from Buran
         static ref RE: Regex = Regex::new(
@@ -81,6 +81,11 @@ pub fn extract_text(inp: &str) -> Result<NoHeadersBody, AppError> {
             r#"^[0-9]{2}\.[0-9]{2}, [0-9]{2}:[0-9]{2}$"#
         )
         .unwrap();
+        // Remove data time line dd.mm.yyyy, hh:mm:ss
+        static ref RE28: Regex = Regex::new(
+            r#"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}\s*$"#
+        )
+        .unwrap();
         // Remove unit line from Mouse
         static ref RE3: Regex = Regex::new(r#"^(\[DMR\] УКХ|УКХ|управління)\s"#).unwrap();
         // Remove freq line from Mouse
@@ -92,7 +97,8 @@ pub fn extract_text(inp: &str) -> Result<NoHeadersBody, AppError> {
     }
 
     // 1. Keep empty lines to avoid breaking `inp.find(&res)`
-    let mut lines: Vec<String> = inp.lines().map(|x| x.to_string()).collect();
+    let mut lines: Vec<String> =
+        input.lines().map(|x| x.to_string()).collect();
     lines = lines
         .iter()
         // .filter(|l| l.trim() != "")
@@ -107,6 +113,7 @@ pub fn extract_text(inp: &str) -> Result<NoHeadersBody, AppError> {
         .filter(|l| !RE25.is_match(l))
         .filter(|l| !RE26.is_match(l))
         .filter(|l| !RE27.is_match(l))
+        .filter(|l| !RE28.is_match(l))
         .filter(|l| !RE3.is_match(l))
         .filter(|l| !RE4.is_match(l))
         .filter(|l| !RE5.is_match(l))
@@ -118,7 +125,7 @@ pub fn extract_text(inp: &str) -> Result<NoHeadersBody, AppError> {
     let mut res = lines.join("\n");
 
     // 2. Find start position in character indices
-    let start_byte_pos = inp.find(&res).unwrap_or(0);
+    let start_byte_pos = input.find(&res).unwrap_or(0);
 
     // 3. Trim leading empty lines *after* finding `start`
     while res.starts_with('\n') {
@@ -131,8 +138,8 @@ pub fn extract_text(inp: &str) -> Result<NoHeadersBody, AppError> {
     }
 
     // 5. Adjust `start` after trimming
-    let new_start_byte_pos = inp.find(&res).unwrap_or(start_byte_pos);
-    let new_start = inp[..new_start_byte_pos].chars().count(); // Convert bytes to chars
+    let new_start_byte_pos = input.find(&res).unwrap_or(start_byte_pos);
+    let new_start = input[..new_start_byte_pos].chars().count(); // Convert bytes to chars
 
     let end = new_start + res.chars().count();
 
@@ -493,5 +500,32 @@ mod tests {
         );
         assert_eq!(res.start, 27);
         assert_eq!(res.end, 139);
+    }
+
+    #[test]
+    fn extract_text_and_position_10() {
+        let body = r#"
+26.07.2025, 09:57:06 
+148.1981
+УКХ р/м 1432 мсп 2 мсд 1 ТА (ТАБАЇВКА (ПІЩАНЕ)) 148.1981 МГц
+НВ
+НВ
+
+— Я Артист, безставая постреливает, возможно одноразую в карате.
+--Морган плюс.
+— Берестовая, шум винтов, возможно глаза."#;
+        let res = extract_text(body).unwrap();
+        assert_eq!(
+            res.body,
+            r#"НВ
+НВ
+
+— Я Артист, безставая постреливает, возможно одноразую в карате.
+--Морган плюс.
+— Берестовая, шум винтов, возможно глаза."#
+                .to_string()
+        );
+        assert_eq!(res.start, 93);
+        assert_eq!(res.end, 221);
     }
 }
