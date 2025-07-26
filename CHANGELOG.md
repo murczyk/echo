@@ -1,4 +1,5 @@
 ## NEXT
+- [#1095](https://github.com/echoua/echo/issues/1095) Виправлено баг з некоректним виділенням сигналів в шапці повідомлення.
 - [#1091](https://github.com/echoua/echo/issues/1091) Еталонка. Виправлено відображення "не звітніх", прив'язаних, позивних.
 - [#1089](https://github.com/echoua/echo/issues/1089) Виправлено помилку створення унікального redis-stream
 - [#1088](https://github.com/echoua/echo/issues/1088) Мережа. Backend. Створено ендпоінт статистики активності частот мережі.
