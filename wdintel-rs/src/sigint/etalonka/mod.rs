@@ -358,7 +358,15 @@ pub async fn generate_networks_docx_report(
                 // add all other callsigns in text
                 let callsigns_other = callsigns
                     .iter()
-                    .filter(|callsign| callsign.known_callsigns.is_none())
+                    .filter(|callsign| {
+                        callsign.known_callsigns.is_none()
+                            || (settings.networks_only
+                                && callsign.known_callsigns.is_some()
+                                && !callsigns_reporting
+                                    .get(&callsign.callsign)
+                                    .cloned()
+                                    .unwrap_or(false))
+                    })
                     .map(|callsign| callsign.callsign.to_uppercase().clone())
                     .collect::<Vec<String>>()
                     .join(", ");

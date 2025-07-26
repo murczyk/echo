@@ -1,4 +1,5 @@
 ## NEXT
+- [#1091](https://github.com/echoua/echo/issues/1091) Еталонка. Виправлено відображення "не звітніх", прив'язаних, позивних.
 - [#1089](https://github.com/echoua/echo/issues/1089) Виправлено помилку створення унікального redis-stream
 - [#1088](https://github.com/echoua/echo/issues/1088) Мережа. Backend. Створено ендпоінт статистики активності частот мережі.
 - [#940](https://github.com/echoua/echo/issues/940) Прив'язування Signal та Whatsapp з адмінки; прив'язування декількох акаунтів Signal/Whatsapp 
