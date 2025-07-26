@@ -1,4 +1,4 @@
-use elm_rs::{Elm, ElmEncode, ElmDecode};
+use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 

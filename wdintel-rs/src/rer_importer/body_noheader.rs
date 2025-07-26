@@ -97,8 +97,7 @@ pub fn extract_text(input: &str) -> Result<NoHeadersBody, AppError> {
     }
 
     // 1. Keep empty lines to avoid breaking `inp.find(&res)`
-    let mut lines: Vec<String> =
-        input.lines().map(|x| x.to_string()).collect();
+    let mut lines: Vec<String> = input.lines().map(|x| x.to_string()).collect();
     lines = lines
         .iter()
         // .filter(|l| l.trim() != "")
