@@ -7,6 +7,7 @@ use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
 use milgeo_rs::MilGeo;
+use crate::location::SettlementsData;
 
 pub mod discord;
 mod healthcheck;
@@ -153,7 +154,8 @@ pub async fn main_server(
             .build()
             .unwrap();
         let settlement_paths = config.settlement_paths().unwrap();
-        let settlements = Arc::new(RwLock::new(crate::location::load_from_file(settlement_paths).unwrap()));
+        let settlements_data = crate::location::load_from_file(settlement_paths).unwrap_or(SettlementsData::default());
+        let settlements = Arc::new(RwLock::new(settlements_data));
 
         let env = Env {
             mode,
