@@ -38,12 +38,14 @@ isLoadingStats model =
 mainBody : B.User -> Model -> Shared.Model -> Route () -> List (Html Msg)
 mainBody user model shared route =
     let
+        masterUnitsDict =
+            case shared.masterUnits of
+                Success units -> units
+                _ -> Dict.empty
         messagesShown =
             List.length model.messages
-
         messagesCountOverall =
             extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
-
         messagesBlock =
             case model.counts |> RD.toMaybe |> mmap (\r -> r.countOverall) of
                 Just 0 ->
@@ -103,16 +105,15 @@ mainBody user model shared route =
                                             [ class "modal-footer" ]
                                             [ button
                                                 [ class "btn btn-secondary"
-                                                , attribute "type" "button"
+                                                , type_ "button"
                                                 , attribute "data-bs-dismiss" "modal"
-                                                , onClick DeleteMessageCancel
                                                 ]
-                                                [ text "Відміна" ]
+                                                [ text "Скасувати" ]
                                             , button
                                                 [ class "btn btn-danger"
                                                 , type_ "button"
-                                                , attribute "data-bs-dismiss" "modal"
                                                 , onClick DeleteMessageConfirm
+                                                , attribute "data-bs-dismiss" "modal"
                                                 ]
                                                 [ text "Видалити" ]
                                             ]
@@ -120,52 +121,44 @@ mainBody user model shared route =
                                     ]
                                 ]
                     in
-                    div []
-                        [ deleteConfirmationModal
-                        , messagesNonEmptyBlock
-                        , loadMoreBtn
-                        ]
-
-        messagesNonEmptyBlock =
-            let
-                vps =
-                    { profiles = model.profiles
-                    , groupInfos = model.groupInfos
-                    , zone = model.zone
-                    , messages = model.messages
-                    , tags = model.tags
-                    , bookmarks = model.bookmarks
-                    , importants = model.importants
-                    , callsignsInfo = model.callsignsInfo
-                    , messageComments = model.messageComments
-                    , user = user
-                    , users = model.users
-                    , serverInfo = shared.serverInfo
-                    , networks = model.networks
-                    , masterUnits = model.masterUnits
-                    , freqNetworkIds = model.freqNetworkIds
-                    , currentRoute = Just route
-                    }
-
-                renderPs =
-                    { hideCheckboxes = False
-                    , hideIndividualSave = False
-                    }
-            in
-            div [ class "" ]
-                [ div []
-                    (List.map (Html.map RowsMsg)
-                        (List.map
-                            (Le.RerMessage.renderRow
-                                vps
-                                renderPs
-                                model.rowsModel
-                                model.formErrors
+                    let
+                        vps =
+                            { profiles = model.profiles
+                            , groupInfos = model.groupInfos
+                            , zone = model.zone
+                            , messages = model.messages
+                            , tags = model.tags
+                            , bookmarks = model.bookmarks
+                            , importants = model.importants
+                            , callsignsInfo = model.callsignsInfo
+                            , messageComments = model.messageComments
+                            , user = user
+                            , users = model.users
+                            , serverInfo = shared.serverInfo
+                            , networks = model.networks
+                            , masterUnits = masterUnitsDict
+                            , freqNetworkIds = model.freqNetworkIds
+                            , currentRoute = Just route
+                            }
+                        renderPs =
+                            { hideCheckboxes = False
+                            , hideIndividualSave = False
+                            }
+                    in
+                    div [ class "" ]
+                        [ div []
+                            (List.map (Html.map RowsMsg)
+                                (List.map
+                                    (Le.RerMessage.renderRow
+                                        vps
+                                        renderPs
+                                        model.rowsModel
+                                        model.formErrors
+                                    )
+                                    (enumerate model.messages)
+                                )
                             )
-                            (enumerate model.messages)
-                        )
-                    )
-                ]
+                        ]
     in
     [ div [] <|
         [ div

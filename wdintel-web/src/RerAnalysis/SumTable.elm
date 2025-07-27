@@ -126,6 +126,11 @@ renderUnitWithEdit model row unit =
 sumTableBlock2 : Model -> Shared.Model -> Route () -> B.SummaryTableFreq -> Html Msg
 sumTableBlock2 model shared route sumTable =
     let
+        masterUnitsDict =
+            case shared.masterUnits of
+                Success units -> units
+                _ -> Dict.empty
+
         renderRow row =
             let
                 actionMenuBody =
@@ -156,7 +161,7 @@ sumTableBlock2 model shared route sumTable =
                                     \networkId ->
                                         case Dict.get networkId model.networksSumTable of
                                             Just network ->
-                                                Le.Block.Unit.boldMasterUnit model.masterUnits network
+                                                Le.Block.Unit.boldMasterUnit masterUnitsDict network
 
                                             _ ->
                                                 text "Невідома мережа"
@@ -205,10 +210,10 @@ sumTableBlock2 model shared route sumTable =
                                             Le.Callsign.getAllUnitsIdsForNetworks networksWithMessageFreq
 
                                         networkUnits =
-                                            Le.Callsign.getUnitsInfoByIds networksUnitIds model.masterUnits
+                                            Le.Callsign.getUnitsInfoByIds networksUnitIds masterUnitsDict
 
                                         prioritizeCallsignsPartial c =
-                                            Le.Callsign.prioritizeCallsigns model.masterUnits networkUnits model.callsignsInfoSumTable c
+                                            Le.Callsign.prioritizeCallsigns masterUnitsDict networkUnits model.callsignsInfoSumTable c
 
                                         ( prio, nonPrio ) =
                                             prioritizeCallsignsPartial callsign
@@ -246,13 +251,6 @@ sumTableBlock2 model shared route sumTable =
                       <|
                         networkBlock
                             :: List.map (renderUnitWithEdit model row) row.units
-                    ]
-                , td [] <|
-                    [ ul
-                        [ class "list-unstyled mb-0"
-                        ]
-                      <|
-                        List.map renderLocation row.locations
                     ]
                 ]
 

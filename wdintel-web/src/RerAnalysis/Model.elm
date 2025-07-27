@@ -117,7 +117,6 @@ type alias Model =
     , networksSumTable : Dict Int B.Network
     , freqNetworkIds : Dict String (Set Int)
     , freqNetworkIdsSumTable : Dict String (Set Int)
-    , masterUnits : Dict Int B.Unit
     , sendersSelectedNames : List String
     , postsSelected : List String
     , deleteMessageModalId : Maybe Int

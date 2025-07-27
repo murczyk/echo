@@ -162,7 +162,6 @@ init route _ =
             , networksSumTable = Dict.empty
             , freqNetworkIds = Dict.empty
             , freqNetworkIdsSumTable = Dict.empty
-            , masterUnits = Dict.empty
             , sendersSelectedNames = []
             , postsSelected = []
             , deleteMessageModalId = Nothing
@@ -217,11 +216,6 @@ init route _ =
         [ E.getTimeZone InitGotZone
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
-        , E.getUnits GotUnits
-            { sortBy = Nothing
-            , afterUnitId = Nothing
-            , beforeUnitId = Nothing
-            }
         , E.map RowsMsg Le.RerMessage.init
         ]
     )
@@ -591,20 +585,7 @@ extractMetaInfo inboxRsp model =
     }
 
 
-loadMissingMasterUnitsIfPresent : List B.Network -> Dict.Dict Int B.Unit -> Effect Msg
-loadMissingMasterUnitsIfPresent rspNetworks existingMUnits =
-    let
-        newMessagesUnitIds =
-            rspNetworks |> List.concatMap (\n -> Maybe.withDefault [] n.unitIds) |> Set.fromList |> Set.toList
 
-        notLoadedUnitIds =
-            List.filter (\id -> not (List.member id (Dict.keys existingMUnits))) newMessagesUnitIds
-    in
-    if List.length notLoadedUnitIds > 0 then
-        E.getUnitsById GotUnitsById { ids = Just notLoadedUnitIds }
-
-    else
-        E.none
 
 
 update : B.User -> Shared.Model -> Route () -> Msg -> Model -> ( Model, Effect Msg )
@@ -751,10 +732,7 @@ update user shared route msg model =
                     extractMetaInfo rsp m2
             in
             ( m3
-            , E.batch
-                [ eff3
-                , loadMissingMasterUnitsIfPresent rsp.networks m3.masterUnits
-                ]
+            , eff3
             )
 
         GotInboxMore (Err e) ->
@@ -786,10 +764,7 @@ update user shared route msg model =
                     extractMetaInfo rsp m2
             in
             ( m3
-            , E.batch
-                [ eff3
-                , loadMissingMasterUnitsIfPresent rsp.networks m3.masterUnits
-                ]
+            , eff3
             )
 
         GotStatsCount (Err e) ->
@@ -1097,6 +1072,14 @@ update user shared route msg model =
 
         RowsMsg imsg ->
             let
+                masterUnitsDict =
+                    case shared.masterUnits of
+                        Success units ->
+                            units
+                        
+                        _ ->
+                            Dict.empty
+
                 vps : Le.RerMessage.ViewParams
                 vps =
                     { profiles = model.profiles
@@ -1112,7 +1095,7 @@ update user shared route msg model =
                     , users = model.users
                     , serverInfo = shared.serverInfo
                     , networks = model.networks
-                    , masterUnits = model.masterUnits
+                    , masterUnits = masterUnitsDict
                     , freqNetworkIds = model.freqNetworkIds
                     , currentRoute = Just route
                     }
@@ -2637,38 +2620,7 @@ update user shared route msg model =
                 _ ->
                     ( model, E.none )
 
-        GotUnits (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
-            )
 
-        GotUnits (Ok rsp) ->
-            ( { model
-                | masterUnits =
-                    rsp.units
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-              }
-            , E.none
-            )
-
-        GotUnitsById (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації підрозділів" err
-            )
-
-        GotUnitsById (Ok rsp) ->
-            let
-                newUnits =
-                    rsp.units
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-            in
-            ( { model
-                | masterUnits = Dict.union newUnits model.masterUnits
-              }
-            , E.none
-            )
 
         DeleteMessageConfirm ->
             case model.deleteMessageModalId of

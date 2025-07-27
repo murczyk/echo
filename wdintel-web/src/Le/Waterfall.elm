@@ -38,6 +38,7 @@ import Le.ErrorHandling
 import Le.RerMessage exposing (model0)
 import Le.Time
 import Le.Types exposing (..)
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (andThen, def, emptyToNothing, findK, getLabelOrDefault, jumpToBottom, renderZoneError)
 import Le.Waterfall.Filters as Filters exposing (Filter, FilterMsg(..))
 import Le.Waterfall.Message
@@ -70,7 +71,6 @@ type Msg
       -- API CALLS
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | GotNetworks (Result ApiError (List B.Network))
-    | GotUnits (Result ApiError B.ListUnitsRsp)
     | GotLatestFrequencies (Result ApiError (List String))
     | GotCallsignsInfo (Result ApiError (List B.CallsignInfoRes))
     | GotGroupKeys (Result ApiError (List String))
@@ -202,7 +202,6 @@ type alias Model =
     , signals : List B.Signal
     , freqNetworkIds : Dict String (Set Int)
     , networks : Dict Int B.Network
-    , masterUnits : Dict Int B.Unit
     , noEarlierMessagesLeft : Bool
     , lastViewedMessageId : LastViewedMessageId
     , loadingStrategy : LoadingStrategy
@@ -304,7 +303,6 @@ init id_ ms =
       , signals = []
       , freqNetworkIds = Dict.empty
       , networks = Dict.empty
-      , masterUnits = Dict.empty
       , noEarlierMessagesLeft = False
       , lastViewedMessageId =
             case ms of
@@ -376,11 +374,6 @@ initCmdOnce =
                 , filterMeaning = Nothing
                 , filterUnit = Nothing
                 }
-        , E.getUnits GotUnits
-            { sortBy = Nothing
-            , afterUnitId = Nothing
-            , beforeUnitId = Nothing
-            }
         ]
 
 
@@ -2088,19 +2081,6 @@ update shared user msg model =
             , E.none
             )
 
-        GotUnits (Err err) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err )
-
-        GotUnits (Ok rsp) ->
-            ( { model
-                | masterUnits =
-                    rsp.units
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-              }
-            , E.none
-            )
-
         MessageMsg id message innerMsg ->
             case model.messages |> Messages.getItem id of
                 Just ( message_, model_ ) ->
@@ -2126,7 +2106,10 @@ update shared user msg model =
 
                             --??
                             , freqNetworkIds = model.freqNetworkIds
-                            , masterUnits = model.masterUnits
+                            , masterUnits = 
+                                case shared.masterUnits of
+                                    Success units -> units
+                                    _ -> Dict.empty
                             , callsignsInfo = model.callsignsInfo
                             , networks = model.networks
                             , zone = model.zone
@@ -2329,9 +2312,10 @@ waterfallDiv :
     -> Set Int
     -> List ( Int, B.Datasource )
     -> Maybe B.ServerInfo
+    -> Dict Int B.Unit
     -> Model
     -> Html Msg
-waterfallDiv user isDarkMode duplicates datasources serverInfo model =
+waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model =
     let
         hideGoLatestButton =
             case model.loadingStrategy of
@@ -2449,7 +2433,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo model =
 
                                             --??
                                             , freqNetworkIds = model.freqNetworkIds
-                                            , masterUnits = model.masterUnits
+                                            , masterUnits = masterUnits
                                             , callsignsInfo = model.callsignsInfo
                                             , networks = model.networks
                                             , zone = model.zone
@@ -2515,6 +2499,7 @@ type alias MessageTabPs =
     , serverInfo : Maybe B.ServerInfo
     , user : B.User
     , waterfallsAmount : Int
+    , masterUnits : Dict Int B.Unit
     }
 
 
@@ -3117,5 +3102,5 @@ messageTab ps model =
                 )
             ]
         , HtmlX.viewIf model.unfoldSettings <| div [ class "h-[48px]" ] []
-        , waterfallDiv ps.user ps.isDarkMode ps.duplicates ps.datasources ps.serverInfo model
+        , waterfallDiv ps.user ps.isDarkMode ps.duplicates ps.datasources ps.serverInfo ps.masterUnits model
         ]
