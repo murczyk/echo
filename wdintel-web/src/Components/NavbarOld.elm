@@ -13,16 +13,21 @@ import Route.Path
 import Shared
 
 
+
 -- Types and Props (copied from Navbar.elm)
+
+
 type Link
     = Internal Route.Path.Path
     | External String
+
 
 type alias Menu =
     { link : Link
     , activeName : String
     , label : String
     }
+
 
 type alias Props msg =
     { onToggleTheme : msg
@@ -44,6 +49,7 @@ navBar user shared activeName props =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми"
+            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери"
             ]
 
         etalonkaSubs =
@@ -68,6 +74,7 @@ navBar user shared activeName props =
             ]
                 ++ (if hasRole "Admin" user then
                         [ Menu (Internal Route.Path.RadiosConvert) "radios-convert" "радіо kmz конвертер" ]
+
                     else
                         []
                    )
@@ -94,7 +101,12 @@ navBar user shared activeName props =
             , class "border-b border-black/15 py-2"
             ]
 
-        exoLogoClass = if not shared.isDarkMode then "invert brightness-0" else ""
+        exoLogoClass =
+            if not shared.isDarkMode then
+                "invert brightness-0"
+
+            else
+                ""
     in
     header navbarStyles
         [ nav [ class "container mx-auto px-4" ]
@@ -144,23 +156,39 @@ navBar user shared activeName props =
                     ]
                 , div [ class "flex gap-1 items-center" ]
                     [ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode ]
-                    , div 
+                    , div
                         [ class "w-6 h-6 flex items-center justify-center"
                         , onClick props.onNavbarVisibilityChange
                         ]
-                        [ i 
+                        [ i
                             [ class "bi bi-arrows-fullscreen text-white cursor-pointer hover:text-white transition-colors duration-200"
-                            , style "opacity" (if props.isRerDuty then "1" else "0")
-                            , style "pointer-events" (if props.isRerDuty then "auto" else "none")
-                            ] 
-                            [] 
+                            , style "opacity"
+                                (if props.isRerDuty then
+                                    "1"
+
+                                 else
+                                    "0"
+                                )
+                            , style "pointer-events"
+                                (if props.isRerDuty then
+                                    "auto"
+
+                                 else
+                                    "none"
+                                )
+                            ]
+                            []
                         ]
                     ]
                 ]
             ]
         ]
 
+
+
 -- Main navbar links: always white text
+
+
 menuItem activeName hrefLink activeNameExp nameText =
     li []
         [ a
@@ -171,12 +199,28 @@ menuItem activeName hrefLink activeNameExp nameText =
             [ text nameText ]
         ]
 
+
+
 -- Dropdowns: black text in light mode, white in dark mode
+
+
 menuItemWithSubs : Bool -> String -> String -> String -> List Menu -> Html msg
 menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
     let
-        dropdownTextClass = if isDarkMode then "text-white" else "text-black"
-        dropdownBgClass = if isDarkMode then "bg-gray-900" else "bg-white"
+        dropdownTextClass =
+            if isDarkMode then
+                "text-white"
+
+            else
+                "text-black"
+
+        dropdownBgClass =
+            if isDarkMode then
+                "bg-gray-900"
+
+            else
+                "bg-white"
+
         dropdownItem : Menu -> Html msg
         dropdownItem sub =
             li []
@@ -190,9 +234,11 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                             [ span [] [ text sub.label ]
                             , if sub.activeName == activeName then
                                 i [ class "bi bi-check ml-2" ] []
+
                               else
                                 text ""
                             ]
+
                     External link ->
                         a
                             [ class ("flex items-center justify-between px-4 py-2 " ++ dropdownTextClass ++ " hover:bg-black/10 rounded transition-all duration-200")
@@ -221,4 +267,5 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                 [ class ("w-56 " ++ dropdownBgClass ++ " rounded-lg shadow-lg border border-black/15 hidden group-hover:block transition-all duration-200") ]
                 (List.map dropdownItem subs)
             ]
-        ] 
+        ]
+
