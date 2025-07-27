@@ -437,12 +437,23 @@ pub async fn create_network(
         )])));
     }
 
-    let active_from = req
-        .active_from
-        .map(|dt| dt_from_millis(dt))
-        .transpose()?
-        .unwrap_or_else(|| Utc::now().naive_utc());
-    let active_to = req.active_to.map(|dt| dt_from_millis(dt)).transpose()?;
+    let freq_ranges: Vec<(NaiveDateTime, Option<NaiveDateTime>)> = req
+        .freqs
+        .iter()
+        .map(|f| {
+            let from_millis = f
+                .active_from
+                .unwrap_or_else(|| Utc::now().timestamp_millis());
+            let from = dt_from_millis(from_millis)
+                .unwrap_or_else(|_| Utc::now().naive_utc());
+
+            let to = f.active_to.and_then(|millis| dt_from_millis(millis).ok());
+
+            (from, to)
+        })
+        .collect();
+
+    let (active_from, active_to) = compute_network_activity_range(&freq_ranges);
 
     let network = sigint_network::ActiveModel {
         id: NotSet,
@@ -653,10 +664,6 @@ pub async fn update_network(
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.updated_by = Set(Some(user.id()?.to_string()));
     network_model.updated_at = Set(Utc::now().naive_utc());
-
-    network_model.active_from = Set(dt_from_millis(req.active_from)?);
-    network_model.active_to =
-        Set(req.active_to.map(|dt| dt_from_millis(dt)).transpose()?);
 
     let network = network_model.update(&txn).await.context(h!())?;
 
@@ -3196,4 +3203,52 @@ fn map_add_network_frequency_description(
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
     }
+}
+
+/// Знаходить в базі даних діапазон активності мережі на основі активності частот
+async fn get_network_activity_range(
+    db: &DatabaseConnection,
+    network_id: i64,
+) -> Result<(NaiveDateTime, Option<NaiveDateTime>), AppError> {
+    let freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .all(db)
+        .await
+        .context(h!())?;
+
+    if freqs.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    let ranges: Vec<(NaiveDateTime, Option<NaiveDateTime>)> = freqs
+        .into_iter()
+        .map(|f| (f.active_from, f.active_to))
+        .collect();
+
+    Ok(compute_network_activity_range(&ranges))
+}
+
+/// Обраховує діапазон активності мережі на основі активності частот
+fn compute_network_activity_range(
+    freq_ranges: &[(NaiveDateTime, Option<NaiveDateTime>)],
+) -> (NaiveDateTime, Option<NaiveDateTime>) {
+    // Find earliest active_from date
+    let network_active_from = freq_ranges
+        .iter()
+        .map(|(from, _)| *from) // Dereference the borrowed NaiveDateTime
+        .min() // Find minimum date
+        .unwrap_or_else(|| Utc::now().naive_utc());
+
+    // Find latest active_to date, but only if all frequencies have end dates
+    let network_active_to = if !freq_ranges.iter().any(|(_, to)| to.is_none()) {
+        // Only proceed if no frequency has None as active_to
+        freq_ranges
+            .iter()
+            .filter_map(|(_, to)| *to) // Extract and dereference Option<NaiveDateTime>
+            .max() // Find maximum date
+    } else {
+        None
+    };
+
+    (network_active_from, network_active_to)
 }
