@@ -634,7 +634,6 @@ update shared msg model =
                                 , selected = updatedNetworkPosts
                                 , items = items
                             }
-
                     in
                     ( { model
                         | editPostsSelect = postsSelect2
@@ -690,8 +689,6 @@ update shared msg model =
 
                 _ ->
                     ( model, E.none )
-
-
 
         DescriptionAddClickedByUser networkId descType ->
             let
@@ -1401,32 +1398,34 @@ freqsTable freq model shared =
         [ td [] [ text freq.freq ]
         , td [] [ text <| Maybe.withDefault "" freq.modulation ]
         , td [] [ text <| String.fromInt freq.messageCount ]
-        , case freq.callsigns of
-            Just callsigns ->
-                let
-                    isOpen =
-                        case model.callsignsOpenedPopupId of
-                            Just openCallsignsPopup ->
-                                openCallsignsPopup == freq.freq
+        , td []
+            [ case freq.callsigns of
+                Just callsigns ->
+                    let
+                        isOpen =
+                            case model.callsignsOpenedPopupId of
+                                Just openCallsignsPopup ->
+                                    openCallsignsPopup == freq.freq
 
-                            Nothing ->
-                                False
-                in
-                CallsignsPopup.view
-                    { isOpened = isOpen
-                    , onClose = CallsignsPopupClosedByUser
-                    , onOpen = CallsignsPopupOpenedByUser freq.freq
-                    , callsigns = callsigns
-                    , callsignsInfo = shared.callsignsInfo
-                    , masterUnits = RD.withDefault Dict.empty shared.masterUnits
-                    }
-                    (FreqsPage
-                        freq.freq
-                        (RD.withDefault Dict.empty model.networks)
-                    )
+                                Nothing ->
+                                    False
+                    in
+                    CallsignsPopup.view
+                        { isOpened = isOpen
+                        , onClose = CallsignsPopupClosedByUser
+                        , onOpen = CallsignsPopupOpenedByUser freq.freq
+                        , callsigns = callsigns
+                        , callsignsInfo = shared.callsignsInfo
+                        , masterUnits = RD.withDefault Dict.empty shared.masterUnits
+                        }
+                        (FreqsPage
+                            freq.freq
+                            (RD.withDefault Dict.empty model.networks)
+                        )
 
-            _ ->
-                text ""
+                _ ->
+                    text ""
+            ]
         , td []
             [ case freq.lastDatetime of
                 Just lastDatetime ->
@@ -1500,7 +1499,7 @@ freqsTableEditing updateFreqReq freq model shared =
                             (Time.millisToPosix lastDatetime)
 
                 Nothing ->
-                    text ""
+                    text "—"
             ]
         , td []
             [ text <|
@@ -2174,10 +2173,12 @@ missingFieldsEditBlock user network updNetworkReq shared model =
         , div [ class "flex gap-[8px]" ]
             [ if model.missingFieldsEditLoading then
                 i [ class "bi bi-x-square text-gray-400 text-[20px]", title "Скасувати" ] []
+
               else
                 i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditCanceledByUser, title "Скасувати" ] []
             , if model.missingFieldsEditLoading then
                 i [ class "text-[20px]" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
+
               else
                 i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick MissingFieldsEditSavedByUser, title "Зберегти" ] []
             ]
