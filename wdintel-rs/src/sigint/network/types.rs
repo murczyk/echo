@@ -66,8 +66,6 @@ pub struct CreateNetworkReq {
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub active_from: Option<i64>,
-    pub active_to: Option<i64>,
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<AddNetworkDescription>,
 }
@@ -97,8 +95,6 @@ pub struct UpdateNetworkReq {
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub active_from: i64,
-    pub active_to: Option<i64>,
     pub descriptions: Option<Vec<UpdateNetworkDescriptionReq>>,
 }
 

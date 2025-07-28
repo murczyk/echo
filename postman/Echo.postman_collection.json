@@ -242,7 +242,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"freqs\":[\n        {\"freq\":\"418.4650\",\n        \"kind\":\"VHF\",\n        \"modulation_id\":3,\n        \"description\":{\n            \"descr_type\":\"Confirmation\",\n            \"description\":\"Обґрунтування прив'язки  - тестове без підроздіру\",\n            \"freq\":\"433.0250\"},\n        \"active_from\":null,\n        \"active_to\":null}],\n    // \"unit_ids\":[3],\n    \"name\":\"Тестування\",\n    \"location\":\"\",\n    \"comment\":\"\",\n    \"radio_station\":null,\n    \"purpose\":\"для управління підлеглим особовим складом\",\n    \"operation_mode\":\"цілодобово, за потреби\",\n    \"operation_type\":\"дуплексний\",\n    \"operation_period\":null,\n    \"active_from\":1749243600000,\n    \"active_to\":null,\n    \"post_ids\":[6],\n    \"descriptions\":[]\n}",
+					"raw": "{\n    \"freqs\":[\n        {\"freq\":\"129.9000\",\n        \"kind\":\"VHF\",\n        \"modulation_id\":3,\n        \"description\":{\n            \"descr_type\":\"Confirmation\",\n            \"description\":\"Обґрунтування прив'язки  - тестове без підроздіру\",\n            \"freq\":\"129.9000\"},\n        \"active_from\":1749243600000,\n        \"active_to\":null}],\n    // \"unit_ids\":[3],\n    \"name\":\"Тестування\",\n    \"location\":\"\",\n    \"comment\":\"\",\n    \"radio_station\":null,\n    \"purpose\":\"для управління підлеглим особовим складом\",\n    \"operation_mode\":\"цілодобово, за потреби\",\n    \"operation_type\":\"дуплексний\",\n    \"operation_period\":null,\n    \"post_ids\":[6],\n    \"descriptions\":[]\n}",
 					"options": {
 						"raw": {
 							"language": "json"
