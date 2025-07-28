@@ -80,6 +80,10 @@ pub async fn deactivate_account(
         .await
         .context(h!())?,
     };
+    messenger_account::Entity::delete_by_id(account.id)
+        .exec(txn)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
