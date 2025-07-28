@@ -97,8 +97,12 @@ pub async fn link_account(
     let source = EchoMessageSource::try_from_value(&source).context(h!())?;
 
     let (src, src_name) = match &source {
-        EchoMessageSource::Whatsapp => (echo_im::types::MessageSource::Whatsapp, SIGNAL_UNIT_NAME),
-        EchoMessageSource::Signal => (echo_im::types::MessageSource::Signal, WHATSAPP_UNIT_NAME),
+        EchoMessageSource::Signal => {
+            (echo_im::types::MessageSource::Signal, SIGNAL_UNIT_NAME)
+        }
+        EchoMessageSource::Whatsapp => {
+            (echo_im::types::MessageSource::Whatsapp, WHATSAPP_UNIT_NAME)
+        }
     };
     let unit_name = format!("{src_name}@{display_name}");
     let accounts = list_linked_accounts(txn).await.context(h!())?;

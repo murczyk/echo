@@ -6,8 +6,8 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
-use milgeo_rs::MilGeo;
 use crate::location::SettlementsData;
+use milgeo_rs::MilGeo;
 
 pub mod discord;
 mod healthcheck;
