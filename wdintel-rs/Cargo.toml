@@ -157,6 +157,8 @@ assets = [
 	[ "data/settlements.json", "etc/echo/", "755", ],
 	[ "data/settlements_json/*", "etc/echo/settlements_json/", "755", ],
 	[ "../deploy/empty.txt", "etc/echo/echo-whatsapp/storage/", "755", ],
+	[ "../deploy/empty.txt", "etc/echo//etc/echo/signal-cli-data/", "755", ],
+	[ "../deploy/empty.txt", "etc/echo//etc/echo/whatsapp-cli-data/", "755", ],
 	[ "../deploy/echo_cron", "etc/cron.d/", "755", ],
 	[ "wdintel-py/*", "usr/share/wdintel-py/", "755", ],
 	[ "../wdintel-web/dist/*", "usr/share/echo/", "755", ],
