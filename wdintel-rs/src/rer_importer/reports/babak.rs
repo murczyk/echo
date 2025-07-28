@@ -64,7 +64,7 @@ pub async fn report_docx_kind_babak(
 
     let units_list = units
         .iter()
-        .filter_map(|unit| unit.regiment.clone().map(|r| r))
+        .filter_map(|unit| unit.unit.clone().map(|r| r))
         .filter(|r| r != "НВ")
         .collect::<Vec<String>>()
         .join(", ");
@@ -131,7 +131,7 @@ pub async fn report_docx_kind_babak(
         trs.push(TableRow::new(vec![
             TableCell::new()
                 .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    stat.regiment.clone().unwrap_or("НВ".to_string()),
+                    stat.unit.clone().unwrap_or("НВ".to_string()),
                 )))
                 .set_borders(TableCellBorders::new()),
             TableCell::new()
@@ -311,7 +311,7 @@ pub async fn report_docx_kind_babak(
                 Paragraph::new().add_run(
                     Run::new()
                         .add_text(
-                            unit.regiment.clone().unwrap_or("НВ".to_string()),
+                            unit.unit.clone().unwrap_or("НВ".to_string()),
                         )
                         .bold(),
                 ),
@@ -375,7 +375,7 @@ pub async fn report_docx_kind_babak(
                 Paragraph::new().add_run(
                     Run::new()
                         .add_text(
-                            unit.regiment.clone().unwrap_or("НВ".to_string()),
+                            unit.unit.clone().unwrap_or("НВ".to_string()),
                         )
                         .bold(),
                 ),
@@ -456,7 +456,7 @@ pub async fn report_docx_kind_babak(
                 Paragraph::new().add_run(
                     Run::new()
                         .add_text(
-                            unit.regiment.clone().unwrap_or("НВ".to_string()),
+                            unit.unit.clone().unwrap_or("НВ".to_string()),
                         )
                         .bold(),
                 ),
@@ -501,7 +501,7 @@ pub async fn report_docx_kind_babak(
 
 #[derive(FromQueryResult, Deserialize, Debug, Clone)]
 pub struct StatsPerUnitReport {
-    pub regiment: Option<String>,
+    pub unit: Option<String>,
     pub count: i64,
     pub bpla: i64,
     pub reb: i64,
@@ -531,7 +531,16 @@ pub async fn get_inbox_messages_report_unit(
             sigint_inbox_item::Column::Tags,
         ])
         .column(signal_message::Column::Body)
-        .column(sigint_unit::Column::Regiment)
+        .expr_as(
+            Expr::cust(
+                r#"coalesce(nullif("sigint_unit"."regiment", ''), 
+                            nullif("sigint_unit"."battalion",''), 
+                            nullif("sigint_unit"."division",''),
+                            nullif("sigint_unit"."army",'')
+                        )"#,
+            ),
+            "unit"
+        ).clone()        
         .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_comment::Column::Comment)
         .expr_as(
@@ -639,7 +648,7 @@ pub async fn get_inbox_messages_report_unit(
                 .lte(dt_from_millis(till_date_inclusive_ms)?),
         );
     }
-    let q = q.order_by_asc(sigint_unit::Column::Regiment);
+    let q = q.order_by_asc(Expr::col(Alias::new("unit")));
     let q = filter_selected_locations(
         q,
         &req.selected_locations,
@@ -662,7 +671,7 @@ pub async fn get_inbox_messages_report_unit(
     let cluster_centroids = CommonTableExpression::new()
         .query(
             Query::select()
-                .expr_as(Expr::if_null(Expr::col(Alias::new("regiment")), Expr::cust("cluster_id::varchar(255)")), Alias::new("unit"))
+                .expr_as(Expr::if_null(Expr::col(Alias::new("unit")), Expr::cust("cluster_id::varchar(255)")), Alias::new("unit"))
                 .expr_as(
                     Expr::cust(
                         "ST_Centroid(ST_Collect(ST_SetSRID(ST_MakePoint(lng, lat), 4326)))",
@@ -727,7 +736,7 @@ pub async fn get_inbox_messages_report_unit(
                     Alias::new("comments")
                 )
                 .from(Alias::new("clustered_points"))
-                .add_group_by(vec![Expr::if_null(Expr::col(Alias::new("regiment")), Expr::cust("cluster_id::varchar(255)"))])
+                .add_group_by(vec![Expr::if_null(Expr::col(Alias::new("unit")), Expr::cust("cluster_id::varchar(255)"))])
                 .to_owned(),
         )
         .table_name(Alias::new("cluster_centroids")).to_owned();
@@ -795,7 +804,7 @@ pub async fn get_inbox_messages_report_unit(
                     Expr::cust("unit")
                 )
                 .finally("НВ"),
-            Alias::new("regiment"),
+            Alias::new("unit"),
         )
         .from(Alias::new("cluster_centroids"))
         // @TODO: postgresql doesn't support CROSS JOIN LATERAL with ON
