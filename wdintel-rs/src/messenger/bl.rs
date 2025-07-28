@@ -122,9 +122,12 @@ pub async fn link_account(
 
     let port = find_port_available(8010, 9000).await.context(h!())?;
     let attachment_path = format!(
-        "/etc/oblik-os/{}-bot/{}/{}-cli/attachments/",
-        src_name, display_name, src_name
+        "/etc/echo/{}-cli-data/{}/{}-cli/attachments/",
+        src.to_string().to_lowercase(),
+        display_name,
+        src.to_string().to_lowercase()
     );
+    info!("attachment path created: {attachment_path}");
     echo_im::attach_new_client(
         display_name,
         &attachment_path,
