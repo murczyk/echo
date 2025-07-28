@@ -494,7 +494,7 @@ linkAccountSidebarContent model =
                     [ div [ class "space-y-6 text-center" ]
                         [ if qrData.qrCode /= "" then
                             div [ class "space-y-4" ]
-                                [ img [ src ("data:image/png;base64," ++ qrData.qrCode), class "mx-auto max-w-xs" ] []
+                                [ img [ src qrData.qrCode, class "mx-auto max-w-xs" ] []
                                 , p [ class "text-sm text-muted-foreground" ] 
                                     [ text "Відскануйте QR код вашим месенджером" ]
                                 ]
