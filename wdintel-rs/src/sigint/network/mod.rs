@@ -1444,7 +1444,14 @@ pub async fn add_network_freq(
         .context(h!())?;
     }
 
+    let (network_active_from, network_active_to) =
+        get_network_activity_range(&txn, req.network_id)
+            .await
+            .context(h!())?;
+
     let mut network_model = network.into_active_model();
+    network_model.active_from = Set(network_active_from);
+    network_model.active_to = Set(network_active_to);
     network_model.updated_at = Set(Utc::now().naive_utc());
     network_model.updated_by = Set(Some(user_login.to_string()));
     network_model.update(&txn).await.context(h!())?;
@@ -1557,15 +1564,22 @@ pub async fn update_network_freq(
     let network_freq_model = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        // .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .one(&txn)
         .await
         .context(h!())?;
 
     if let Some(network_freq_model) = network_freq_model {
+        let active_from =
+            dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
+        let active_to =
+            req.active_to.map(|dt| dt_from_millis(dt)).transpose()?;
+
         let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
         model.modulation_id = Set(req.modulation_id);
+        model.active_from = Set(active_from);
+        model.active_to = Set(active_to);
         model.update(&txn).await.context(h!())?;
     } else {
         debug!(
@@ -1574,16 +1588,17 @@ pub async fn update_network_freq(
         );
     }
 
-    let active_from =
-        dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
-    let active_to = req.active_to.map(|dt| dt_from_millis(dt)).transpose()?;
+    let (network_active_from, network_active_to) =
+        get_network_activity_range(&txn, req.network_id)
+            .await
+            .context(h!())?;
 
-    // Update the network's updated_at timestamp
+    // Update the network's updated_at timestamp as well as new active_from and active_to
     let mut network_model = network.into_active_model();
     network_model.updated_at = Set(Utc::now().naive_utc());
     network_model.updated_by = Set(Some(user_login.clone()));
-    network_model.active_from = Set(active_from);
-    network_model.active_to = Set(active_to);
+    network_model.active_from = Set(network_active_from);
+    network_model.active_to = Set(network_active_to);
     network_model.update(&txn).await.context(h!())?;
 
     // Now fetch the updated network with all descriptions, units and freqs to return
@@ -1658,10 +1673,17 @@ pub async fn delete_network_freq(
         }
     }
 
-    // Update the network's updated_at timestamp
+    let (network_active_from, network_active_to) =
+        get_network_activity_range(&txn, req.network_id)
+            .await
+            .context(h!())?;
+
+    // Update the network's updated_at timestamp as well as new active_from and active_to
     let mut network_model = network.into_active_model();
     network_model.updated_at = Set(Utc::now().naive_utc());
     network_model.updated_by = Set(Some(user.id()?.to_string()));
+    network_model.active_from = Set(network_active_from);
+    network_model.active_to = Set(network_active_to);
     network_model.update(&txn).await.context(h!())?;
 
     // Now fetch the updated network with all frequencies to return
@@ -1774,24 +1796,25 @@ async fn cleanup_networks_worker_1(
         .context(h!())?;
 
     for (network, network_freqs) in networks {
-        let mut deactivate_network = true;
         for network_freq in network_freqs {
             let is_deleted = ids.contains(&network_freq.id);
             if is_deleted {
                 let mut model = network_freq.into_active_model();
                 model.active_to = Set(Some(Utc::now().naive_utc()));
                 model.update(dbx).await.context(h!())?;
-            } else {
-                if network_freq.active_to.is_none() {
-                    deactivate_network = false;
-                }
             }
         }
-        if deactivate_network {
-            let mut network = network.into_active_model();
-            network.active_to = Set(Some(start_time.naive_utc()));
-            network.update(dbx).await.context(h!())?;
-        }
+
+        let network_id = network.id.clone();
+        let (network_active_from, network_active_to) =
+            get_network_activity_range(dbx, network_id)
+                .await
+                .context(h!())?;
+
+        let mut network = network.into_active_model();
+        network.active_from = Set(network_active_from);
+        network.active_to = Set(network_active_to);
+        network.update(dbx).await.context(h!())?;
     }
 
     for sigint_network_freq in networks_freqs_to_remove {
@@ -2993,23 +3016,20 @@ pub async fn merge_two_networks(
         network_to.radio_station.clone(),
         network_from.radio_station.clone(),
     );
-    let new_active_from =
-        network_from.active_from.min(network_to.active_from.clone());
-    let new_active_to =
-        match (network_from.active_to.clone(), network_to.active_to.clone()) {
-            (Some(active_to_1), Some(active_to_2)) => {
-                Some(active_to_1.max(active_to_2))
-            }
-            _ => None,
-        };
+
+    // Get updated network activity range for the new network
+    let (network_active_from, network_active_to) =
+        get_network_activity_range(txn, network_id_to)
+            .await
+            .context(h!())?;
 
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());
     network_to_model.radio_station = Set(new_radio_station);
     network_to_model.updated_at = Set(Utc::now().naive_utc());
     network_to_model.updated_by = Set(Some(login.clone()));
-    network_to_model.active_from = Set(new_active_from);
-    network_to_model.active_to = Set(new_active_to);
+    network_to_model.active_from = Set(network_active_from);
+    network_to_model.active_to = Set(network_active_to);
     network_to_model.update(txn).await.context(h!())?;
 
     // delete old freqs and freqs descriptions
@@ -3206,13 +3226,16 @@ fn map_add_network_frequency_description(
 }
 
 /// Знаходить в базі даних діапазон активності мережі на основі активності частот
-async fn get_network_activity_range(
-    db: &DatabaseConnection,
+async fn get_network_activity_range<'a, 'async_trait, C>(
+    txn: &'a C,
     network_id: i64,
-) -> Result<(NaiveDateTime, Option<NaiveDateTime>), AppError> {
+) -> Result<(NaiveDateTime, Option<NaiveDateTime>), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-        .all(db)
+        .all(txn)
         .await
         .context(h!())?;
 
