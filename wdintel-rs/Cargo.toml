@@ -108,7 +108,7 @@ dialoguer = "0.11.0"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "5c93f113572060e30f328ae53200ade2d4cb1cf6"
+rev = "955be6d5bef1af03e7aac7902179561b26f392cc"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
