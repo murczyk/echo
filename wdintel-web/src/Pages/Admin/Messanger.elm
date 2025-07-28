@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Components.Button as Button
+import Components.ModalDialog as ModalDialog
 import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
@@ -59,6 +60,8 @@ type alias Model =
     , formErrors : Dict String String
     , tableState : Table.State
     , linkFlow : LinkFlow
+    , unlinkConfirmDialog : Maybe Int
+    , unlinkLoading : Bool
     }
 
 
@@ -66,7 +69,7 @@ type LinkFlow
     = LinkFormState LinkForm
     | LinkQrCode { accountId : Int, qrCode : String, account : B.EchoAccountF1 }
     | LinkSuccess B.EchoAccountF1
-    | LinkError String
+    | LinkError { message : String, accountId : Int, account : B.EchoAccountF1 }
 
 
 type alias LinkForm =
@@ -83,6 +86,8 @@ init () =
       , formErrors = Dict.empty
       , tableState = Table.initialSort "Створено"
       , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
+      , unlinkConfirmDialog = Nothing
+      , unlinkLoading = False
       }
     , E.sendCmd (Api.messenger_list_accounts GotAccounts)
     )
@@ -108,6 +113,11 @@ type Msg
     | CheckIsLinked
     | GotIsLinked (Result ApiError B.IsAccountLinkedRsp)
     | LinkTimeout
+    | RetryQrCode
+    | UnlinkAccount Int
+    | ConfirmUnlink Int
+    | CancelUnlink
+    | GotUnlinkResult (Result ApiError ()) Int
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -213,7 +223,7 @@ update msg model =
                     )
 
                 Err _ ->
-                    ( { model | linkFlow = LinkError "Помилка створення акаунту" }
+                    ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
                     , E.none
                     )
 
@@ -229,9 +239,13 @@ update msg model =
                             ( model, E.none )
                 
                 Err _ ->
-                    ( { model | linkFlow = LinkError "Помилка отримання QR коду" }
-                    , E.none
-                    )
+                    case model.linkFlow of
+                        LinkQrCode qrData ->
+                            ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду", accountId = qrData.accountId, account = qrData.account } }
+                            , E.none
+                            )
+                        _ ->
+                            ( model, E.none )
 
         CheckIsLinked ->
             case model.linkFlow of
@@ -261,6 +275,52 @@ update msg model =
 
         LinkTimeout ->
             ( model, E.none )
+
+        RetryQrCode ->
+            case model.linkFlow of
+                LinkError errorData ->
+                    ( { model | linkFlow = LinkQrCode { accountId = errorData.accountId, qrCode = "", account = errorData.account } }
+                    , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = errorData.accountId })
+                    )
+                
+                _ ->
+                    ( model, E.none )
+
+        UnlinkAccount accountId ->
+            ( { model | unlinkConfirmDialog = Just accountId }
+            , E.none
+            )
+
+        ConfirmUnlink accountId ->
+            ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = True }
+            , E.sendCmd (Api.messenger_unlink_account (\result -> GotUnlinkResult result accountId) { accountId = accountId })
+            )
+
+        CancelUnlink ->
+            ( { model | unlinkConfirmDialog = Nothing }
+            , E.none
+            )
+
+        GotUnlinkResult result accountId ->
+            case result of
+                Ok _ ->
+                    case model.accounts of
+                        RD.Success accounts ->
+                            let
+                                updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
+                            in
+                            ( { model | accounts = RD.Success updatedAccounts, unlinkConfirmDialog = Nothing, unlinkLoading = False }
+                            , E.none
+                            )
+                        _ ->
+                            ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
+                            , E.none
+                            )
+                
+                Err _ ->
+                    ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
+                    , E.none
+                    )
 
 
 
@@ -330,7 +390,7 @@ mainBlock isDark model =
             RD.Success accounts ->
                 div [ class "table-responsive-modern" ]
                     [ Table.view
-                        (messengerAccountsTableConfig)
+                        (messengerAccountsTableConfig model.unlinkLoading)
                         model.tableState
                         accounts
                     ]
@@ -343,6 +403,25 @@ mainBlock isDark model =
                 div [ class "text-center py-8" ]
                     [ text "Потрібно перезавантажити" ]
         ]
+    , case model.unlinkConfirmDialog of
+        Just accountId ->
+            ModalDialog.modalDialog 
+                True 
+                CancelUnlink 
+                [ class "bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4" ]
+                [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Підтвердження" ]
+                , p [ class "text-muted-foreground mb-6" ] [ text "Ви впевнені, що хочете відв'язати цей акаунт месенджера?" ]
+                , div [ class "flex gap-3 justify-end" ]
+                    [ Button.new { label = "Скасувати", onClick = CancelUnlink }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    , Button.new { label = "Відв'язати", onClick = ConfirmUnlink accountId }
+                        |> Button.view
+                    ]
+                ]
+        
+        Nothing ->
+            text ""
     ]
 
 
@@ -463,7 +542,7 @@ linkAccountSidebarContent model =
                 ]
             ]
 
-        LinkError error ->
+        LinkError errorData ->
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
@@ -474,7 +553,7 @@ linkAccountSidebarContent model =
                         [ div [ class "text-red-600 text-6xl" ] [ text "❌" ]
                         , div [ class "space-y-2" ]
                             [ h3 [ class "text-lg font-medium" ] [ text "Помилка" ]
-                            , p [ class "text-sm text-muted-foreground" ] [ text error ]
+                            , p [ class "text-sm text-muted-foreground" ] [ text errorData.message ]
                             ]
                         ]
                     ]
@@ -483,7 +562,7 @@ linkAccountSidebarContent model =
                         [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
                             |> Button.withStyleSecondary
                             |> Button.view
-                        , Button.new { label = "Спробувати знову", onClick = OpenLinkSidebar }
+                        , Button.new { label = "Спробувати знову", onClick = RetryQrCode }
                             |> Button.view
                         ]
                     ]
@@ -491,8 +570,8 @@ linkAccountSidebarContent model =
             ]
 
 
-messengerAccountsTableConfig : Table.Config B.EchoAccountF1 Msg
-messengerAccountsTableConfig =
+messengerAccountsTableConfig : Bool -> Table.Config B.EchoAccountF1 Msg
+messengerAccountsTableConfig isLoading =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -510,20 +589,23 @@ messengerAccountsTableConfig =
             , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
             , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
             , Table.stringColumn "Назва" .name |> Table.withColumnWidth "20%"
-            , Table.veryCustomColumn
-                { name = "Дії"
-                , viewData =
-                    \account ->
-                        TableColumn.HtmlDetails [] 
-                            [ div [ class "flex gap-2" ]
-                                [ Button.new { label = "Відв'язати", onClick = NoOp }
-                                    |> Button.withStyleSecondary
-                                    |> Button.view
-                                ]
-                            ]
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "30%"
+                                    , Table.veryCustomColumn
+                            { name = "Дії"
+                            , viewData =
+                                \account ->
+                                    TableColumn.HtmlDetails []
+                                        [ div [ class "flex gap-2" ]
+                                            [ if isLoading then
+                                                div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
+                                              else
+                                                Button.new { label = "Відв'язати", onClick = UnlinkAccount account.id }
+                                                    |> Button.withStyleSecondary
+                                                    |> Button.view
+                                            ]
+                                        ]
+                            , sorter = Table.unsortable
+                            }
+                            |> Table.withColumnWidth "30%"
             ]
         , customizations = customizations
         }
