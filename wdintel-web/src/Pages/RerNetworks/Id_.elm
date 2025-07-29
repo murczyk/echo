@@ -160,6 +160,12 @@ type alias CallsignResModified =
     }
 
 
+type FreqActivityFilter
+    = AllFreqs
+    | ActiveFreqs
+    | InactiveFreqs
+
+
 type alias Model =
     { network : RemoteData ApiError B.Network
     , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
@@ -188,6 +194,7 @@ type alias Model =
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
     , reportIncludeConfirmation : Bool
+    , freqsActivityFilter : FreqActivityFilter
     }
 
 
@@ -244,6 +251,7 @@ init route shared () =
       , reportIncludePelengsMap = True
       , reportIncludeSigintSigns = True
       , reportIncludeConfirmation = True
+      , freqsActivityFilter = AllFreqs
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -313,6 +321,7 @@ type Msg
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
+    | FreqsActivityFilterChangedByUser FreqActivityFilter
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1091,6 +1100,9 @@ update shared msg model =
         ReportIncludeSigintSignsCheckedByUser isChecked ->
             ( { model | reportIncludeSigintSigns = isChecked }, E.none )
 
+        FreqsActivityFilterChangedByUser filter ->
+            ( { model | freqsActivityFilter = filter }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1103,6 +1115,58 @@ subscriptions model =
 
 
 -- VIEW
+
+
+filterFreqsByActivity : FreqActivityFilter -> List B.NetworkFreqsRes -> List B.NetworkFreqsRes
+filterFreqsByActivity filter freqs =
+    case filter of
+        AllFreqs ->
+            freqs
+
+        ActiveFreqs ->
+            List.filter .isActive freqs
+
+        InactiveFreqs ->
+            List.filter (\freq -> not freq.isActive) freqs
+
+
+freqsActivityFilterView : Model -> Html Msg
+freqsActivityFilterView model =
+    div [ class "flex gap-2 items-center mb-4" ]
+        [ span [ class "text-sm font-medium" ] [ text "Фільтр активності:" ]
+        , div [ class "flex gap-2" ]
+            [ label [ class "flex items-center gap-2 cursor-pointer" ]
+                [ input 
+                    [ type_ "radio"
+                    , name "freqs-activity-filter"
+                    , checked (model.freqsActivityFilter == AllFreqs)
+                    , onClick (FreqsActivityFilterChangedByUser AllFreqs)
+                    , class "form-radio"
+                    ] []
+                , span [ class "text-sm" ] [ text "Всі" ]
+                ]
+            , label [ class "flex items-center gap-2 cursor-pointer" ]
+                [ input 
+                    [ type_ "radio"
+                    , name "freqs-activity-filter"
+                    , checked (model.freqsActivityFilter == ActiveFreqs)
+                    , onClick (FreqsActivityFilterChangedByUser ActiveFreqs)
+                    , class "form-radio"
+                    ] []
+                , span [ class "text-sm" ] [ text "Активні" ]
+                ]
+            , label [ class "flex items-center gap-2 cursor-pointer" ]
+                [ input 
+                    [ type_ "radio"
+                    , name "freqs-activity-filter"
+                    , checked (model.freqsActivityFilter == InactiveFreqs)
+                    , onClick (FreqsActivityFilterChangedByUser InactiveFreqs)
+                    , class "form-radio"
+                    ] []
+                , span [ class "text-sm" ] [ text "Неактивні" ]
+                ]
+            ]
+        ]
 
 
 missingFieldsBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
@@ -1805,8 +1869,13 @@ contentBlock user shared network model =
               else
                 text ""
             ]
+        , freqsActivityFilterView model
         , case model.freqs of
             Success freqs ->
+                let
+                    filteredFreqs =
+                        filterFreqsByActivity model.freqsActivityFilter freqs
+                in
                 div [ class "overflow-y-auto grow-1" ]
                     [ table [ class "table-fixed w-full" ]
                         [ thead [ class "text-[13px]/[110%] font-medium" ]
@@ -1836,7 +1905,7 @@ contentBlock user shared network model =
                                                 Nothing ->
                                                     freqsTable freq model shared
                                 )
-                                freqs
+                                filteredFreqs
                             )
                         ]
                     ]
