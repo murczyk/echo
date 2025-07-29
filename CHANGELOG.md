@@ -3,7 +3,7 @@
 - [#1091](https://github.com/echoua/echo/issues/1091) Еталонка. Виправлено відображення "не звітніх", прив'язаних, позивних.
 - [#1089](https://github.com/echoua/echo/issues/1089) Виправлено помилку створення унікального redis-stream
 - [#1088](https://github.com/echoua/echo/issues/1088) Мережа. Backend. Створено ендпоінт статистики активності частот мережі.
-- [#940](https://github.com/echoua/echo/issues/940) Прив'язування Signal та Whatsapp з адмінки; прив'язування декількох акаунтів Signal/Whatsapp 
+- [#940](https://github.com/echoua/echo/issues/940) Прив'язування Signal та Whatsapp з адмінки; прив'язування декількох акаунтів Signal/Whatsapp
 - [#964](https://github.com/echoua/echo/issues/964) Звіт "бабак". Виправлено помилку з дублюванням повідомлень
 - [#1055](https://github.com/echoua/echo/issues/1055) Оперативний. Покращено парсинг постів
 - [#934](https://github.com/echoua/echo/issues/943) Додано новий АРІ для кращого пошуку підрозділів та мереж. **УВАГА! Після деплою потрібно запустити oneoff-reprocess-units-search-index**
@@ -29,6 +29,7 @@
 - [](https://github.com/echoua/echo/issues/818) Загальне: додані події про зміну підрозділу для всіх сторінок крім
 Аналізу і Оперативного
 - [#1050](https://github.com/echoua/echo/issues/1050) Мережа: додане редагування підрозділів для існуючої мережі
+- []() Месенджери: додана адмінка месенджерів
 
 ## 2025-07-08
 - [#987](https://github.com/echoua/echo/issues/987) Еталонка. Виправлено формування звіту коли задано фільтр по конкретній частоті
