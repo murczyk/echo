@@ -60,10 +60,9 @@ type alias Model =
     , formErrors : Dict String String
     , tableState : Table.State
     , linkFlow : LinkFlow
-    , unlinkConfirmDialog : Maybe Int
-    , unlinkLoading : Bool
     , deleteConfirmDialog : Maybe Int
     , deleteLoading : Bool
+    , messengerTypeSelect : Le.Block.Select.SelectTypeSingle String
     }
 
 
@@ -88,10 +87,13 @@ init () =
       , formErrors = Dict.empty
       , tableState = Table.initialSort "Створено"
       , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
-      , unlinkConfirmDialog = Nothing
-      , unlinkLoading = False
       , deleteConfirmDialog = Nothing
       , deleteLoading = False
+      , messengerTypeSelect = 
+            { state = Select.initState (Select.selectIdentifier "messenger-type-select")
+            , items = messengerTypeMenuItems
+            , selected = Just "signal"
+            }
       }
     , E.sendCmd (Api.messenger_list_accounts GotAccounts)
     )
@@ -129,6 +131,23 @@ getStatusColorClass account =
         "text-orange-600"
 
 
+-- Helper function to get messenger type label
+getMessengerTypeLabel : String -> String
+getMessengerTypeLabel messengerType =
+    case messengerType of
+        "signal" -> "Signal"
+        "whatsapp" -> "WhatsApp"
+        _ -> messengerType
+
+
+-- Messenger type menu items
+messengerTypeMenuItems : List (Select.MenuItem String)
+messengerTypeMenuItems =
+    [ Select.basicMenuItem { item = "signal", label = "Signal" }
+    , Select.basicMenuItem { item = "whatsapp", label = "WhatsApp" }
+    ]
+
+
 type Msg
     = NoOp
     | LoadAccounts
@@ -146,15 +165,14 @@ type Msg
     | GotIsLinked (Result ApiError B.IsAccountLinkedRsp)
     | LinkTimeout
     | RetryQrCode
-    | UnlinkAccount Int
-    | ConfirmUnlink Int
-    | CancelUnlink
-    | GotUnlinkResult (Result ApiError ()) Int
     | ConnectExistingAccount Int
     | DeleteAccount Int
     | ConfirmDelete Int
     | CancelDelete
     | GotDeleteResult (Result ApiError ()) Int
+    | ToggleAccountStatus Int
+    | GotToggleStatusResult (Result ApiError ()) Int
+    | MessengerTypeSelectMsg (Select.Msg String)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -356,39 +374,7 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        UnlinkAccount accountId ->
-            ( { model | unlinkConfirmDialog = Just accountId }
-            , E.none
-            )
 
-        ConfirmUnlink accountId ->
-            ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = True }
-            , E.sendCmd (Api.messenger_unlink_account (\result -> GotUnlinkResult result accountId) { accountId = accountId })
-            )
-
-        CancelUnlink ->
-            ( { model | unlinkConfirmDialog = Nothing }
-            , E.none
-            )
-
-        GotUnlinkResult (Ok _) accountId ->
-            case model.accounts of
-                RD.Success accounts ->
-                    let
-                        updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
-                    in
-                    ( { model | accounts = RD.Success updatedAccounts, unlinkConfirmDialog = Nothing, unlinkLoading = False }
-                    , E.none
-                    )
-                _ ->
-                    ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
-                    , E.none
-                    )
-
-        GotUnlinkResult (Err _) accountId ->
-            ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
-            , E.none
-            )
 
         ConnectExistingAccount accountId ->
             case model.accounts of
@@ -440,6 +426,80 @@ update msg model =
             , E.none
             )
 
+        ToggleAccountStatus accountId ->
+            case model.accounts of
+                RD.Success accounts ->
+                    case List.filter (\account -> account.id == accountId) accounts |> List.head of
+                        Just account ->
+                            let
+                                -- Toggle between active and paused
+                                newIsActive = account.status /= "active"
+                            in
+                            ( model
+                            , E.sendCmd (Api.messenger_edit_account (\result -> GotToggleStatusResult result accountId) { accountId = accountId, isActive = newIsActive })
+                            )
+                        Nothing ->
+                            ( model, E.none )
+                _ ->
+                    ( model, E.none )
+
+        GotToggleStatusResult (Ok _) accountId ->
+            case model.accounts of
+                RD.Success accounts ->
+                    let
+                        -- Update the account status in the table
+                        updatedAccounts = 
+                            RD.Success 
+                                (List.map 
+                                    (\account -> 
+                                        if account.id == accountId then
+                                            -- Toggle the status
+                                            { account | status = if account.status == "active" then "paused" else "active" }
+                                        else
+                                            account
+                                    ) 
+                                    accounts
+                                )
+                    in
+                    ( { model | accounts = updatedAccounts }
+                    , E.none
+                    )
+                _ ->
+                    ( model, E.none )
+
+        GotToggleStatusResult (Err _) accountId ->
+            ( model, E.none )
+
+        MessengerTypeSelectMsg selectMsg ->
+            let
+                ( mAction, newState, selectCmd ) =
+                    Select.update selectMsg model.messengerTypeSelect.state
+
+                updatedMessengerType =
+                    Le.Block.Select.singleUpdWithDefault mAction (Maybe.withDefault "signal" model.messengerTypeSelect.selected)
+
+                newSelect =
+                    { state = newState
+                    , items = model.messengerTypeSelect.items
+                    , selected = Just updatedMessengerType
+                    }
+
+                -- Update the link form with the new messenger type
+                updatedLinkFlow =
+                    case model.linkFlow of
+                        LinkFormState linkForm ->
+                            LinkFormState { linkForm | messengerType = updatedMessengerType }
+                        
+                        _ ->
+                            model.linkFlow
+            in
+            ( { model 
+                | messengerTypeSelect = newSelect
+                , linkFlow = updatedLinkFlow
+              }
+            , E.sendCmd <| Cmd.map MessengerTypeSelectMsg selectCmd
+            )
+
 
 
 -- SUBSCRIPTIONS
@@ -470,7 +530,7 @@ body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
     let
         sidebarContent =
-            linkAccountSidebarContent model
+            linkAccountSidebarContent dark shared model
     in
     [ div
         [ classList [ ( "overflow-hidden", model.sidebarOpen ) ]
@@ -508,7 +568,7 @@ mainBlock isDark model =
             RD.Success accounts ->
                 div [ class "table-responsive-modern" ]
                     [ Table.view
-                        (messengerAccountsTableConfig (model.unlinkLoading || model.deleteLoading))
+                        (messengerAccountsTableConfig model.deleteLoading)
                         model.tableState
                         accounts
                     ]
@@ -521,25 +581,6 @@ mainBlock isDark model =
                 div [ class "text-center py-8" ]
                     [ text "Потрібно перезавантажити" ]
         ]
-    , case model.unlinkConfirmDialog of
-        Just accountId ->
-            ModalDialog.modalDialog 
-                True 
-                CancelUnlink 
-                [ class "bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4" ]
-                [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Підтвердження" ]
-                , p [ class "text-muted-foreground mb-6" ] [ text "Ви впевнені, що хочете відв'язати цей акаунт месенджера?" ]
-                , div [ class "flex gap-3 justify-end" ]
-                    [ Button.new { label = "Скасувати", onClick = CancelUnlink }
-                        |> Button.withStyleSecondary
-                        |> Button.view
-                    , Button.new { label = "Відв'язати", onClick = ConfirmUnlink accountId }
-                        |> Button.view
-                    ]
-                ]
-        
-        Nothing ->
-            text ""
     , case model.deleteConfirmDialog of
         Just accountId ->
             ModalDialog.modalDialog 
@@ -562,8 +603,8 @@ mainBlock isDark model =
     ]
 
 
-linkAccountSidebarContent : Model -> List (Html Msg)
-linkAccountSidebarContent model =
+linkAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
+linkAccountSidebarContent isDark shared model =
     case model.linkFlow of
         LinkFormState linkForm ->
             [ div [ class "flex flex-col h-full" ]
@@ -575,19 +616,19 @@ linkAccountSidebarContent model =
                     [ div [ class "space-y-6" ]
                         [ div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип месенджера" ]
-                            , select
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                                , value linkForm.messengerType
-                                , onInput SetLinkMessengerType
-                                ]
-                                [ option [ value "signal" ] [ text "Signal" ]
-                                , option [ value "whatsapp" ] [ text "WhatsApp" ]
-                                ]
+                            , Html.map MessengerTypeSelectMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        (Just (Select.basicMenuItem { item = linkForm.messengerType, label = getMessengerTypeLabel linkForm.messengerType }))
+                                        model.messengerTypeSelect.state
+                                        messengerTypeMenuItems
+                                        "Виберіть тип месенджера"
+                                        (Le.Block.Select.defaultOptions isDark)
                             ]
                         , div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Номер телефону" ]
                             , input
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                [ class "form-input w-full"
                                 , type_ "tel"
                                 , placeholder "+380XXXXXXXXX"
                                 , value linkForm.phoneNumber
@@ -598,7 +639,7 @@ linkAccountSidebarContent model =
                         , div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва акаунту" ]
                             , input
-                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                                [ class "form-input w-full"
                                 , type_ "text"
                                 , placeholder "Мій Signal акаунт"
                                 , value linkForm.name
@@ -745,9 +786,18 @@ messengerAccountsTableConfig isLoading =
                                     div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
                                   else
                                     if account.isLinked then
-                                        Button.new { label = "Відв'язати", onClick = UnlinkAccount account.id }
-                                            |> Button.withStyleSecondary
-                                            |> Button.view
+                                        div [ class "flex gap-2" ]
+                                            [ if account.status == "active" then
+                                                Button.new { label = "Призупинити", onClick = ToggleAccountStatus account.id }
+                                                    |> Button.withStyleSecondary
+                                                    |> Button.view
+                                              else
+                                                Button.new { label = "Активувати", onClick = ToggleAccountStatus account.id }
+                                                    |> Button.view
+                                            , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
+                                                |> Button.withStyleSecondary
+                                                |> Button.view
+                                            ]
                                     else
                                         div [ class "flex gap-2" ]
                                             [ Button.new { label = "Підключити", onClick = ConnectExistingAccount account.id }
