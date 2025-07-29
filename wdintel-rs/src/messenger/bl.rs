@@ -10,7 +10,6 @@ use echo_im::entities::sea_orm_active_enums::{
 };
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
-use echo_migration::Expr;
 use sea_orm::prelude::DateTime;
 use sea_orm::*;
 use std::net::TcpListener;
@@ -48,12 +47,14 @@ pub async fn edit_account(
     } else {
         AccountStatus::Paused
     };
-    messenger_account::Entity::update_many()
-        .filter(messenger_account::Column::Id.eq(id))
-        .col_expr(messenger_account::Column::Status, Expr::value(new_status))
-        .exec(txn)
+    let mut account = messenger_account::Entity::find_by_id(id)
+        .one(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .context(h!())?
+        .into_active_model();
+    account.status = Set(new_status);
+    account.update(txn).await.context(h!())?;
     Ok(())
 }
 
