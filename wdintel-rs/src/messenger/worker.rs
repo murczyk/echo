@@ -115,6 +115,16 @@ async fn sync_groups(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
 ) -> anyhow::Result<()> {
+    let mut datasources = collect_datasources(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|(kind, model)| (kind, model.id))
+        .collect::<BTreeMap<_, _>>();
+    let signal_datasource_id =
+        datasources.remove(&MessageSource::Signal).context(h!())?;
+    let whatsapp_datasource_id =
+        datasources.remove(&MessageSource::Whatsapp).context(h!())?;
     let now = Utc::now().naive_utc();
     if let Some(last_updated_ts) =
         client_groups_sync_ts_map.get(client_name).cloned()
@@ -137,7 +147,8 @@ async fn sync_groups(
     }
     let group_master_keys =
         groups.iter().map(|x| x.id.clone()).collect::<Vec<_>>();
-    let mut existing_groups = BTreeMap::new();
+    let mut existing_groups: BTreeMap<(String, i64), GroupData> =
+        BTreeMap::new();
 
     #[derive(Clone)]
     struct GroupData {
@@ -146,6 +157,7 @@ async fn sync_groups(
         created_at: NaiveDateTime,
         model_a: Option<signal_group::Model>,
         model_b: Option<whatsapp_group::Model>,
+        datasource_id: i64,
     }
 
     let mut groups_raw = vec![];
@@ -164,6 +176,7 @@ async fn sync_groups(
                 id: g.master_key,
                 name: g.name,
                 created_at: g.created_at,
+                datasource_id: signal_datasource_id,
             })
         });
     whatsapp_group::Entity::find()
@@ -179,10 +192,11 @@ async fn sync_groups(
                 id: g.jid,
                 name: Some(g.name),
                 created_at: g.created_at,
+                datasource_id: whatsapp_datasource_id,
             })
         });
     for g in groups_raw {
-        let key = g.id.clone();
+        let key = (g.id.clone(), g.datasource_id);
         match existing_groups.get(&key) {
             None => {
                 existing_groups.insert(key, g);
@@ -198,43 +212,49 @@ async fn sync_groups(
     }
 
     for g in groups {
-        match existing_groups.remove(&g.id.clone()) {
-            None => match g.message_source {
-                MessageSource::Signal => {
-                    signal_group::ActiveModel {
-                        name: Set(Some(g.name)),
-                        datasource_id: NotSet,
-                        created_at: NotSet,
-                        ignore_operativny: NotSet,
-                        master_key: Set(g.id),
-                        is_secret: NotSet,
-                    }
-                    .insert(txn)
-                    .await
-                    .context(h!())?;
+        let group_id = g.id.clone();
+        let datasource_id = match g.message_source {
+            MessageSource::Signal => signal_datasource_id,
+            MessageSource::Whatsapp => whatsapp_datasource_id,
+        };
+        match existing_groups.get(&(group_id.clone(), datasource_id)) {
+            None => {
+                signal_group::ActiveModel {
+                    name: Set(Some(g.name.clone())),
+                    datasource_id: Set(Some(whatsapp_datasource_id)),
+                    created_at: NotSet,
+                    ignore_operativny: NotSet,
+                    master_key: Set(group_id.clone()),
+                    is_secret: NotSet,
                 }
-                MessageSource::Whatsapp => {
+                .insert(txn)
+                .await
+                .context(h!())?;
+                if g.message_source.eq(&MessageSource::Whatsapp) {
                     whatsapp_group::ActiveModel {
-                        name: Set(g.name),
+                        name: Set(g.name.clone()),
                         created_at: NotSet,
-                        jid: Set(g.id),
+                        jid: Set(group_id.clone()),
                         owner_jid: NotSet,
                     }
                     .insert(txn)
                     .await
                     .context(h!())?;
                 }
-            },
+            }
             Some(group_model) => {
-                let name = Some(g.name);
+                let datasource_id = group_model.datasource_id;
+                let name = Some(g.name.clone());
                 if group_model.name != name {
-                    if let Some(model) = group_model.model_a {
-                        let mut model = model.into_active_model();
+                    if let Some(ref model) = group_model.model_a {
+                        let mut model = model.clone().into_active_model();
                         model.name = Set(name);
+                        model.datasource_id = Set(Some(datasource_id));
                         model.update(txn).await.context(h!())?;
                     } else {
                         let mut model = group_model
                             .model_b
+                            .clone()
                             .context(h!())?
                             .into_active_model();
                         model.name = Set(name.unwrap_or("".to_string()));
@@ -337,9 +357,12 @@ async fn sync_inbox(
     Ok(())
 }
 
-async fn collect_datasources(
-    db: &DatabaseConnection,
-) -> anyhow::Result<BTreeMap<MessageSource, Model>> {
+async fn collect_datasources<'a, 'async_trait, C>(
+    db: &'a C,
+) -> anyhow::Result<BTreeMap<MessageSource, Model>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut all_data_sources = datasource::Entity::find()
         .all(db)
         .await
