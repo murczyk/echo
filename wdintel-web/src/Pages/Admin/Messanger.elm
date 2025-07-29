@@ -89,7 +89,7 @@ init () =
       , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
       , deleteConfirmDialog = Nothing
       , deleteLoading = False
-      , messengerTypeSelect = 
+      , messengerTypeSelect =
             { state = Select.initState (Select.selectIdentifier "messenger-type-select")
             , items = messengerTypeMenuItems
             , selected = Just "signal"
@@ -173,6 +173,7 @@ type Msg
     | ToggleAccountStatus Int
     | GotToggleStatusResult (Result ApiError ()) Int
     | MessengerTypeSelectMsg (Select.Msg String)
+    | RefreshQrCode
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -222,7 +223,7 @@ update msg model =
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
                     )
-                
+
                 _ ->
                     ( model, E.none )
 
@@ -235,7 +236,7 @@ update msg model =
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
                     )
-                
+
                 _ ->
                     ( model, E.none )
 
@@ -248,7 +249,7 @@ update msg model =
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
                     )
-                
+
                 _ ->
                     ( model, E.none )
 
@@ -256,7 +257,7 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        request = 
+                        request =
                             { messenger = linkForm.messengerType
                             , phone = linkForm.phoneNumber
                             , displayName = linkForm.name
@@ -265,7 +266,7 @@ update msg model =
                     ( model
                     , E.sendCmd (Api.messenger_link_account GotLinkResult request)
                     )
-                
+
                 _ ->
                     ( model, E.none )
 
@@ -273,7 +274,7 @@ update msg model =
             let
                 -- STEP 1: Add the new account to the table immediately after creation
                 -- This makes the account appear in the table right away, even before QR scan
-                updatedAccounts = 
+                updatedAccounts =
                     case model.accounts of
                         RD.Success accounts ->
                             -- Add the new account to the beginning of the list
@@ -282,7 +283,7 @@ update msg model =
                             -- If accounts list is empty/loading, create new list with just this account
                             RD.Success [ linkRsp.account ]
             in
-            ( { model 
+            ( { model
                 | accounts = updatedAccounts  -- Update the table with new account
                 , linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account }
               }
@@ -328,28 +329,28 @@ update msg model =
                         let
                             -- STEP 2: Update only the specific account's is_linked status
                             -- This changes the status from "Очікує підключення" to "Активний" without refreshing the whole table
-                            updatedAccounts = 
+                            updatedAccounts =
                                 case model.accounts of
                                     RD.Success accounts ->
-                                        RD.Success 
-                                            (List.map 
-                                                (\account -> 
+                                        RD.Success
+                                            (List.map
+                                                (\account ->
                                                     if account.id == qrData.accountId then
                                                         -- Update only this specific account's isLinked field
                                                         { account | isLinked = True }
                                                     else
                                                         -- Leave all other accounts unchanged
                                                         account
-                                                ) 
+                                                )
                                                 accounts
                                             )
                                     _ ->
                                         -- If accounts list is not loaded, keep it as is
                                         model.accounts
                         in
-                        ( { model 
+                        ( { model
                             | accounts = updatedAccounts  -- Update the table with new status
-                            , linkFlow = LinkSuccess qrData.account 
+                            , linkFlow = LinkSuccess qrData.account
                           }
                         , E.none  -- No need to refresh the table!
                         )
@@ -370,7 +371,7 @@ update msg model =
                     ( { model | linkFlow = LinkQrCode { accountId = errorData.accountId, qrCode = "", account = errorData.account } }
                     , Api.messenger_get_qr_retryable GotQrCode { accountId = errorData.accountId }
                     )
-                
+
                 _ ->
                     ( model, E.none )
 
@@ -381,8 +382,8 @@ update msg model =
                 RD.Success accounts ->
                     case List.filter (\account -> account.id == accountId) accounts |> List.head of
                         Just account ->
-                            ( { model 
-                                | sidebarOpen = True  
+                            ( { model
+                                | sidebarOpen = True
                                 , linkFlow = LinkQrCode { accountId = accountId, qrCode = "", account = account }
                               }
                             , Api.messenger_get_qr_retryable GotQrCode { accountId = accountId }
@@ -448,16 +449,16 @@ update msg model =
                 RD.Success accounts ->
                     let
                         -- Update the account status in the table
-                        updatedAccounts = 
-                            RD.Success 
-                                (List.map 
-                                    (\account -> 
+                        updatedAccounts =
+                            RD.Success
+                                (List.map
+                                    (\account ->
                                         if account.id == accountId then
                                             -- Toggle the status
                                             { account | status = if account.status == "active" then "paused" else "active" }
                                         else
                                             account
-                                    ) 
+                                    )
                                     accounts
                                 )
                     in
@@ -491,16 +492,25 @@ update msg model =
                     case model.linkFlow of
                         LinkFormState linkForm ->
                             LinkFormState { linkForm | messengerType = updatedMessengerType }
-                        
+
                         _ ->
                             model.linkFlow
             in
-            ( { model 
+            ( { model
                 | messengerTypeSelect = newSelect
                 , linkFlow = updatedLinkFlow
               }
             , E.sendCmd <| Cmd.map MessengerTypeSelectMsg selectCmd
             )
+
+        RefreshQrCode ->
+            case model.linkFlow of
+                LinkQrCode qrData ->
+                    ( { model | linkFlow = LinkQrCode { qrData | qrCode = "" } }
+                    , Api.messenger_get_qr_retryable GotQrCode { accountId = qrData.accountId }
+                    )
+                _ ->
+                    ( model, E.none )
 
 
 
@@ -512,7 +522,7 @@ subscriptions model =
     case model.linkFlow of
         LinkQrCode _ ->
             Time.every 3000 (\_ -> CheckIsLinked)
-        
+
         _ ->
             Sub.none
 
@@ -552,7 +562,7 @@ mainBlock isDark model =
             [ class "border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)]"
             ]
             [ div [ class "flex justify-between items-center" ]
-                [ div [ class "text-sm text-muted-foreground" ] 
+                [ div [ class "text-sm text-muted-foreground" ]
                     [ text "Управління прив'язаними акаунтами месенджерів" ]
                 , Button.new { label = "Прив'язати новий", onClick = OpenLinkSidebar }
                     |> Button.view
@@ -585,12 +595,12 @@ mainBlock isDark model =
         ]
     , case model.deleteConfirmDialog of
         Just accountId ->
-            ModalDialog.modalDialog 
-                True 
-                CancelDelete 
+            ModalDialog.modalDialog
+                True
+                CancelDelete
                 [ class "bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4" ]
                 [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Підтвердження видалення" ]
-                , p [ class "text-muted-foreground mb-6" ] [ text "Ви впевнені, що хочете видалити цей акаунт месенджера? Ця дія незворотна." ]
+                , p [ class "text-muted-foreground mb-6" ] [ text "Ви впевнені, що хочете видалити цей акаунт месенджера?" ]
                 , div [ class "flex gap-3 justify-end" ]
                     [ Button.new { label = "Скасувати", onClick = CancelDelete }
                         |> Button.withStyleSecondary
@@ -599,7 +609,7 @@ mainBlock isDark model =
                         |> Button.view
                     ]
                 ]
-        
+
         Nothing ->
             text ""
     ]
@@ -667,7 +677,7 @@ linkAccountSidebarContent isDark shared model =
             [ div [ class "flex flex-col h-full" ]
                 [ div [ class "p-6 border-b border-border" ]
                     [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Прив'язати новий акаунт" ]
-                    , p [ class "text-sm text-muted-foreground" ] 
+                    , p [ class "text-sm text-muted-foreground" ]
                         [ text (qrData.account.messenger ++ ": " ++ qrData.account.phoneNumber) ]
                     ]
                 , div [ class "flex-1 overflow-y-auto p-6" ]
@@ -675,7 +685,7 @@ linkAccountSidebarContent isDark shared model =
                         [ if qrData.qrCode /= "" then
                             div [ class "space-y-4" ]
                                 [ img [ src qrData.qrCode, class "mx-auto max-w-xs" ] []
-                                , p [ class "text-sm text-muted-foreground" ] 
+                                , p [ class "text-sm text-muted-foreground" ]
                                     [ text "Відскануйте QR код вашим месенджером" ]
                                 ]
                           else
@@ -690,6 +700,9 @@ linkAccountSidebarContent isDark shared model =
                 , div [ class "p-6 border-t border-border" ]
                     [ div [ class "flex gap-3" ]
                         [ Button.new { label = "Скасувати", onClick = CloseLinkSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        , Button.new { label = "Оновити QR код", onClick = RefreshQrCode }
                             |> Button.withStyleSecondary
                             |> Button.view
                         ]
@@ -708,7 +721,7 @@ linkAccountSidebarContent isDark shared model =
                         [ div [ class "text-green-600 text-6xl" ] [ text "✅" ]
                         , div [ class "space-y-2" ]
                             [ h3 [ class "text-lg font-medium" ] [ text "Акаунт підключено!" ]
-                            , p [ class "text-sm text-muted-foreground" ] 
+                            , p [ class "text-sm text-muted-foreground" ]
                                 [ text (account.messenger ++ ": " ++ account.phoneNumber) ]
                             ]
                         ]
