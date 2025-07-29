@@ -275,6 +275,8 @@
     --toggle-ball-color: var(--neutral-400);
     --toggle-selected-color: var(--ochre-normal);
     --toggle-selected-ball-color: white;
+    --color-bg-inactive: #EFF0F1;
+    /* Light gray for inactive rows */
 }
 
 html[data-bs-theme="dark"] {
@@ -298,4 +300,6 @@ html[data-bs-theme="dark"] {
     --toggle-color: black;
     --bw-color: var(--bs-body-bg);
     --toggle-selected-color: var(--ochre-normal);
+    --color-bg-inactive: #2C2C2E;
+    /* Neutral dark gray for inactive rows */
 }
