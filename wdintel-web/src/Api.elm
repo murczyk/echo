@@ -1304,3 +1304,80 @@ units_search toMsg tracker req =
         , timeout = Nothing
         , tracker = Just tracker
         }
+
+
+-- Messenger API functions
+
+messenger_list_accounts : (Result ApiError AccountsRsp -> msg) -> Cmd msg
+messenger_list_accounts toMsg =
+    Http.post
+        { url = "/api/messenger/list"
+        , body = Http.jsonBody Encode.null
+        , expect = leExpectJson toMsg accountsRspDecoder
+        }
+
+
+messenger_get_qr : (Result ApiError QrCodeRsp -> msg) -> QrCodeReq -> Cmd msg
+messenger_get_qr toMsg req =
+    Http.post
+        { url = "/api/messenger/qr"
+        , body = Http.jsonBody (qrCodeReqEncoder req)
+        , expect = leExpectJson toMsg qrCodeRspDecoder
+        }
+
+
+-- Custom retry config for QR code requests - only retry once
+qrCodeRetryConfig : { maxRetries : Int, maxDurationMs : Int, initialIntervalMs : Float, maxIntervalMs : Float }
+qrCodeRetryConfig =
+    { maxRetries = 1  -- Only retry once (original + 1 retry = 2 total attempts)
+    , maxDurationMs = 10000  -- 10 seconds max total time
+    , initialIntervalMs = 1000  -- Start with 1 second delay
+    , maxIntervalMs = 3000  -- Max 3 second delay
+    }
+
+
+messenger_get_qr_retryable : (Result ApiError QrCodeRsp -> msg) -> QrCodeReq -> Effect msg
+messenger_get_qr_retryable toMsg req =
+    RetryableHttp.retryablePost
+        qrCodeRetryConfig
+        toMsg
+        { url = "/api/messenger/qr"
+        , body = Http.jsonBody (qrCodeReqEncoder req)
+        , decoder = qrCodeRspDecoder
+        }
+
+
+messenger_is_linked : (Result ApiError IsAccountLinkedRsp -> msg) -> IsAccountLinkedReq -> Cmd msg
+messenger_is_linked toMsg req =
+    Http.post
+        { url = "/api/messenger/is-linked"
+        , body = Http.jsonBody (isAccountLinkedReqEncoder req)
+        , expect = leExpectJson toMsg isAccountLinkedRspDecoder
+        }
+
+
+messenger_edit_account : (Result ApiError () -> msg) -> AccountStatusReq -> Cmd msg
+messenger_edit_account toMsg req =
+    Http.post
+        { url = "/api/messenger/edit"
+        , body = Http.jsonBody (accountStatusReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
+messenger_unlink_account : (Result ApiError () -> msg) -> DeleteAccountReq -> Cmd msg
+messenger_unlink_account toMsg req =
+    Http.post
+        { url = "/api/messenger/unlink"
+        , body = Http.jsonBody (deleteAccountReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
+messenger_link_account : (Result ApiError LinkAccountRsp -> msg) -> LinkAccountReq -> Cmd msg
+messenger_link_account toMsg req =
+    Http.post
+        { url = "/api/messenger/link"
+        , body = Http.jsonBody (linkAccountReqEncoder req)
+        , expect = leExpectJson toMsg linkAccountRspDecoder
+        }

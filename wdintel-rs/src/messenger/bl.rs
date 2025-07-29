@@ -10,7 +10,6 @@ use echo_im::entities::sea_orm_active_enums::{
 };
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
-use echo_migration::Expr;
 use sea_orm::prelude::DateTime;
 use sea_orm::*;
 use std::net::TcpListener;
@@ -48,12 +47,14 @@ pub async fn edit_account(
     } else {
         AccountStatus::Paused
     };
-    messenger_account::Entity::update_many()
-        .filter(messenger_account::Column::Id.eq(id))
-        .col_expr(messenger_account::Column::Status, Expr::value(new_status))
-        .exec(txn)
+    let mut account = messenger_account::Entity::find_by_id(id)
+        .one(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .context(h!())?
+        .into_active_model();
+    account.status = Set(new_status);
+    account.update(txn).await.context(h!())?;
     Ok(())
 }
 
@@ -80,6 +81,10 @@ pub async fn deactivate_account(
         .await
         .context(h!())?,
     };
+    messenger_account::Entity::delete_by_id(account.id)
+        .exec(txn)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
@@ -96,12 +101,15 @@ pub async fn link_account(
     }
     let source = EchoMessageSource::try_from_value(&source).context(h!())?;
 
-    let src = match &source {
-        EchoMessageSource::Whatsapp => echo_im::types::MessageSource::Whatsapp,
-        EchoMessageSource::Signal => echo_im::types::MessageSource::Signal,
+    let (src, src_name) = match &source {
+        EchoMessageSource::Signal => {
+            (echo_im::types::MessageSource::Signal, SIGNAL_UNIT_NAME)
+        }
+        EchoMessageSource::Whatsapp => {
+            (echo_im::types::MessageSource::Whatsapp, WHATSAPP_UNIT_NAME)
+        }
     };
-    let src_name = source.to_value().to_string();
-    let unit_name = format!("{src_name}-cli@{display_name}");
+    let unit_name = format!("{src_name}@{display_name}");
     let accounts = list_linked_accounts(txn).await.context(h!())?;
     let existing_account = accounts
         .into_iter()
@@ -119,9 +127,12 @@ pub async fn link_account(
 
     let port = find_port_available(8010, 9000).await.context(h!())?;
     let attachment_path = format!(
-        "/etc/oblik-os/{}-bot/{}/{}-cli/attachments/",
-        src_name, display_name, src_name
+        "/etc/echo/{}-cli-data/{}/{}-cli/attachments/",
+        src.to_string().to_lowercase(),
+        display_name,
+        src.to_string().to_lowercase()
     );
+    info!("attachment path created: {attachment_path}");
     echo_im::attach_new_client(
         display_name,
         &attachment_path,

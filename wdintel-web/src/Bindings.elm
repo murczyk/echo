@@ -4377,6 +4377,18 @@ networkCallsignsReqEncoder struct =
         ]
 
 
+type alias NetworkFreqsActivityReq =
+    { networkId : Int
+    }
+
+
+networkFreqsActivityReqEncoder : NetworkFreqsActivityReq -> Json.Encode.Value
+networkFreqsActivityReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        ]
+
+
 type alias NetworkGroupsActivityOneReq =
     { networkId : Int
     , tillDateNoninclusiveMs : Maybe Int
@@ -5262,6 +5274,146 @@ longPollRspEncoder struct =
     Json.Encode.object
         [ ( "events", Json.Encode.list eventMsgEncoder struct.events )
         , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.lastEventId )
+        ]
+
+
+type alias EchoAccountF1 =
+    { id : Int
+    , status : String
+    , createdAt : Int
+    , clientId : Int
+    , name : String
+    , messenger : String
+    , phoneNumber : String
+    , isLinked : Bool
+    }
+
+
+echoAccountF1Encoder : EchoAccountF1 -> Json.Encode.Value
+echoAccountF1Encoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "status", Json.Encode.string struct.status )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        , ( "client_id", Json.Encode.int struct.clientId )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "messenger", Json.Encode.string struct.messenger )
+        , ( "phone_number", Json.Encode.string struct.phoneNumber )
+        , ( "is_linked", Json.Encode.bool struct.isLinked )
+        ]
+
+
+type alias QrCodeReq =
+    { accountId : Int
+    }
+
+
+qrCodeReqEncoder : QrCodeReq -> Json.Encode.Value
+qrCodeReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", Json.Encode.int struct.accountId )
+        ]
+
+
+type alias QrCodeRsp =
+    { qrCodeBase64 : String
+    }
+
+
+qrCodeRspEncoder : QrCodeRsp -> Json.Encode.Value
+qrCodeRspEncoder struct =
+    Json.Encode.object
+        [ ( "qr_code_base64", Json.Encode.string struct.qrCodeBase64 )
+        ]
+
+
+type alias AccountsRsp =
+    { accounts : List EchoAccountF1
+    }
+
+
+accountsRspEncoder : AccountsRsp -> Json.Encode.Value
+accountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "accounts", Json.Encode.list echoAccountF1Encoder struct.accounts )
+        ]
+
+
+type alias IsAccountLinkedReq =
+    { accountId : Int
+    }
+
+
+isAccountLinkedReqEncoder : IsAccountLinkedReq -> Json.Encode.Value
+isAccountLinkedReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", Json.Encode.int struct.accountId )
+        ]
+
+
+type alias IsAccountLinkedRsp =
+    { isLinked : Bool
+    }
+
+
+isAccountLinkedRspEncoder : IsAccountLinkedRsp -> Json.Encode.Value
+isAccountLinkedRspEncoder struct =
+    Json.Encode.object
+        [ ( "is_linked", Json.Encode.bool struct.isLinked )
+        ]
+
+
+type alias AccountStatusReq =
+    { accountId : Int
+    , isActive : Bool
+    }
+
+
+accountStatusReqEncoder : AccountStatusReq -> Json.Encode.Value
+accountStatusReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", Json.Encode.int struct.accountId )
+        , ( "is_active", Json.Encode.bool struct.isActive )
+        ]
+
+
+type alias DeleteAccountReq =
+    { accountId : Int
+    }
+
+
+deleteAccountReqEncoder : DeleteAccountReq -> Json.Encode.Value
+deleteAccountReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", Json.Encode.int struct.accountId )
+        ]
+
+
+type alias LinkAccountReq =
+    { phone : String
+    , messenger : String
+    , displayName : String
+    }
+
+
+linkAccountReqEncoder : LinkAccountReq -> Json.Encode.Value
+linkAccountReqEncoder struct =
+    Json.Encode.object
+        [ ( "phone", Json.Encode.string struct.phone )
+        , ( "messenger", Json.Encode.string struct.messenger )
+        , ( "display_name", Json.Encode.string struct.displayName )
+        ]
+
+
+type alias LinkAccountRsp =
+    { account : EchoAccountF1
+    }
+
+
+linkAccountRspEncoder : LinkAccountRsp -> Json.Encode.Value
+linkAccountRspEncoder struct =
+    Json.Encode.object
+        [ ( "account", echoAccountF1Encoder struct.account )
         ]
 
 
@@ -7781,6 +7933,12 @@ listNetworksSortByDecoder =
         ]
 
 
+networkFreqsActivityReqDecoder : Json.Decode.Decoder NetworkFreqsActivityReq
+networkFreqsActivityReqDecoder =
+    Json.Decode.succeed NetworkFreqsActivityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+
+
 networkGroupsActivityOneReqDecoder : Json.Decode.Decoder NetworkGroupsActivityOneReq
 networkGroupsActivityOneReqDecoder =
     Json.Decode.succeed NetworkGroupsActivityOneReq
@@ -8229,3 +8387,73 @@ longPollRspDecoder =
     Json.Decode.succeed LongPollRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list eventMsgDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable Json.Decode.string)))
+
+
+echoAccountF1Decoder : Json.Decode.Decoder EchoAccountF1
+echoAccountF1Decoder =
+    Json.Decode.succeed EchoAccountF1
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "client_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone_number" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_linked" Json.Decode.bool))
+
+
+qrCodeReqDecoder : Json.Decode.Decoder QrCodeReq
+qrCodeReqDecoder =
+    Json.Decode.succeed QrCodeReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" Json.Decode.int))
+
+
+qrCodeRspDecoder : Json.Decode.Decoder QrCodeRsp
+qrCodeRspDecoder =
+    Json.Decode.succeed QrCodeRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_code_base64" Json.Decode.string))
+
+
+accountsRspDecoder : Json.Decode.Decoder AccountsRsp
+accountsRspDecoder =
+    Json.Decode.succeed AccountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "accounts" (Json.Decode.list echoAccountF1Decoder)))
+
+
+isAccountLinkedReqDecoder : Json.Decode.Decoder IsAccountLinkedReq
+isAccountLinkedReqDecoder =
+    Json.Decode.succeed IsAccountLinkedReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" Json.Decode.int))
+
+
+isAccountLinkedRspDecoder : Json.Decode.Decoder IsAccountLinkedRsp
+isAccountLinkedRspDecoder =
+    Json.Decode.succeed IsAccountLinkedRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_linked" Json.Decode.bool))
+
+
+accountStatusReqDecoder : Json.Decode.Decoder AccountStatusReq
+accountStatusReqDecoder =
+    Json.Decode.succeed AccountStatusReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" Json.Decode.bool))
+
+
+deleteAccountReqDecoder : Json.Decode.Decoder DeleteAccountReq
+deleteAccountReqDecoder =
+    Json.Decode.succeed DeleteAccountReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" Json.Decode.int))
+
+
+linkAccountReqDecoder : Json.Decode.Decoder LinkAccountReq
+linkAccountReqDecoder =
+    Json.Decode.succeed LinkAccountReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
+
+
+linkAccountRspDecoder : Json.Decode.Decoder LinkAccountRsp
+linkAccountRspDecoder =
+    Json.Decode.succeed LinkAccountRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account" echoAccountF1Decoder))

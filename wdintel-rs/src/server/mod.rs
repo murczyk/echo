@@ -6,6 +6,7 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
+use crate::location::SettlementsData;
 use milgeo_rs::MilGeo;
 
 pub mod discord;
@@ -153,7 +154,8 @@ pub async fn main_server(
             .build()
             .unwrap();
         let settlement_paths = config.settlement_paths().unwrap();
-        let settlements = Arc::new(RwLock::new(crate::location::load_from_file(settlement_paths).unwrap()));
+        let settlements_data = crate::location::load_from_file(settlement_paths).unwrap_or(SettlementsData::default());
+        let settlements = Arc::new(RwLock::new(settlements_data));
 
         let env = Env {
             mode,
@@ -386,6 +388,12 @@ pub async fn main_server(
             .service(crate::tags::inbox_message_tags_rm)
             .service(crate::log_api::log_error)
             .service(crate::event_stream::long_poll)
+            .service(crate::messenger::list_linked_accounts)
+            .service(crate::messenger::get_qr)
+            .service(crate::messenger::is_linked)
+            .service(crate::messenger::edit)
+            .service(crate::messenger::unlink)
+            .service(crate::messenger::link)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?

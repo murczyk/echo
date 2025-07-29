@@ -45,6 +45,7 @@ navBar user shared activeName props =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
             , Menu (Internal Route.Path.Admin_Users) "users" "користувачі"
             , Menu (Internal Route.Path.Admin_Organisms) "organisms" "організми"
+            , Menu (Internal Route.Path.Admin_Messanger) "messanger" "месенджери"
             ]
 
         etalonkaSubs =
