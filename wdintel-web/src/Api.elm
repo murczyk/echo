@@ -1326,6 +1326,27 @@ messenger_get_qr toMsg req =
         }
 
 
+-- Custom retry config for QR code requests - only retry once
+qrCodeRetryConfig : { maxRetries : Int, maxDurationMs : Int, initialIntervalMs : Float, maxIntervalMs : Float }
+qrCodeRetryConfig =
+    { maxRetries = 1  -- Only retry once (original + 1 retry = 2 total attempts)
+    , maxDurationMs = 10000  -- 10 seconds max total time
+    , initialIntervalMs = 1000  -- Start with 1 second delay
+    , maxIntervalMs = 3000  -- Max 3 second delay
+    }
+
+
+messenger_get_qr_retryable : (Result ApiError QrCodeRsp -> msg) -> QrCodeReq -> Effect msg
+messenger_get_qr_retryable toMsg req =
+    RetryableHttp.retryablePost
+        qrCodeRetryConfig
+        toMsg
+        { url = "/api/messenger/qr"
+        , body = Http.jsonBody (qrCodeReqEncoder req)
+        , decoder = qrCodeRspDecoder
+        }
+
+
 messenger_is_linked : (Result ApiError IsAccountLinkedRsp -> msg) -> IsAccountLinkedReq -> Cmd msg
 messenger_is_linked toMsg req =
     Http.post

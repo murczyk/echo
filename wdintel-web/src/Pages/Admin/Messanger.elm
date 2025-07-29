@@ -195,7 +195,7 @@ update msg model =
 
         GotAccounts (Err error) ->
             ( { model | accounts = RD.Failure error }
-            , E.none
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження акаунтів месенджерів" error
             )
 
         OpenLinkSidebar ->
@@ -286,12 +286,12 @@ update msg model =
                 | accounts = updatedAccounts  -- Update the table with new account
                 , linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account }
               }
-            , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = linkRsp.account.id })
+            , Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
             )
 
-        GotLinkResult (Err _) ->
+        GotLinkResult (Err error) ->
             ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
-            , E.none
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
         GotQrCode (Ok qrRsp) ->
@@ -303,11 +303,11 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        GotQrCode (Err _) ->
+        GotQrCode (Err error) ->
             case model.linkFlow of
                 LinkQrCode qrData ->
-                    ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду", accountId = qrData.accountId, account = qrData.account } }
-                    , E.none
+                    ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду після кількох спроб", accountId = qrData.accountId, account = qrData.account } }
+                    , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
                     )
                 _ ->
                     ( model, E.none )
@@ -368,7 +368,7 @@ update msg model =
             case model.linkFlow of
                 LinkError errorData ->
                     ( { model | linkFlow = LinkQrCode { accountId = errorData.accountId, qrCode = "", account = errorData.account } }
-                    , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = errorData.accountId })
+                    , Api.messenger_get_qr_retryable GotQrCode { accountId = errorData.accountId }
                     )
                 
                 _ ->
@@ -385,7 +385,7 @@ update msg model =
                                 | sidebarOpen = True  
                                 , linkFlow = LinkQrCode { accountId = accountId, qrCode = "", account = account }
                               }
-                            , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = accountId })
+                            , Api.messenger_get_qr_retryable GotQrCode { accountId = accountId }
                             )
                         Nothing ->
                             ( model, E.none )
@@ -421,9 +421,9 @@ update msg model =
                     , E.none
                     )
 
-        GotDeleteResult (Err _) accountId ->
+        GotDeleteResult (Err error) accountId ->
             ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
-            , E.none
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення акаунту" error
             )
 
         ToggleAccountStatus accountId ->
@@ -467,8 +467,10 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        GotToggleStatusResult (Err _) accountId ->
-            ( model, E.none )
+        GotToggleStatusResult (Err error) accountId ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка зміни статусу акаунту" error
+            )
 
         MessengerTypeSelectMsg selectMsg ->
             let
