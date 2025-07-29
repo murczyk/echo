@@ -141,10 +141,13 @@ systemd-units = [
 	{ unit-name = "wdintel-rs" },
 	{ unit-name = "wdintel-rs-sigint-worker" },
 	{ unit-name = "wdintel-py" },
+	# legacy mechanism without echo-im, to be discontinued
 	{ unit-name = "echo-signal-cli" },
 	{ unit-name = "echo-whatsapp" },
 	{ unit-name = "echo-vector" },
+	# new mechanism via echo-im
 	{ unit-name = "echo-signal-bot@" },
+	# new mechanism via echo-im
 	{ unit-name = "echo-whatsapp-bot@" },
 ]
 depends = ""
