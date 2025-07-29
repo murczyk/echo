@@ -115,6 +115,58 @@ handleHttpError2 toMsg e =
             }
 
 
+{-| TODO: Refactor error handling to be more flexible and avoid code duplication.
+    This function is a temporary solution for login-specific error handling.
+-}
+handleLoginHttpError :
+    (Le.Block.Toast.Msg -> msg)
+    -> ApiError
+    -> ModelWithErrorFields model
+    -> ( ModelWithErrorFields model, Effect msg )
+handleLoginHttpError toMsg e m =
+    case e.httpError of
+        Http.BadStatus code ->
+            case code of
+                401 ->
+                    -- For login page, treat 401 as form error instead of logout
+                    ( { m | formErrors = Dict.insert "login" "Невірний логін або пароль" e.formErrors }
+                    , E.none
+                    )
+
+                _ ->
+                    case Dict.toList e.formErrors of
+                        [] ->
+                            case e.errors of
+                                [] ->
+                                    ( { m | formErrors = e.formErrors }
+                                    , E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+                                    )
+
+                                es ->
+                                    ( { m | formErrors = e.formErrors }
+                                    , E.sendCmd <| Le.Block.Toast.addErrors toMsg es
+                                    )
+
+                        _ ->
+                            ( { m | formErrors = e.formErrors }
+                            , E.none
+                            )
+
+        Http.BadBody badBody ->
+            ( m
+            , E.sendCmd <|
+                Cmd.batch
+                    [ Le.Block.Toast.addError toMsg "There was an error, please try again later"
+                    , logError ("Bad Body: " ++ badBody) (toMsg << always Le.Block.Toast.NoOp)
+                    ]
+            )
+
+        _ ->
+            ( m
+            , E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+            )
+
+
 logError : String -> (Result ApiError () -> msg) -> Cmd msg
 logError msg toMsg =
     Http.get

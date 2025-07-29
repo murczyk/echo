@@ -136,7 +136,7 @@ update shared msg model =
             )
 
         LoginDone (Err e) ->
-            Api.handleHttpError ToastMsg e model
+            Api.handleLoginHttpError ToastMsg e model
 
         LoginDone (Ok ()) ->
             case shared.location of
