@@ -7,6 +7,7 @@ import Bytes exposing (Bytes)
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
+import Components.SegmentedControl as SegmentedControl
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File.Download as Download
@@ -1132,40 +1133,17 @@ filterFreqsByActivity filter freqs =
 
 freqsActivityFilterView : Model -> Html Msg
 freqsActivityFilterView model =
-    div [ class "flex gap-2 items-center mb-4" ]
-        [ span [ class "text-sm font-medium" ] [ text "Фільтр активності:" ]
-        , div [ class "flex gap-2" ]
-            [ label [ class "flex items-center gap-2 cursor-pointer" ]
-                [ input 
-                    [ type_ "radio"
-                    , name "freqs-activity-filter"
-                    , checked (model.freqsActivityFilter == AllFreqs)
-                    , onClick (FreqsActivityFilterChangedByUser AllFreqs)
-                    , class "form-radio"
-                    ] []
-                , span [ class "text-sm" ] [ text "Всі" ]
-                ]
-            , label [ class "flex items-center gap-2 cursor-pointer" ]
-                [ input 
-                    [ type_ "radio"
-                    , name "freqs-activity-filter"
-                    , checked (model.freqsActivityFilter == ActiveFreqs)
-                    , onClick (FreqsActivityFilterChangedByUser ActiveFreqs)
-                    , class "form-radio"
-                    ] []
-                , span [ class "text-sm" ] [ text "Активні" ]
-                ]
-            , label [ class "flex items-center gap-2 cursor-pointer" ]
-                [ input 
-                    [ type_ "radio"
-                    , name "freqs-activity-filter"
-                    , checked (model.freqsActivityFilter == InactiveFreqs)
-                    , onClick (FreqsActivityFilterChangedByUser InactiveFreqs)
-                    , class "form-radio"
-                    ] []
-                , span [ class "text-sm" ] [ text "Неактивні" ]
-                ]
+    let
+        options =
+            [ { value = AllFreqs, label = "Всі" }
+            , { value = ActiveFreqs, label = "Активні" }
+            , { value = InactiveFreqs, label = "Неактивні" }
             ]
+    in
+    div [ class "flex gap-2 items-center mb-4" ]
+        [
+         SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
+            |> SegmentedControl.view
         ]
 
 
