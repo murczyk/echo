@@ -26,6 +26,7 @@ import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
+import Le.Auth
 import Le.Block.Callsign
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Le.Block.DateTime
@@ -1540,7 +1541,7 @@ unitsBlock shared model =
             ]
 
 
-view : Bool -> Shared.Model -> B.User -> Model -> View Msg
+view : Bool -> Shared.Model -> Auth.User -> Model -> View Msg
 view dark shared user model =
     { title = "мережі"
     , body =
@@ -1557,10 +1558,20 @@ view dark shared user model =
                             [ text "мережі" ]
                         , dateAndPanelsBlock dark model
                         ]
-                    , div [ class "flex gap-[16px]" ]
-                        [ Button.new { label = "Створити", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
-                        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
-                        ]
+                    , let
+                        reportButton =
+                            Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+
+                        buttons =
+                            if Le.Auth.hasRole "UnitsEditor" user then
+                                [ Button.new { label = "Створити", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
+                                , reportButton
+                                ]
+
+                            else
+                                [ reportButton ]
+                      in
+                      div [ class "flex gap-[16px]" ] buttons
                     ]
                 , case model.networksMergeStatus of
                     CalculatedSuggestions (x :: xs) ->

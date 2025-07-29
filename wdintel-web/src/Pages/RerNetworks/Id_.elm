@@ -7,6 +7,7 @@ import Bytes exposing (Bytes)
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
+import Components.SegmentedControl as SegmentedControl
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File.Download as Download
@@ -160,6 +161,12 @@ type alias CallsignResModified =
     }
 
 
+type FreqActivityFilter
+    = AllFreqs
+    | ActiveFreqs
+    | InactiveFreqs
+
+
 type alias Model =
     { network : RemoteData ApiError B.Network
     , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
@@ -188,6 +195,7 @@ type alias Model =
     , reportIncludePelengsMap : Bool
     , reportIncludeSigintSigns : Bool
     , reportIncludeConfirmation : Bool
+    , freqsActivityFilter : FreqActivityFilter
     }
 
 
@@ -244,6 +252,7 @@ init route shared () =
       , reportIncludePelengsMap = True
       , reportIncludeSigintSigns = True
       , reportIncludeConfirmation = True
+      , freqsActivityFilter = AllFreqs
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -313,6 +322,7 @@ type Msg
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
+    | FreqsActivityFilterChangedByUser FreqActivityFilter
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -841,8 +851,8 @@ update shared msg model =
             )
 
         FreqsEditStartedByUser ->
-            case model.network of
-                Success network ->
+            case ( model.freqs, model.network ) of
+                ( Success freqs, Success network ) ->
                     let
                         editFreqsDict =
                             List.map
@@ -850,14 +860,14 @@ update shared msg model =
                                     ( f.freq
                                     , { networkId = network.id
                                       , freq = f.freq
-                                      , kind = f.kind
-                                      , modulationId = f.modulationId
+                                      , kind = "VHF"  -- Default value since NetworkFreqsRes doesn't have kind
+                                      , modulationId = Nothing  -- NetworkFreqsRes doesn't have modulationId
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
                                     )
                                 )
-                                network.freqs
+                                freqs
                                 |> Dict.fromList
                     in
                     ( { model
@@ -872,20 +882,14 @@ update shared msg model =
 
         FreqsEditSavedByUser ->
             let
-                compareTwoFreqs : B.UpdateNetworkFreqReq -> B.NetworkFreq -> Bool
-                compareTwoFreqs f1 f2 =
-                    f1.freq
-                        == f2.freq
-                        && f1.modulationId
-                        == f2.modulationId
-                        && f1.kind
-                        == f2.kind
-                        && f1.networkId
-                        == f2.networkId
-                        && f1.activeFrom
-                        == f2.activeFrom
-                        && f1.activeTo
-                        == f2.activeTo
+                compareTwoFreqs : B.UpdateNetworkFreqReq -> B.NetworkFreqsRes -> Bool
+                compareTwoFreqs updateReq originalFreq =
+                    updateReq.freq
+                        == originalFreq.freq
+                        && updateReq.activeFrom
+                        == originalFreq.activeFrom
+                        && updateReq.activeTo
+                        == originalFreq.activeTo
 
                 ( m1, eff1 ) =
                     case model.freqsEditingState of
@@ -896,12 +900,12 @@ update shared msg model =
                                         |> List.map Tuple.second
                                         |> List.filterMap
                                             (\updateFreqReq ->
-                                                case model.network of
-                                                    Success network ->
-                                                        ListX.find (\f -> f.freq == updateFreqReq.freq) network.freqs
+                                                case model.freqs of
+                                                    Success freqs ->
+                                                        ListX.find (\f -> f.freq == updateFreqReq.freq) freqs
                                                             |> Maybe.andThen
-                                                                (\f1 ->
-                                                                    if compareTwoFreqs updateFreqReq f1 then
+                                                                (\originalFreq ->
+                                                                    if compareTwoFreqs updateFreqReq originalFreq then
                                                                         Nothing
 
                                                                     else
@@ -953,7 +957,9 @@ update shared msg model =
             )
 
         FreqUpdatedByApi (Ok network) ->
-            ( { model | network = Success network, freqsEditingState = Readonly }, E.none )
+            ( { model | network = Success network, freqsEditingState = Readonly }
+            , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+            )
 
         CallsignReportingStatusToggledByUser callsign isChecked ->
             ( { model
@@ -1091,6 +1097,9 @@ update shared msg model =
         ReportIncludeSigintSignsCheckedByUser isChecked ->
             ( { model | reportIncludeSigintSigns = isChecked }, E.none )
 
+        FreqsActivityFilterChangedByUser filter ->
+            ( { model | freqsActivityFilter = filter }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1103,6 +1112,58 @@ subscriptions model =
 
 
 -- VIEW
+
+
+filterFreqsByActivity : FreqActivityFilter -> List B.NetworkFreqsRes -> List B.NetworkFreqsRes
+filterFreqsByActivity filter freqs =
+    case filter of
+        AllFreqs ->
+            freqs
+
+        ActiveFreqs ->
+            List.filter .isActive freqs
+
+        InactiveFreqs ->
+            List.filter (\freq -> not freq.isActive) freqs
+
+
+emptyFreqsPlaceholder : FreqActivityFilter -> Html msg
+emptyFreqsPlaceholder filter =
+    let
+        message =
+            case filter of
+                AllFreqs ->
+                    "Немає частот в мережі"
+
+                ActiveFreqs ->
+                    "Немає активних частот"
+
+                InactiveFreqs ->
+                    "Немає неактивних частот"
+    in
+    div 
+        [ class "flex flex-col items-center justify-center py-12 text-center" ]
+        [ i [ class "bi bi-radio-tower text-4xl text-gray-400 mb-4" ] []
+        , p [ class "text-gray-600 dark:text-gray-400 text-lg font-medium" ] [ text message ]
+        , p [ class "text-gray-500 dark:text-gray-500 text-sm mt-2" ] 
+            [ text "Спробуйте змінити фільтр або перевірте налаштування мережі" ]
+        ]
+
+
+freqsActivityFilterView : Model -> Html Msg
+freqsActivityFilterView model =
+    let
+        options =
+            [ { value = AllFreqs, label = "Всі" }
+            , { value = ActiveFreqs, label = "Активні" }
+            , { value = InactiveFreqs, label = "Неактивні" }
+            ]
+    in
+    div [ class "flex gap-2 items-center mb-4" ]
+        [
+         SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
+            |> SegmentedControl.view
+        ]
 
 
 missingFieldsBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
@@ -1390,7 +1451,15 @@ mainInfoEditBlock updNetworkReq network networkFreqs shared model =
 
 freqsTable : B.NetworkFreqsRes -> Model -> Shared.Model -> Html Msg
 freqsTable freq model shared =
-    tr [ class "" ]
+    let
+        rowAttrs =
+            if not freq.isActive then
+                [ style "background-color" "var(--color-bg-inactive)" ]
+
+            else
+                []
+    in
+    tr rowAttrs
         [ td [] [ text freq.freq ]
         , td [] [ text <| Maybe.withDefault "" freq.modulation ]
         , td [] [ text <| String.fromInt freq.messageCount ]
@@ -1457,7 +1526,15 @@ freqsTable freq model shared =
 
 freqsTableEditing : B.UpdateNetworkFreqReq -> B.NetworkFreqsRes -> Model -> Shared.Model -> Html Msg
 freqsTableEditing updateFreqReq freq model shared =
-    tr [ class "" ]
+    let
+        rowAttrs =
+            if not freq.isActive then
+                [ style "background-color" "var(--color-bg-inactive)" ]
+
+            else
+                []
+    in
+    tr rowAttrs
         [ td [] [ text freq.freq ]
         , td [] [ text <| Maybe.withDefault "" freq.modulation ]
         , td [] [ text <| String.fromInt freq.messageCount ]
@@ -1537,15 +1614,7 @@ freqsTableEditing updateFreqReq freq model shared =
                     FreqsEditingMsg
                         << (\v ->
                                 { updateFreqReq
-                                    | activeTo =
-                                        case Le.Time.parseDateParts v of
-                                            Err _ ->
-                                                updateFreqReq.activeTo
-
-                                            Ok parts ->
-                                                Time.Extra.partsToPosix shared.timeZone parts
-                                                    |> Time.posixToMillis
-                                                    |> Just
+                                    | activeTo = updateActiveToFromInput v shared.timeZone updateFreqReq.activeTo
                                 }
                            )
                 , class "form-control"
@@ -1805,40 +1874,48 @@ contentBlock user shared network model =
               else
                 text ""
             ]
+        , freqsActivityFilterView model
         , case model.freqs of
             Success freqs ->
+                let
+                    filteredFreqs =
+                        filterFreqsByActivity model.freqsActivityFilter freqs
+                in
                 div [ class "overflow-y-auto grow-1" ]
-                    [ table [ class "table-fixed w-full" ]
-                        [ thead [ class "text-[13px]/[110%] font-medium" ]
-                            [ tr [ class "" ]
-                                [ th [] [ text "Частота" ]
-                                , th [] [ text "Модуляція" ]
-                                , th [] [ text "Кількість перехоплень" ]
-                                , th [] [ text "Позивні" ]
-                                , th [] [ text "Останній раз в етері" ]
-                                , th [] [ text "Дата прив'язки" ]
-                                , th [] [ text "Активна з" ]
-                                , th [] [ text "Активна по" ]
+                    [ if List.isEmpty filteredFreqs then
+                        emptyFreqsPlaceholder model.freqsActivityFilter
+                      else
+                        table [ class "table-fixed w-full" ]
+                            [ thead [ class "text-[13px]/[110%] font-medium" ]
+                                [ tr [ class "" ]
+                                    [ th [] [ text "Частота" ]
+                                    , th [] [ text "Модуляція" ]
+                                    , th [] [ text "Кількість перехоплень" ]
+                                    , th [] [ text "Позивні" ]
+                                    , th [] [ text "Останній раз в етері" ]
+                                    , th [] [ text "Дата прив'язки" ]
+                                    , th [] [ text "Активна з" ]
+                                    , th [] [ text "Активна по" ]
+                                    ]
                                 ]
-                            ]
-                        , tbody []
-                            (List.map
-                                (\freq ->
-                                    case model.freqsEditingState of
-                                        Readonly ->
-                                            freqsTable freq model shared
+                            , tbody []
+                                (List.map
+                                    (\freq ->
+                                        case model.freqsEditingState of
+                                            Readonly ->
+                                                freqsTable freq model shared
 
-                                        Editing updateFreqsDict ->
-                                            case Dict.get freq.freq updateFreqsDict of
-                                                Just updateFreqReq ->
-                                                    freqsTableEditing updateFreqReq freq model shared
+                                            Editing updateFreqsDict ->
+                                                case Dict.get freq.freq updateFreqsDict of
+                                                    Just updateFreqReq ->
+                                                        freqsTableEditing updateFreqReq freq model shared
 
-                                                Nothing ->
-                                                    freqsTable freq model shared
+                                                    Nothing ->
+                                                        freqsTable freq model shared
+                                    )
+                                    filteredFreqs
                                 )
-                                freqs
-                            )
-                        ]
+                            ]
                     ]
 
             _ ->
@@ -2288,3 +2365,18 @@ missingFieldsEditBlock user network updNetworkReq shared model =
             ]
         ]
     ]
+
+
+updateActiveToFromInput : String -> Time.Zone -> Maybe Int -> Maybe Int
+updateActiveToFromInput input timeZone currentValue =
+    case ( String.isEmpty input, Le.Time.parseDateParts input ) of
+        ( True, _ ) ->
+            Nothing
+
+        ( False, Err _ ) ->
+            currentValue
+
+        ( False, Ok parts ) ->
+            Time.Extra.partsToPosix timeZone parts
+                |> Time.posixToMillis
+                |> Just
