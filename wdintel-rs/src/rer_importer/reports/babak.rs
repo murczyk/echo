@@ -130,9 +130,11 @@ pub async fn report_docx_kind_babak(
 
         trs.push(TableRow::new(vec![
             TableCell::new()
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text(
-                    stat.unit.clone().unwrap_or("НВ".to_string()),
-                )))
+                .add_paragraph(Paragraph::new().add_run(
+                    Run::new().add_text(
+                        stat.unit.clone().unwrap_or("НВ".to_string()),
+                    ),
+                ))
                 .set_borders(TableCellBorders::new()),
             TableCell::new()
                 .add_paragraph(
@@ -310,9 +312,7 @@ pub async fn report_docx_kind_babak(
             .add_paragraph(
                 Paragraph::new().add_run(
                     Run::new()
-                        .add_text(
-                            unit.unit.clone().unwrap_or("НВ".to_string()),
-                        )
+                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
                         .bold(),
                 ),
             )
@@ -374,9 +374,7 @@ pub async fn report_docx_kind_babak(
             .add_paragraph(
                 Paragraph::new().add_run(
                     Run::new()
-                        .add_text(
-                            unit.unit.clone().unwrap_or("НВ".to_string()),
-                        )
+                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
                         .bold(),
                 ),
             )
@@ -455,9 +453,7 @@ pub async fn report_docx_kind_babak(
             .add_paragraph(
                 Paragraph::new().add_run(
                     Run::new()
-                        .add_text(
-                            unit.unit.clone().unwrap_or("НВ".to_string()),
-                        )
+                        .add_text(unit.unit.clone().unwrap_or("НВ".to_string()))
                         .bold(),
                 ),
             )
@@ -540,7 +536,7 @@ pub async fn get_inbox_messages_report_unit(
                         )"#,
             ),
             "unit"
-        ).clone()        
+        ).clone()
         .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_comment::Column::Comment)
         .expr_as(

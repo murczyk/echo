@@ -5,7 +5,7 @@ use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
 use crate::messenger::bl::list_linked_accounts;
 use crate::messenger::types::EchoAccountF1;
-use crate::types::Mode;
+use crate::types::*;
 use crate::{h, new_redis};
 use anyhow::Context;
 use chrono::*;
@@ -138,20 +138,58 @@ async fn sync_groups(
     let group_master_keys =
         groups.iter().map(|x| x.id.clone()).collect::<Vec<_>>();
     let mut existing_groups = BTreeMap::new();
-    let groups_raw = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_in(group_master_keys))
+
+    #[derive(Clone)]
+    struct GroupData {
+        id: String,
+        name: Option<String>,
+        created_at: NaiveDateTime,
+        model_a: Option<signal_group::Model>,
+        model_b: Option<whatsapp_group::Model>,
+    }
+
+    let mut groups_raw = vec![];
+    signal_group::Entity::find()
+        .filter(
+            signal_group::Column::MasterKey.is_in(group_master_keys.clone()),
+        )
         .all(txn)
         .await
-        .cae(h!())?;
+        .cae(h!())?
+        .into_iter()
+        .for_each(|g| {
+            groups_raw.push(GroupData {
+                model_a: Some(g.clone()),
+                model_b: None,
+                id: g.master_key,
+                name: g.name,
+                created_at: g.created_at,
+            })
+        });
+    whatsapp_group::Entity::find()
+        .filter(whatsapp_group::Column::Jid.is_in(group_master_keys))
+        .all(txn)
+        .await
+        .cae(h!())?
+        .into_iter()
+        .for_each(|g| {
+            groups_raw.push(GroupData {
+                model_a: None,
+                model_b: Some(g.clone()),
+                id: g.jid,
+                name: Some(g.name),
+                created_at: g.created_at,
+            })
+        });
     for g in groups_raw {
-        let key = g.master_key.clone();
+        let key = g.id.clone();
         match existing_groups.get(&key) {
             None => {
                 existing_groups.insert(key, g);
             }
             Some(g2) => {
                 if g.created_at > g2.created_at {
-                    existing_groups.insert(key, g);
+                    existing_groups.insert(key, g.clone());
                 } else {
                     existing_groups.insert(key, g2.clone());
                 }
@@ -190,9 +228,18 @@ async fn sync_groups(
             Some(group_model) => {
                 let name = Some(g.name);
                 if group_model.name != name {
-                    let mut model = group_model.into_active_model();
-                    model.name = Set(name);
-                    model.update(txn).await.context(h!())?;
+                    if let Some(model) = group_model.model_a {
+                        let mut model = model.into_active_model();
+                        model.name = Set(name);
+                        model.update(txn).await.context(h!())?;
+                    } else {
+                        let mut model = group_model
+                            .model_b
+                            .context(h!())?
+                            .into_active_model();
+                        model.name = Set(name.unwrap_or("".to_string()));
+                        model.update(txn).await.context(h!())?;
+                    }
                 }
             }
         }
