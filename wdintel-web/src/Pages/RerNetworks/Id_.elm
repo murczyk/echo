@@ -450,8 +450,6 @@ update shared msg model =
                                 , operationMode = network.operationMode
                                 , operationType = network.operationType
                                 , operationPeriod = network.operationPeriod
-                                , activeFrom = network.activeFrom
-                                , activeTo = network.activeTo
                                 , descriptions = Nothing --TODO
                                 , restoreNetwork = Nothing
                                 }
@@ -500,8 +498,6 @@ update shared msg model =
                                 , operationMode = network.operationMode
                                 , operationType = network.operationType
                                 , operationPeriod = network.operationPeriod
-                                , activeFrom = network.activeFrom
-                                , activeTo = network.activeTo
                                 , descriptions = Nothing
                                 , restoreNetwork = Nothing
                                 }
@@ -1301,8 +1297,8 @@ activityEditBlock user network updNetworkReq shared model =
     ]
 
 
-mainInfoEditBlock : B.UpdateNetworkReq -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
-mainInfoEditBlock updNetworkReq networkFreqs shared model =
+mainInfoEditBlock : B.UpdateNetworkReq -> B.Network -> List B.NetworkFreq -> Shared.Model -> Model -> List (Html Msg)
+mainInfoEditBlock updNetworkReq network networkFreqs shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
         [ h5 []
             [ text "Згідно форми" ]
@@ -1588,7 +1584,7 @@ contentBlock user shared network model =
 
                     Editing eNetwork ->
                         if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                            mainInfoEditBlock eNetwork network.freqs shared model
+                            mainInfoEditBlock eNetwork network network.freqs shared model
 
                         else
                             mainInfoBlock user network shared model
@@ -2276,63 +2272,18 @@ missingFieldsEditBlock user network updNetworkReq shared model =
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center mt-[24px]" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
-            , div [ class "col-span-2" ]
-                [ input
-                    [ type_ "date"
-                    , class "form-input w-full h-[40px]"
-                    , value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix updNetworkReq.activeFrom
-                    , onInput <|
-                        MissingFieldsEditingMsg
-                            << (\v ->
-                                    { updNetworkReq
-                                        | activeFrom =
-                                            case Le.Time.parseDateParts v of
-                                                Err _ ->
-                                                    updNetworkReq.activeFrom
-
-                                                Ok parts ->
-                                                    Time.Extra.partsToPosix shared.timeZone parts
-                                                        |> Time.posixToMillis
-                                    }
-                               )
-                    ]
-                    []
-                ]
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix network.activeFrom) ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
-            , div [ class "col-span-2" ]
-                [ input
-                    [ type_ "date"
-                    , class "form-input w-full h-[40px]"
-                    , value <|
-                        case updNetworkReq.activeTo of
-                            Just millis ->
-                                Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+            , div [ class "col-span-2 h-[40px] flex items-center" ]
+                [ case network.activeTo of
+                    Just millis ->
+                        text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix millis)
 
-                            Nothing ->
-                                ""
-                    , onInput <|
-                        MissingFieldsEditingMsg
-                            << (\v ->
-                                    { updNetworkReq
-                                        | activeTo =
-                                            if String.trim v == "" then
-                                                Nothing
-
-                                            else
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        updNetworkReq.activeTo
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                    }
-                               )
-                    ]
-                    []
+                    Nothing ->
+                        text ""
                 ]
             ]
         ]

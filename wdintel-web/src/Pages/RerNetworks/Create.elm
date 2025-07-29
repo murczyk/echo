@@ -35,10 +35,12 @@ import View exposing (View)
 
 -- VALIDATION
 
+
 type alias ValidationResult =
     { errors : Dict String String
     , isValid : Bool
     }
+
 
 validateCreateNetworkReq : B.CreateNetworkReq -> ValidationResult
 validateCreateNetworkReq req =
@@ -53,10 +55,15 @@ validateCreateNetworkReq req =
     , isValid = Dict.isEmpty errors
     }
 
+
+
 -- Helper function to check if form is valid for save button
+
+
 isFormValid : B.CreateNetworkReq -> Bool
 isFormValid req =
     not (String.trim req.name == "" || String.trim req.location == "" || List.isEmpty req.freqs)
+
 
 validateRequiredString : String -> String -> Dict String String -> Dict String String
 validateRequiredString fieldName value errors =
@@ -133,11 +140,15 @@ init : Route () -> Shared.Model -> () -> ( Model, Effect Msg )
 init route shared () =
     let
         -- Parse frequency from query parameters
-        freqFromQuery = Dict.get "freq" route.query
-        
+        freqFromQuery =
+            Dict.get "freq" route.query
+
         -- Determine if sidebar should be open and pre-filled
-        shouldOpenSidebar = freqFromQuery /= Nothing
-        freqToUse = Maybe.withDefault "" freqFromQuery
+        shouldOpenSidebar =
+            freqFromQuery /= Nothing
+
+        freqToUse =
+            Maybe.withDefault "" freqFromQuery
     in
     ( { formErrors = Dict.empty
       , toasts = Le.Block.Toast.init
@@ -151,8 +162,6 @@ init route shared () =
             , operationMode = Just "дуплекс"
             , operationType = Just "ведення службового радіообміну"
             , operationPeriod = Just "цілодобово"
-            , activeFrom = Nothing
-            , activeTo = Nothing
             , postIds = []
             , descriptions = []
             }
@@ -468,14 +477,15 @@ update shared msg model =
             let
                 validationResult =
                     validateCreateNetworkReq model.createNetworkState
-                
+
                 fieldError =
                     Dict.get fieldName validationResult.errors
-                
+
                 updatedErrors =
                     case fieldError of
                         Just error ->
                             Dict.insert fieldName error model.formErrors
+
                         Nothing ->
                             Dict.remove fieldName model.formErrors
             in
@@ -564,6 +574,7 @@ update shared msg model =
                 description =
                     if String.trim model.freqDescriptionInp == "" then
                         Nothing
+
                     else
                         Just
                             { descrType = B.Confirmation
@@ -796,7 +807,6 @@ viewLeftColumn shared model =
     div [ class "col-span-7 flex flex-col gap-[16px]" ]
         [ viewMissingFieldsBlock shared model
         , viewMainInfoBlock shared model
-        , viewActivityBlock shared model
         ]
 
 
@@ -817,7 +827,7 @@ viewMissingFieldsBlock shared model =
             ]
         , div [ class "space-y-3" ]
             [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-                [ span [ class "text-[13px] font-medium" ] 
+                [ span [ class "text-[13px] font-medium" ]
                     [ text "Назва"
                     , span [ class "text-red-500 ml-1" ] [ text "*" ]
                     ]
@@ -915,91 +925,6 @@ viewMissingFieldsBlock shared model =
                                 "виберіть пости"
                                 defaultOptions
                     ]
-                ]
-            ]
-        ]
-
-
-viewActivityBlock : Shared.Model -> Model -> Html Msg
-viewActivityBlock shared model =
-    div [ class "bg-w dark:bg-[#1C1C21] p-[16px]" ]
-        [ h5 [ class "mb-4" ] [ text "Активність мережі" ]
-        , div [ class "space-y-4" ]
-            [ div [ class "mb-4" ]
-                [ span [ class "opacity-70 text-sm" ] [ text "Виберіть дату початку функціонування мережі на основі графіку активності частоти за місяць" ]
-                ]
-            , div [ class "grid grid-cols-12 gap-[8px]" ]
-                [ div [ class "col-span-4" ]
-                    [ label [ class "mb-1" ] [ text "Активна з:" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control w-[150px]!"
-                        , required True
-                        , case model.createNetworkState.activeFrom of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateNetworkState
-                                << (\v state ->
-                                        { state
-                                            | activeFrom =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeFrom
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                , div [ class "col-span-4" ]
-                    [ label [ class "mb-1" ] [ text "Активна по:" ]
-                    , input
-                        [ type_ "date"
-                        , class "form-control w-[150px]!"
-                        , case model.createNetworkState.activeTo of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
-
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateNetworkState
-                                << (\v state ->
-                                        { state
-                                            | activeTo =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeTo
-
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
-                    ]
-                , div [ class "col-span-4" ]
-                    [ text "" ]
-                ]
-            , div [ class "h-[300px]" ]
-                [ let
-                    groupsMessageCountByDayJson =
-                        B.freqDailyActivityCountEncoder (RD.withDefault { dataPerDate = Dict.empty } model.freqGroupsActivityForNetworkAdd)
-                  in
-                  Html.node "bar-chart-2"
-                    [ Attr.property "data" <| groupsMessageCountByDayJson
-                    ]
-                    []
                 ]
             ]
         ]
@@ -1382,12 +1307,16 @@ viewActionButtons model =
         disabledTooltip =
             if model.creatingNetwork then
                 "Збереження..."
+
             else if String.trim model.createNetworkState.name == "" then
                 "Введіть назву мережі"
+
             else if String.trim model.createNetworkState.location == "" then
                 "Введіть район функціонування/розгортання"
+
             else if List.isEmpty model.createNetworkState.freqs then
                 "Додайте хоча б одну частоту"
+
             else
                 ""
     in
@@ -1413,7 +1342,7 @@ createMainInfoBlock createReq shared model =
         ]
     , div [ class "space-y-3" ]
         [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
-            [ span [ class "text-[13px] font-medium" ] 
+            [ span [ class "text-[13px] font-medium" ]
                 [ text "Район функціонування/розгортання"
                 , span [ class "text-red-500 ml-1" ] [ text "*" ]
                 ]

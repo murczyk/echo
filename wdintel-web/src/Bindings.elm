@@ -4301,8 +4301,6 @@ type alias CreateNetworkReq =
     , operationMode : Maybe String
     , operationType : Maybe String
     , operationPeriod : Maybe String
-    , activeFrom : Maybe Int
-    , activeTo : Maybe Int
     , postIds : List Int
     , descriptions : List AddNetworkDescription
     }
@@ -4320,8 +4318,6 @@ createNetworkReqEncoder struct =
         , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationMode )
         , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationType )
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
-        , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeFrom )
-        , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         , ( "descriptions", Json.Encode.list addNetworkDescriptionEncoder struct.descriptions )
         ]
@@ -4337,8 +4333,6 @@ type alias UpdateNetworkReq =
     , operationMode : Maybe String
     , operationType : Maybe String
     , operationPeriod : Maybe String
-    , activeFrom : Int
-    , activeTo : Maybe Int
     , descriptions : Maybe (List UpdateNetworkDescriptionReq)
     }
 
@@ -4355,8 +4349,6 @@ updateNetworkReqEncoder struct =
         , ( "operation_mode", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationMode )
         , ( "operation_type", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationType )
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
-        , ( "active_from", Json.Encode.int struct.activeFrom )
-        , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
         , ( "descriptions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list updateNetworkDescriptionReqEncoder)) struct.descriptions )
         ]
 
@@ -7805,8 +7797,6 @@ createNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list addNetworkDescriptionDecoder)))
 
@@ -7823,8 +7813,6 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_mode" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_type" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.nullable (Json.Decode.list updateNetworkDescriptionReqDecoder))))
 
 
