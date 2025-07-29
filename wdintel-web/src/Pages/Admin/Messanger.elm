@@ -62,6 +62,8 @@ type alias Model =
     , linkFlow : LinkFlow
     , unlinkConfirmDialog : Maybe Int
     , unlinkLoading : Bool
+    , deleteConfirmDialog : Maybe Int
+    , deleteLoading : Bool
     }
 
 
@@ -88,6 +90,8 @@ init () =
       , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
       , unlinkConfirmDialog = Nothing
       , unlinkLoading = False
+      , deleteConfirmDialog = Nothing
+      , deleteLoading = False
       }
     , E.sendCmd (Api.messenger_list_accounts GotAccounts)
     )
@@ -95,6 +99,34 @@ init () =
 
 
 -- UPDATE
+
+
+-- Helper function to get user-friendly status text
+getStatusText : B.EchoAccountF1 -> String
+getStatusText account =
+    if account.isLinked then
+        case account.status of
+            "active" -> "Активний"
+            "paused" -> "Призупинено"
+            "ready" -> "Готовий"
+            _ -> account.status
+    else
+        case account.status of
+            "ready" -> "Очікує підключення"
+            _ -> "Не підключено"
+
+
+-- Helper function to get status color class
+getStatusColorClass : B.EchoAccountF1 -> String
+getStatusColorClass account =
+    if account.isLinked then
+        case account.status of
+            "active" -> "text-green-600"
+            "paused" -> "text-yellow-600"
+            "ready" -> "text-blue-600"
+            _ -> "text-gray-600"
+    else
+        "text-orange-600"
 
 
 type Msg
@@ -118,6 +150,11 @@ type Msg
     | ConfirmUnlink Int
     | CancelUnlink
     | GotUnlinkResult (Result ApiError ()) Int
+    | ConnectExistingAccount Int
+    | DeleteAccount Int
+    | ConfirmDelete Int
+    | CancelDelete
+    | GotDeleteResult (Result ApiError ()) Int
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -133,14 +170,13 @@ update msg model =
             , E.sendCmd (Api.messenger_list_accounts GotAccounts)
             )
 
-        GotAccounts result ->
-            ( { model | accounts = 
-                case result of
-                    Ok accountsRsp ->
-                        RD.Success accountsRsp.accounts
-                    Err error ->
-                        RD.Failure error
-              }
+        GotAccounts (Ok accountsRsp) ->
+            ( { model | accounts = RD.Success accountsRsp.accounts }
+            , E.none
+            )
+
+        GotAccounts (Err error) ->
+            ( { model | accounts = RD.Failure error }
             , E.none
             )
 
@@ -215,37 +251,48 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        GotLinkResult result ->
-            case result of
-                Ok linkRsp ->
-                    ( { model | linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account } }
-                    , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = linkRsp.account.id })
-                    )
+        GotLinkResult (Ok linkRsp) ->
+            let
+                -- STEP 1: Add the new account to the table immediately after creation
+                -- This makes the account appear in the table right away, even before QR scan
+                updatedAccounts = 
+                    case model.accounts of
+                        RD.Success accounts ->
+                            -- Add the new account to the beginning of the list
+                            RD.Success (linkRsp.account :: accounts)
+                        _ ->
+                            -- If accounts list is empty/loading, create new list with just this account
+                            RD.Success [ linkRsp.account ]
+            in
+            ( { model 
+                | accounts = updatedAccounts  -- Update the table with new account
+                , linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account }
+              }
+            , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = linkRsp.account.id })
+            )
 
-                Err _ ->
-                    ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
+        GotLinkResult (Err _) ->
+            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
+            , E.none
+            )
+
+        GotQrCode (Ok qrRsp) ->
+            case model.linkFlow of
+                LinkQrCode qrData ->
+                    ( { model | linkFlow = LinkQrCode { qrData | qrCode = qrRsp.qrCodeBase64 } }
                     , E.none
                     )
+                _ ->
+                    ( model, E.none )
 
-        GotQrCode result ->
-            case result of
-                Ok qrRsp ->
-                    case model.linkFlow of
-                        LinkQrCode qrData ->
-                            ( { model | linkFlow = LinkQrCode { qrData | qrCode = qrRsp.qrCodeBase64 } }
-                            , E.none
-                            )
-                        _ ->
-                            ( model, E.none )
-                
-                Err _ ->
-                    case model.linkFlow of
-                        LinkQrCode qrData ->
-                            ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду", accountId = qrData.accountId, account = qrData.account } }
-                            , E.none
-                            )
-                        _ ->
-                            ( model, E.none )
+        GotQrCode (Err _) ->
+            case model.linkFlow of
+                LinkQrCode qrData ->
+                    ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду", accountId = qrData.accountId, account = qrData.account } }
+                    , E.none
+                    )
+                _ ->
+                    ( model, E.none )
 
         CheckIsLinked ->
             case model.linkFlow of
@@ -256,22 +303,45 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        GotIsLinked result ->
-            case result of
-                Ok isLinkedRsp ->
-                    if isLinkedRsp.isLinked then
-                        case model.linkFlow of
-                            LinkQrCode qrData ->
-                                ( { model | linkFlow = LinkSuccess qrData.account }
-                                , E.none
-                                )
-                            _ ->
-                                ( model, E.none )
-                    else
+        GotIsLinked (Ok isLinkedRsp) ->
+            if isLinkedRsp.isLinked then
+                case model.linkFlow of
+                    LinkQrCode qrData ->
+                        let
+                            -- STEP 2: Update only the specific account's is_linked status
+                            -- This changes the status from "Очікує підключення" to "Активний" without refreshing the whole table
+                            updatedAccounts = 
+                                case model.accounts of
+                                    RD.Success accounts ->
+                                        RD.Success 
+                                            (List.map 
+                                                (\account -> 
+                                                    if account.id == qrData.accountId then
+                                                        -- Update only this specific account's isLinked field
+                                                        { account | isLinked = True }
+                                                    else
+                                                        -- Leave all other accounts unchanged
+                                                        account
+                                                ) 
+                                                accounts
+                                            )
+                                    _ ->
+                                        -- If accounts list is not loaded, keep it as is
+                                        model.accounts
+                        in
+                        ( { model 
+                            | accounts = updatedAccounts  -- Update the table with new status
+                            , linkFlow = LinkSuccess qrData.account 
+                          }
+                        , E.none  -- No need to refresh the table!
+                        )
+                    _ ->
                         ( model, E.none )
-                
-                Err _ ->
-                    ( model, E.none )
+            else
+                ( model, E.none )
+
+        GotIsLinked (Err _) ->
+            ( model, E.none )
 
         LinkTimeout ->
             ( model, E.none )
@@ -301,26 +371,74 @@ update msg model =
             , E.none
             )
 
-        GotUnlinkResult result accountId ->
-            case result of
-                Ok _ ->
-                    case model.accounts of
-                        RD.Success accounts ->
-                            let
-                                updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
-                            in
-                            ( { model | accounts = RD.Success updatedAccounts, unlinkConfirmDialog = Nothing, unlinkLoading = False }
-                            , E.none
-                            )
-                        _ ->
-                            ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
-                            , E.none
-                            )
-                
-                Err _ ->
+        GotUnlinkResult (Ok _) accountId ->
+            case model.accounts of
+                RD.Success accounts ->
+                    let
+                        updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
+                    in
+                    ( { model | accounts = RD.Success updatedAccounts, unlinkConfirmDialog = Nothing, unlinkLoading = False }
+                    , E.none
+                    )
+                _ ->
                     ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
                     , E.none
                     )
+
+        GotUnlinkResult (Err _) accountId ->
+            ( { model | unlinkConfirmDialog = Nothing, unlinkLoading = False }
+            , E.none
+            )
+
+        ConnectExistingAccount accountId ->
+            case model.accounts of
+                RD.Success accounts ->
+                    case List.filter (\account -> account.id == accountId) accounts |> List.head of
+                        Just account ->
+                            ( { model 
+                                | sidebarOpen = True  
+                                , linkFlow = LinkQrCode { accountId = accountId, qrCode = "", account = account }
+                              }
+                            , E.sendCmd (Api.messenger_get_qr GotQrCode { accountId = accountId })
+                            )
+                        Nothing ->
+                            ( model, E.none )
+                _ ->
+                    ( model, E.none )
+
+        DeleteAccount accountId ->
+            ( { model | deleteConfirmDialog = Just accountId }
+            , E.none
+            )
+
+        ConfirmDelete accountId ->
+            ( { model | deleteConfirmDialog = Nothing, deleteLoading = True }
+            , E.sendCmd (Api.messenger_unlink_account (\result -> GotDeleteResult result accountId) { accountId = accountId })
+            )
+
+        CancelDelete ->
+            ( { model | deleteConfirmDialog = Nothing }
+            , E.none
+            )
+
+        GotDeleteResult (Ok _) accountId ->
+            case model.accounts of
+                RD.Success accounts ->
+                    let
+                        updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
+                    in
+                    ( { model | accounts = RD.Success updatedAccounts, deleteConfirmDialog = Nothing, deleteLoading = False }
+                    , E.none
+                    )
+                _ ->
+                    ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
+                    , E.none
+                    )
+
+        GotDeleteResult (Err _) accountId ->
+            ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
+            , E.none
+            )
 
 
 
@@ -390,7 +508,7 @@ mainBlock isDark model =
             RD.Success accounts ->
                 div [ class "table-responsive-modern" ]
                     [ Table.view
-                        (messengerAccountsTableConfig model.unlinkLoading)
+                        (messengerAccountsTableConfig (model.unlinkLoading || model.deleteLoading))
                         model.tableState
                         accounts
                     ]
@@ -416,6 +534,25 @@ mainBlock isDark model =
                         |> Button.withStyleSecondary
                         |> Button.view
                     , Button.new { label = "Відв'язати", onClick = ConfirmUnlink accountId }
+                        |> Button.view
+                    ]
+                ]
+        
+        Nothing ->
+            text ""
+    , case model.deleteConfirmDialog of
+        Just accountId ->
+            ModalDialog.modalDialog 
+                True 
+                CancelDelete 
+                [ class "bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4" ]
+                [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Підтвердження видалення" ]
+                , p [ class "text-muted-foreground mb-6" ] [ text "Ви впевнені, що хочете видалити цей акаунт месенджера? Ця дія незворотна." ]
+                , div [ class "flex gap-3 justify-end" ]
+                    [ Button.new { label = "Скасувати", onClick = CancelDelete }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    , Button.new { label = "Видалити", onClick = ConfirmDelete accountId }
                         |> Button.view
                     ]
                 ]
@@ -585,27 +722,45 @@ messengerAccountsTableConfig isLoading =
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Статус" .status |> Table.withColumnWidth "15%"
+            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "20%"
             , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
             , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
-            , Table.stringColumn "Назва" .name |> Table.withColumnWidth "20%"
-                                    , Table.veryCustomColumn
-                            { name = "Дії"
-                            , viewData =
-                                \account ->
-                                    TableColumn.HtmlDetails []
-                                        [ div [ class "flex gap-2" ]
-                                            [ if isLoading then
-                                                div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
-                                              else
-                                                Button.new { label = "Відв'язати", onClick = UnlinkAccount account.id }
-                                                    |> Button.withStyleSecondary
-                                                    |> Button.view
+            , Table.veryCustomColumn
+                { name = "Статус"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ span [ class (getStatusColorClass account) ] [ text (getStatusText account) ]
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "Дії"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ div [ class "flex gap-2" ]
+                                [ if isLoading then
+                                    div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
+                                  else
+                                    if account.isLinked then
+                                        Button.new { label = "Відв'язати", onClick = UnlinkAccount account.id }
+                                            |> Button.withStyleSecondary
+                                            |> Button.view
+                                    else
+                                        div [ class "flex gap-2" ]
+                                            [ Button.new { label = "Підключити", onClick = ConnectExistingAccount account.id }
+                                                |> Button.view
+                                            , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
+                                                |> Button.withStyleSecondary
+                                                |> Button.view
                                             ]
-                                        ]
-                            , sorter = Table.unsortable
-                            }
-                            |> Table.withColumnWidth "30%"
+                                ]
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "30%"
             ]
         , customizations = customizations
         }
