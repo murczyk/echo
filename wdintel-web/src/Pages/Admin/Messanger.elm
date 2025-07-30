@@ -154,6 +154,106 @@ getStatusColorClass account =
 
 
 
+-- Helper function to normalize display name to system service name
+normalizeToSystemName : String -> String
+normalizeToSystemName displayName =
+    let
+        -- Convert to lowercase and replace spaces with hyphens
+        step1 = 
+            displayName
+                |> String.toLower
+                |> String.replace " " "-"
+                |> String.replace "  " "-"
+                |> String.replace "   " "-"
+        
+        -- Replace Ukrainian characters with Latin equivalents
+        step2 =
+            step1
+                |> String.replace "а" "a"
+                |> String.replace "б" "b"
+                |> String.replace "в" "v"
+                |> String.replace "г" "h"
+                |> String.replace "ґ" "g"
+                |> String.replace "д" "d"
+                |> String.replace "е" "e"
+                |> String.replace "є" "ye"
+                |> String.replace "ж" "zh"
+                |> String.replace "з" "z"
+                |> String.replace "и" "y"
+                |> String.replace "і" "i"
+                |> String.replace "ї" "yi"
+                |> String.replace "й" "y"
+                |> String.replace "к" "k"
+                |> String.replace "л" "l"
+                |> String.replace "м" "m"
+                |> String.replace "н" "n"
+                |> String.replace "о" "o"
+                |> String.replace "п" "p"
+                |> String.replace "р" "r"
+                |> String.replace "с" "s"
+                |> String.replace "т" "t"
+                |> String.replace "у" "u"
+                |> String.replace "ф" "f"
+                |> String.replace "х" "kh"
+                |> String.replace "ц" "ts"
+                |> String.replace "ч" "ch"
+                |> String.replace "ш" "sh"
+                |> String.replace "щ" "shch"
+                |> String.replace "ь" ""
+                |> String.replace "ю" "yu"
+                |> String.replace "я" "ya"
+        
+        -- Filter only allowed characters
+        step3 =
+            step2
+                |> String.filter (\c -> Char.isAlphaNum c || c == '-' || c == '_')
+        
+        -- Remove multiple consecutive hyphens
+        step4 =
+            step3
+                |> String.replace "--" "-"
+                |> String.replace "---" "-"
+                |> String.replace "----" "-"
+        
+        -- Remove leading/trailing hyphens
+        step5 =
+            if String.startsWith "-" step4 then
+                String.dropLeft 1 step4
+            else
+                step4
+        
+        step6 =
+            if String.endsWith "-" step5 then
+                String.dropRight 1 step5
+            else
+                step5
+        
+        -- Limit length and ensure minimum length
+        final =
+            if String.length step6 < 4 then
+                if String.length step6 == 0 then
+                    "account"
+                else
+                    step6 ++ "-" ++ String.fromInt (modBy 1000 (String.length step6 + 1))
+            else if String.length step6 > 50 then
+                String.left 50 step6
+            else
+                step6
+    in
+    final
+
+
+-- Helper function to validate display name
+validateDisplayName : String -> Result String String
+validateDisplayName name =
+    if String.length name < 2 then
+        Err "Назва акаунту має бути мінімум 2 символи"
+    else if String.length name > 50 then
+        Err "Назва акаунту має бути максимум 50 символів"
+    else
+        Ok name
+
+
 -- Helper function to get messenger type label
 
 
@@ -282,26 +382,41 @@ update msg model =
                         updatedForm =
                             { linkForm | name = value }
                     in
-                    ( { model | linkFlow = LinkFormState updatedForm }
+                    ( { model 
+                        | linkFlow = LinkFormState updatedForm
+                        , formErrors = Dict.remove "displayName" model.formErrors
+                      }
                     , E.none
                     )
 
                 _ ->
                     ( model, E.none )
 
+
+
         SubmitLinkForm ->
             case model.linkFlow of
                 LinkFormState linkForm ->
-                    let
-                        request =
-                            { messenger = linkForm.messengerType
-                            , phone = linkForm.phoneNumber
-                            , displayName = linkForm.name
-                            }
-                    in
-                    ( model
-                    , E.sendCmd (Api.messenger_link_account GotLinkResult request)
-                    )
+                    case validateDisplayName linkForm.name of
+                        Ok _ ->
+                            let
+                                systemServiceName = normalizeToSystemName linkForm.name
+                                request =
+                                    { messenger = linkForm.messengerType
+                                    , phone = linkForm.phoneNumber
+                                    , displayName = linkForm.name
+                                    , systemServiceName = systemServiceName
+                                    , description = Nothing
+                                    }
+                            in
+                            ( model
+                            , E.sendCmd (Api.messenger_link_account GotLinkResult request)
+                            )
+                        
+                        Err error ->
+                            ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
+                            , E.none
+                            )
 
                 _ ->
                     ( model, E.none )
@@ -718,6 +833,28 @@ linkAccountSidebarContent isDark shared model =
                                 , onInput SetLinkName
                                 ]
                                 []
+                            , case Dict.get "displayName" model.formErrors of
+                                Just error ->
+                                    p [ class "text-xs text-red-600" ] [ text error ]
+                                
+                                Nothing ->
+                                    text ""
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Системна назва" ]
+                            , div [ class "text-sm text-muted-foreground bg-muted p-2 rounded border" ]
+                                [ text "Буде згенеровано: "
+                                , span [ class "font-mono text-foreground" ] [ text (normalizeToSystemName linkForm.name) ]
+                                ]
+                            , let
+                                systemName = normalizeToSystemName linkForm.name
+                              in
+                              if String.length systemName < 6 then
+                                p [ class "text-xs text-yellow-600" ] 
+                                  [ text "Увага: Системна назва дуже коротка. Рекомендується використовувати більш описову назву." ]
+                              else
+                                p [ class "text-xs text-muted-foreground" ] 
+                                  [ text "Автоматично генерується з назви акаунту" ]
                             ]
                         ]
                     ]
@@ -839,7 +976,7 @@ messengerAccountsTableConfig isLoading =
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Системний сервіс" .name |> Table.withColumnWidth "20%"
+            [ Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "20%"
             , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
             , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
