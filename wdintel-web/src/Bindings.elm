@@ -1200,6 +1200,20 @@ signalGroupReqEncoder struct =
         ]
 
 
+type alias SignalGroupStats =
+    { activityLastDay : Int
+    , activityLastWeek : Int
+    }
+
+
+signalGroupStatsEncoder : SignalGroupStats -> Json.Encode.Value
+signalGroupStatsEncoder struct =
+    Json.Encode.object
+        [ ( "activity_last_day", Json.Encode.int struct.activityLastDay )
+        , ( "activity_last_week", Json.Encode.int struct.activityLastWeek )
+        ]
+
+
 type alias SignalGroupRsp =
     { name : Maybe String
     }
@@ -6056,6 +6070,13 @@ signalGroupReqDecoder : Json.Decode.Decoder SignalGroupReq
 signalGroupReqDecoder =
     Json.Decode.succeed SignalGroupReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+
+
+signalGroupStatsDecoder : Json.Decode.Decoder SignalGroupStats
+signalGroupStatsDecoder =
+    Json.Decode.succeed SignalGroupStats
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_day" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_last_week" Json.Decode.int))
 
 
 signalGroupRspDecoder : Json.Decode.Decoder SignalGroupRsp

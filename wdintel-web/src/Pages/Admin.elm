@@ -991,6 +991,7 @@ update msg model =
                                 , ignoreOperativny = False -- Default value
                                 , shortNote = Nothing
                                 , longNote = Nothing
+                                , groupStats = { activityLastDay = 0, activityLastWeek = 0 }
                                 }
                                 model.groupInfos
 
