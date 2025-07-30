@@ -77,6 +77,7 @@ type alias LinkForm =
     { messengerType : String
     , phoneNumber : String
     , name : String
+    , description : String
     }
 
 
@@ -86,7 +87,7 @@ init () =
       , sidebarOpen = False
       , formErrors = Dict.empty
       , tableState = Table.initialSort "Створено"
-      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
+      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" }
       , deleteConfirmDialog = Nothing
       , deleteLoading = False
       , messengerTypeSelect =
@@ -291,6 +292,7 @@ type Msg
     | SetLinkMessengerType String
     | SetLinkPhoneNumber String
     | SetLinkName String
+    | SetLinkDescription String
     | SubmitLinkForm
     | GotLinkResult (Result ApiError B.LinkAccountRsp)
     | GotQrCode (Result ApiError B.QrCodeRsp)
@@ -338,7 +340,7 @@ update msg model =
             )
 
         CloseLinkSidebar ->
-            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
+            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" } }
             , E.none
             )
 
@@ -392,6 +394,20 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
+        SetLinkDescription value ->
+            case model.linkFlow of
+                LinkFormState linkForm ->
+                    let
+                        updatedForm =
+                            { linkForm | description = value }
+                    in
+                    ( { model | linkFlow = LinkFormState updatedForm }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
 
 
         SubmitLinkForm ->
@@ -406,7 +422,7 @@ update msg model =
                                     , phone = linkForm.phoneNumber
                                     , displayName = linkForm.name
                                     , systemServiceName = systemServiceName
-                                    , description = Nothing
+                                    , description = if String.isEmpty linkForm.description then Nothing else Just linkForm.description
                                     }
                             in
                             ( model
@@ -443,7 +459,7 @@ update msg model =
             )
 
         GotLinkResult (Err error) ->
-            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
+            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" } }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
@@ -841,21 +857,17 @@ linkAccountSidebarContent isDark shared model =
                                     text ""
                             ]
                         , div [ class "space-y-2" ]
-                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Системна назва" ]
-                            , div [ class "text-sm text-muted-foreground bg-muted p-2 rounded border" ]
-                                [ text "Буде згенеровано: "
-                                , span [ class "font-mono text-foreground" ] [ text (normalizeToSystemName linkForm.name) ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Опис (необов'язково)" ]
+                            , textarea
+                                [ class "form-textarea w-full"
+                                , rows 3
+                                , placeholder "Короткий опис акаунту..."
+                                , value linkForm.description
+                                , onInput SetLinkDescription
                                 ]
-                            , let
-                                systemName = normalizeToSystemName linkForm.name
-                              in
-                              if String.length systemName < 6 then
-                                p [ class "text-xs text-yellow-600" ] 
-                                  [ text "Увага: Системна назва дуже коротка. Рекомендується використовувати більш описову назву." ]
-                              else
-                                p [ class "text-xs text-muted-foreground" ] 
-                                  [ text "Автоматично генерується з назви акаунту" ]
+                                []
                             ]
+
                         ]
                     ]
                 , div [ class "p-6 border-t border-border" ]
@@ -976,9 +988,27 @@ messengerAccountsTableConfig isLoading =
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "20%"
-            , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
-            , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
+            [ Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Опис"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ case account.description of
+                                Just desc ->
+                                    if String.length desc > 50 then
+                                        span [ title desc ] [ text (String.left 50 desc ++ "...") ]
+                                    else
+                                        span [] [ text desc ]
+                                
+                                Nothing ->
+                                    span [ class "text-muted-foreground" ] [ text "—" ]
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Статус"
                 , viewData =
@@ -1025,7 +1055,7 @@ messengerAccountsTableConfig isLoading =
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "30%"
+                |> Table.withColumnWidth "25%"
             ]
         , customizations = customizations
         }
