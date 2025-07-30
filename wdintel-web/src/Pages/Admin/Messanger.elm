@@ -101,46 +101,79 @@ init () =
 
 
 -- UPDATE
-
-
 -- Helper function to get user-friendly status text
+
+
 getStatusText : B.EchoAccountF1 -> String
 getStatusText account =
     if account.isLinked then
         case account.status of
-            "active" -> "Активний"
-            "paused" -> "Призупинено"
-            "ready" -> "Готовий"
-            _ -> account.status
+            "active" ->
+                "Активний"
+
+            "paused" ->
+                "Призупинено"
+
+            "ready" ->
+                "Готовий"
+
+            _ ->
+                account.status
+
     else
         case account.status of
-            "ready" -> "Очікує підключення"
-            _ -> "Не підключено"
+            "ready" ->
+                "Очікує підключення"
+
+            _ ->
+                "Не підключено"
+
 
 
 -- Helper function to get status color class
+
+
 getStatusColorClass : B.EchoAccountF1 -> String
 getStatusColorClass account =
     if account.isLinked then
         case account.status of
-            "active" -> "text-green-600"
-            "paused" -> "text-yellow-600"
-            "ready" -> "text-blue-600"
-            _ -> "text-gray-600"
+            "active" ->
+                "text-green-600"
+
+            "paused" ->
+                "text-yellow-600"
+
+            "ready" ->
+                "text-blue-600"
+
+            _ ->
+                "text-gray-600"
+
     else
         "text-orange-600"
 
 
+
 -- Helper function to get messenger type label
+
+
 getMessengerTypeLabel : String -> String
 getMessengerTypeLabel messengerType =
     case messengerType of
-        "signal" -> "Signal"
-        "whatsapp" -> "WhatsApp"
-        _ -> messengerType
+        "signal" ->
+            "Signal"
+
+        "whatsapp" ->
+            "WhatsApp"
+
+        _ ->
+            messengerType
+
 
 
 -- Messenger type menu items
+
+
 messengerTypeMenuItems : List (Select.MenuItem String)
 messengerTypeMenuItems =
     [ Select.basicMenuItem { item = "signal", label = "Signal" }
@@ -218,7 +251,8 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        updatedForm = { linkForm | messengerType = value }
+                        updatedForm =
+                            { linkForm | messengerType = value }
                     in
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
@@ -231,7 +265,8 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        updatedForm = { linkForm | phoneNumber = value }
+                        updatedForm =
+                            { linkForm | phoneNumber = value }
                     in
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
@@ -244,7 +279,8 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        updatedForm = { linkForm | name = value }
+                        updatedForm =
+                            { linkForm | name = value }
                     in
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
@@ -279,12 +315,13 @@ update msg model =
                         RD.Success accounts ->
                             -- Add the new account to the beginning of the list
                             RD.Success (linkRsp.account :: accounts)
+
                         _ ->
                             -- If accounts list is empty/loading, create new list with just this account
                             RD.Success [ linkRsp.account ]
             in
             ( { model
-                | accounts = updatedAccounts  -- Update the table with new account
+                | accounts = updatedAccounts -- Update the table with new account
                 , linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account }
               }
             , Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
@@ -301,6 +338,7 @@ update msg model =
                     ( { model | linkFlow = LinkQrCode { qrData | qrCode = qrRsp.qrCodeBase64 } }
                     , E.none
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -310,6 +348,7 @@ update msg model =
                     ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду після кількох спроб", accountId = qrData.accountId, account = qrData.account } }
                     , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -319,6 +358,7 @@ update msg model =
                     ( model
                     , E.sendCmd (Api.messenger_is_linked GotIsLinked { accountId = qrData.accountId })
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -338,24 +378,29 @@ update msg model =
                                                     if account.id == qrData.accountId then
                                                         -- Update only this specific account's isLinked field
                                                         { account | isLinked = True }
+
                                                     else
                                                         -- Leave all other accounts unchanged
                                                         account
                                                 )
                                                 accounts
                                             )
+
                                     _ ->
                                         -- If accounts list is not loaded, keep it as is
                                         model.accounts
                         in
                         ( { model
-                            | accounts = updatedAccounts  -- Update the table with new status
+                            | accounts = updatedAccounts -- Update the table with new status
                             , linkFlow = LinkSuccess qrData.account
                           }
-                        , E.none  -- No need to refresh the table!
+                        , E.none
+                          -- No need to refresh the table!
                         )
+
                     _ ->
                         ( model, E.none )
+
             else
                 ( model, E.none )
 
@@ -375,8 +420,6 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-
-
         ConnectExistingAccount accountId ->
             case model.accounts of
                 RD.Success accounts ->
@@ -388,8 +431,10 @@ update msg model =
                               }
                             , Api.messenger_get_qr_retryable GotQrCode { accountId = accountId }
                             )
+
                         Nothing ->
                             ( model, E.none )
+
                 _ ->
                     ( model, E.none )
 
@@ -412,11 +457,13 @@ update msg model =
             case model.accounts of
                 RD.Success accounts ->
                     let
-                        updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
+                        updatedAccounts =
+                            List.filter (\account -> account.id /= accountId) accounts
                     in
                     ( { model | accounts = RD.Success updatedAccounts, deleteConfirmDialog = Nothing, deleteLoading = False }
                     , E.none
                     )
+
                 _ ->
                     ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
                     , E.none
@@ -434,13 +481,16 @@ update msg model =
                         Just account ->
                             let
                                 -- Toggle between active and paused
-                                newIsActive = account.status /= "active"
+                                newIsActive =
+                                    account.status /= "active"
                             in
                             ( model
                             , E.sendCmd (Api.messenger_edit_account (\result -> GotToggleStatusResult result accountId) { accountId = accountId, isActive = newIsActive })
                             )
+
                         Nothing ->
                             ( model, E.none )
+
                 _ ->
                     ( model, E.none )
 
@@ -455,7 +505,15 @@ update msg model =
                                     (\account ->
                                         if account.id == accountId then
                                             -- Toggle the status
-                                            { account | status = if account.status == "active" then "paused" else "active" }
+                                            { account
+                                                | status =
+                                                    if account.status == "active" then
+                                                        "paused"
+
+                                                    else
+                                                        "active"
+                                            }
+
                                         else
                                             account
                                     )
@@ -465,6 +523,7 @@ update msg model =
                     ( { model | accounts = updatedAccounts }
                     , E.none
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -509,6 +568,7 @@ update msg model =
                     ( { model | linkFlow = LinkQrCode { qrData | qrCode = "" } }
                     , Api.messenger_get_qr_retryable GotQrCode { accountId = qrData.accountId }
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -688,6 +748,7 @@ linkAccountSidebarContent isDark shared model =
                                 , p [ class "text-sm text-muted-foreground" ]
                                     [ text "Відскануйте QR код вашим месенджером" ]
                                 ]
+
                           else
                             div [ class "py-8" ]
                                 [ text "Завантаження QR коду..." ]
@@ -778,7 +839,7 @@ messengerAccountsTableConfig isLoading =
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "20%"
+            [ Table.stringColumn "Системний сервіс" .name |> Table.withColumnWidth "20%"
             , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
             , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
@@ -799,28 +860,30 @@ messengerAccountsTableConfig isLoading =
                             [ div [ class "flex gap-2" ]
                                 [ if isLoading then
                                     div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
+
+                                  else if account.isLinked then
+                                    div [ class "flex gap-2" ]
+                                        [ if account.status == "active" then
+                                            Button.new { label = "Призупинити", onClick = ToggleAccountStatus account.id }
+                                                |> Button.withStyleSecondary
+                                                |> Button.view
+
+                                          else
+                                            Button.new { label = "Активувати", onClick = ToggleAccountStatus account.id }
+                                                |> Button.view
+                                        , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
+                                            |> Button.withStyleSecondary
+                                            |> Button.view
+                                        ]
+
                                   else
-                                    if account.isLinked then
-                                        div [ class "flex gap-2" ]
-                                            [ if account.status == "active" then
-                                                Button.new { label = "Призупинити", onClick = ToggleAccountStatus account.id }
-                                                    |> Button.withStyleSecondary
-                                                    |> Button.view
-                                              else
-                                                Button.new { label = "Активувати", onClick = ToggleAccountStatus account.id }
-                                                    |> Button.view
-                                            , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
-                                                |> Button.withStyleSecondary
-                                                |> Button.view
-                                            ]
-                                    else
-                                        div [ class "flex gap-2" ]
-                                            [ Button.new { label = "Підключити", onClick = ConnectExistingAccount account.id }
-                                                |> Button.view
-                                            , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
-                                                |> Button.withStyleSecondary
-                                                |> Button.view
-                                            ]
+                                    div [ class "flex gap-2" ]
+                                        [ Button.new { label = "Підключити", onClick = ConnectExistingAccount account.id }
+                                            |> Button.view
+                                        , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
+                                            |> Button.withStyleSecondary
+                                            |> Button.view
+                                        ]
                                 ]
                             ]
                 , sorter = Table.unsortable

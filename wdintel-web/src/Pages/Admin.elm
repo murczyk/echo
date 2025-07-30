@@ -35,6 +35,15 @@ import View exposing (View)
 import Views
 
 
+type alias OrphanGroupAssignmentDialog =
+    { groupKey : String
+    , zoneIds : List Int -- для множинного додавання
+    , isSecret : Bool
+    , selectedUsers : List String
+    , userSelectState : Select.State
+    }
+
+
 type alias Model =
     { formErrors : Dict String String
     , datasources : List ( Int, B.Datasource )
@@ -69,6 +78,7 @@ type alias Model =
     , orphanGroupZoneSelector : Maybe { groupKey : String, selectedZones : List Int }
     , orphanGroupsTableState : Table.State
     , orphanGroupsPager : Pager.Model
+    , orphanGroupAssignmentDialog : Maybe OrphanGroupAssignmentDialog
     }
 
 
@@ -188,6 +198,7 @@ init _ =
       , orphanGroupZoneSelector = Nothing
       , orphanGroupsTableState = Table.initialSort "Створено"
       , orphanGroupsPager = Pager.init
+      , orphanGroupAssignmentDialog = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -232,6 +243,11 @@ type Msg
     | SaveOrphanGroupZones
     | OrphanGroupsTableStateChanged Table.State
     | OrphanGroupsPagerMsg Pager.Msg
+    | OpenOrphanGroupAssignmentDialog String (List Int) -- groupKey, zoneIds
+    | CloseOrphanGroupAssignmentDialog
+    | ToggleOrphanGroupSecret
+    | ConfirmOrphanGroupAssignment
+    | OrphanGroupUserSelectMsg (Select.Msg String)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -1162,6 +1178,125 @@ update msg model =
             , E.none
             )
 
+        OpenOrphanGroupAssignmentDialog groupKey zoneIds ->
+            if List.isEmpty model.allLogins then
+                ( { model
+                    | orphanGroupAssignmentDialog =
+                        Just
+                            { groupKey = groupKey
+                            , zoneIds = zoneIds
+                            , isSecret = False
+                            , selectedUsers = []
+                            , userSelectState = Select.initState (Select.selectIdentifier "orphan-group-users")
+                            }
+                  }
+                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                )
+
+            else
+                ( { model
+                    | orphanGroupAssignmentDialog =
+                        Just
+                            { groupKey = groupKey
+                            , zoneIds = zoneIds
+                            , isSecret = False
+                            , selectedUsers = []
+                            , userSelectState = Select.initState (Select.selectIdentifier "orphan-group-users")
+                            }
+                  }
+                , E.none
+                )
+
+        CloseOrphanGroupAssignmentDialog ->
+            ( { model | orphanGroupAssignmentDialog = Nothing }
+            , E.none
+            )
+
+        ToggleOrphanGroupSecret ->
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupAssignmentDialog =
+                            Just
+                                { dialog | isSecret = not dialog.isSecret }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        ConfirmOrphanGroupAssignment ->
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    case findOrphanGroup model dialog.groupKey of
+                        Just orphanGroup ->
+                            case orphanGroup.datasourceId of
+                                Just datasourceId ->
+                                    let
+                                        requests =
+                                            List.map
+                                                (\zoneId ->
+                                                    let
+                                                        req : B.ZoneDatasourceGroupAddReq
+                                                        req =
+                                                            { zoneId = zoneId
+                                                            , datasourceId = datasourceId
+                                                            , masterKey = dialog.groupKey
+                                                            , isSecret = dialog.isSecret
+                                                            , userLogins = dialog.selectedUsers
+                                                            }
+                                                    in
+                                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                                )
+                                                dialog.zoneIds
+                                    in
+                                    ( { model
+                                        | orphanGroupAssignmentInProgress = Just dialog.groupKey
+                                        , orphanGroupAssignmentError = Nothing
+                                        , orphanGroupAssignmentDialog = Nothing
+                                      }
+                                    , E.sendCmd <| Cmd.batch requests
+                                    )
+
+                                Nothing ->
+                                    ( { model | orphanGroupAssignmentError = Just "У групи немає прив'язаного датасорса" }
+                                    , E.none
+                                    )
+
+                        Nothing ->
+                            ( { model | orphanGroupAssignmentError = Just "Не вдалося знайти групу" }
+                            , E.none
+                            )
+
+                Nothing ->
+                    ( model, E.none )
+
+        OrphanGroupUserSelectMsg imsg ->
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg dialog.userSelectState
+
+                        selected : List String
+                        selected =
+                            Le.Block.Select.multiUpdS mAction dialog.selectedUsers
+                    in
+                    ( { model
+                        | orphanGroupAssignmentDialog =
+                            Just
+                                { dialog
+                                    | userSelectState = imodel2
+                                    , selectedUsers = selected
+                                }
+                      }
+                    , E.sendCmd <| Cmd.map OrphanGroupUserSelectMsg icmd
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1230,6 +1365,104 @@ findOrphanGroup model groupKey =
             Nothing
 
 
+getGroupDisplayName : Model -> String -> String
+getGroupDisplayName model groupKey =
+    case findOrphanGroup model groupKey of
+        Just group ->
+            if String.isEmpty group.name then
+                String.right 5 group.masterKey
+
+            else
+                group.name
+
+        Nothing ->
+            groupKey
+
+
+getZoneName : Model -> Int -> String
+getZoneName model zoneId =
+    List.filterMap
+        (\( id, zone ) ->
+            if id == zoneId then
+                Just zone.name
+
+            else
+                Nothing
+        )
+        model.zones
+        |> List.head
+        |> Maybe.withDefault (String.fromInt zoneId)
+
+
+renderOrphanGroupAssignmentDialog : Bool -> Model -> OrphanGroupAssignmentDialog -> Html Msg
+renderOrphanGroupAssignmentDialog isDark model dialog =
+    ModalDialog.modalDialog True
+        CloseOrphanGroupAssignmentDialog
+        [ class "medium-modal overflow-visible" ]
+        [ div [ class "p-6" ]
+            [ div [ class "mb-4" ]
+                [ h3 [ class "text-lg font-semibold" ]
+                    [ text "Налаштування групи" ]
+                ]
+            , div [ class "mb-4" ]
+                [ text ("Група: " ++ getGroupDisplayName model dialog.groupKey)
+                , br [] []
+                , text ("Напрямки: " ++ String.join ", " (List.map (getZoneName model) dialog.zoneIds))
+                ]
+            , div [ class "mb-4" ]
+                [ Toggle.new
+                    { onToggle = ToggleOrphanGroupSecret
+                    , label = "Прихована група"
+                    , id = "orphan-group-secret-toggle"
+                    }
+                    |> Toggle.view dialog.isSecret
+                ]
+            , div [ class "mb-4" ]
+                [ if dialog.isSecret then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-2" ]
+                            [ text "Користувачі, яким видима група:" ]
+                        , Html.map OrphanGroupUserSelectMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectVirtual
+                                    (List.map (\user -> Select.basicMenuItem { item = user, label = user }) dialog.selectedUsers)
+                                    dialog.userSelectState
+                                    (List.map (\user -> Select.basicMenuItem { item = user, label = user }) model.allLogins)
+                                    "виберіть користувачів"
+                                    { loading = False, disabled = False, isDark = isDark }
+                        ]
+
+                  else
+                    div [ class "h-16" ] []
+
+                -- Зарезервоване місце під select
+                ]
+            , case model.orphanGroupAssignmentError of
+                Just error ->
+                    div [ class "mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded" ]
+                        [ text error ]
+
+                Nothing ->
+                    text ""
+            , div [ class "flex justify-end gap-3" ]
+                [ Button.view
+                    (Button.new { label = "Скасувати", onClick = CloseOrphanGroupAssignmentDialog }
+                        |> Button.withStyleSecondary
+                    )
+                , if model.orphanGroupAssignmentInProgress == Just dialog.groupKey then
+                    div [ class "flex items-center gap-2" ]
+                        [ Le.Block.Spinner.loadingSpinner2Sm
+                        , span [ class "text-sm text-gray-600" ] [ text "Додавання..." ]
+                        ]
+
+                  else
+                    Button.view
+                        (Button.new { label = "Додати групу", onClick = ConfirmOrphanGroupAssignment })
+                ]
+            ]
+        ]
+
+
 renderOrphanGroupsTable : Model -> List B.OrphanSignalGroupEntry -> Html Msg
 renderOrphanGroupsTable model groups =
     let
@@ -1248,7 +1481,7 @@ renderOrphanGroupsTable model groups =
                 { toId = .masterKey
                 , toMsg = OrphanGroupsTableStateChanged
                 , columns =
-                    [ Table.stringColumn "Назва групи" getGroupDisplayName |> Table.withColumnWidth "25%"
+                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "25%"
                     , Table.customColumn
                         { name = "Створено"
                         , viewData = formatCreatedAt
@@ -1330,8 +1563,8 @@ renderOrphanGroupsTable model groups =
         customRowAttrs _ =
             []
 
-        getGroupDisplayName : B.OrphanSignalGroupEntry -> String
-        getGroupDisplayName group =
+        getGroupDisplayNameLocal : B.OrphanSignalGroupEntry -> String
+        getGroupDisplayNameLocal group =
             if String.isEmpty group.name then
                 String.right 5 group.masterKey
 
@@ -1407,7 +1640,7 @@ renderOrphanGroupsTable model groups =
                                 [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
                                 , button
                                     [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                    , onClick (AssignOrphanGroup zoneId group.masterKey)
+                                    , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
                                     , title ("Додати до " ++ zone.name)
                                     ]
                                     [ i [ class "bi bi-plus text-lg" ] [] ]
@@ -1465,7 +1698,7 @@ renderOrphanGroupsTable model groups =
                             ++ (if hasSelection then
                                     [ button
                                         [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
-                                        , onClick SaveOrphanGroupZones
+                                        , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
                                         , title "Додати до вибраних напрямків"
                                         ]
                                         [ i [ class "bi bi-plus text-sm" ] [] ]
@@ -1533,7 +1766,7 @@ renderOrphanGroup model group =
                             [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
                             , button
                                 [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                , onClick (AssignOrphanGroup zoneId group.masterKey)
+                                , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
                                 , title ("Додати до " ++ zone.name)
                                 ]
                                 [ i [ class "bi bi-plus text-lg" ] [] ]
@@ -1591,7 +1824,7 @@ renderOrphanGroup model group =
                         ++ (if hasSelection then
                                 [ button
                                     [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
-                                    , onClick SaveOrphanGroupZones
+                                    , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
                                     , title "Додати до вибраних напрямків"
                                     ]
                                     [ i [ class "bi bi-plus text-sm" ] [] ]
@@ -1908,6 +2141,13 @@ body dark shared user model =
                             ]
                         ]
                     ]
+
+                Nothing ->
+                    []
+           )
+        ++ (case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    [ renderOrphanGroupAssignmentDialog dark model dialog ]
 
                 Nothing ->
                     []
