@@ -48,6 +48,8 @@ pub enum Relation {
     Login,
     #[sea_orm(has_many = "super::sigint_network_activity_history::Entity")]
     SigintNetworkActivityHistory,
+    #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
+    SigintNetworkAor,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
     SigintNetworkCallsign,
     #[sea_orm(has_many = "super::sigint_network_changelog::Entity")]
@@ -79,6 +81,12 @@ impl Related<super::login::Entity> for Entity {
 impl Related<super::sigint_network_activity_history::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkActivityHistory.def()
+    }
+}
+
+impl Related<super::sigint_network_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkAor.def()
     }
 }
 

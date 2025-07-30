@@ -26,6 +26,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::area_of_responsibility::Entity")]
+    AreaOfResponsibility,
     #[sea_orm(
         belongs_to = "super::delta_login::Entity",
         from = "Column::DeltaLoginId",
@@ -72,6 +74,12 @@ pub enum Relation {
     SigintZone,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
     TagsOrdering,
+}
+
+impl Related<super::area_of_responsibility::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AreaOfResponsibility.def()
+    }
 }
 
 impl Related<super::delta_login::Entity> for Entity {

@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod alert;
+pub mod area_of_responsibility;
 pub mod bgtask;
 pub mod bgtask_res;
 pub mod callsign_lexeme;
@@ -61,6 +62,7 @@ pub mod sigint_important;
 pub mod sigint_inbox_item;
 pub mod sigint_network;
 pub mod sigint_network_activity_history;
+pub mod sigint_network_aor;
 pub mod sigint_network_callsign;
 pub mod sigint_network_changelog;
 pub mod sigint_network_description;
@@ -80,9 +82,11 @@ pub mod sigint_signal_changelog;
 pub mod sigint_unit;
 pub mod sigint_unit_changelog;
 pub mod sigint_zone;
+pub mod sigint_zone_aor;
 pub mod sigint_zone_datasource;
 pub mod signal_attachment;
 pub mod signal_group;
+pub mod signal_group_aor;
 pub mod signal_message;
 pub mod signal_profile;
 pub mod signal_restapi_error;
