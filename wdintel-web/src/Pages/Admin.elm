@@ -670,7 +670,12 @@ update msg model =
                             let
                                 req : B.ZoneDatasourceGroupUpdateReq
                                 req =
-                                    { id = g.sigintZoneDatasourceId, isSecret = g.isGroupSecret, userLogins = model.userSelectorSelect.selectedItems }
+                                    { id = g.sigintZoneDatasourceId
+                                    , isSecret = g.isGroupSecret
+                                    , userLogins = model.userSelectorSelect.selectedItems
+                                    , shortNote = g.shortNote
+                                    , longNote = g.longNote
+                                    }
                             in
                             ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
 
@@ -758,7 +763,12 @@ update msg model =
             let
                 req : B.ZoneDatasourceGroupUpdateReq
                 req =
-                    { id = group.sigintZoneDatasourceId, isSecret = not group.isGroupSecret, userLogins = group.allowedUsers }
+                    { id = group.sigintZoneDatasourceId
+                    , isSecret = not group.isGroupSecret
+                    , userLogins = group.allowedUsers
+                    , shortNote = group.shortNote
+                    , longNote = group.longNote
+                    }
             in
             ( { model | groupUpdateInProgress = Just ( zoneId, sourceId, group.groupMasterKey ), groupUpdateError = Nothing }
             , E.sendCmd <| Api.zone_datasource_group_update (\res -> ToggleGroupSecretDone res zoneId sourceId group.groupMasterKey) req
@@ -843,6 +853,8 @@ update msg model =
                                     , masterKey = groupKey
                                     , isSecret = False
                                     , userLogins = []
+                                    , shortNote = Nothing
+                                    , longNote = Nothing
                                     }
                             in
                             ( { model | orphanGroupAssignmentInProgress = Just groupKey, orphanGroupAssignmentError = Nothing }
@@ -907,6 +919,8 @@ update msg model =
                                 { masterKey = response.groupMasterKey
                                 , name = name
                                 , ignoreOperativny = False -- Default value
+                                , shortNote = Nothing
+                                , longNote = Nothing
                                 }
                                 model.groupInfos
 
@@ -1141,9 +1155,11 @@ update msg model =
                                             , masterKey = selector.groupKey
                                             , isSecret = False
                                             , userLogins = []
+                                            , shortNote = Nothing
+                                            , longNote = Nothing
                                             }
                                     in
-                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
                                 )
                                 selector.selectedZones
                     in
@@ -1245,9 +1261,11 @@ update msg model =
                                                             , masterKey = dialog.groupKey
                                                             , isSecret = dialog.isSecret
                                                             , userLogins = dialog.selectedUsers
+                                                            , shortNote = Nothing
+                                                            , longNote = Nothing
                                                             }
                                                     in
-                                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
                                                 )
                                                 dialog.zoneIds
                                     in
