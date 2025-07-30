@@ -380,15 +380,19 @@ pub async fn orphan_signal_groups(
         .await
         .context(h!())?;
 
+    let keys = orphan_groups.iter().map(|b| b.master_key.clone()).collect();
+    let stats = collect_group_stats(keys, &env.dbx).await.context(h!())?;
     let data: Vec<OrphanSignalGroupEntry> = orphan_groups
         .into_iter()
         .filter_map(|g| {
+            let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
                 datasource_id: g.datasource_id,
                 created_at: g.created_at.and_utc().timestamp_millis(),
+                group_stats: stats,
             })
         })
         .collect();

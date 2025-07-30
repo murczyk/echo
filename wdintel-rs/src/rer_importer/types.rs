@@ -392,6 +392,7 @@ pub struct OrphanSignalGroupEntry {
     pub datasource_id: Option<i64>,
     /// Час створення групи (в мілісекундах від epoch)
     pub created_at: i64,
+    pub group_stats: SignalGroupStats,
 }
 
 #[derive(
