@@ -290,6 +290,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::types::DeleteAccountReq,
             crate::messenger::types::LinkAccountReq,
             crate::messenger::types::LinkAccountRsp,
+            crate::messenger::types::GroupUpdateReq,
+            crate::messenger::types::GroupEntryF1,
         ],
         decoders: [
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
@@ -573,6 +575,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::types::DeleteAccountReq,
             crate::messenger::types::LinkAccountReq,
             crate::messenger::types::LinkAccountRsp,
+            crate::messenger::types::GroupUpdateReq,
+            crate::messenger::types::GroupEntryF1,
         ],
         queries: [],
         query_fields: [],

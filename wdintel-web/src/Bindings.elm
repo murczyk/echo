@@ -5455,6 +5455,44 @@ linkAccountRspEncoder struct =
         ]
 
 
+type alias GroupUpdateReq =
+    { masterKey : String
+    , shortNote : Maybe String
+    , longNote : Maybe String
+    }
+
+
+groupUpdateReqEncoder : GroupUpdateReq -> Json.Encode.Value
+groupUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", Json.Encode.string struct.masterKey )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
+        ]
+
+
+type alias GroupEntryF1 =
+    { masterKey : String
+    , name : String
+    , ignoreOperativny : Bool
+    , shortNote : Maybe String
+    , longNote : Maybe String
+    , groupStats : SignalGroupStats
+    }
+
+
+groupEntryF1Encoder : GroupEntryF1 -> Json.Encode.Value
+groupEntryF1Encoder struct =
+    Json.Encode.object
+        [ ( "master_key", Json.Encode.string struct.masterKey )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
+        , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -8514,3 +8552,22 @@ linkAccountRspDecoder : Json.Decode.Decoder LinkAccountRsp
 linkAccountRspDecoder =
     Json.Decode.succeed LinkAccountRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account" echoAccountF1Decoder))
+
+
+groupUpdateReqDecoder : Json.Decode.Decoder GroupUpdateReq
+groupUpdateReqDecoder =
+    Json.Decode.succeed GroupUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
+
+
+groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1
+groupEntryF1Decoder =
+    Json.Decode.succeed GroupEntryF1
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
