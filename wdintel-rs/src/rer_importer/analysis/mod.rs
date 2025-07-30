@@ -1641,7 +1641,9 @@ async fn group_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin").await.is_ok();
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .is_ok();
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -1649,8 +1651,9 @@ async fn group_stats(
     let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
         .await
         .context(h!())?;
-    let group_names =
-        collect_group_names(&groups, &env.dbx, is_admin).await.context(h!())?;
+    let group_names = collect_group_names(&groups, &env.dbx, is_admin)
+        .await
+        .context(h!())?;
     Ok(Json(GroupStatsRsp {
         groups,
         group_names,

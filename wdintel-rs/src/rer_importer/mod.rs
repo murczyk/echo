@@ -343,7 +343,9 @@ pub async fn signal_group_info_batch(
     req: Json<BatchSignalGroupReq>,
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin").await.is_ok();
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
     let data = collect_groups(keys, &env.dbx, is_admin).await?;

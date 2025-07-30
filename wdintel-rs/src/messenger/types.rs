@@ -1,3 +1,4 @@
+use crate::rer_importer::types::SignalGroupStats;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -14,6 +15,18 @@ pub struct EchoAccountF1 {
     pub messenger: String,
     pub phone_number: String,
     pub is_linked: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GroupEntryF1 {
+    pub master_key: String,
+    pub name: String,
+    pub ignore_operativny: bool,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
+    pub group_stats: SignalGroupStats,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -64,4 +77,13 @@ pub struct LinkAccountReq {
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct LinkAccountRsp {
     pub account: EchoAccountF1,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct GroupUpdateReq {
+    pub master_key: String,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
 }

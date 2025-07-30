@@ -140,7 +140,9 @@ async fn inbox_messages(
         .await
         .context(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin").await.is_ok();
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .is_ok();
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await

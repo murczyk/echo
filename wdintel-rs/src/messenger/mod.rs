@@ -1,6 +1,8 @@
+use crate::entities::signal_group;
 use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::types::*;
+use crate::rer_importer::collect_group_stats;
 use crate::types::{AppError, Env};
 use actix_web::post;
 use actix_web::web::Json;
@@ -76,6 +78,46 @@ pub async fn edit(
         .context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(()))
+}
+
+#[post("/api/messenger/edit-group")]
+pub async fn group_update(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+    req: Json<GroupUpdateReq>,
+) -> Result<Json<GroupEntryF1>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+
+    let txn = env.dbx.begin().await?;
+    let req = req.into_inner();
+    let mut group = signal_group::Entity::find_by_id(req.master_key.clone())
+        .one(&txn)
+        .await
+        .context(h!())?
+        .context(h!())?
+        .into_active_model();
+
+    group.short_note = Set(req.short_note);
+    group.long_note = Set(req.long_note);
+    let group = group.update(&txn).await.context(h!())?;
+
+    let stats = collect_group_stats(vec![group.master_key.clone()], &env.dbx)
+        .await
+        .context(h!())?
+        .get(&group.master_key)
+        .cloned()
+        .unwrap_or_default();
+
+    txn.commit().await?;
+
+    Ok(Json(GroupEntryF1 {
+        master_key: group.master_key,
+        name: group.name.unwrap_or("".to_string()),
+        ignore_operativny: group.ignore_operativny,
+        short_note: group.short_note,
+        long_note: group.long_note,
+        group_stats: stats,
+    }))
 }
 
 #[post("/api/messenger/unlink")]

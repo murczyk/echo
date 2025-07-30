@@ -343,7 +343,9 @@ pub async fn load_inbox_signal_groups(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect_vec();
-    let data = collect_groups(callsigns, txn, is_admin).await.context(h!())?;
+    let data = collect_groups(callsigns, txn, is_admin)
+        .await
+        .context(h!())?;
     Ok(data)
 }
 
