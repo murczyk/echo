@@ -140,6 +140,7 @@ async fn inbox_messages(
         .await
         .context(h!())?;
     crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin").await.is_ok();
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
@@ -154,7 +155,7 @@ async fn inbox_messages(
     let signal_profiles =
         load_inbox_signal_profiles(&inbox_items, &env.dbx).await?;
     let signal_groups =
-        load_inbox_signal_groups(&inbox_items, &env.dbx).await?;
+        load_inbox_signal_groups(&inbox_items, &env.dbx, is_admin).await?;
 
     let freq_pelengs_summary = match req.calculate_freq_pelengs_summary {
         Some(true) => load_inbox_freq_pelengs_summary(&inbox_items, &env.dbx)

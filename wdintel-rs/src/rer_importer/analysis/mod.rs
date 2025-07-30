@@ -1641,6 +1641,7 @@ async fn group_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin").await.is_ok();
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
@@ -1649,7 +1650,7 @@ async fn group_stats(
         .await
         .context(h!())?;
     let group_names =
-        collect_group_names(&groups, &env.dbx).await.context(h!())?;
+        collect_group_names(&groups, &env.dbx, is_admin).await.context(h!())?;
     Ok(Json(GroupStatsRsp {
         groups,
         group_names,
@@ -2116,6 +2117,7 @@ async fn collect_sender_names(
 async fn collect_group_names(
     groups: &Vec<AnalysisStatsGroup>,
     txn: &DatabaseConnection,
+    is_admin: bool,
 ) -> anyhow::Result<Vec<SignalGroupEntry>> {
     let mut result = vec![];
     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
@@ -2150,8 +2152,8 @@ async fn collect_group_names(
                 master_key,
                 name,
                 ignore_operativny,
-                short_note,
-                long_note,
+                short_note: short_note.filter(|_| is_admin),
+                long_note: long_note.filter(|_| is_admin),
                 group_stats: stats,
             });
         }

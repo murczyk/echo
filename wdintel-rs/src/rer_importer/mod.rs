@@ -343,9 +343,10 @@ pub async fn signal_group_info_batch(
     req: Json<BatchSignalGroupReq>,
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin").await.is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
-    let data = collect_groups(keys, &env.dbx).await?;
+    let data = collect_groups(keys, &env.dbx, is_admin).await?;
     Ok(Json(SignalGroupsRsp { data }))
 }
 
@@ -683,6 +684,7 @@ where
 pub async fn collect_groups(
     keys: Vec<String>,
     txn: &DatabaseConnection,
+    is_admin: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
     let signal_groups = SignalGroup::find()
         .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
@@ -701,8 +703,8 @@ pub async fn collect_groups(
                 name,
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
-                long_note: g.long_note.clone(),
-                short_note: g.short_note.clone(),
+                long_note: g.long_note.clone().filter(|_| is_admin),
+                short_note: g.short_note.clone().filter(|_| is_admin),
                 group_stats: stats,
             })
         })
