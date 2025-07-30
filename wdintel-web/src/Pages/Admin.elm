@@ -145,12 +145,29 @@ renderGroup model zoneId activeSourceId group =
 
                 Nothing ->
                     False
+
+        -- Get group stats from groupInfos
+        groupStats : Maybe B.SignalGroupStats
+        groupStats =
+            Dict.get group.groupMasterKey model.groupInfos
+                |> Maybe.map .groupStats
     in
     div [ class "border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
         [ -- Header row: Group name, secret icon, action buttons
           div [ class "flex items-center justify-between mb-2" ]
             [ div [ class "flex items-center" ]
                 [ span [ class "font-semibold mr-2 text-lg" ] [ text groupName ]
+                , -- Group stats display
+                  case groupStats of
+                    Just stats ->
+                        span [ class "ml-4 text-sm text-gray-600 flex items-center" ]
+                            [ span [ class "mr-1" ] [ text "Активність" ]
+                            , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
+                            , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt stats.activityLastDay ++ " / " ++ String.fromInt stats.activityLastWeek) ]
+                            ]
+                    
+                    Nothing ->
+                        text ""
                 , if group.isGroupSecret then
                     span [ class "ml-1 text-lg text-amber-600" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
@@ -991,6 +1008,7 @@ update msg model =
                                 , ignoreOperativny = False -- Default value
                                 , shortNote = Nothing
                                 , longNote = Nothing
+                                --TODO: get group stats from server
                                 , groupStats = { activityLastDay = 0, activityLastWeek = 0 }
                                 }
                                 model.groupInfos
@@ -1135,6 +1153,7 @@ update msg model =
                                         , datasourceId = Just datasourceId
                                         , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
+                                        , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1991,20 +2010,26 @@ renderOrphanGroupsTable model groups =
             Table.customConfig
                 { toId = .masterKey
                 , toMsg = OrphanGroupsTableStateChanged
-                , columns =
-                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "25%"
+                ,                 columns =
+                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "20%"
                     , Table.customColumn
                         { name = "Створено"
                         , viewData = formatCreatedAt
                         , sorter = Table.decreasingBy .createdAt
                         }
-                        |> Table.withColumnWidth "20%"
+                        |> Table.withColumnWidth "15%"
                     , Table.customColumn
                         { name = "Джерело даних"
                         , viewData = getDatasourceName
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "25%"
+                        |> Table.withColumnWidth "20%"
+                    , Table.veryCustomColumn
+                        { name = "Активність"
+                        , viewData = renderActivityColumn
+                        , sorter = Table.decreasingBy (.groupStats >> .activityLastDay)
+                        }
+                        |> Table.withColumnWidth "15%"
                     , Table.veryCustomColumn
                         { name = "Дії"
                         , viewData = renderActionsColumn model
@@ -2120,6 +2145,29 @@ renderOrphanGroupsTable model groups =
 
                 Nothing ->
                     "-"
+
+        formatActivity : B.OrphanSignalGroupEntry -> String
+        formatActivity group =
+            let
+                activityText : String
+                activityText =
+                    String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek
+            in
+            activityText
+
+        renderActivityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderActivityColumn group =
+            let
+                activityText : String
+                activityText =
+                    String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek
+            in
+            { attributes = []
+            , children = 
+                [ span [ class "text-sm text-gray-700", title "Активність за день / за тиждень" ] 
+                    [ text activityText ]
+                ]
+            }
 
         renderActionsColumn : Model -> B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderActionsColumn currentModel group =
@@ -2252,6 +2300,12 @@ renderOrphanGroup model group =
         [ div [ class "flex-1" ]
             [ div [ class "font-semibold" ] [ text groupName ]
             , div [ class "text-sm text-gray-600" ] [ text group.masterKey ]
+            , -- Group stats display for orphan groups
+              div [ class "mt-2 text-sm text-gray-600 flex items-center" ]
+                [ span [ class "mr-1" ] [ text "Активність" ]
+                , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
+                , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek) ]
+                ]
             , case model.orphanGroupAssignmentError of
                 Just error ->
                     div [ class "mt-2 text-xs text-red-600" ] [ text error ]
