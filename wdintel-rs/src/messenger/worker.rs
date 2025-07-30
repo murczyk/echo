@@ -226,8 +226,6 @@ async fn sync_groups(
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
                     is_secret: NotSet,
-                    short_note: NotSet,
-                    long_note: NotSet,
                 }
                 .insert(txn)
                 .await

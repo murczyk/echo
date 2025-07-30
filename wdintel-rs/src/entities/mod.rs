@@ -38,6 +38,7 @@ pub mod echo_whatsapp_queue;
 pub mod echo_whatsapp_queue_attachment;
 pub mod enemy_units_geojson;
 pub mod freq_location;
+pub mod group_admin_data;
 pub mod log_users_report_generation;
 pub mod login;
 pub mod messenger_account;

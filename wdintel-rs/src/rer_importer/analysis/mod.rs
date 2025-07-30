@@ -4,7 +4,7 @@ use crate::delta::types::GeoJson;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
-use crate::rer_importer::collect_group_stats;
+use crate::rer_importer::{collect_group_admin_data, collect_group_stats};
 use crate::types::*;
 use crate::users;
 use crate::users::*;
@@ -2130,34 +2130,37 @@ async fn collect_group_names(
             signal_group::Column::MasterKey,
             signal_group::Column::Name,
             signal_group::Column::IgnoreOperativny,
-            signal_group::Column::ShortNote,
-            signal_group::Column::LongNote,
         ])
         .filter(signal_group::Column::MasterKey.is_in(group_keys.clone()))
-        .into_tuple::<(String, Option<String>, bool, Option<String>, Option<String>)>()
+        .into_tuple::<(String, Option<String>, bool)>()
         .all(txn)
         .await
         .context(h!())?;
     let mut resolved_keys = vec![];
-    let keys = signal_groups
+    let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _)| key.clone())
+        .map(|(key, _, _)| key.clone())
         .collect();
     let stats: BTreeMap<String, SignalGroupStats> =
-        collect_group_stats(keys, txn).await.context(h!())?;
-    for (master_key, name, ignore_operativny, short_note, long_note) in
-        signal_groups
-    {
+        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+    let group_admin_data = if is_admin {
+        collect_group_admin_data(keys, txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
+
+    for (master_key, name, ignore_operativny) in signal_groups {
         if let Some(name) = name {
             resolved_keys.push(master_key.clone());
             let stats = stats.get(&master_key).cloned().unwrap_or_default();
+            let group_admin_data =
+                group_admin_data.get(master_key.as_str()).cloned();
             result.push(SignalGroupEntry {
                 master_key,
                 name,
                 ignore_operativny,
-                short_note: short_note.filter(|_| is_admin),
-                long_note: long_note.filter(|_| is_admin),
                 group_stats: stats,
+                admin_data: group_admin_data,
             });
         }
     }
@@ -2173,13 +2176,14 @@ async fn collect_group_names(
     let ignore_operativny = false;
     for (master_key, name) in whatsapp_groups {
         let stats = stats.get(&master_key).cloned().unwrap_or_default();
+        let group_admin_data =
+            group_admin_data.get(master_key.as_str()).cloned();
         result.push(SignalGroupEntry {
             master_key,
             name,
             ignore_operativny,
-            short_note: None,
-            long_note: None,
             group_stats: stats,
+            admin_data: group_admin_data,
         });
     }
     Ok(result)

@@ -75,6 +75,18 @@ pub async fn zones_datasources_groups_list(
 
     let req = req.into_inner();
     let rows = sigint_zone_datasource::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            sigint_zone_datasource::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::GroupAdminData.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::SecretGroupUser.def(),
+        )
         .column_as(
             sigint_zone_datasource::Column::GroupMasterKey,
             "group_master_key",
@@ -82,8 +94,8 @@ pub async fn zones_datasources_groups_list(
         .column_as(sigint_zone_datasource::Column::Id, "id")
         .column_as(signal_group::Column::IsSecret, "is_secret")
         .column_as(secret_group_user::Column::Login, "login")
-        .column(signal_group::Column::ShortNote)
-        .column(signal_group::Column::LongNote)
+        .column(group_admin_data::Column::ShortNote)
+        .column(group_admin_data::Column::LongNote)
         .join(
             JoinType::InnerJoin,
             sigint_zone_datasource::Relation::SignalGroup.def(),
@@ -184,13 +196,30 @@ pub async fn zones_datasources_group_update(
         .collect::<Vec<_>>();
 
     // Fetch updated is_secret and other group attributes
-    let (is_secret, short_note, long_note) = signal_group::Entity::find()
+
+    let is_secret = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
+        .select_only()
+        .column(signal_group::Column::IsSecret)
+        .into_tuple::<bool>()
         .one(&txn)
         .await
         .context(h!())?
-        .map(|g| (g.is_secret, g.short_note, g.long_note))
-        .unwrap_or((false, None, None));
+        .unwrap_or(false);
+    let (short_note, long_note) = group_admin_data::Entity::find()
+        .filter(
+            group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
+        )
+        .select_only()
+        .columns([
+            group_admin_data::Column::ShortNote,
+            group_admin_data::Column::LongNote,
+        ])
+        .into_tuple::<(Option<String>, Option<String>)>()
+        .one(&txn)
+        .await
+        .context(h!())?
+        .unwrap_or((None, None));
 
     txn.commit().await?;
 
@@ -246,13 +275,30 @@ pub async fn zones_datasources_group_add(
         .collect::<Vec<_>>();
 
     // Fetch the group name and notes
-    let (group_name, short_note, long_note) = signal_group::Entity::find()
+    let group_name = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
+        .select_only()
+        .column(signal_group::Column::Name)
+        .into_tuple::<Option<String>>()
         .one(&txn)
         .await
         .context(h!())?
-        .map(|g| (g.name, g.short_note, g.long_note))
-        .unwrap_or((None, None, None));
+        .flatten();
+
+    let (short_note, long_note) = group_admin_data::Entity::find()
+        .filter(
+            group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
+        )
+        .select_only()
+        .columns([
+            group_admin_data::Column::ShortNote,
+            group_admin_data::Column::LongNote,
+        ])
+        .into_tuple::<(Option<String>, Option<String>)>()
+        .one(&txn)
+        .await
+        .context(h!())?
+        .unwrap_or((None, None));
 
     txn.commit().await?;
 
@@ -312,11 +358,36 @@ async fn zones_datasources_group_update_bl(
     if let Some(group) = m_group {
         let master_key = group.master_key.clone();
 
+        let m_group = group_admin_data::Entity::find()
+            .filter(
+                group_admin_data::Column::GroupMasterKey
+                    .eq(&master_key.clone()),
+            )
+            .one(txn)
+            .await
+            .context(h!())?;
+        let mut group_data = match m_group {
+            Some(group) => group,
+            None => group_admin_data::ActiveModel {
+                group_master_key: Set(Some(master_key.clone())),
+                short_note: Set(short_note.clone()),
+                long_note: Set(long_note.clone()),
+                id: NotSet,
+                created_at: NotSet,
+            }
+            .insert(txn)
+            .await
+            .context(h!())?,
+        }
+        .into_active_model();
+
+        group_data.short_note = Set(short_note);
+        group_data.long_note = Set(long_note);
+        group_data.update(txn).await.context(h!())?;
+
         // Update the group's secret status
         let mut active_group: signal_group::ActiveModel = group.into();
         active_group.is_secret = Set(is_secret);
-        active_group.short_note = Set(short_note);
-        active_group.long_note = Set(long_note);
         active_group.update(txn).await.context(h!())?;
 
         // Delete all current users for this group
