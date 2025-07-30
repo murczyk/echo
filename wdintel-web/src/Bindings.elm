@@ -1256,6 +1256,7 @@ type alias SignalGroupEntry =
     , ignoreOperativny : Bool
     , shortNote : Maybe String
     , longNote : Maybe String
+    , groupStats : SignalGroupStats
     }
 
 
@@ -1267,6 +1268,7 @@ signalGroupEntryEncoder struct =
         , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
+        , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
         ]
 
 
@@ -6394,6 +6396,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
 
 
 batchMessageCommentsReqDecoder : Json.Decode.Decoder BatchMessageCommentsReq
