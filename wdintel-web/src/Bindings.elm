@@ -5274,7 +5274,8 @@ type alias EchoAccountF1 =
     , status : String
     , createdAt : Int
     , clientId : Int
-    , name : String
+    , displayName : String
+    , systemServiceName : String
     , messenger : String
     , phoneNumber : String
     , isLinked : Bool
@@ -5288,7 +5289,8 @@ echoAccountF1Encoder struct =
         , ( "status", Json.Encode.string struct.status )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "client_id", Json.Encode.int struct.clientId )
-        , ( "name", Json.Encode.string struct.name )
+        , ( "display_name", Json.Encode.string struct.displayName )
+        , ( "system_service_name", Json.Encode.string struct.systemServiceName )
         , ( "messenger", Json.Encode.string struct.messenger )
         , ( "phone_number", Json.Encode.string struct.phoneNumber )
         , ( "is_linked", Json.Encode.bool struct.isLinked )
@@ -5385,6 +5387,8 @@ type alias LinkAccountReq =
     { phone : String
     , messenger : String
     , displayName : String
+    , systemServiceName : String
+    , description : Maybe String
     }
 
 
@@ -5394,6 +5398,8 @@ linkAccountReqEncoder struct =
         [ ( "phone", Json.Encode.string struct.phone )
         , ( "messenger", Json.Encode.string struct.messenger )
         , ( "display_name", Json.Encode.string struct.displayName )
+        , ( "system_service_name", Json.Encode.string struct.systemServiceName )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
         ]
 
 
@@ -8384,7 +8390,8 @@ echoAccountF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "client_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "system_service_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone_number" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_linked" Json.Decode.bool))
@@ -8439,6 +8446,8 @@ linkAccountReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "system_service_name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
 
 
 linkAccountRspDecoder : Json.Decode.Decoder LinkAccountRsp

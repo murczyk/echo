@@ -111,7 +111,9 @@ pub async fn link(
     let account = bl::link_account(
         req.phone.as_str(),
         req.display_name.as_str(),
-        req.messenger.clone(),
+        req.system_service_name.as_str(),
+        req.messenger.as_str(),
+        req.description.clone(),
         &txn,
     )
     .await

@@ -67,14 +67,14 @@ pub async fn deactivate_account(
         EchoMessageSource::try_from_value(&account.messenger).context(h!())?;
     match messenger {
         EchoMessageSource::Signal => os_specific::stop_signal_client(
-            &account.name,
+            &account.system_service_name,
             SIGNAL_CLIENT_DIR,
             SIGNAL_UNIT_NAME,
         )
         .await
         .context(h!())?,
         EchoMessageSource::Whatsapp => os_specific::stop_whatsapp_client(
-            &account.name,
+            &account.system_service_name,
             WHATSAPP_CLIENT_DIR,
             WHATSAPP_UNIT_NAME,
         )
@@ -91,15 +91,18 @@ pub async fn deactivate_account(
 pub async fn link_account(
     phone_number: &str,
     display_name: &str,
-    source: String,
+    system_service_name: &str,
+    source: &str,
+    description: Option<String>,
     txn: &DatabaseTransaction,
 ) -> Result<EchoAccountF1, AppError> {
-    if !is_valid_display_name(&display_name) {
+    if !is_valid_service_name(&system_service_name) {
         return Err(AppError::BL {
-            msg: format!("Invalid display name: {display_name}"),
+            msg: format!("Invalid system service name: {system_service_name}"),
         });
     }
-    let source = EchoMessageSource::try_from_value(&source).context(h!())?;
+    let source =
+        EchoMessageSource::try_from_value(&source.to_string()).context(h!())?;
 
     let (src, src_name) = match &source {
         EchoMessageSource::Signal => {
@@ -113,7 +116,7 @@ pub async fn link_account(
     let accounts = list_linked_accounts(txn).await.context(h!())?;
     let existing_account = accounts
         .into_iter()
-        .filter(|a| a.name.eq(display_name))
+        .filter(|a| a.system_service_name.eq(system_service_name))
         .filter(|a| a.phone_number.eq(phone_number))
         .filter(|a| a.messenger.eq(&src_name))
         .into_iter()
@@ -129,12 +132,12 @@ pub async fn link_account(
     let attachment_path = format!(
         "/etc/echo/{}-cli-data/{}/{}-cli/attachments/",
         src.to_string().to_lowercase(),
-        display_name,
+        system_service_name,
         src.to_string().to_lowercase()
     );
     info!("attachment path created: {attachment_path}");
     echo_im::attach_new_client(
-        display_name,
+        system_service_name,
         &attachment_path,
         unit_name,
         port,
@@ -152,7 +155,7 @@ pub async fn link_account(
 
     let lock = echo_im::set_account_phone(
         String::from(phone_number),
-        &display_name,
+        &system_service_name,
         src.clone(),
         true,
         txn,
@@ -165,6 +168,8 @@ pub async fn link_account(
         id: NotSet,
         status: NotSet,
         created_at: NotSet,
+        display_name: Set(display_name.to_string()),
+        description: Set(description),
     }
     .insert(txn)
     .await
@@ -174,7 +179,7 @@ pub async fn link_account(
     match src {
         echo_im::types::MessageSource::Signal => {
             os_specific::start_new_signal_client(
-                &display_name,
+                &system_service_name,
                 port,
                 SIGNAL_CLIENT_DIR,
                 SIGNAL_UNIT_NAME,
@@ -186,7 +191,7 @@ pub async fn link_account(
         }
         echo_im::types::MessageSource::Whatsapp => {
             os_specific::start_new_whatsapp_client(
-                &display_name,
+                &system_service_name,
                 WHATSAPP_CLIENT_CONFIG,
                 WHATSAPP_CLIENT_DIR,
                 WHATSAPP_UNIT_NAME,
@@ -214,9 +219,10 @@ pub async fn get_qr_code(
 
     let messenger = parse_message_source(&account).context(h!())?;
 
-    let code = echo_im::link_account(&account.name, messenger, txn)
-        .await
-        .context(h!())?;
+    let code =
+        echo_im::link_account(&account.system_service_name, messenger, txn)
+            .await
+            .context(h!())?;
 
     Ok(code)
 }
@@ -227,10 +233,11 @@ pub async fn list_linked_accounts(
     #[derive(FromQueryResult)]
     struct LinkedAccountRow {
         pub id: i64,
+        pub display_name: String,
         pub status: AccountStatus,
         pub created_at: DateTime,
         pub client_id: i32,
-        pub name: String,
+        pub system_service_name: String,
         pub source: sea_orm_active_enums::EchoMessageSource,
         pub phone_number: String,
         pub is_linked: bool,
@@ -252,10 +259,11 @@ pub async fn list_linked_accounts(
         .filter(echo_client::Column::Deleted.eq(false))
         .select_only()
         .column(messenger_account::Column::Id)
+        .column(messenger_account::Column::DisplayName)
         .column(messenger_account::Column::Status)
         .column(messenger_account::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
-        .column(echo_client::Column::Name)
+        .column_as(echo_client::Column::Name, "system_service_name")
         .column(echo_account::Column::Source)
         .column(echo_account::Column::PhoneNumber)
         .column(echo_account::Column::IsLinked)
@@ -269,7 +277,8 @@ pub async fn list_linked_accounts(
             status: a.status.into_value().to_string(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
-            name: a.name,
+            display_name: a.display_name,
+            system_service_name: a.system_service_name,
             messenger: a.source.into_value().to_string(),
             phone_number: a.phone_number,
             is_linked: a.is_linked,
@@ -295,7 +304,7 @@ pub async fn find_port_available(
     Ok(port)
 }
 
-fn is_valid_display_name(s: &str) -> bool {
+fn is_valid_service_name(s: &str) -> bool {
     if s.len() < 4 {
         return false; // too short
     }
