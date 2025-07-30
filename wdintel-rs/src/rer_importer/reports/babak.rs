@@ -520,19 +520,30 @@ pub async fn get_inbox_messages_report_unit(
         req.include_peleng_locations.clone().unwrap_or(false);
     let mut q = signal_message::Entity::find()
         .select_only()
+        // creare a unique id for each message, using either duplicate_of or sigint_inbox_item.id to filter out duplicates
+        .expr_as(
+            Expr::cust(
+                r#"coalesce(signal_message.duplicate_of,
+                            sigint_inbox_item.id)"#,
+            ),
+            "id"
+        ).clone()
         .columns(vec![
-            sigint_inbox_item::Column::Id,
+            // sigint_inbox_item::Column::Id,
             sigint_inbox_item::Column::Lat,
             sigint_inbox_item::Column::Lng,
             sigint_inbox_item::Column::Tags,
         ])
         .column(signal_message::Column::Body)
+        // For the messages without a network assigned (or no frequency), we use the unit_v2 field
         .expr_as(
             Expr::cust(
                 r#"coalesce(nullif("sigint_unit"."regiment", ''), 
                             nullif("sigint_unit"."battalion",''), 
                             nullif("sigint_unit"."division",''),
-                            nullif("sigint_unit"."army",'')
+                            nullif("sigint_unit"."army",''),
+                            nullif("sigint_unit"."name",''),
+                            sigint_inbox_item.unit_v2
                         )"#,
             ),
             "unit"
@@ -579,8 +590,14 @@ pub async fn get_inbox_messages_report_unit(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(Condition::any()
+                .add(sigint_network::Column::Deleted.eq(false))
+                .add(sigint_network::Column::Deleted.is_null())
+            )
+        .filter(Condition::any()
+                .add(sigint_unit::Column::Deleted.eq(false))
+                .add(sigint_unit::Column::Deleted.is_null())
+            )            
         .filter(signal_message::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
@@ -607,7 +624,7 @@ pub async fn get_inbox_messages_report_unit(
     if req.report_tags_only_this_unit == Some(true) {
         q = q.filter(sigint_comment::Column::Login.is_in(logins));
     }
-    let q = q.filter(signal_message::Column::DuplicateOf.is_null());
+    // let q = q.filter(signal_message::Column::DuplicateOf.is_null());
     let q = filter_selected_groups(q, &req.selected_groups)?;
     let q = filter_selected_senders(q, &req.selected_senders)?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
@@ -644,13 +661,14 @@ pub async fn get_inbox_messages_report_unit(
                 .lte(dt_from_millis(till_date_inclusive_ms)?),
         );
     }
-    let q = q.order_by_asc(Expr::col(Alias::new("unit")));
     let q = filter_selected_locations(
         q,
         &req.selected_locations,
         include_peleng_locations,
     )?;
-    // let q = q.order_by_desc(sigint_inbox_item::Column::Datetime);
+    // group by to get rid of duplicates
+    let q = q.group_by(Expr::cust("1,2,3,4,5,6,7,8"));
+    let q = q.order_by_asc(Expr::col(Alias::new("unit")));
 
     let clustered_points = CommonTableExpression::new()
         .query(q.into_query().to_owned())
