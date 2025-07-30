@@ -1254,6 +1254,8 @@ type alias SignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
+    , shortNote : Maybe String
+    , longNote : Maybe String
     }
 
 
@@ -1263,6 +1265,8 @@ signalGroupEntryEncoder struct =
         [ ( "master_key", Json.Encode.string struct.masterKey )
         , ( "name", Json.Encode.string struct.name )
         , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         ]
 
 
@@ -2949,6 +2953,8 @@ type alias ZoneDatasourceGroup =
     , groupMasterKey : String
     , isGroupSecret : Bool
     , allowedUsers : List String
+    , shortNote : Maybe String
+    , longNote : Maybe String
     }
 
 
@@ -2959,6 +2965,8 @@ zoneDatasourceGroupEncoder struct =
         , ( "group_master_key", Json.Encode.string struct.groupMasterKey )
         , ( "is_group_secret", Json.Encode.bool struct.isGroupSecret )
         , ( "allowed_users", Json.Encode.list Json.Encode.string struct.allowedUsers )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         ]
 
 
@@ -2994,6 +3002,8 @@ type alias ZoneDatasourceGroupAddReq =
     , isSecret : Bool
     , masterKey : String
     , userLogins : List String
+    , shortNote : Maybe String
+    , longNote : Maybe String
     }
 
 
@@ -3005,6 +3015,8 @@ zoneDatasourceGroupAddReqEncoder struct =
         , ( "is_secret", Json.Encode.bool struct.isSecret )
         , ( "master_key", Json.Encode.string struct.masterKey )
         , ( "user_logins", Json.Encode.list Json.Encode.string struct.userLogins )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         ]
 
 
@@ -3012,6 +3024,8 @@ type alias ZoneDatasourceGroupUpdateReq =
     { id : Int
     , isSecret : Bool
     , userLogins : List String
+    , shortNote : Maybe String
+    , longNote : Maybe String
     }
 
 
@@ -3021,6 +3035,8 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         [ ( "id", Json.Encode.int struct.id )
         , ( "is_secret", Json.Encode.bool struct.isSecret )
         , ( "user_logins", Json.Encode.list Json.Encode.string struct.userLogins )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         ]
 
 
@@ -5276,6 +5292,7 @@ type alias EchoAccountF1 =
     , clientId : Int
     , displayName : String
     , systemServiceName : String
+    , description : Maybe String
     , messenger : String
     , phoneNumber : String
     , isLinked : Bool
@@ -5291,6 +5308,7 @@ echoAccountF1Encoder struct =
         , ( "client_id", Json.Encode.int struct.clientId )
         , ( "display_name", Json.Encode.string struct.displayName )
         , ( "system_service_name", Json.Encode.string struct.systemServiceName )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
         , ( "messenger", Json.Encode.string struct.messenger )
         , ( "phone_number", Json.Encode.string struct.phoneNumber )
         , ( "is_linked", Json.Encode.bool struct.isLinked )
@@ -6374,6 +6392,8 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
 
 
 batchMessageCommentsReqDecoder : Json.Decode.Decoder BatchMessageCommentsReq
@@ -6983,6 +7003,8 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
 
 
 zoneDatasourceGroupsReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsReq
@@ -7006,6 +7028,8 @@ zoneDatasourceGroupAddReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
 
 
 zoneDatasourceGroupUpdateReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupUpdateReq
@@ -7014,6 +7038,8 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
 
 
 tagDecoder : Json.Decode.Decoder Tag
@@ -8392,6 +8418,7 @@ echoAccountF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "client_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "system_service_name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone_number" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_linked" Json.Decode.bool))
