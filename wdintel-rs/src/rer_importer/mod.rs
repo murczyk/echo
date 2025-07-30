@@ -396,6 +396,8 @@ pub async fn orphan_signal_groups(
                 datasource_id: g.datasource_id,
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
+                short_note: g.short_note,
+                long_note: g.long_note,
             })
         })
         .collect();

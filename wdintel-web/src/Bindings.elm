@@ -1279,6 +1279,8 @@ type alias OrphanSignalGroupEntry =
     , datasourceId : Maybe Int
     , createdAt : Int
     , groupStats : SignalGroupStats
+    , shortNote : Maybe String
+    , longNote : Maybe String
     }
 
 
@@ -1291,6 +1293,8 @@ orphanSignalGroupEntryEncoder struct =
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.datasourceId )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         ]
 
 
@@ -6344,6 +6348,8 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
