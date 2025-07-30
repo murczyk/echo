@@ -2039,36 +2039,65 @@ mainBlock : Bool -> Model -> B.User -> Html Msg
 mainBlock isDark model user =
     div [ class "space-y-6" ]
         [ renderOrphanGroupsSection isDark model user
-        , div [ class "bg-[var(--bs-tertiary-bg)] rounded-lg border p-4" ]
-            [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Фільтри" ]
-            , div [ class "flex flex-col space-y-6" ]
-                [ div [ class "flex flex-col" ]
-                    [ label
-                        [ for "group-name-filter"
-                        , class "mb-1 text-sm font-medium"
-                        ]
-                        [ text "Назва групи:" ]
-                    , input
-                        [ type_ "text"
-                        , id "group-name-filter"
-                        , value model.groupNameFilter
-                        , onInput UpdateGroupNameFilter
-                        , placeholder "Введіть назву групи..."
-                        , class "flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-[var(--bs-body-bg)]"
-                        ]
-                        []
+        , div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
+            [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки" ]
+            , div 
+                [ class 
+                    (if isDark then
+                        "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-gray-800 to-gray-700 border border-gray-600 rounded-lg shadow-lg transform transition-all duration-300 ease-in-out hover:shadow-xl"
+                    else
+                        "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-sm transform transition-all duration-300 ease-in-out hover:shadow-md hover:border-blue-300"
+                    )
+                ] 
+                [ div 
+                    [ class 
+                        (if isDark then
+                            "flex items-center gap-2 text-blue-300"
+                        else
+                            "flex items-center gap-2 text-blue-700"
+                        )
+                    ] 
+                    [ i [ class "bi bi-funnel-fill text-lg" ] []
+                    , span [ class "font-medium text-sm" ] [ text "Фільтри" ]
                     ]
-                , div [ class "flex items-center pt-2 border-t border-gray-100" ]
-                    [ Toggle.new
-                        { onToggle = ToggleShowOnlyHidden
-                        , label = "Лише приховані"
-                        , id = "show-only-hidden-filter"
-                        }
-                        |> Toggle.view model.showOnlyHidden
+                , div [ class "flex-1 flex items-center gap-3" ]
+                    [ div [ class "flex items-center gap-2" ]
+                        [ i [ class "text-gray-500" ] [ i [ class "bi bi-search" ] [] ]
+                        , input
+                            [ type_ "text"
+                            , id "group-name-filter"
+                            , value model.groupNameFilter
+                            , onInput UpdateGroupNameFilter
+                            , placeholder "Пошук по назві групи..."
+                            , class 
+                                (if isDark then
+                                    "px-3 py-2 text-sm border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-gray-700 text-gray-100 placeholder-gray-400 shadow-sm transition-all duration-200"
+                                else
+                                    "px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm transition-all duration-200"
+                                )
+                            ]
+                            []
+                        ]
+                    , div 
+                        [ class 
+                            (if isDark then
+                                "flex items-center gap-2 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm"
+                            else
+                                "flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm"
+                            )
+                        ] 
+                        [ i [ class "text-gray-500" ] [ i [ class "bi bi-eye-slash" ] [] ]
+                        , Toggle.new
+                            { onToggle = ToggleShowOnlyHidden
+                            , label = "Лише приховані"
+                            , id = "show-only-hidden-filter"
+                            }
+                            |> Toggle.view model.showOnlyHidden
+                        ]
                     ]
                 ]
+            , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
             ]
-        , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
         ]
 
 
