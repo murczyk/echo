@@ -1278,6 +1278,7 @@ type alias OrphanSignalGroupEntry =
     , ignoreOperativny : Bool
     , datasourceId : Maybe Int
     , createdAt : Int
+    , groupStats : SignalGroupStats
     }
 
 
@@ -1289,6 +1290,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.datasourceId )
         , ( "created_at", Json.Encode.int struct.createdAt )
+        , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
         ]
 
 
@@ -6341,6 +6343,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
