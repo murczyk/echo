@@ -979,16 +979,64 @@ messengerAccountsTableConfig isLoading =
         defaultCustomizations =
             Table.defaultCustomizations
 
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
         customizations =
             { defaultCustomizations
                 | tableAttrs = [ class "base-table" ]
+                , thead = customThead
             }
     in
     Table.customConfig
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "15%"
+            [ Table.stringColumn "Назва акаунту" .displayName |> Table.withColumnWidth "18%"
+             ,Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "15%"
             , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "15%"
             , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
@@ -1018,44 +1066,64 @@ messengerAccountsTableConfig isLoading =
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "15%"
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Дії"
+                { name = ""
                 , viewData =
                     \account ->
-                        TableColumn.HtmlDetails []
-                            [ div [ class "flex gap-2" ]
-                                [ if isLoading then
-                                    div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
+                        TableColumn.HtmlDetails [ class "col-narrow" ]
+                            [ if isLoading then
+                                div [ class "px-2 py-1 text-sm text-muted-foreground" ] [ text "..." ]
 
-                                  else if account.isLinked then
-                                    div [ class "flex gap-2" ]
-                                        [ if account.status == "active" then
-                                            Button.new { label = "Призупинити", onClick = ToggleAccountStatus account.id }
-                                                |> Button.withStyleSecondary
-                                                |> Button.view
+                              else if account.isLinked then
+                                div [ class "flex gap-1" ]
+                                    [ if account.status == "active" then
+                                        button
+                                            [ class "table-action-btn"
+                                            , type_ "button"
+                                            , title "Призупинити"
+                                            , onClick <| ToggleAccountStatus account.id
+                                            ]
+                                            [ i [ class "bi bi-pause-circle" ] [] ]
 
-                                          else
-                                            Button.new { label = "Активувати", onClick = ToggleAccountStatus account.id }
-                                                |> Button.view
-                                        , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
-                                            |> Button.withStyleSecondary
-                                            |> Button.view
+                                      else
+                                        button
+                                            [ class "table-action-btn"
+                                            , type_ "button"
+                                            , title "Активувати"
+                                            , onClick <| ToggleAccountStatus account.id
+                                            ]
+                                            [ i [ class "bi bi-play-circle" ] [] ]
+                                    , button
+                                        [ class "icon-btn icon-btn-danger"
+                                        , type_ "button"
+                                        , title "Видалити"
+                                        , onClick <| DeleteAccount account.id
                                         ]
+                                        [ i [ class "bi bi-trash" ] [] ]
+                                    ]
 
-                                  else
-                                    div [ class "flex gap-2" ]
-                                        [ Button.new { label = "Підключити", onClick = ConnectExistingAccount account.id }
-                                            |> Button.view
-                                        , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
-                                            |> Button.withStyleSecondary
-                                            |> Button.view
+                              else
+                                div [ class "flex gap-1" ]
+                                    [ button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
+                                        , title "Підключити"
+                                        , onClick <| ConnectExistingAccount account.id
                                         ]
-                                ]
+                                        [ i [ class "bi bi-link-45deg" ] [] ]
+                                    , button
+                                        [ class "icon-btn icon-btn-danger"
+                                        , type_ "button"
+                                        , title "Видалити"
+                                        , onClick <| DeleteAccount account.id
+                                        ]
+                                        [ i [ class "bi bi-trash" ] [] ]
+                                    ]
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "25%"
+                |> Table.withColumnWidth "8%"
             ]
         , customizations = customizations
         }
