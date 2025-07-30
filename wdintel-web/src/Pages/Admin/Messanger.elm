@@ -77,6 +77,7 @@ type alias LinkForm =
     { messengerType : String
     , phoneNumber : String
     , name : String
+    , description : String
     }
 
 
@@ -86,7 +87,7 @@ init () =
       , sidebarOpen = False
       , formErrors = Dict.empty
       , tableState = Table.initialSort "Створено"
-      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" }
+      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" }
       , deleteConfirmDialog = Nothing
       , deleteLoading = False
       , messengerTypeSelect =
@@ -101,46 +102,179 @@ init () =
 
 
 -- UPDATE
-
-
 -- Helper function to get user-friendly status text
+
+
 getStatusText : B.EchoAccountF1 -> String
 getStatusText account =
     if account.isLinked then
         case account.status of
-            "active" -> "Активний"
-            "paused" -> "Призупинено"
-            "ready" -> "Готовий"
-            _ -> account.status
+            "active" ->
+                "Активний"
+
+            "paused" ->
+                "Призупинено"
+
+            "ready" ->
+                "Готовий"
+
+            _ ->
+                account.status
+
     else
         case account.status of
-            "ready" -> "Очікує підключення"
-            _ -> "Не підключено"
+            "ready" ->
+                "Очікує підключення"
+
+            _ ->
+                "Не підключено"
+
 
 
 -- Helper function to get status color class
+
+
 getStatusColorClass : B.EchoAccountF1 -> String
 getStatusColorClass account =
     if account.isLinked then
         case account.status of
-            "active" -> "text-green-600"
-            "paused" -> "text-yellow-600"
-            "ready" -> "text-blue-600"
-            _ -> "text-gray-600"
+            "active" ->
+                "text-green-600"
+
+            "paused" ->
+                "text-yellow-600"
+
+            "ready" ->
+                "text-blue-600"
+
+            _ ->
+                "text-gray-600"
+
     else
         "text-orange-600"
 
 
+
+-- Helper function to normalize display name to system service name
+normalizeToSystemName : String -> String
+normalizeToSystemName displayName =
+    let
+        -- Convert to lowercase and replace spaces with hyphens
+        step1 = 
+            displayName
+                |> String.toLower
+                |> String.replace " " "-"
+                |> String.replace "  " "-"
+                |> String.replace "   " "-"
+        
+        -- Replace Ukrainian characters with Latin equivalents
+        step2 =
+            step1
+                |> String.replace "а" "a"
+                |> String.replace "б" "b"
+                |> String.replace "в" "v"
+                |> String.replace "г" "h"
+                |> String.replace "ґ" "g"
+                |> String.replace "д" "d"
+                |> String.replace "е" "e"
+                |> String.replace "є" "ye"
+                |> String.replace "ж" "zh"
+                |> String.replace "з" "z"
+                |> String.replace "и" "y"
+                |> String.replace "і" "i"
+                |> String.replace "ї" "yi"
+                |> String.replace "й" "y"
+                |> String.replace "к" "k"
+                |> String.replace "л" "l"
+                |> String.replace "м" "m"
+                |> String.replace "н" "n"
+                |> String.replace "о" "o"
+                |> String.replace "п" "p"
+                |> String.replace "р" "r"
+                |> String.replace "с" "s"
+                |> String.replace "т" "t"
+                |> String.replace "у" "u"
+                |> String.replace "ф" "f"
+                |> String.replace "х" "kh"
+                |> String.replace "ц" "ts"
+                |> String.replace "ч" "ch"
+                |> String.replace "ш" "sh"
+                |> String.replace "щ" "shch"
+                |> String.replace "ь" ""
+                |> String.replace "ю" "yu"
+                |> String.replace "я" "ya"
+        
+        -- Filter only allowed characters
+        step3 =
+            step2
+                |> String.filter (\c -> Char.isAlphaNum c || c == '-' || c == '_')
+        
+        -- Remove multiple consecutive hyphens
+        step4 =
+            step3
+                |> String.replace "--" "-"
+                |> String.replace "---" "-"
+                |> String.replace "----" "-"
+        
+        -- Remove leading/trailing hyphens
+        step5 =
+            if String.startsWith "-" step4 then
+                String.dropLeft 1 step4
+            else
+                step4
+        
+        step6 =
+            if String.endsWith "-" step5 then
+                String.dropRight 1 step5
+            else
+                step5
+        
+        -- Limit length and ensure minimum length
+        final =
+            if String.length step6 < 4 then
+                if String.length step6 == 0 then
+                    "account"
+                else
+                    step6 ++ "-" ++ String.fromInt (modBy 1000 (String.length step6 + 1))
+            else if String.length step6 > 50 then
+                String.left 50 step6
+            else
+                step6
+    in
+    final
+
+
+-- Helper function to validate display name
+validateDisplayName : String -> Result String String
+validateDisplayName name =
+    if String.length name < 2 then
+        Err "Назва акаунту має бути мінімум 2 символи"
+    else if String.length name > 50 then
+        Err "Назва акаунту має бути максимум 50 символів"
+    else
+        Ok name
+
+
 -- Helper function to get messenger type label
+
+
 getMessengerTypeLabel : String -> String
 getMessengerTypeLabel messengerType =
     case messengerType of
-        "signal" -> "Signal"
-        "whatsapp" -> "WhatsApp"
-        _ -> messengerType
+        "signal" ->
+            "Signal"
+
+        "whatsapp" ->
+            "WhatsApp"
+
+        _ ->
+            messengerType
+
 
 
 -- Messenger type menu items
+
+
 messengerTypeMenuItems : List (Select.MenuItem String)
 messengerTypeMenuItems =
     [ Select.basicMenuItem { item = "signal", label = "Signal" }
@@ -158,6 +292,7 @@ type Msg
     | SetLinkMessengerType String
     | SetLinkPhoneNumber String
     | SetLinkName String
+    | SetLinkDescription String
     | SubmitLinkForm
     | GotLinkResult (Result ApiError B.LinkAccountRsp)
     | GotQrCode (Result ApiError B.QrCodeRsp)
@@ -205,7 +340,7 @@ update msg model =
             )
 
         CloseLinkSidebar ->
-            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
+            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" } }
             , E.none
             )
 
@@ -218,7 +353,8 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        updatedForm = { linkForm | messengerType = value }
+                        updatedForm =
+                            { linkForm | messengerType = value }
                     in
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
@@ -231,7 +367,8 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        updatedForm = { linkForm | phoneNumber = value }
+                        updatedForm =
+                            { linkForm | phoneNumber = value }
                     in
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
@@ -244,7 +381,25 @@ update msg model =
             case model.linkFlow of
                 LinkFormState linkForm ->
                     let
-                        updatedForm = { linkForm | name = value }
+                        updatedForm =
+                            { linkForm | name = value }
+                    in
+                    ( { model 
+                        | linkFlow = LinkFormState updatedForm
+                        , formErrors = Dict.remove "displayName" model.formErrors
+                      }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        SetLinkDescription value ->
+            case model.linkFlow of
+                LinkFormState linkForm ->
+                    let
+                        updatedForm =
+                            { linkForm | description = value }
                     in
                     ( { model | linkFlow = LinkFormState updatedForm }
                     , E.none
@@ -253,19 +408,31 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
+
+
         SubmitLinkForm ->
             case model.linkFlow of
                 LinkFormState linkForm ->
-                    let
-                        request =
-                            { messenger = linkForm.messengerType
-                            , phone = linkForm.phoneNumber
-                            , displayName = linkForm.name
-                            }
-                    in
-                    ( model
-                    , E.sendCmd (Api.messenger_link_account GotLinkResult request)
-                    )
+                    case validateDisplayName linkForm.name of
+                        Ok _ ->
+                            let
+                                systemServiceName = normalizeToSystemName linkForm.name
+                                request =
+                                    { messenger = linkForm.messengerType
+                                    , phone = linkForm.phoneNumber
+                                    , displayName = linkForm.name
+                                    , systemServiceName = systemServiceName
+                                    , description = if String.isEmpty linkForm.description then Nothing else Just linkForm.description
+                                    }
+                            in
+                            ( model
+                            , E.sendCmd (Api.messenger_link_account GotLinkResult request)
+                            )
+                        
+                        Err error ->
+                            ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
+                            , E.none
+                            )
 
                 _ ->
                     ( model, E.none )
@@ -279,19 +446,20 @@ update msg model =
                         RD.Success accounts ->
                             -- Add the new account to the beginning of the list
                             RD.Success (linkRsp.account :: accounts)
+
                         _ ->
                             -- If accounts list is empty/loading, create new list with just this account
                             RD.Success [ linkRsp.account ]
             in
             ( { model
-                | accounts = updatedAccounts  -- Update the table with new account
+                | accounts = updatedAccounts -- Update the table with new account
                 , linkFlow = LinkQrCode { accountId = linkRsp.account.id, qrCode = "", account = linkRsp.account }
               }
             , Api.messenger_get_qr_retryable GotQrCode { accountId = linkRsp.account.id }
             )
 
         GotLinkResult (Err error) ->
-            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "" } }
+            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" } }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
@@ -301,6 +469,7 @@ update msg model =
                     ( { model | linkFlow = LinkQrCode { qrData | qrCode = qrRsp.qrCodeBase64 } }
                     , E.none
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -310,6 +479,7 @@ update msg model =
                     ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду після кількох спроб", accountId = qrData.accountId, account = qrData.account } }
                     , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -319,6 +489,7 @@ update msg model =
                     ( model
                     , E.sendCmd (Api.messenger_is_linked GotIsLinked { accountId = qrData.accountId })
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -338,24 +509,29 @@ update msg model =
                                                     if account.id == qrData.accountId then
                                                         -- Update only this specific account's isLinked field
                                                         { account | isLinked = True }
+
                                                     else
                                                         -- Leave all other accounts unchanged
                                                         account
                                                 )
                                                 accounts
                                             )
+
                                     _ ->
                                         -- If accounts list is not loaded, keep it as is
                                         model.accounts
                         in
                         ( { model
-                            | accounts = updatedAccounts  -- Update the table with new status
+                            | accounts = updatedAccounts -- Update the table with new status
                             , linkFlow = LinkSuccess qrData.account
                           }
-                        , E.none  -- No need to refresh the table!
+                        , E.none
+                          -- No need to refresh the table!
                         )
+
                     _ ->
                         ( model, E.none )
+
             else
                 ( model, E.none )
 
@@ -375,8 +551,6 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-
-
         ConnectExistingAccount accountId ->
             case model.accounts of
                 RD.Success accounts ->
@@ -388,8 +562,10 @@ update msg model =
                               }
                             , Api.messenger_get_qr_retryable GotQrCode { accountId = accountId }
                             )
+
                         Nothing ->
                             ( model, E.none )
+
                 _ ->
                     ( model, E.none )
 
@@ -412,11 +588,13 @@ update msg model =
             case model.accounts of
                 RD.Success accounts ->
                     let
-                        updatedAccounts = List.filter (\account -> account.id /= accountId) accounts
+                        updatedAccounts =
+                            List.filter (\account -> account.id /= accountId) accounts
                     in
                     ( { model | accounts = RD.Success updatedAccounts, deleteConfirmDialog = Nothing, deleteLoading = False }
                     , E.none
                     )
+
                 _ ->
                     ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
                     , E.none
@@ -434,13 +612,16 @@ update msg model =
                         Just account ->
                             let
                                 -- Toggle between active and paused
-                                newIsActive = account.status /= "active"
+                                newIsActive =
+                                    account.status /= "active"
                             in
                             ( model
                             , E.sendCmd (Api.messenger_edit_account (\result -> GotToggleStatusResult result accountId) { accountId = accountId, isActive = newIsActive })
                             )
+
                         Nothing ->
                             ( model, E.none )
+
                 _ ->
                     ( model, E.none )
 
@@ -455,7 +636,15 @@ update msg model =
                                     (\account ->
                                         if account.id == accountId then
                                             -- Toggle the status
-                                            { account | status = if account.status == "active" then "paused" else "active" }
+                                            { account
+                                                | status =
+                                                    if account.status == "active" then
+                                                        "paused"
+
+                                                    else
+                                                        "active"
+                                            }
+
                                         else
                                             account
                                     )
@@ -465,6 +654,7 @@ update msg model =
                     ( { model | accounts = updatedAccounts }
                     , E.none
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -509,6 +699,7 @@ update msg model =
                     ( { model | linkFlow = LinkQrCode { qrData | qrCode = "" } }
                     , Api.messenger_get_qr_retryable GotQrCode { accountId = qrData.accountId }
                     )
+
                 _ ->
                     ( model, E.none )
 
@@ -658,7 +849,25 @@ linkAccountSidebarContent isDark shared model =
                                 , onInput SetLinkName
                                 ]
                                 []
+                            , case Dict.get "displayName" model.formErrors of
+                                Just error ->
+                                    p [ class "text-xs text-red-600" ] [ text error ]
+                                
+                                Nothing ->
+                                    text ""
                             ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Опис (необов'язково)" ]
+                            , textarea
+                                [ class "form-textarea w-full"
+                                , rows 3
+                                , placeholder "Короткий опис акаунту..."
+                                , value linkForm.description
+                                , onInput SetLinkDescription
+                                ]
+                                []
+                            ]
+
                         ]
                     ]
                 , div [ class "p-6 border-t border-border" ]
@@ -688,6 +897,7 @@ linkAccountSidebarContent isDark shared model =
                                 , p [ class "text-sm text-muted-foreground" ]
                                     [ text "Відскануйте QR код вашим месенджером" ]
                                 ]
+
                           else
                             div [ class "py-8" ]
                                 [ text "Завантаження QR коду..." ]
@@ -769,18 +979,84 @@ messengerAccountsTableConfig isLoading =
         defaultCustomizations =
             Table.defaultCustomizations
 
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
         customizations =
             { defaultCustomizations
                 | tableAttrs = [ class "base-table" ]
+                , thead = customThead
             }
     in
     Table.customConfig
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва" .name |> Table.withColumnWidth "20%"
-            , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "20%"
-            , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "15%"
+            [ Table.stringColumn "Назва акаунту" .displayName |> Table.withColumnWidth "18%"
+             ,Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "15%"
+            , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Опис"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ case account.description of
+                                Just desc ->
+                                    if String.length desc > 50 then
+                                        span [ title desc ] [ text (String.left 50 desc ++ "...") ]
+                                    else
+                                        span [] [ text desc ]
+                                
+                                Nothing ->
+                                    span [ class "text-muted-foreground" ] [ text "—" ]
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Статус"
                 , viewData =
@@ -790,42 +1066,64 @@ messengerAccountsTableConfig isLoading =
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "15%"
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Дії"
+                { name = ""
                 , viewData =
                     \account ->
-                        TableColumn.HtmlDetails []
-                            [ div [ class "flex gap-2" ]
-                                [ if isLoading then
-                                    div [ class "px-3 py-1 text-sm text-muted-foreground" ] [ text "Завантаження..." ]
-                                  else
-                                    if account.isLinked then
-                                        div [ class "flex gap-2" ]
-                                            [ if account.status == "active" then
-                                                Button.new { label = "Призупинити", onClick = ToggleAccountStatus account.id }
-                                                    |> Button.withStyleSecondary
-                                                    |> Button.view
-                                              else
-                                                Button.new { label = "Активувати", onClick = ToggleAccountStatus account.id }
-                                                    |> Button.view
-                                            , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
-                                                |> Button.withStyleSecondary
-                                                |> Button.view
+                        TableColumn.HtmlDetails [ class "col-narrow" ]
+                            [ if isLoading then
+                                div [ class "px-2 py-1 text-sm text-muted-foreground" ] [ text "..." ]
+
+                              else if account.isLinked then
+                                div [ class "flex gap-1" ]
+                                    [ if account.status == "active" then
+                                        button
+                                            [ class "table-action-btn"
+                                            , type_ "button"
+                                            , title "Призупинити"
+                                            , onClick <| ToggleAccountStatus account.id
                                             ]
-                                    else
-                                        div [ class "flex gap-2" ]
-                                            [ Button.new { label = "Підключити", onClick = ConnectExistingAccount account.id }
-                                                |> Button.view
-                                            , Button.new { label = "Видалити", onClick = DeleteAccount account.id }
-                                                |> Button.withStyleSecondary
-                                                |> Button.view
+                                            [ i [ class "bi bi-pause-circle" ] [] ]
+
+                                      else
+                                        button
+                                            [ class "table-action-btn"
+                                            , type_ "button"
+                                            , title "Активувати"
+                                            , onClick <| ToggleAccountStatus account.id
                                             ]
-                                ]
+                                            [ i [ class "bi bi-play-circle" ] [] ]
+                                    , button
+                                        [ class "icon-btn icon-btn-danger"
+                                        , type_ "button"
+                                        , title "Видалити"
+                                        , onClick <| DeleteAccount account.id
+                                        ]
+                                        [ i [ class "bi bi-trash" ] [] ]
+                                    ]
+
+                              else
+                                div [ class "flex gap-1" ]
+                                    [ button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
+                                        , title "Підключити"
+                                        , onClick <| ConnectExistingAccount account.id
+                                        ]
+                                        [ i [ class "bi bi-link-45deg" ] [] ]
+                                    , button
+                                        [ class "icon-btn icon-btn-danger"
+                                        , type_ "button"
+                                        , title "Видалити"
+                                        , onClick <| DeleteAccount account.id
+                                        ]
+                                        [ i [ class "bi bi-trash" ] [] ]
+                                    ]
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "30%"
+                |> Table.withColumnWidth "8%"
             ]
         , customizations = customizations
         }

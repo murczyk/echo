@@ -356,6 +356,8 @@ pub struct SignalGroupEntry {
     pub master_key: String,
     pub name: String,
     pub ignore_operativny: bool,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
 }
 
 /// Запис групи, яка не прив'язана до жодного напрямку

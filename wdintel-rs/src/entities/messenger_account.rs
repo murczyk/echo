@@ -14,6 +14,10 @@ pub struct Model {
     pub status: AccountStatus,
     pub echo_client_lock_id: Option<i64>,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Text")]
+    pub display_name: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub description: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -8,7 +8,9 @@ pub struct EchoAccountF1 {
     pub status: String,
     pub created_at: i64,
     pub client_id: i32,
-    pub name: String,
+    pub display_name: String,
+    pub system_service_name: String,
+    pub description: Option<String>,
     pub messenger: String,
     pub phone_number: String,
     pub is_linked: bool,
@@ -55,6 +57,8 @@ pub struct LinkAccountReq {
     pub phone: String,
     pub messenger: String,
     pub display_name: String,
+    pub system_service_name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]

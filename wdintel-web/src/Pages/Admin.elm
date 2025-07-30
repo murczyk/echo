@@ -6,6 +6,7 @@ import Bindings as B
 import Components.Button as Button
 import Components.ModalDialog as ModalDialog
 import Components.Pager as Pager
+import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Config as Config
 import Components.Tabs as Tabs
@@ -33,6 +34,30 @@ import Set exposing (Set)
 import Shared
 import View exposing (View)
 import Views
+
+
+type alias OrphanGroupAssignmentDialog =
+    { groupKey : String
+    , zoneIds : List Int -- для множинного додавання
+    , isSecret : Bool
+    , selectedUsers : List String
+    , userSelectState : Select.State
+    }
+
+
+type alias GroupEditDialog =
+    { zoneId : Int
+    , sourceId : Int
+    , groupKey : String
+    , groupName : String
+    , shortNote : String
+    , longNote : String
+    , isSecret : Bool
+    , selectedUsers : List String
+    , userSelectState : Select.State
+    , isLoading : Bool
+    , error : Maybe String
+    }
 
 
 type alias Model =
@@ -69,6 +94,9 @@ type alias Model =
     , orphanGroupZoneSelector : Maybe { groupKey : String, selectedZones : List Int }
     , orphanGroupsTableState : Table.State
     , orphanGroupsPager : Pager.Model
+    , orphanGroupAssignmentDialog : Maybe OrphanGroupAssignmentDialog
+    , expandedGroupNotes : Set String -- Track which groups have expanded long notes
+    , groupEditDialog : Maybe GroupEditDialog
     }
 
 
@@ -96,64 +124,146 @@ renderGroup model zoneId activeSourceId group =
 
                 Nothing ->
                     False
+
+        isExpanded : Bool
+        isExpanded =
+            Set.member group.groupMasterKey model.expandedGroupNotes
+
+        shortNote : Maybe String
+        shortNote =
+            group.shortNote
+
+        longNote : Maybe String
+        longNote =
+            group.longNote
+
+        hasLongNote : Bool
+        hasLongNote =
+            case longNote of
+                Just note ->
+                    not (String.isEmpty (String.trim note))
+
+                Nothing ->
+                    False
     in
-    div [ class "flex items-center border rounded-lg mb-3 px-4 py-2 bg-[var(--bs-tertiary-bg)]" ]
-        [ div [ class "w-1/4 flex items-center" ]
-            [ span [ class "font-semibold mr-2" ] [ text groupName ]
-            , if group.isGroupSecret then
-                span [ class "ml-1 text-lg" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
+    div [ class "border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
+        [ -- Header row: Group name, secret icon, action buttons
+          div [ class "flex items-center justify-between mb-2" ]
+            [ div [ class "flex items-center" ]
+                [ span [ class "font-semibold mr-2 text-lg" ] [ text groupName ]
+                , if group.isGroupSecret then
+                    span [ class "ml-1 text-lg text-amber-600" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
-              else
-                text ""
-            ]
-        , div [ class "w-1/2 flex flex-col justify-center" ]
-            [ if group.isGroupSecret then
-                div [ class "mb-2 flex items-center" ]
-                    [ span [ class "mr-2 text-sm" ] [ text "видима для:" ]
-                    , span
-                        [ class "cursor-pointer ml-2"
-                        , onClick (OpenUserSelector zoneId activeSourceId group.groupMasterKey group.allowedUsers)
+                  else
+                    text ""
+                ]
+            , div [ class "flex items-center gap-2" ]
+                [ -- Info button for long note (only if has long note)
+                  if hasLongNote then
+                    button
+                        [ class <|
+                            "flex items-center justify-center w-8 h-8 rounded-full transition-colors "
+                                ++ (if isExpanded then
+                                        "bg-blue-100 text-blue-700 hover:bg-blue-200"
+
+                                    else
+                                        "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                   )
+                        , onClick (ToggleGroupNoteExpansion group.groupMasterKey)
+                        , title <|
+                            if isExpanded then
+                                "Сховати детальну інформацію"
+
+                            else
+                                "Показати детальну інформацію"
                         ]
-                        [ i [ class "bi bi-pencil-square text-action" ] [] ]
+                        [ i
+                            [ class <|
+                                if isExpanded then
+                                    "bi bi-chevron-up"
+
+                                else
+                                    "bi bi-info-circle"
+                            ]
+                            []
+                        ]
+
+                  else
+                    text ""
+                , -- Edit button
+                  button
+                    [ class "flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                    , onClick (EditGroup zoneId activeSourceId group.groupMasterKey)
+                    , title "Редагувати групу"
                     ]
+                    [ i [ class "bi bi-pencil" ] [] ]
+                , -- Loading spinner (for any ongoing operations)
+                  if isLoading then
+                    span [ class "ml-1" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
 
-              else
-                text ""
-            , if group.isGroupSecret then
-                div [ class "text-sm" ] [ text (String.join ", " group.allowedUsers) ]
-
-              else
-                text ""
+                  else
+                    text ""
+                , -- Delete button
+                  button
+                    [ class "flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                    , onClick (ShowRemoveGroupConfirmation zoneId activeSourceId group.groupMasterKey)
+                    , title "Видалити групу з цього напрямку"
+                    ]
+                    [ i [ class "bi bi-x-lg" ] [] ]
+                ]
             ]
-        , div [ class "w-1/4 flex items-center justify-end gap-4" ]
-            [ div
-                [ style "pointer-events"
-                    (if isLoading then
-                        "none"
+        , -- Short note row (always visible if exists)
+          case shortNote of
+            Just note ->
+                if not (String.isEmpty (String.trim note)) then
+                    div [ class "mb-2 text-sm text-gray-700 bg-blue-50 rounded px-3 py-2 border-l-4 border-blue-300" ]
+                        [ i [ class "bi bi-sticky mr-2 text-blue-600" ] []
+                        , text note
+                        ]
+
+                else
+                    text ""
+
+            Nothing ->
+                text ""
+        , -- User list row (always visible for secret groups)
+          if group.isGroupSecret then
+            div [ class "mb-2 flex items-center flex-wrap gap-2" ]
+                [ span [ class "text-sm text-gray-600 mr-2" ] [ text "👥 Видима для:" ]
+                , div [ class "flex flex-wrap gap-1" ]
+                    (if List.isEmpty group.allowedUsers then
+                        [ span [ class "text-sm text-gray-500 italic" ] [ text "немає користувачів" ] ]
 
                      else
-                        "auto"
+                        List.map
+                            (\user ->
+                                span [ class "inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full" ]
+                                    [ text user ]
+                            )
+                            group.allowedUsers
                     )
-                ]
-                [ Toggle.new
-                    { onToggle = ToggleGroupSecret zoneId activeSourceId group
-                    , label = "Прихована"
-                    , id = "toggle-" ++ String.fromInt zoneId ++ "-" ++ String.fromInt activeSourceId ++ "-" ++ group.groupMasterKey
-                    }
-                    |> Toggle.view group.isGroupSecret
-                ]
-            , if isLoading then
-                span [ class "ml-2" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
 
-              else
-                text ""
-            , button
-                [ class "cursor-pointer text-red-600 hover:text-red-800 transition-colors ml-2"
-                , onClick (ShowRemoveGroupConfirmation zoneId activeSourceId group.groupMasterKey)
-                , title "Видалити групу з цього напрямку"
                 ]
-                [ i [ class "bi bi-x-lg" ] [] ]
-            ]
+
+          else
+            text ""
+        , -- Expandable long note section
+          if hasLongNote && isExpanded then
+            case longNote of
+                Just note ->
+                    div [ class "mt-3 p-3 bg-gray-50 rounded border border-gray-200" ]
+                        [ div [ class "flex items-center mb-2" ]
+                            [ i [ class "bi bi-file-text mr-2 text-gray-600" ] []
+                            , span [ class "text-sm font-medium text-gray-700" ] [ text "Детальна інформація:" ]
+                            ]
+                        , div [ class "text-sm text-gray-800 whitespace-pre-wrap" ] [ text note ]
+                        ]
+
+                Nothing ->
+                    text ""
+
+          else
+            text ""
         ]
 
 
@@ -188,6 +298,9 @@ init _ =
       , orphanGroupZoneSelector = Nothing
       , orphanGroupsTableState = Table.initialSort "Створено"
       , orphanGroupsPager = Pager.init
+      , orphanGroupAssignmentDialog = Nothing
+      , expandedGroupNotes = Set.empty
+      , groupEditDialog = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -213,8 +326,6 @@ type Msg
     | UserSelectorSave
     | UserSelectorLoginsLoaded (Result ApiError B.ListLoginsRsp)
     | UserSelectorSaveDone (Result ApiError B.ZoneDatasourceGroup)
-    | ToggleGroupSecret Int Int B.ZoneDatasourceGroup
-    | ToggleGroupSecretDone (Result ApiError B.ZoneDatasourceGroup) Int Int String
     | ZoneTabChanged Int Int
     | ToggleShowOnlyHidden
     | UpdateGroupNameFilter String
@@ -232,6 +343,20 @@ type Msg
     | SaveOrphanGroupZones
     | OrphanGroupsTableStateChanged Table.State
     | OrphanGroupsPagerMsg Pager.Msg
+    | OpenOrphanGroupAssignmentDialog String (List Int) -- groupKey, zoneIds
+    | CloseOrphanGroupAssignmentDialog
+    | ToggleOrphanGroupSecret
+    | ConfirmOrphanGroupAssignment
+    | OrphanGroupUserSelectMsg (Select.Msg String)
+    | ToggleGroupNoteExpansion String -- groupMasterKey
+    | EditGroup Int Int String -- zoneId, sourceId, groupMasterKey
+    | CloseGroupEdit
+    | UpdateGroupShortNote String
+    | UpdateGroupLongNote String
+    | ToggleGroupSecretInDialog
+    | GroupEditUserSelectMsg (Select.Msg String)
+    | SaveGroupEdit
+    | SaveGroupEditDone (Result ApiError B.ZoneDatasourceGroup)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -588,6 +713,21 @@ update msg model =
                 menu =
                     List.map (\login -> Select.basicMenuItem { item = login, label = login }) logins
 
+                -- Update the group edit dialog if it's open and was loading
+                updatedModel =
+                    case model.groupEditDialog of
+                        Just dialog ->
+                            if dialog.isLoading then
+                                { model
+                                    | groupEditDialog = 
+                                        Just { dialog | isLoading = False }
+                                }
+                            else
+                                model
+                        
+                        Nothing ->
+                            model
+
                 -- Get the original selected users from the dialog context
                 originalSelected : List String
                 originalSelected =
@@ -611,7 +751,7 @@ update msg model =
                         Nothing ->
                             []
             in
-            ( { model | allLogins = logins, userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = menu, selectedItems = originalSelected }, userSelectorLoading = False, userSelectorError = Nothing }
+            ( { updatedModel | allLogins = logins, userSelectorSelect = { selectState = Select.initState (Select.selectIdentifier "user-selector"), items = menu, selectedItems = originalSelected }, userSelectorLoading = False, userSelectorError = Nothing }
             , E.none
             )
 
@@ -654,7 +794,12 @@ update msg model =
                             let
                                 req : B.ZoneDatasourceGroupUpdateReq
                                 req =
-                                    { id = g.sigintZoneDatasourceId, isSecret = g.isGroupSecret, userLogins = model.userSelectorSelect.selectedItems }
+                                    { id = g.sigintZoneDatasourceId
+                                    , isSecret = g.isGroupSecret
+                                    , userLogins = model.userSelectorSelect.selectedItems
+                                    , shortNote = g.shortNote
+                                    , longNote = g.longNote
+                                    }
                             in
                             ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
 
@@ -738,56 +883,7 @@ update msg model =
             , E.none
             )
 
-        ToggleGroupSecret zoneId sourceId group ->
-            let
-                req : B.ZoneDatasourceGroupUpdateReq
-                req =
-                    { id = group.sigintZoneDatasourceId, isSecret = not group.isGroupSecret, userLogins = group.allowedUsers }
-            in
-            ( { model | groupUpdateInProgress = Just ( zoneId, sourceId, group.groupMasterKey ), groupUpdateError = Nothing }
-            , E.sendCmd <| Api.zone_datasource_group_update (\res -> ToggleGroupSecretDone res zoneId sourceId group.groupMasterKey) req
-            )
 
-        ToggleGroupSecretDone (Ok updatedGroup) zoneId sourceId groupKey ->
-            let
-                oldGroups : List B.ZoneDatasourceGroup
-                oldGroups =
-                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
-
-                newGroups : List B.ZoneDatasourceGroup
-                newGroups =
-                    List.map
-                        (\g ->
-                            if g.groupMasterKey == groupKey then
-                                updatedGroup
-
-                            else
-                                g
-                        )
-                        oldGroups
-
-                m2 : Model
-                m2 =
-                    { model | groupUpdateInProgress = Nothing, groupUpdateError = Nothing, zoneSourceGroups = Dict.insert ( zoneId, sourceId ) newGroups model.zoneSourceGroups }
-
-                needInfo : Bool
-                needInfo =
-                    not (Dict.member updatedGroup.groupMasterKey model.groupInfos)
-
-                eff : Cmd Msg
-                eff =
-                    if needInfo then
-                        Api.rer_importer_signal_group_info_batch GotGroupInfos { groups = [ { masterKey = updatedGroup.groupMasterKey } ] }
-
-                    else
-                        Cmd.none
-            in
-            ( m2, E.sendCmd eff )
-
-        ToggleGroupSecretDone (Err e) zoneId sourceId groupKey ->
-            ( { model | groupUpdateInProgress = Nothing, groupUpdateError = Just { zoneId = zoneId, sourceId = sourceId, groupKey = groupKey, error = "Не вдалося зберегти" } }
-            , E.none
-            )
 
         ZoneTabChanged zoneId sourceId ->
             ( { model | zoneActiveTabs = Dict.insert zoneId sourceId model.zoneActiveTabs }
@@ -827,6 +923,8 @@ update msg model =
                                     , masterKey = groupKey
                                     , isSecret = False
                                     , userLogins = []
+                                    , shortNote = Nothing
+                                    , longNote = Nothing
                                     }
                             in
                             ( { model | orphanGroupAssignmentInProgress = Just groupKey, orphanGroupAssignmentError = Nothing }
@@ -891,6 +989,8 @@ update msg model =
                                 { masterKey = response.groupMasterKey
                                 , name = name
                                 , ignoreOperativny = False -- Default value
+                                , shortNote = Nothing
+                                , longNote = Nothing
                                 }
                                 model.groupInfos
 
@@ -1125,9 +1225,11 @@ update msg model =
                                             , masterKey = selector.groupKey
                                             , isSecret = False
                                             , userLogins = []
+                                            , shortNote = Nothing
+                                            , longNote = Nothing
                                             }
                                     in
-                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
                                 )
                                 selector.selectedZones
                     in
@@ -1161,6 +1263,411 @@ update msg model =
             ( { model | orphanGroupsPager = Pager.update pagerMsg model.orphanGroupsPager }
             , E.none
             )
+
+        OpenOrphanGroupAssignmentDialog groupKey zoneIds ->
+            if List.isEmpty model.allLogins then
+                ( { model
+                    | orphanGroupAssignmentDialog =
+                        Just
+                            { groupKey = groupKey
+                            , zoneIds = zoneIds
+                            , isSecret = False
+                            , selectedUsers = []
+                            , userSelectState = Select.initState (Select.selectIdentifier "orphan-group-users")
+                            }
+                  }
+                , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                )
+
+            else
+                ( { model
+                    | orphanGroupAssignmentDialog =
+                        Just
+                            { groupKey = groupKey
+                            , zoneIds = zoneIds
+                            , isSecret = False
+                            , selectedUsers = []
+                            , userSelectState = Select.initState (Select.selectIdentifier "orphan-group-users")
+                            }
+                  }
+                , E.none
+                )
+
+        CloseOrphanGroupAssignmentDialog ->
+            ( { model | orphanGroupAssignmentDialog = Nothing }
+            , E.none
+            )
+
+        ToggleOrphanGroupSecret ->
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupAssignmentDialog =
+                            Just
+                                { dialog | isSecret = not dialog.isSecret }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        ConfirmOrphanGroupAssignment ->
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    case findOrphanGroup model dialog.groupKey of
+                        Just orphanGroup ->
+                            case orphanGroup.datasourceId of
+                                Just datasourceId ->
+                                    let
+                                        requests =
+                                            List.map
+                                                (\zoneId ->
+                                                    let
+                                                        req : B.ZoneDatasourceGroupAddReq
+                                                        req =
+                                                            { zoneId = zoneId
+                                                            , datasourceId = datasourceId
+                                                            , masterKey = dialog.groupKey
+                                                            , isSecret = dialog.isSecret
+                                                            , userLogins = dialog.selectedUsers
+                                                            , shortNote = Nothing
+                                                            , longNote = Nothing
+                                                            }
+                                                    in
+                                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                                )
+                                                dialog.zoneIds
+                                    in
+                                    ( { model
+                                        | orphanGroupAssignmentInProgress = Just dialog.groupKey
+                                        , orphanGroupAssignmentError = Nothing
+                                        , orphanGroupAssignmentDialog = Nothing
+                                      }
+                                    , E.sendCmd <| Cmd.batch requests
+                                    )
+
+                                Nothing ->
+                                    ( { model | orphanGroupAssignmentError = Just "У групи немає прив'язаного датасорса" }
+                                    , E.none
+                                    )
+
+                        Nothing ->
+                            ( { model | orphanGroupAssignmentError = Just "Не вдалося знайти групу" }
+                            , E.none
+                            )
+
+                Nothing ->
+                    ( model, E.none )
+
+        OrphanGroupUserSelectMsg imsg ->
+            case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg dialog.userSelectState
+
+                        selected : List String
+                        selected =
+                            Le.Block.Select.multiUpdS mAction dialog.selectedUsers
+                    in
+                    ( { model
+                        | orphanGroupAssignmentDialog =
+                            Just
+                                { dialog
+                                    | userSelectState = imodel2
+                                    , selectedUsers = selected
+                                }
+                      }
+                    , E.sendCmd <| Cmd.map OrphanGroupUserSelectMsg icmd
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        ToggleGroupNoteExpansion groupMasterKey ->
+            let
+                updatedExpanded =
+                    if Set.member groupMasterKey model.expandedGroupNotes then
+                        Set.remove groupMasterKey model.expandedGroupNotes
+                    else
+                        Set.insert groupMasterKey model.expandedGroupNotes
+            in
+            ( { model | expandedGroupNotes = updatedExpanded }
+            , E.none
+            )
+
+        EditGroup zoneId sourceId groupMasterKey ->
+            let
+                group : Maybe B.ZoneDatasourceGroup
+                group =
+                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups
+                        |> def []
+                        |> List.filter (\g -> g.groupMasterKey == groupMasterKey)
+                        |> List.head
+
+                groupName : String
+                groupName =
+                    Dict.get groupMasterKey model.groupInfos
+                        |> Maybe.map .name
+                        |> def groupMasterKey
+                        |> (\name ->
+                                if String.isEmpty name then
+                                    String.right 5 groupMasterKey
+
+                                else
+                                    name
+                           )
+            in
+            case group of
+                Just g ->
+                    if List.isEmpty model.allLogins then
+                        ( { model
+                            | groupEditDialog =
+                                Just
+                                    { zoneId = zoneId
+                                    , sourceId = sourceId
+                                    , groupKey = groupMasterKey
+                                    , groupName = groupName
+                                    , shortNote = g.shortNote |> Maybe.withDefault ""
+                                    , longNote = g.longNote |> Maybe.withDefault ""
+                                    , isSecret = g.isGroupSecret
+                                    , selectedUsers = g.allowedUsers
+                                    , userSelectState = Select.initState (Select.selectIdentifier ("group-edit-users-" ++ groupMasterKey))
+                                    , isLoading = True
+                                    , error = Nothing
+                                    }
+                          }
+                        , E.sendCmd <| Api.list_logins UserSelectorLoginsLoaded { sortBy = Nothing }
+                        )
+
+                    else
+                        ( { model
+                            | groupEditDialog =
+                                Just
+                                    { zoneId = zoneId
+                                    , sourceId = sourceId
+                                    , groupKey = groupMasterKey
+                                    , groupName = groupName
+                                    , shortNote = g.shortNote |> Maybe.withDefault ""
+                                    , longNote = g.longNote |> Maybe.withDefault ""
+                                    , isSecret = g.isGroupSecret
+                                    , selectedUsers = g.allowedUsers
+                                    , userSelectState = Select.initState (Select.selectIdentifier ("group-edit-users-" ++ groupMasterKey))
+                                    , isLoading = False
+                                    , error = Nothing
+                                    }
+                          }
+                        , E.none
+                        )
+
+                Nothing ->
+                    ( model, E.none )
+
+        CloseGroupEdit ->
+            ( { model | groupEditDialog = Nothing }
+            , E.none
+            )
+
+        UpdateGroupShortNote newShortNote ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | groupEditDialog =
+                            Just { dialog | shortNote = newShortNote }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateGroupLongNote newLongNote ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | groupEditDialog =
+                            Just { dialog | longNote = newLongNote }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        ToggleGroupSecretInDialog ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | groupEditDialog =
+                            Just 
+                                { dialog 
+                                | isSecret = not dialog.isSecret
+                                , selectedUsers = 
+                                    if not dialog.isSecret then
+                                        dialog.selectedUsers  -- Keep existing users when enabling secret mode
+                                    else
+                                        []  -- Clear users when disabling secret mode
+                                }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GroupEditUserSelectMsg imsg ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg dialog.userSelectState
+
+                        selected : List String
+                        selected =
+                            Le.Block.Select.multiUpdS mAction dialog.selectedUsers
+                    in
+                    ( { model
+                        | groupEditDialog =
+                            Just
+                                { dialog
+                                    | userSelectState = imodel2
+                                    , selectedUsers = selected
+                                }
+                      }
+                    , E.sendCmd <| Cmd.map GroupEditUserSelectMsg icmd
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        SaveGroupEdit ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    let
+                        group : Maybe B.ZoneDatasourceGroup
+                        group =
+                            Dict.get ( dialog.zoneId, dialog.sourceId ) model.zoneSourceGroups
+                                |> def []
+                                |> List.filter (\g -> g.groupMasterKey == dialog.groupKey)
+                                |> List.head
+                    in
+                    case group of
+                        Just g ->
+                            let
+                                req : B.ZoneDatasourceGroupUpdateReq
+                                req =
+                                    { id = g.sigintZoneDatasourceId
+                                    , isSecret = dialog.isSecret
+                                    , userLogins = dialog.selectedUsers
+                                    , shortNote =
+                                        if String.isEmpty (String.trim dialog.shortNote) then
+                                            Nothing
+
+                                        else
+                                            Just dialog.shortNote
+                                    , longNote =
+                                        if String.isEmpty (String.trim dialog.longNote) then
+                                            Nothing
+
+                                        else
+                                            Just dialog.longNote
+                                    }
+                            in
+                            ( { model
+                                | groupEditDialog =
+                                    Just { dialog | isLoading = True, error = Nothing }
+                              }
+                            , E.sendCmd <| Api.zone_datasource_group_update SaveGroupEditDone req
+                            )
+
+                        Nothing ->
+                            ( { model
+                                | groupEditDialog =
+                                    Just { dialog | error = Just "Група не знайдена" }
+                              }
+                            , E.none
+                            )
+
+                Nothing ->
+                    ( model, E.none )
+
+        SaveGroupEditDone (Ok updatedGroup) ->
+            let
+                { sigintZoneDatasourceId, groupMasterKey } =
+                    updatedGroup
+
+                findZoneSource : Maybe ( Int, Int )
+                findZoneSource =
+                    Dict.toList model.zoneSourceGroups
+                        |> List.filterMap
+                            (\( ( zid, sid ), groups ) ->
+                                if List.any (\g -> g.sigintZoneDatasourceId == sigintZoneDatasourceId) groups then
+                                    Just ( zid, sid )
+
+                                else
+                                    Nothing
+                            )
+                        |> List.head
+
+                zoneSourceTuple : ( Int, Int )
+                zoneSourceTuple =
+                    case findZoneSource of
+                        Just v ->
+                            v
+
+                        Nothing ->
+                            ( 0, 0 )
+
+                zoneId : Int
+                zoneId =
+                    Tuple.first zoneSourceTuple
+
+                sourceId : Int
+                sourceId =
+                    Tuple.second zoneSourceTuple
+
+                oldGroups : List B.ZoneDatasourceGroup
+                oldGroups =
+                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+
+                newGroups : List B.ZoneDatasourceGroup
+                newGroups =
+                    List.map
+                        (\g ->
+                            if g.groupMasterKey == groupMasterKey then
+                                updatedGroup
+
+                            else
+                                g
+                        )
+                        oldGroups
+
+                m2 : Model
+                m2 =
+                    { model
+                        | groupEditDialog = Nothing
+                        , zoneSourceGroups = Dict.insert ( zoneId, sourceId ) newGroups model.zoneSourceGroups
+                    }
+            in
+            ( m2, E.none )
+
+        SaveGroupEditDone (Err e) ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | groupEditDialog =
+                            Just
+                                { dialog
+                                    | isLoading = False
+                                    , error = Just "Не вдалося зберегти зміни"
+                                }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -1230,6 +1737,242 @@ findOrphanGroup model groupKey =
             Nothing
 
 
+getGroupDisplayName : Model -> String -> String
+getGroupDisplayName model groupKey =
+    case findOrphanGroup model groupKey of
+        Just group ->
+            if String.isEmpty group.name then
+                String.right 5 group.masterKey
+
+            else
+                group.name
+
+        Nothing ->
+            groupKey
+
+
+getZoneName : Model -> Int -> String
+getZoneName model zoneId =
+    List.filterMap
+        (\( id, zone ) ->
+            if id == zoneId then
+                Just zone.name
+
+            else
+                Nothing
+        )
+        model.zones
+        |> List.head
+        |> Maybe.withDefault (String.fromInt zoneId)
+
+
+renderGroupEditSidebar : Bool -> Model -> GroupEditDialog -> Html Msg
+renderGroupEditSidebar isDark model dialog =
+    Sidebar.view True CloseGroupEdit
+        [ div [ class "flex flex-col h-full" ]
+            [ -- Header
+              div [ class <| "px-6 py-3 border-b " ++ (if isDark then "border-gray-600" else "border-gray-200") ]
+                [ div [ class "flex items-center justify-between" ]
+                    [ div []
+                        [ div [ class <| "text-sm " ++ (if isDark then "text-gray-400" else "text-gray-500") ] [ text "Редагувати групу" ]
+                        , h3 [ class <| "text-lg font-semibold leading-tight " ++ (if isDark then "text-gray-100" else "text-gray-900") ]
+                            [ text dialog.groupName ]
+                        ]
+                    , button
+                        [ class <| if isDark then "text-gray-400 hover:text-gray-200" else "text-gray-500 hover:text-gray-700"
+                        , onClick CloseGroupEdit
+                        ]
+                        [ i [ class "bi bi-x-lg" ] [] ]
+                    ]
+                ]
+            , -- Content
+              div [ class "flex-1 overflow-y-auto px-6 py-4" ]
+                [ div [ class "space-y-6" ]
+                    [ -- Visibility section (first to avoid dropdown clipping)
+                      div []
+                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                            [ text "🔒 Видимість" ]
+                        , div [ class "space-y-3" ]
+                            [ -- Secret checkbox
+                              Toggle.new
+                                { onToggle = ToggleGroupSecretInDialog
+                                , label = "Прихована група"
+                                , id = "group-edit-secret-toggle"
+                                }
+                                |> Toggle.view dialog.isSecret
+                            , -- Reserved space for user selector (always present to prevent layout shift)
+                              div [ class "min-h-16" ]
+                                [ if dialog.isSecret then
+                                    div []
+                                        [ label [ class <| "block text-sm font-medium mb-2 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                            [ text "👥 Користувачі, яким видима група:" ]
+                                        , Html.map GroupEditUserSelectMsg <|
+                                            Styled.toUnstyled <|
+                                                Le.Block.Select.renderSelectVirtual
+                                                    (List.map (\user -> Select.basicMenuItem { item = user, label = user }) dialog.selectedUsers)
+                                                    dialog.userSelectState
+                                                    (List.map (\user -> Select.basicMenuItem { item = user, label = user }) model.allLogins)
+                                                    "виберіть користувачів"
+                                                    { loading = False, disabled = dialog.isLoading, isDark = isDark }
+                                        ]
+
+                                  else
+                                    div [ class <| "flex items-center h-16 text-sm " ++ (if isDark then "text-gray-400" else "text-gray-500") ]
+                                        [ text "👁️ Група видима всім користувачам" ]
+                                ]
+                            ]
+                        ]
+                    , -- Notes section (moved to second position)
+                      div []
+                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                            [ text "📝 Нотатки" ]
+                        , div [ class "space-y-3" ]
+                            [ -- Short note field
+                              div []
+                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                    [ text "Коротка нотатка:" ]
+                                , input
+                                    [ type_ "text"
+                                    , value dialog.shortNote
+                                    , onInput UpdateGroupShortNote
+                                    , placeholder "Коротка нотатка для швидкого перегляду..."
+                                    , class <|
+                                        "w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 "
+                                            ++ (if isDark then
+                                                    "bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400"
+
+                                                else
+                                                    "bg-white border-gray-300"
+                                               )
+                                    , disabled dialog.isLoading
+                                    ]
+                                    []
+                                ]
+                            , -- Long note field
+                              div []
+                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                    [ text "Детальна інформація:" ]
+                                , textarea
+                                    [ value dialog.longNote
+                                    , onInput UpdateGroupLongNote
+                                    , placeholder "Детальна інформація про групу, яка буде показана при розгортанні..."
+                                    , rows 4
+                                    , class <|
+                                        "w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical "
+                                            ++ (if isDark then
+                                                    "bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400"
+
+                                                else
+                                                    "bg-white border-gray-300"
+                                               )
+                                    , disabled dialog.isLoading
+                                    ]
+                                    []
+                                ]
+                            ]
+                        ]
+                    , -- Error display
+                      case dialog.error of
+                        Just error ->
+                            div [ class "p-3 bg-red-100 border border-red-400 text-red-700 rounded" ]
+                                [ text error ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                ]
+            , -- Footer with actions
+              div [ class <| "px-6 py-4 border-t " ++ (if isDark then "border-gray-600 bg-gray-800" else "border-gray-200 bg-gray-50") ]
+                [ div [ class "flex justify-end gap-3" ]
+                    [ Button.view
+                        (Button.new { label = "Скасувати", onClick = CloseGroupEdit }
+                            |> Button.withStyleSecondary
+                            |> Button.withDisabled dialog.isLoading
+                        )
+                    , if dialog.isLoading then
+                        div [ class "flex items-center gap-2 px-4 py-2" ]
+                            [ Le.Block.Spinner.loadingSpinner2Sm
+                            , span [ class <| "text-sm " ++ (if isDark then "text-gray-300" else "text-gray-600") ] [ text "Збереження..." ]
+                            ]
+
+                      else
+                        Button.view
+                            (Button.new { label = "Зберегти", onClick = SaveGroupEdit })
+                    ]
+                ]
+            ]
+        ]
+
+
+renderOrphanGroupAssignmentDialog : Bool -> Model -> OrphanGroupAssignmentDialog -> Html Msg
+renderOrphanGroupAssignmentDialog isDark model dialog =
+    ModalDialog.modalDialog True
+        CloseOrphanGroupAssignmentDialog
+        [ class "medium-modal overflow-visible" ]
+        [ div [ class "p-6" ]
+            [ div [ class "mb-4" ]
+                [ h3 [ class "text-lg font-semibold" ]
+                    [ text "Налаштування групи" ]
+                ]
+            , div [ class "mb-4" ]
+                [ text ("Група: " ++ getGroupDisplayName model dialog.groupKey)
+                , br [] []
+                , text ("Напрямки: " ++ String.join ", " (List.map (getZoneName model) dialog.zoneIds))
+                ]
+            , div [ class "mb-4" ]
+                [ Toggle.new
+                    { onToggle = ToggleOrphanGroupSecret
+                    , label = "Прихована група"
+                    , id = "orphan-group-secret-toggle"
+                    }
+                    |> Toggle.view dialog.isSecret
+                ]
+            , div [ class "mb-4" ]
+                [ if dialog.isSecret then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-2" ]
+                            [ text "Користувачі, яким видима група:" ]
+                        , Html.map OrphanGroupUserSelectMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectVirtual
+                                    (List.map (\user -> Select.basicMenuItem { item = user, label = user }) dialog.selectedUsers)
+                                    dialog.userSelectState
+                                    (List.map (\user -> Select.basicMenuItem { item = user, label = user }) model.allLogins)
+                                    "виберіть користувачів"
+                                    { loading = False, disabled = False, isDark = isDark }
+                        ]
+
+                  else
+                    div [ class "h-16" ] []
+
+                -- Зарезервоване місце під select
+                ]
+            , case model.orphanGroupAssignmentError of
+                Just error ->
+                    div [ class "mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded" ]
+                        [ text error ]
+
+                Nothing ->
+                    text ""
+            , div [ class "flex justify-end gap-3" ]
+                [ Button.view
+                    (Button.new { label = "Скасувати", onClick = CloseOrphanGroupAssignmentDialog }
+                        |> Button.withStyleSecondary
+                    )
+                , if model.orphanGroupAssignmentInProgress == Just dialog.groupKey then
+                    div [ class "flex items-center gap-2" ]
+                        [ Le.Block.Spinner.loadingSpinner2Sm
+                        , span [ class "text-sm text-gray-600" ] [ text "Додавання..." ]
+                        ]
+
+                  else
+                    Button.view
+                        (Button.new { label = "Додати групу", onClick = ConfirmOrphanGroupAssignment })
+                ]
+            ]
+        ]
+
+
 renderOrphanGroupsTable : Model -> List B.OrphanSignalGroupEntry -> Html Msg
 renderOrphanGroupsTable model groups =
     let
@@ -1248,7 +1991,7 @@ renderOrphanGroupsTable model groups =
                 { toId = .masterKey
                 , toMsg = OrphanGroupsTableStateChanged
                 , columns =
-                    [ Table.stringColumn "Назва групи" getGroupDisplayName |> Table.withColumnWidth "25%"
+                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "25%"
                     , Table.customColumn
                         { name = "Створено"
                         , viewData = formatCreatedAt
@@ -1330,8 +2073,8 @@ renderOrphanGroupsTable model groups =
         customRowAttrs _ =
             []
 
-        getGroupDisplayName : B.OrphanSignalGroupEntry -> String
-        getGroupDisplayName group =
+        getGroupDisplayNameLocal : B.OrphanSignalGroupEntry -> String
+        getGroupDisplayNameLocal group =
             if String.isEmpty group.name then
                 String.right 5 group.masterKey
 
@@ -1407,7 +2150,7 @@ renderOrphanGroupsTable model groups =
                                 [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
                                 , button
                                     [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                    , onClick (AssignOrphanGroup zoneId group.masterKey)
+                                    , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
                                     , title ("Додати до " ++ zone.name)
                                     ]
                                     [ i [ class "bi bi-plus text-lg" ] [] ]
@@ -1465,7 +2208,7 @@ renderOrphanGroupsTable model groups =
                             ++ (if hasSelection then
                                     [ button
                                         [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
-                                        , onClick SaveOrphanGroupZones
+                                        , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
                                         , title "Додати до вибраних напрямків"
                                         ]
                                         [ i [ class "bi bi-plus text-sm" ] [] ]
@@ -1533,7 +2276,7 @@ renderOrphanGroup model group =
                             [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
                             , button
                                 [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                , onClick (AssignOrphanGroup zoneId group.masterKey)
+                                , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
                                 , title ("Додати до " ++ zone.name)
                                 ]
                                 [ i [ class "bi bi-plus text-lg" ] [] ]
@@ -1591,7 +2334,7 @@ renderOrphanGroup model group =
                         ++ (if hasSelection then
                                 [ button
                                     [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
-                                    , onClick SaveOrphanGroupZones
+                                    , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
                                     , title "Додати до вибраних напрямків"
                                     ]
                                     [ i [ class "bi bi-plus text-sm" ] [] ]
@@ -1806,36 +2549,65 @@ mainBlock : Bool -> Model -> B.User -> Html Msg
 mainBlock isDark model user =
     div [ class "space-y-6" ]
         [ renderOrphanGroupsSection isDark model user
-        , div [ class "bg-[var(--bs-tertiary-bg)] rounded-lg border p-4" ]
-            [ h3 [ class "text-lg font-semibold mb-4" ] [ text "Фільтри" ]
-            , div [ class "flex flex-col space-y-6" ]
-                [ div [ class "flex flex-col" ]
-                    [ label
-                        [ for "group-name-filter"
-                        , class "mb-1 text-sm font-medium"
-                        ]
-                        [ text "Назва групи:" ]
-                    , input
-                        [ type_ "text"
-                        , id "group-name-filter"
-                        , value model.groupNameFilter
-                        , onInput UpdateGroupNameFilter
-                        , placeholder "Введіть назву групи..."
-                        , class "flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-[var(--bs-body-bg)]"
-                        ]
-                        []
+        , div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
+            [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки" ]
+            , div 
+                [ class 
+                    (if isDark then
+                        "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-gray-800 to-gray-700 border border-gray-600 rounded-lg shadow-lg transform transition-all duration-300 ease-in-out hover:shadow-xl"
+                    else
+                        "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-sm transform transition-all duration-300 ease-in-out hover:shadow-md hover:border-blue-300"
+                    )
+                ] 
+                [ div 
+                    [ class 
+                        (if isDark then
+                            "flex items-center gap-2 text-blue-300"
+                        else
+                            "flex items-center gap-2 text-blue-700"
+                        )
+                    ] 
+                    [ i [ class "bi bi-funnel-fill text-lg" ] []
+                    , span [ class "font-medium text-sm" ] [ text "Фільтри" ]
                     ]
-                , div [ class "flex items-center pt-2 border-t border-gray-100" ]
-                    [ Toggle.new
-                        { onToggle = ToggleShowOnlyHidden
-                        , label = "Лише приховані"
-                        , id = "show-only-hidden-filter"
-                        }
-                        |> Toggle.view model.showOnlyHidden
+                , div [ class "flex-1 flex items-center gap-3" ]
+                    [ div [ class "flex items-center gap-2" ]
+                        [ i [ class "text-gray-500" ] [ i [ class "bi bi-search" ] [] ]
+                        , input
+                            [ type_ "text"
+                            , id "group-name-filter"
+                            , value model.groupNameFilter
+                            , onInput UpdateGroupNameFilter
+                            , placeholder "Пошук по назві групи..."
+                            , class 
+                                (if isDark then
+                                    "px-3 py-2 text-sm border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-gray-700 text-gray-100 placeholder-gray-400 shadow-sm transition-all duration-200"
+                                else
+                                    "px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm transition-all duration-200"
+                                )
+                            ]
+                            []
+                        ]
+                    , div 
+                        [ class 
+                            (if isDark then
+                                "flex items-center gap-2 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm"
+                            else
+                                "flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm"
+                            )
+                        ] 
+                        [ i [ class "text-gray-500" ] [ i [ class "bi bi-eye-slash" ] [] ]
+                        , Toggle.new
+                            { onToggle = ToggleShowOnlyHidden
+                            , label = "Лише приховані"
+                            , id = "show-only-hidden-filter"
+                            }
+                            |> Toggle.view model.showOnlyHidden
+                        ]
                     ]
                 ]
+            , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
             ]
-        , div [ class "space-y-6" ] (List.map (zoneCard2 isDark model user) model.zones)
         ]
 
 
@@ -1908,6 +2680,20 @@ body dark shared user model =
                             ]
                         ]
                     ]
+
+                Nothing ->
+                    []
+           )
+        ++ (case model.orphanGroupAssignmentDialog of
+                Just dialog ->
+                    [ renderOrphanGroupAssignmentDialog dark model dialog ]
+
+                Nothing ->
+                    []
+           )
+        ++ (case model.groupEditDialog of
+                Just dialog ->
+                    [ renderGroupEditSidebar dark model dialog ]
 
                 Nothing ->
                     []

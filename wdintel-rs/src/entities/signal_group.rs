@@ -16,6 +16,10 @@ pub struct Model {
     pub created_at: DateTime,
     pub ignore_operativny: bool,
     pub is_secret: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub short_note: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub long_note: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

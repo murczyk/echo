@@ -191,6 +191,8 @@ pub async fn sync_groups(
                     is_secret: Set(false),
                     datasource_id: Set(Some(datasource.id)),
                     ignore_operativny: Default::default(),
+                    short_note: NotSet,
+                    long_note: NotSet,
                 }
                 .insert(dbx)
                 .await

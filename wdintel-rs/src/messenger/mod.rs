@@ -105,13 +105,15 @@ pub async fn link(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    only_alphanumeric_and_hyphen(&req.display_name)?;
+    only_alphanumeric_and_hyphen(&req.system_service_name)?;
     valid_phone_number(&req.phone)?;
 
     let account = bl::link_account(
         req.phone.as_str(),
         req.display_name.as_str(),
-        req.messenger.clone(),
+        req.system_service_name.as_str(),
+        req.messenger.as_str(),
+        req.description.clone(),
         &txn,
     )
     .await

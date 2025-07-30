@@ -106,6 +106,7 @@ mod m20250714_150613_add_sigint_origin;
 mod m20250715_124452_add_system_login;
 mod m20250716_150622_add_mothership_post;
 mod m20250722_144413_add_messenger_account;
+mod m20250730_090455_add_messenger_account_description;
 
 pub struct Migrator;
 
@@ -219,6 +220,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250715_124452_add_system_login::Migration),
             Box::new(m20250716_150622_add_mothership_post::Migration),
             Box::new(m20250722_144413_add_messenger_account::Migration),
+            Box::new(m20250730_090455_add_messenger_account_description::Migration),
         ]
     }
 }

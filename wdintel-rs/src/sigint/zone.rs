@@ -69,6 +69,8 @@ pub async fn zones_datasources_groups_list(
         id: i64,
         group_master_key: String,
         is_secret: bool,
+        short_note: Option<String>,
+        long_note: Option<String>,
     }
 
     let req = req.into_inner();
@@ -80,6 +82,8 @@ pub async fn zones_datasources_groups_list(
         .column_as(sigint_zone_datasource::Column::Id, "id")
         .column_as(signal_group::Column::IsSecret, "is_secret")
         .column_as(secret_group_user::Column::Login, "login")
+        .column(signal_group::Column::ShortNote)
+        .column(signal_group::Column::LongNote)
         .join(
             JoinType::InnerJoin,
             sigint_zone_datasource::Relation::SignalGroup.def(),
@@ -97,9 +101,14 @@ pub async fn zones_datasources_groups_list(
         .await
         .context(h!())?;
 
-    let mut res = HashMap::<String, (bool, i64, Vec<String>)>::new();
+    let mut res = HashMap::<
+        String,
+        (bool, i64, Vec<String>, Option<String>, Option<String>),
+    >::new();
     for row in rows {
-        if let Some((_, _, login_vec)) = res.get_mut(&row.group_master_key) {
+        if let Some((_, _, login_vec, _, _)) =
+            res.get_mut(&row.group_master_key)
+        {
             if let Some(user_login) = row.login {
                 login_vec.push(user_login);
             }
@@ -109,21 +118,31 @@ pub async fn zones_datasources_groups_list(
             } else {
                 vec![]
             };
-            res.insert(row.group_master_key, (row.is_secret, row.id, logins));
+            res.insert(
+                row.group_master_key,
+                (row.is_secret, row.id, logins, row.short_note, row.long_note),
+            );
         }
     }
 
     Ok(Json(ZoneDatasourceGroupListRsp {
         zone_datasource_groups: res
             .into_iter()
-            .map(|(master_key, (is_secret, szd_id, allowed_users))| {
-                ZoneDatasourceGroup {
-                    sigint_zone_datasource_id: szd_id,
-                    group_master_key: master_key,
-                    is_group_secret: is_secret,
-                    allowed_users,
-                }
-            })
+            .map(
+                |(
+                    master_key,
+                    (is_secret, szd_id, allowed_users, short_note, long_note),
+                )| {
+                    ZoneDatasourceGroup {
+                        sigint_zone_datasource_id: szd_id,
+                        group_master_key: master_key,
+                        is_group_secret: is_secret,
+                        allowed_users,
+                        short_note,
+                        long_note,
+                    }
+                },
+            )
             .collect(),
     }))
 }
@@ -147,6 +166,8 @@ pub async fn zones_datasources_group_update(
     zones_datasources_group_update_bl(
         req.user_logins,
         req.is_secret,
+        req.short_note,
+        req.long_note,
         szd.clone(),
         &txn,
     )
@@ -162,14 +183,14 @@ pub async fn zones_datasources_group_update(
         .map(|u| u.login)
         .collect::<Vec<_>>();
 
-    // Fetch updated is_secret
-    let is_secret = signal_group::Entity::find()
+    // Fetch updated is_secret and other group attributes
+    let (is_secret, short_note, long_note) = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .one(&txn)
         .await
         .context(h!())?
-        .map(|g| g.is_secret)
-        .unwrap_or(false);
+        .map(|g| (g.is_secret, g.short_note, g.long_note))
+        .unwrap_or((false, None, None));
 
     txn.commit().await?;
 
@@ -178,6 +199,8 @@ pub async fn zones_datasources_group_update(
         group_master_key: szd.group_master_key,
         is_group_secret: is_secret,
         allowed_users,
+        short_note,
+        long_note,
     }))
 }
 
@@ -204,6 +227,8 @@ pub async fn zones_datasources_group_add(
     zones_datasources_group_update_bl(
         req.user_logins.clone(),
         req.is_secret,
+        req.short_note,
+        req.long_note,
         szd.clone(),
         &txn,
     )
@@ -220,13 +245,14 @@ pub async fn zones_datasources_group_add(
         .map(|u| u.login)
         .collect::<Vec<_>>();
 
-    // Fetch the group name
-    let group_name = signal_group::Entity::find()
+    // Fetch the group name and notes
+    let (group_name, short_note, long_note) = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .one(&txn)
         .await
         .context(h!())?
-        .and_then(|g| g.name);
+        .map(|g| (g.name, g.short_note, g.long_note))
+        .unwrap_or((None, None, None));
 
     txn.commit().await?;
 
@@ -240,6 +266,8 @@ pub async fn zones_datasources_group_add(
             group_master_key: szd.group_master_key,
             is_group_secret: req.is_secret,
             allowed_users,
+            short_note,
+            long_note,
         },
     }))
 }
@@ -270,6 +298,8 @@ pub async fn zones_datasources_group_delete(
 async fn zones_datasources_group_update_bl(
     user_logins: Vec<String>,
     is_secret: bool,
+    short_note: Option<String>,
+    long_note: Option<String>,
     szd: sigint_zone_datasource::Model,
     txn: &DatabaseTransaction,
 ) -> Result<(), AppError> {
@@ -285,6 +315,8 @@ async fn zones_datasources_group_update_bl(
         // Update the group's secret status
         let mut active_group: signal_group::ActiveModel = group.into();
         active_group.is_secret = Set(is_secret);
+        active_group.short_note = Set(short_note);
+        active_group.long_note = Set(long_note);
         active_group.update(txn).await.context(h!())?;
 
         // Delete all current users for this group

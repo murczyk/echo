@@ -37,7 +37,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
             }
         };
         for cli in clients {
-            let client_name = cli.name;
+            let client_name = cli.system_service_name;
             if let Err(e) = receive_thread(
                 &client_name,
                 &mut client_groups_sync_ts_map,
@@ -226,6 +226,8 @@ async fn sync_groups(
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
                     is_secret: NotSet,
+                    short_note: NotSet,
+                    long_note: NotSet,
                 }
                 .insert(txn)
                 .await
