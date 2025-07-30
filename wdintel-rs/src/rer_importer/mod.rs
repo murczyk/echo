@@ -9,6 +9,7 @@ use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
+use echo_migration::Alias;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use itertools::Itertools;
@@ -395,30 +396,6 @@ pub async fn orphan_signal_groups(
     Ok(Json(data))
 }
 
-pub async fn collect_groups(
-    keys: Vec<String>,
-    txn: &DatabaseConnection,
-) -> Result<Vec<SignalGroupEntry>, AppError> {
-    let signal_groups = SignalGroup::find()
-        .filter(signal_group::Column::MasterKey.is_in(keys))
-        .all(txn)
-        .await
-        .context(h!())?;
-    let data: Vec<SignalGroupEntry> = signal_groups
-        .iter()
-        .filter_map(|g| {
-            g.name.clone().map(|name| SignalGroupEntry {
-                name,
-                master_key: g.master_key.clone(),
-                ignore_operativny: g.ignore_operativny,
-                long_note: g.long_note.clone(),
-                short_note: g.short_note.clone(),
-            })
-        })
-        .collect();
-    Ok(data)
-}
-
 #[post("/api/rer-importer/signal-profile")]
 pub async fn signal_profile_info(
     user: actix_identity::Identity,
@@ -697,4 +674,96 @@ where
         data.insert(id, m_profile);
     }
     Ok(data)
+}
+
+pub async fn collect_groups(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+) -> Result<Vec<SignalGroupEntry>, AppError> {
+    let signal_groups = SignalGroup::find()
+        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?;
+    let group_stats = collect_group_stats(keys, txn).await?;
+    let data: Vec<SignalGroupEntry> = signal_groups
+        .iter()
+        .filter_map(|g| {
+            let stats = group_stats
+                .get(g.master_key.as_str())
+                .cloned()
+                .unwrap_or_default();
+            g.name.clone().map(|name| SignalGroupEntry {
+                name,
+                master_key: g.master_key.clone(),
+                ignore_operativny: g.ignore_operativny,
+                long_note: g.long_note.clone(),
+                short_note: g.short_note.clone(),
+                group_stats: stats,
+            })
+        })
+        .collect();
+    Ok(data)
+}
+
+pub async fn collect_group_stats(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
+    let signal_message_counts_last_day =
+        count_group_messages(keys.clone(), txn, 1)
+            .await
+            .context(h!())?;
+    let signal_message_counts_last_week =
+        count_group_messages(keys.clone(), txn, 7)
+            .await
+            .context(h!())?;
+    let mut result = BTreeMap::new();
+    for k in keys {
+        let activity_last_day =
+            signal_message_counts_last_day.get(&k).cloned().unwrap_or(0);
+        let activity_last_week = signal_message_counts_last_week
+            .get(&k)
+            .cloned()
+            .unwrap_or(0);
+        result.insert(
+            k,
+            SignalGroupStats {
+                activity_last_day,
+                activity_last_week,
+            },
+        );
+    }
+    Ok(result)
+}
+
+async fn count_group_messages(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+    num_days: i64,
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
+    let signal_message_counts = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            signal_message::Relation::SignalGroup.def(),
+            Alias::new("signal_group"),
+        )
+        .select_only()
+        .column(signal_message::Column::GroupMasterKey)
+        .column_as(Expr::cust("count(*)"), "count")
+        .group_by(Expr::cust("group_master_key"))
+        .filter(signal_group::Column::MasterKey.is_in(keys))
+        .filter(signal_message::Column::Timestamp.gte(cutoff))
+        .into_tuple::<(String, i64)>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect();
+    Ok(signal_message_counts)
 }

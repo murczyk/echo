@@ -4,6 +4,7 @@ use crate::delta::types::GeoJson;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
+use crate::rer_importer::collect_group_stats;
 use crate::types::*;
 use crate::users;
 use crate::users::*;
@@ -473,7 +474,7 @@ where
         for not_ilike in search_parts.not_ilike {
             q2 = q2.filter(
                 sea_query::Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
-                .not_ilike(not_ilike),
+                    .not_ilike(not_ilike),
             );
         }
 
@@ -2074,63 +2075,6 @@ async fn stats_deprecated(
     }))
 }
 
-async fn collect_group_names(
-    groups: &Vec<AnalysisStatsGroup>,
-    txn: &DatabaseConnection,
-) -> anyhow::Result<Vec<SignalGroupEntry>> {
-    let mut result = vec![];
-    let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
-    let signal_groups = signal_group::Entity::find()
-        .select_only()
-        .columns([
-            signal_group::Column::MasterKey,
-            signal_group::Column::Name,
-            signal_group::Column::IgnoreOperativny,
-            signal_group::Column::ShortNote,
-            signal_group::Column::LongNote,
-        ])
-        .filter(signal_group::Column::MasterKey.is_in(group_keys.clone()))
-        .into_tuple::<(String, Option<String>, bool, Option<String>, Option<String>)>()
-        .all(txn)
-        .await
-        .context(h!())?;
-    let mut resolved_keys = vec![];
-    for (master_key, name, ignore_operativny, short_note, long_note) in
-        signal_groups
-    {
-        if let Some(name) = name {
-            resolved_keys.push(master_key.clone());
-            result.push(SignalGroupEntry {
-                master_key,
-                name,
-                ignore_operativny,
-                short_note,
-                long_note,
-            });
-        }
-    }
-    let whatsapp_groups = whatsapp_group::Entity::find()
-        .select_only()
-        .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
-        .filter(whatsapp_group::Column::Jid.is_in(group_keys.clone()))
-        .filter(whatsapp_group::Column::Jid.is_not_in(resolved_keys))
-        .into_tuple::<(String, String)>()
-        .all(txn)
-        .await
-        .context(h!())?;
-    let ignore_operativny = false;
-    for (master_key, name) in whatsapp_groups {
-        result.push(SignalGroupEntry {
-            master_key,
-            name,
-            ignore_operativny,
-            short_note: None,
-            long_note: None,
-        });
-    }
-    Ok(result)
-}
-
 async fn collect_sender_names(
     senders: &Vec<AnalysisStatsSender>,
     txn: &DatabaseConnection,
@@ -2167,5 +2111,71 @@ async fn collect_sender_names(
         result.insert(s, entry);
     }
 
+    Ok(result)
+}
+async fn collect_group_names(
+    groups: &Vec<AnalysisStatsGroup>,
+    txn: &DatabaseConnection,
+) -> anyhow::Result<Vec<SignalGroupEntry>> {
+    let mut result = vec![];
+    let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
+    let signal_groups = signal_group::Entity::find()
+        .select_only()
+        .columns([
+            signal_group::Column::MasterKey,
+            signal_group::Column::Name,
+            signal_group::Column::IgnoreOperativny,
+            signal_group::Column::ShortNote,
+            signal_group::Column::LongNote,
+        ])
+        .filter(signal_group::Column::MasterKey.is_in(group_keys.clone()))
+        .into_tuple::<(String, Option<String>, bool, Option<String>, Option<String>)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let mut resolved_keys = vec![];
+    let keys = signal_groups
+        .iter()
+        .map(|(key, _, _, _, _)| key.clone())
+        .collect();
+    let stats: BTreeMap<String, SignalGroupStats> =
+        collect_group_stats(keys, txn).await.context(h!())?;
+    for (master_key, name, ignore_operativny, short_note, long_note) in
+        signal_groups
+    {
+        if let Some(name) = name {
+            resolved_keys.push(master_key.clone());
+            let stats = stats.get(&master_key).cloned().unwrap_or_default();
+            result.push(SignalGroupEntry {
+                master_key,
+                name,
+                ignore_operativny,
+                short_note,
+                long_note,
+                group_stats: stats,
+            });
+        }
+    }
+    let whatsapp_groups = whatsapp_group::Entity::find()
+        .select_only()
+        .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
+        .filter(whatsapp_group::Column::Jid.is_in(group_keys.clone()))
+        .filter(whatsapp_group::Column::Jid.is_not_in(resolved_keys))
+        .into_tuple::<(String, String)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let ignore_operativny = false;
+    for (master_key, name) in whatsapp_groups {
+        let stats = stats.get(&master_key).cloned().unwrap_or_default();
+        result.push(SignalGroupEntry {
+            master_key,
+            name,
+            ignore_operativny,
+            short_note: None,
+            long_note: None,
+            group_stats: stats,
+        });
+    }
     Ok(result)
 }
