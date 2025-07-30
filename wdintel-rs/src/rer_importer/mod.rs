@@ -411,6 +411,8 @@ pub async fn collect_groups(
                 name,
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
+                long_note: g.long_note.clone(),
+                short_note: g.short_note.clone(),
             })
         })
         .collect();

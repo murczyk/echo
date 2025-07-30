@@ -234,6 +234,7 @@ pub async fn list_linked_accounts(
     struct LinkedAccountRow {
         pub id: i64,
         pub display_name: String,
+        pub description: Option<String>,
         pub status: AccountStatus,
         pub created_at: DateTime,
         pub client_id: i32,
@@ -260,6 +261,7 @@ pub async fn list_linked_accounts(
         .select_only()
         .column(messenger_account::Column::Id)
         .column(messenger_account::Column::DisplayName)
+        .column(messenger_account::Column::Description)
         .column(messenger_account::Column::Status)
         .column(messenger_account::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
@@ -282,6 +284,7 @@ pub async fn list_linked_accounts(
             messenger: a.source.into_value().to_string(),
             phone_number: a.phone_number,
             is_linked: a.is_linked,
+            description: a.description,
         })
         .collect();
     Ok(messenger_accounts)

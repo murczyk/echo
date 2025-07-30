@@ -10,6 +10,7 @@ pub struct EchoAccountF1 {
     pub client_id: i32,
     pub display_name: String,
     pub system_service_name: String,
+    pub description: Option<String>,
     pub messenger: String,
     pub phone_number: String,
     pub is_linked: bool,

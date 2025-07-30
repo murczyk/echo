@@ -2086,18 +2086,26 @@ async fn collect_group_names(
             signal_group::Column::MasterKey,
             signal_group::Column::Name,
             signal_group::Column::IgnoreOperativny,
+            signal_group::Column::ShortNote,
+            signal_group::Column::LongNote,
         ])
         .filter(signal_group::Column::MasterKey.is_in(group_keys.clone()))
-        .into_tuple::<(String, Option<String>, bool)>()
+        .into_tuple::<(String, Option<String>, bool, Option<String>, Option<String>)>()
         .all(txn)
         .await
         .context(h!())?;
-    for (master_key, name, ignore_operativny) in signal_groups {
+    let mut resolved_keys = vec![];
+    for (master_key, name, ignore_operativny, short_note, long_note) in
+        signal_groups
+    {
         if let Some(name) = name {
+            resolved_keys.push(master_key.clone());
             result.push(SignalGroupEntry {
                 master_key,
                 name,
                 ignore_operativny,
+                short_note,
+                long_note,
             });
         }
     }
@@ -2105,6 +2113,7 @@ async fn collect_group_names(
         .select_only()
         .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
         .filter(whatsapp_group::Column::Jid.is_in(group_keys.clone()))
+        .filter(whatsapp_group::Column::Jid.is_not_in(resolved_keys))
         .into_tuple::<(String, String)>()
         .all(txn)
         .await
@@ -2115,6 +2124,8 @@ async fn collect_group_names(
             master_key,
             name,
             ignore_operativny,
+            short_note: None,
+            long_note: None,
         });
     }
     Ok(result)

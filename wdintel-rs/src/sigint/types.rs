@@ -26,6 +26,8 @@ pub struct ZoneDatasourceGroup {
     pub group_master_key: String,
     pub is_group_secret: bool,
     pub allowed_users: Vec<String>,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
 }
 
 #[derive(
@@ -42,6 +44,8 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
     pub is_secret: bool,
     pub user_logins: Vec<String>,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
 }
 
 #[derive(
@@ -53,6 +57,8 @@ pub struct ZoneDatasourceGroupAddReq {
     pub is_secret: bool,
     pub master_key: String,
     pub user_logins: Vec<String>,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
 }
 
 #[derive(
