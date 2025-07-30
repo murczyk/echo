@@ -60,6 +60,16 @@ type alias GroupEditDialog =
     }
 
 
+type alias OrphanGroupEditDialog =
+    { groupKey : String
+    , groupName : String
+    , shortNote : String
+    , longNote : String
+    , isLoading : Bool
+    , error : Maybe String
+    }
+
+
 type alias Model =
     { formErrors : Dict String String
     , datasources : List ( Int, B.Datasource )
@@ -97,6 +107,9 @@ type alias Model =
     , orphanGroupAssignmentDialog : Maybe OrphanGroupAssignmentDialog
     , expandedGroupNotes : Set String -- Track which groups have expanded long notes
     , groupEditDialog : Maybe GroupEditDialog
+    , orphanGroupEditDialog : Maybe OrphanGroupEditDialog
+    , orphanGroupEditInProgress : Maybe String -- groupKey being edited
+    , orphanGroupEditError : Maybe String
     }
 
 
@@ -145,12 +158,29 @@ renderGroup model zoneId activeSourceId group =
 
                 Nothing ->
                     False
+
+        -- Get group stats from groupInfos
+        groupStats : Maybe B.SignalGroupStats
+        groupStats =
+            Dict.get group.groupMasterKey model.groupInfos
+                |> Maybe.map .groupStats
     in
     div [ class "border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
         [ -- Header row: Group name, secret icon, action buttons
           div [ class "flex items-center justify-between mb-2" ]
             [ div [ class "flex items-center" ]
                 [ span [ class "font-semibold mr-2 text-lg" ] [ text groupName ]
+                , -- Group stats display
+                  case groupStats of
+                    Just stats ->
+                        span [ class "ml-4 text-sm text-gray-600 flex items-center" ]
+                            [ span [ class "mr-1" ] [ text "Активність" ]
+                            , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
+                            , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt stats.activityLastDay ++ " / " ++ String.fromInt stats.activityLastWeek) ]
+                            ]
+
+                    Nothing ->
+                        text ""
                 , if group.isGroupSecret then
                     span [ class "ml-1 text-lg text-amber-600" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
@@ -301,6 +331,9 @@ init _ =
       , orphanGroupAssignmentDialog = Nothing
       , expandedGroupNotes = Set.empty
       , groupEditDialog = Nothing
+      , orphanGroupEditDialog = Nothing
+      , orphanGroupEditInProgress = Nothing
+      , orphanGroupEditError = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -343,6 +376,12 @@ type Msg
     | SaveOrphanGroupZones
     | OrphanGroupsTableStateChanged Table.State
     | OrphanGroupsPagerMsg Pager.Msg
+    | EditOrphanGroup String -- groupKey
+    | CloseOrphanGroupEdit
+    | UpdateOrphanGroupShortNote String
+    | UpdateOrphanGroupLongNote String
+    | SaveOrphanGroupEdit
+    | OrphanGroupEditDone (Result ApiError B.GroupEntryF1)
     | OpenOrphanGroupAssignmentDialog String (List Int) -- groupKey, zoneIds
     | CloseOrphanGroupAssignmentDialog
     | ToggleOrphanGroupSecret
@@ -719,12 +758,12 @@ update msg model =
                         Just dialog ->
                             if dialog.isLoading then
                                 { model
-                                    | groupEditDialog = 
+                                    | groupEditDialog =
                                         Just { dialog | isLoading = False }
                                 }
                             else
                                 model
-                        
+
                         Nothing ->
                             model
 
@@ -985,12 +1024,23 @@ update msg model =
                 updatedGroupInfos =
                     case response.groupName of
                         Just name ->
+                            -- Get existing group stats from orphan group data
+                            let
+                                existingGroupStats =
+                                    case findOrphanGroup model response.groupMasterKey of
+                                        Just orphanGroup ->
+                                            orphanGroup.groupStats
+                                        
+                                        Nothing ->
+                                            { activityLastDay = 0, activityLastWeek = 0 }
+                            in
                             Dict.insert response.groupMasterKey
                                 { masterKey = response.groupMasterKey
                                 , name = name
                                 , ignoreOperativny = False -- Default value
                                 , shortNote = Nothing
                                 , longNote = Nothing
+                                , groupStats = existingGroupStats
                                 }
                                 model.groupInfos
 
@@ -1134,6 +1184,9 @@ update msg model =
                                         , datasourceId = Just datasourceId
                                         , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
+                                        , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
+                                        , shortNote = groupInfo |> Maybe.andThen .shortNote
+                                        , longNote = groupInfo |> Maybe.andThen .longNote
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1500,10 +1553,10 @@ update msg model =
                 Just dialog ->
                     ( { model
                         | groupEditDialog =
-                            Just 
-                                { dialog 
+                            Just
+                                { dialog
                                 | isSecret = not dialog.isSecret
-                                , selectedUsers = 
+                                , selectedUsers =
                                     if not dialog.isSecret then
                                         dialog.selectedUsers  -- Keep existing users when enabling secret mode
                                     else
@@ -1669,6 +1722,140 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
+        EditOrphanGroup groupKey ->
+            case findOrphanGroup model groupKey of
+                Just orphanGroup ->
+                    let
+                        groupName : String
+                        groupName =
+                            if String.isEmpty orphanGroup.name then
+                                String.right 5 groupKey
+                            else
+                                orphanGroup.name
+                    in
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just
+                                { groupKey = groupKey
+                                , groupName = groupName
+                                , shortNote = orphanGroup.shortNote |> Maybe.withDefault ""
+                                , longNote = orphanGroup.longNote |> Maybe.withDefault ""
+                                , isLoading = False
+                                , error = Nothing
+                                }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        CloseOrphanGroupEdit ->
+            ( { model | orphanGroupEditDialog = Nothing }
+            , E.none
+            )
+
+        UpdateOrphanGroupShortNote newShortNote ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | shortNote = newShortNote }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateOrphanGroupLongNote newLongNote ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | longNote = newLongNote }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        SaveOrphanGroupEdit ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    let
+                        req : B.GroupUpdateReq
+                        req =
+                            { masterKey = dialog.groupKey
+                            , shortNote =
+                                if String.isEmpty (String.trim dialog.shortNote) then
+                                    Nothing
+                                else
+                                    Just dialog.shortNote
+                            , longNote =
+                                if String.isEmpty (String.trim dialog.longNote) then
+                                    Nothing
+                                else
+                                    Just dialog.longNote
+                            }
+                    in
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | isLoading = True, error = Nothing }
+                      }
+                    , E.sendCmd <| Api.messenger_edit_group OrphanGroupEditDone req
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        OrphanGroupEditDone (Ok updatedGroup) ->
+            let
+                -- Update the orphan groups list with the new data
+                updatedOrphanGroups =
+                    case model.orphanGroups of
+                        RD.Success groups ->
+                            groups
+                                |> List.map
+                                    (\group ->
+                                        if group.masterKey == updatedGroup.masterKey then
+                                            { group
+                                                | shortNote = updatedGroup.shortNote
+                                                , longNote = updatedGroup.longNote
+                                            }
+                                        else
+                                            group
+                                    )
+                                |> RD.Success
+
+                        other ->
+                            other
+            in
+            ( { model
+                | orphanGroupEditDialog = Nothing
+                , orphanGroups = updatedOrphanGroups
+              }
+            , E.none
+            )
+
+        OrphanGroupEditDone (Err e) ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just
+                                { dialog
+                                    | isLoading = False
+                                    , error = Just "Не вдалося зберегти зміни"
+                                }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1764,6 +1951,96 @@ getZoneName model zoneId =
         model.zones
         |> List.head
         |> Maybe.withDefault (String.fromInt zoneId)
+
+
+renderOrphanGroupEditSidebar : Bool -> Model -> OrphanGroupEditDialog -> Html Msg
+renderOrphanGroupEditSidebar isDark model dialog =
+    Sidebar.view True CloseOrphanGroupEdit
+        [ div [ class "flex flex-col h-full" ]
+            [ -- Header
+              div [ class <| "px-6 py-3 border-b " ++ (if isDark then "border-gray-600" else "border-gray-200") ]
+                [ div [ class "flex items-center justify-between" ]
+                    [ div []
+                        [ div [ class <| "text-sm " ++ (if isDark then "text-gray-400" else "text-gray-500") ] [ text "Редагувати групу" ]
+                        , h3 [ class <| "text-lg font-semibold leading-tight " ++ (if isDark then "text-gray-100" else "text-gray-900") ]
+                            [ text dialog.groupName ]
+                        ]
+                    , button
+                        [ class <| if isDark then "text-gray-400 hover:text-gray-200" else "text-gray-500 hover:text-gray-700"
+                        , onClick CloseOrphanGroupEdit
+                        ]
+                        [ i [ class "bi bi-x-lg" ] [] ]
+                    ]
+                ]
+            , -- Content
+              div [ class "flex-1 overflow-y-auto px-6 py-4" ]
+                [ div [ class "space-y-6" ]
+                    [ -- Notes section
+                      div []
+                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                            [ text "📝 Нотатки" ]
+                        , div [ class "space-y-3" ]
+                            [ -- Short note field
+                              div []
+                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                    [ text "Коротка нотатка:" ]
+                                , input
+                                    [ type_ "text"
+                                    , value dialog.shortNote
+                                    , onInput UpdateOrphanGroupShortNote
+                                    , placeholder "Коротка нотатка для швидкого перегляду..."
+                                    , class <| "w-full px-3 py-2 border rounded-md " ++ (if isDark then "bg-gray-700 border-gray-600 text-gray-100" else "bg-white border-gray-300 text-gray-900")
+                                    ]
+                                    []
+                                ]
+                            , -- Long note field
+                              div []
+                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                    [ text "Довга нотатка:" ]
+                                , textarea
+                                    [ value dialog.longNote
+                                    , onInput UpdateOrphanGroupLongNote
+                                    , placeholder "Детальна інформація про групу..."
+                                    , rows 6
+                                    , class <| "w-full px-3 py-2 border rounded-md " ++ (if isDark then "bg-gray-700 border-gray-600 text-gray-100" else "bg-white border-gray-300 text-gray-900")
+                                    ]
+                                    []
+                                ]
+                            ]
+                        ]
+                    , -- Error message
+                      case dialog.error of
+                        Just error ->
+                            div [ class "p-3 bg-red-50 border border-red-200 rounded-md" ]
+                                [ div [ class "text-sm text-red-600" ] [ text error ]
+                                ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                ]
+            , -- Footer
+              div [ class <| "px-6 py-3 border-t " ++ (if isDark then "border-gray-600" else "border-gray-200") ]
+                [ div [ class "flex justify-end gap-3" ]
+                    [ Button.view
+                        (Button.new { label = "Скасувати", onClick = CloseOrphanGroupEdit }
+                            |> Button.withStyleSecondary
+                        )
+                    , if dialog.isLoading then
+                        div [ class "flex items-center gap-2" ]
+                            [ Le.Block.Spinner.loadingSpinner2Sm
+                            , span [ class "text-sm text-gray-600" ] [ text "Збереження..." ]
+                            ]
+
+                      else
+                        Button.view
+                            (Button.new { label = "Зберегти", onClick = SaveOrphanGroupEdit }
+                                |> Button.withPrimary
+                            )
+                    ]
+                ]
+            ]
+        ]
 
 
 renderGroupEditSidebar : Bool -> Model -> GroupEditDialog -> Html Msg
@@ -1990,26 +2267,44 @@ renderOrphanGroupsTable model groups =
             Table.customConfig
                 { toId = .masterKey
                 , toMsg = OrphanGroupsTableStateChanged
-                , columns =
-                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "25%"
+                ,                 columns =
+                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "15%"
                     , Table.customColumn
                         { name = "Створено"
                         , viewData = formatCreatedAt
                         , sorter = Table.decreasingBy .createdAt
                         }
-                        |> Table.withColumnWidth "20%"
+                        |> Table.withColumnWidth "12%"
                     , Table.customColumn
                         { name = "Джерело даних"
                         , viewData = getDatasourceName
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "25%"
+                        |> Table.withColumnWidth "15%"
+                    , Table.veryCustomColumn
+                        { name = "Активність"
+                        , viewData = renderActivityColumn
+                        , sorter = Table.decreasingBy (.groupStats >> .activityLastDay)
+                        }
+                        |> Table.withColumnWidth "10%"
+                    , Table.veryCustomColumn
+                        { name = "Коротка нотатка"
+                        , viewData = renderShortNoteColumn
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "18%"
+                    , Table.veryCustomColumn
+                        { name = "Довга нотатка"
+                        , viewData = renderLongNoteColumn
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "20%"
                     , Table.veryCustomColumn
                         { name = "Дії"
                         , viewData = renderActionsColumn model
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "30%"
+                        |> Table.withColumnWidth "10%"
                     ]
                 , customizations =
                     { tableAttrs = [ class "base-table" ]
@@ -2120,6 +2415,91 @@ renderOrphanGroupsTable model groups =
                 Nothing ->
                     "-"
 
+        formatActivity : B.OrphanSignalGroupEntry -> String
+        formatActivity group =
+            let
+                activityText : String
+                activityText =
+                    String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek
+            in
+            activityText
+
+        renderActivityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderActivityColumn group =
+            let
+                activityText : String
+                activityText =
+                    String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek
+            in
+            { attributes = []
+            , children =
+                [ span [ class "text-sm", title "Активність за день / за тиждень" ]
+                    [ text activityText ]
+                ]
+            }
+
+        renderShortNoteColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderShortNoteColumn group =
+            let
+                displayText : String
+                displayText =
+                    case group.shortNote of
+                        Just note ->
+                            if String.length note > 50 then
+                                String.left 50 note ++ "..."
+                            else
+                                note
+
+                        Nothing ->
+                            "-"
+
+                tooltipText : String
+                tooltipText =
+                    case group.shortNote of
+                        Just note ->
+                            note
+
+                        Nothing ->
+                            "Немає короткої нотатки"
+            in
+            { attributes = []
+            , children =
+                [ span [ class "text-sm", title tooltipText ]
+                    [ text displayText ]
+                ]
+            }
+
+        renderLongNoteColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderLongNoteColumn group =
+            let
+                displayText : String
+                displayText =
+                    case group.longNote of
+                        Just note ->
+                            if String.length note > 50 then
+                                String.left 50 note ++ "..."
+                            else
+                                note
+
+                        Nothing ->
+                            "-"
+
+                tooltipText : String
+                tooltipText =
+                    case group.longNote of
+                        Just note ->
+                            note
+
+                        Nothing ->
+                            "Немає довгої нотатки"
+            in
+            { attributes = []
+            , children =
+                [ span [ class "text-sm", title tooltipText ]
+                    [ text displayText ]
+                ]
+            }
+
         renderActionsColumn : Model -> B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderActionsColumn currentModel group =
             let
@@ -2134,90 +2514,78 @@ renderOrphanGroupsTable model groups =
             { attributes = []
             , children =
                 [ if isAssigning then
-                    div [ class "flex items-center gap-2" ]
+                    div [ class "flex items-center gap-1" ]
                         [ Le.Block.Spinner.loadingSpinner2Sm
-                        , span [ class "text-sm text-gray-600" ] [ text "Призначення..." ]
+                        , span [ class "text-xs text-gray-600" ] [ text "Призначення..." ]
                         ]
 
                   else if zoneCount == 0 then
-                    span [ class "text-sm text-gray-500" ] [ text "Немає напрямків" ]
-
-                  else if zoneCount == 1 then
-                    -- Тільки одна зона - показуємо тільки іконку додати
-                    case List.head currentModel.zones of
-                        Just ( zoneId, zone ) ->
-                            div [ class "flex items-center gap-2" ]
-                                [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
-                                , button
-                                    [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                    , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
-                                    , title ("Додати до " ++ zone.name)
-                                    ]
-                                    [ i [ class "bi bi-plus text-lg" ] [] ]
-                                ]
-
-                        Nothing ->
-                            text ""
+                    span [ class "text-xs text-gray-500" ] [ text "Немає напрямків" ]
 
                   else
-                    -- Кілька зон - показуємо теги з напрямками
-                    let
-                        selectedZones =
-                            case currentModel.orphanGroupZoneSelector of
-                                Just selector ->
-                                    if selector.groupKey == group.masterKey then
-                                        selector.selectedZones
-
-                                    else
-                                        []
+                    div [ class "flex items-center gap-1" ]
+                        [ -- Edit button
+                          button
+                            [ class "flex items-center justify-center w-6 h-6 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 transition-colors"
+                            , onClick (EditOrphanGroup group.masterKey)
+                            , title "Редагувати нотатки"
+                            ]
+                            [ i [ class "bi bi-pencil text-xs" ] [] ]
+                        , -- Zone assignment controls
+                          if zoneCount == 1 then
+                            -- Single zone - compact display
+                            case List.head currentModel.zones of
+                                Just ( zoneId, zone ) ->
+                                    button
+                                        [ class "flex items-center justify-center w-6 h-6 rounded bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
+                                        , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
+                                        , title ("Додати до " ++ zone.name)
+                                        ]
+                                        [ i [ class "bi bi-plus text-xs" ] [] ]
 
                                 Nothing ->
-                                    []
+                                    text ""
 
-                        hasSelection =
-                            not (List.isEmpty selectedZones)
-                    in
-                    div [ class "flex items-center gap-2 flex-wrap" ]
-                        ([ span [ class "text-sm text-gray-700" ] [ text "→" ] ]
-                            ++ List.map
-                                (\( zoneId, zone ) ->
-                                    let
-                                        isSelected =
-                                            List.member zoneId selectedZones
-                                    in
-                                    button
-                                        [ class <|
-                                            "px-2 py-1 text-xs rounded-full transition-colors "
-                                                ++ (if isSelected then
-                                                        "bg-blue-100 text-blue-700 border border-blue-300"
-
-                                                    else
-                                                        "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
-                                                   )
-                                        , onClick (ToggleOrphanGroupZone group.masterKey zoneId)
-                                        , title <|
-                                            if isSelected then
-                                                "Прибрати " ++ zone.name
+                          else
+                            -- Multiple zones - compact zone selector
+                            let
+                                selectedZones =
+                                    case currentModel.orphanGroupZoneSelector of
+                                        Just selector ->
+                                            if selector.groupKey == group.masterKey then
+                                                selector.selectedZones
 
                                             else
-                                                "Додати " ++ zone.name
-                                        ]
-                                        [ text zone.name ]
-                                )
-                                currentModel.zones
-                            ++ (if hasSelection then
-                                    [ button
-                                        [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
+                                                []
+
+                                        Nothing ->
+                                            []
+
+                                hasSelection =
+                                    not (List.isEmpty selectedZones)
+                            in
+                            div [ class "flex items-center gap-1" ]
+                                [ -- Zone count indicator
+                                  span [ class "text-xs text-gray-600" ]
+                                    [ text (String.fromInt (List.length selectedZones) ++ "/" ++ String.fromInt zoneCount) ]
+                                , -- Add button if zones selected
+                                  if hasSelection then
+                                    button
+                                        [ class "flex items-center justify-center w-6 h-6 rounded bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
                                         , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
                                         , title "Додати до вибраних напрямків"
                                         ]
-                                        [ i [ class "bi bi-plus text-sm" ] [] ]
-                                    ]
+                                        [ i [ class "bi bi-plus text-xs" ] [] ]
 
-                                else
-                                    []
-                               )
-                        )
+                                  else
+                                    button
+                                        [ class "flex items-center justify-center w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
+                                        , onClick (OpenOrphanGroupZoneSelector group.masterKey)
+                                        , title "Вибрати напрямки"
+                                        ]
+                                        [ i [ class "bi bi-gear text-xs" ] [] ]
+                                ]
+                        ]
                 ]
             }
     in
@@ -2251,6 +2619,12 @@ renderOrphanGroup model group =
         [ div [ class "flex-1" ]
             [ div [ class "font-semibold" ] [ text groupName ]
             , div [ class "text-sm text-gray-600" ] [ text group.masterKey ]
+            , -- Group stats display for orphan groups
+              div [ class "mt-2 text-sm text-gray-600 flex items-center" ]
+                [ span [ class "mr-1" ] [ text "Активність" ]
+                , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
+                , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek) ]
+                ]
             , case model.orphanGroupAssignmentError of
                 Just error ->
                     div [ class "mt-2 text-xs text-red-600" ] [ text error ]
@@ -2551,22 +2925,22 @@ mainBlock isDark model user =
         [ renderOrphanGroupsSection isDark model user
         , div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
             [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки" ]
-            , div 
-                [ class 
+            , div
+                [ class
                     (if isDark then
                         "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-gray-800 to-gray-700 border border-gray-600 rounded-lg shadow-lg transform transition-all duration-300 ease-in-out hover:shadow-xl"
                     else
                         "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-sm transform transition-all duration-300 ease-in-out hover:shadow-md hover:border-blue-300"
                     )
-                ] 
-                [ div 
-                    [ class 
+                ]
+                [ div
+                    [ class
                         (if isDark then
                             "flex items-center gap-2 text-blue-300"
                         else
                             "flex items-center gap-2 text-blue-700"
                         )
-                    ] 
+                    ]
                     [ i [ class "bi bi-funnel-fill text-lg" ] []
                     , span [ class "font-medium text-sm" ] [ text "Фільтри" ]
                     ]
@@ -2579,7 +2953,7 @@ mainBlock isDark model user =
                             , value model.groupNameFilter
                             , onInput UpdateGroupNameFilter
                             , placeholder "Пошук по назві групи..."
-                            , class 
+                            , class
                                 (if isDark then
                                     "px-3 py-2 text-sm border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-gray-700 text-gray-100 placeholder-gray-400 shadow-sm transition-all duration-200"
                                 else
@@ -2588,14 +2962,14 @@ mainBlock isDark model user =
                             ]
                             []
                         ]
-                    , div 
-                        [ class 
+                    , div
+                        [ class
                             (if isDark then
                                 "flex items-center gap-2 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm"
                             else
                                 "flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm"
                             )
-                        ] 
+                        ]
                         [ i [ class "text-gray-500" ] [ i [ class "bi bi-eye-slash" ] [] ]
                         , Toggle.new
                             { onToggle = ToggleShowOnlyHidden
@@ -2694,6 +3068,13 @@ body dark shared user model =
         ++ (case model.groupEditDialog of
                 Just dialog ->
                     [ renderGroupEditSidebar dark model dialog ]
+
+                Nothing ->
+                    []
+           )
+        ++ (case model.orphanGroupEditDialog of
+                Just dialog ->
+                    [ renderOrphanGroupEditSidebar dark model dialog ]
 
                 Nothing ->
                     []

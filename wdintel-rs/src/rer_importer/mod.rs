@@ -9,6 +9,7 @@ use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
+use echo_migration::Alias;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
 use itertools::Itertools;
@@ -342,9 +343,12 @@ pub async fn signal_group_info_batch(
     req: Json<BatchSignalGroupReq>,
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
-    let data = collect_groups(keys, &env.dbx).await?;
+    let data = collect_groups(keys, &env.dbx, is_admin).await?;
     Ok(Json(SignalGroupsRsp { data }))
 }
 
@@ -379,44 +383,26 @@ pub async fn orphan_signal_groups(
         .await
         .context(h!())?;
 
+    let keys = orphan_groups.iter().map(|b| b.master_key.clone()).collect();
+    let stats = collect_group_stats(keys, &env.dbx).await.context(h!())?;
     let data: Vec<OrphanSignalGroupEntry> = orphan_groups
         .into_iter()
         .filter_map(|g| {
+            let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
                 datasource_id: g.datasource_id,
                 created_at: g.created_at.and_utc().timestamp_millis(),
+                group_stats: stats,
+                short_note: g.short_note,
+                long_note: g.long_note,
             })
         })
         .collect();
 
     Ok(Json(data))
-}
-
-pub async fn collect_groups(
-    keys: Vec<String>,
-    txn: &DatabaseConnection,
-) -> Result<Vec<SignalGroupEntry>, AppError> {
-    let signal_groups = SignalGroup::find()
-        .filter(signal_group::Column::MasterKey.is_in(keys))
-        .all(txn)
-        .await
-        .context(h!())?;
-    let data: Vec<SignalGroupEntry> = signal_groups
-        .iter()
-        .filter_map(|g| {
-            g.name.clone().map(|name| SignalGroupEntry {
-                name,
-                master_key: g.master_key.clone(),
-                ignore_operativny: g.ignore_operativny,
-                long_note: g.long_note.clone(),
-                short_note: g.short_note.clone(),
-            })
-        })
-        .collect();
-    Ok(data)
 }
 
 #[post("/api/rer-importer/signal-profile")]
@@ -697,4 +683,97 @@ where
         data.insert(id, m_profile);
     }
     Ok(data)
+}
+
+pub async fn collect_groups(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+    is_admin: bool,
+) -> Result<Vec<SignalGroupEntry>, AppError> {
+    let signal_groups = SignalGroup::find()
+        .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?;
+    let group_stats = collect_group_stats(keys, txn).await?;
+    let data: Vec<SignalGroupEntry> = signal_groups
+        .iter()
+        .filter_map(|g| {
+            let stats = group_stats
+                .get(g.master_key.as_str())
+                .cloned()
+                .unwrap_or_default();
+            g.name.clone().map(|name| SignalGroupEntry {
+                name,
+                master_key: g.master_key.clone(),
+                ignore_operativny: g.ignore_operativny,
+                long_note: g.long_note.clone().filter(|_| is_admin),
+                short_note: g.short_note.clone().filter(|_| is_admin),
+                group_stats: stats,
+            })
+        })
+        .collect();
+    Ok(data)
+}
+
+pub async fn collect_group_stats(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
+    let signal_message_counts_last_day =
+        count_group_messages(keys.clone(), txn, 1)
+            .await
+            .context(h!())?;
+    let signal_message_counts_last_week =
+        count_group_messages(keys.clone(), txn, 7)
+            .await
+            .context(h!())?;
+    let mut result = BTreeMap::new();
+    for k in keys {
+        let activity_last_day =
+            signal_message_counts_last_day.get(&k).cloned().unwrap_or(0);
+        let activity_last_week = signal_message_counts_last_week
+            .get(&k)
+            .cloned()
+            .unwrap_or(0);
+        result.insert(
+            k,
+            SignalGroupStats {
+                activity_last_day,
+                activity_last_week,
+            },
+        );
+    }
+    Ok(result)
+}
+
+async fn count_group_messages(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+    num_days: i64,
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
+    let signal_message_counts = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join_as(
+            JoinType::LeftJoin,
+            signal_message::Relation::SignalGroup.def(),
+            Alias::new("signal_group"),
+        )
+        .select_only()
+        .column(signal_message::Column::GroupMasterKey)
+        .column_as(Expr::cust("count(*)"), "count")
+        .group_by(Expr::cust("group_master_key"))
+        .filter(signal_group::Column::MasterKey.is_in(keys))
+        .filter(signal_message::Column::Timestamp.gte(cutoff))
+        .into_tuple::<(String, i64)>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect();
+    Ok(signal_message_counts)
 }

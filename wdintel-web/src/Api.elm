@@ -1433,3 +1433,12 @@ messenger_link_account toMsg req =
         , body = Http.jsonBody (linkAccountReqEncoder req)
         , expect = leExpectJson toMsg linkAccountRspDecoder
         }
+
+
+messenger_edit_group : (Result ApiError GroupEntryF1 -> msg) -> GroupUpdateReq -> Cmd msg
+messenger_edit_group toMsg req =
+    Http.post
+        { url = "/api/messenger/edit-group"
+        , body = Http.jsonBody (groupUpdateReqEncoder req)
+        , expect = leExpectJson toMsg groupEntryF1Decoder
+        }

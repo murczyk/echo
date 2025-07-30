@@ -394,6 +394,7 @@ pub async fn main_server(
             .service(crate::messenger::edit)
             .service(crate::messenger::unlink)
             .service(crate::messenger::link)
+            .service(crate::messenger::group_update)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?

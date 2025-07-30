@@ -358,6 +358,23 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    pub group_stats: SignalGroupStats,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
+)]
+pub struct SignalGroupStats {
+    pub activity_last_day: i64,
+    pub activity_last_week: i64,
 }
 
 /// Запис групи, яка не прив'язана до жодного напрямку
@@ -375,6 +392,9 @@ pub struct OrphanSignalGroupEntry {
     pub datasource_id: Option<i64>,
     /// Час створення групи (в мілісекундах від epoch)
     pub created_at: i64,
+    pub group_stats: SignalGroupStats,
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
 }
 
 #[derive(

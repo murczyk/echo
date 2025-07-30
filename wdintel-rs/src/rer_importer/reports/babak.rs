@@ -526,7 +526,7 @@ pub async fn get_inbox_messages_report_unit(
                 r#"coalesce(signal_message.duplicate_of,
                             sigint_inbox_item.id)"#,
             ),
-            "id"
+            "id",
         ).clone()
         .columns(vec![
             // sigint_inbox_item::Column::Id,
@@ -546,7 +546,7 @@ pub async fn get_inbox_messages_report_unit(
                             sigint_inbox_item.unit_v2
                         )"#,
             ),
-            "unit"
+            "unit",
         ).clone()
         .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_comment::Column::Comment)
@@ -557,13 +557,13 @@ pub async fn get_inbox_messages_report_unit(
                     eps := $1::numeric,
                     minPoints := 2
                 ) OVER ()"#,
-                env.config.cluster_radius.unwrap_or(2.0) / 100.0 // 2km is a default radius
+                env.config.cluster_radius.unwrap_or(2.0) / 100.0, // 2km is a default radius
             ),
-            "cluster_id"
+            "cluster_id",
         ).clone()
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def()
+            signal_message::Relation::SigintInboxItem.def(),
         )
         // .join(
         //     JoinType::LeftJoin,
@@ -591,13 +591,13 @@ pub async fn get_inbox_messages_report_unit(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(Condition::any()
-                .add(sigint_network::Column::Deleted.eq(false))
-                .add(sigint_network::Column::Deleted.is_null())
-            )
+            .add(sigint_network::Column::Deleted.eq(false))
+            .add(sigint_network::Column::Deleted.is_null())
+        )
         .filter(Condition::any()
-                .add(sigint_unit::Column::Deleted.eq(false))
-                .add(sigint_unit::Column::Deleted.is_null())
-            )            
+            .add(sigint_unit::Column::Deleted.eq(false))
+            .add(sigint_unit::Column::Deleted.is_null())
+        )
         .filter(signal_message::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
@@ -698,56 +698,56 @@ pub async fn get_inbox_messages_report_unit(
                 )
                 .expr_as(
                     Expr::cust_with_expr(
-                        "COUNT(*) FILTER (WHERE tags @> $1)", 
+                        "COUNT(*) FILTER (WHERE tags @> $1)",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(bpla_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("bpla")
+                    Alias::new("bpla"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(rer_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("reb")
+                    Alias::new("reb"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(arta_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("arta")
+                    Alias::new("arta"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(software_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("software")
+                    Alias::new("software"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "COUNT(*) FILTER (WHERE tags @> $1)",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("losses")
+                    Alias::new("losses"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "json_agg(jsonb_build_object('datetime', datetime, 'comment', comment, 'text', body) ORDER BY \"datetime\") FILTER (WHERE tags @> $1)",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("losses_comments")
+                    Alias::new("losses_comments"),
                 )
                 .expr_as(
                     Expr::cust_with_expr(
                         "json_agg(jsonb_build_object('datetime', datetime, 'comment', comment, 'text', body) ORDER BY \"datetime\") FILTER (WHERE NOT(tags @> $1))",
                         SimpleExpr::SubQuery(None, Box::new(Query::select().from(tag::Entity).expr(Expr::cust("jsonb_agg(id)")).and_where(tag::Column::Label.eq(losses_tag)).clone().into_sub_query_statement())),
                     ),
-                    Alias::new("others_comments")
+                    Alias::new("others_comments"),
                 )
                 .expr_as(
                     Expr::cust("json_agg(jsonb_build_object('datetime', datetime, 'comment', comment, 'text', body) ORDER BY \"datetime\")"),
-                    Alias::new("comments")
+                    Alias::new("comments"),
                 )
                 .from(Alias::new("clustered_points"))
                 .add_group_by(vec![Expr::if_null(Expr::col(Alias::new("unit")), Expr::cust("cluster_id::varchar(255)"))])
@@ -777,45 +777,45 @@ pub async fn get_inbox_messages_report_unit(
         ])
         .expr_as(
             Expr::case(
-                    Expr::cust("unit ~ '^\\d+$'"),
-                    Func::cust(Alias::new("FORMAT"))
-                        .arg(Expr::val("%s км %s %s"))
-                        .arg(Func::round_with_precision(
-                            Expr::cust("ST_Distance(centroid::geography,s.geom::geography)").cast_as(Alias::new("numeric")).div(Expr::val(1000.0)),
-                            Expr::val(1)
-                        ))
-                        .arg(
-                            Expr::case(
-                                degree_expr(22.5),
-                                Expr::val("Пн")
-                            ).case(
-                                degree_expr(67.5),
-                                Expr::val("Пн-Сх")
-                            ).case(
-                                degree_expr(112.5),
-                                Expr::val("Сх")
-                            ).case(
-                                degree_expr(157.5),
-                                Expr::val("Пд-Сх")
-                            ).case(
-                                degree_expr(202.5),
-                                Expr::val("Пд")
-                            ).case(
-                                degree_expr(247.5),
-                                Expr::val("Пд-Зх")
-                            ).case(
-                                degree_expr(292.5),
-                                Expr::val("Зх")
-                            ).case(
-                                degree_expr(337.5),
-                                Expr::val("Пн-Зх")
-                            ).finally("Пн")
-                        )
-                        .arg(Expr::cust("s.name"))
-                )
+                Expr::cust("unit ~ '^\\d+$'"),
+                Func::cust(Alias::new("FORMAT"))
+                    .arg(Expr::val("%s км %s %s"))
+                    .arg(Func::round_with_precision(
+                        Expr::cust("ST_Distance(centroid::geography,s.geom::geography)").cast_as(Alias::new("numeric")).div(Expr::val(1000.0)),
+                        Expr::val(1),
+                    ))
+                    .arg(
+                        Expr::case(
+                            degree_expr(22.5),
+                            Expr::val("Пн"),
+                        ).case(
+                            degree_expr(67.5),
+                            Expr::val("Пн-Сх"),
+                        ).case(
+                            degree_expr(112.5),
+                            Expr::val("Сх"),
+                        ).case(
+                            degree_expr(157.5),
+                            Expr::val("Пд-Сх"),
+                        ).case(
+                            degree_expr(202.5),
+                            Expr::val("Пд"),
+                        ).case(
+                            degree_expr(247.5),
+                            Expr::val("Пд-Зх"),
+                        ).case(
+                            degree_expr(292.5),
+                            Expr::val("Зх"),
+                        ).case(
+                            degree_expr(337.5),
+                            Expr::val("Пн-Зх"),
+                        ).finally("Пн")
+                    )
+                    .arg(Expr::cust("s.name")),
+            )
                 .case(
-                    Expr::cust("unit IS NOT NULL AND unit <> ''"), 
-                    Expr::cust("unit")
+                    Expr::cust("unit IS NOT NULL AND unit <> ''"),
+                    Expr::cust("unit"),
                 )
                 .finally("НВ"),
             Alias::new("unit"),
@@ -832,7 +832,7 @@ pub async fn get_inbox_messages_report_unit(
                 .limit(1)
                 .to_owned(),
             Alias::new("s"),
-            Expr::cust("")
+            Expr::cust(""),
         )
         .to_owned();
 

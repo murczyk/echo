@@ -335,6 +335,7 @@ pub async fn load_inbox_signal_profiles(
 pub async fn load_inbox_signal_groups(
     inbox_items: &Vec<(i64, InboxMessage)>,
     txn: &DatabaseConnection,
+    is_admin: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
     let callsigns = inbox_items
         .iter()
@@ -342,7 +343,9 @@ pub async fn load_inbox_signal_groups(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect_vec();
-    let data = collect_groups(callsigns, txn).await.context(h!())?;
+    let data = collect_groups(callsigns, txn, is_admin)
+        .await
+        .context(h!())?;
     Ok(data)
 }
 
