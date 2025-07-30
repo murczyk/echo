@@ -1024,14 +1024,23 @@ update msg model =
                 updatedGroupInfos =
                     case response.groupName of
                         Just name ->
+                            -- Get existing group stats from orphan group data
+                            let
+                                existingGroupStats =
+                                    case findOrphanGroup model response.groupMasterKey of
+                                        Just orphanGroup ->
+                                            orphanGroup.groupStats
+                                        
+                                        Nothing ->
+                                            { activityLastDay = 0, activityLastWeek = 0 }
+                            in
                             Dict.insert response.groupMasterKey
                                 { masterKey = response.groupMasterKey
                                 , name = name
                                 , ignoreOperativny = False -- Default value
                                 , shortNote = Nothing
                                 , longNote = Nothing
-                                --TODO: get group stats from server
-                                , groupStats = { activityLastDay = 0, activityLastWeek = 0 }
+                                , groupStats = existingGroupStats
                                 }
                                 model.groupInfos
 
