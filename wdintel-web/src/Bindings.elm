@@ -1268,9 +1268,8 @@ type alias SignalGroupEntry =
     { masterKey : String
     , name : String
     , ignoreOperativny : Bool
-    , shortNote : Maybe String
-    , longNote : Maybe String
     , groupStats : SignalGroupStats
+    , adminData : Maybe GroupAdminData
     }
 
 
@@ -1280,9 +1279,8 @@ signalGroupEntryEncoder struct =
         [ ( "master_key", Json.Encode.string struct.masterKey )
         , ( "name", Json.Encode.string struct.name )
         , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
-        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
-        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
+        , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map groupAdminDataEncoder) struct.adminData )
         ]
 
 
@@ -1293,8 +1291,7 @@ type alias OrphanSignalGroupEntry =
     , datasourceId : Maybe Int
     , createdAt : Int
     , groupStats : SignalGroupStats
-    , shortNote : Maybe String
-    , longNote : Maybe String
+    , groupAdminData : Maybe GroupAdminData
     }
 
 
@@ -1307,8 +1304,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.datasourceId )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
-        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
-        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
+        , ( "group_admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map groupAdminDataEncoder) struct.groupAdminData )
         ]
 
 
@@ -6407,8 +6403,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_admin_data" (Json.Decode.nullable groupAdminDataDecoder)))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
@@ -6462,9 +6457,8 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable groupAdminDataDecoder)))
 
 
 batchMessageCommentsReqDecoder : Json.Decode.Decoder BatchMessageCommentsReq

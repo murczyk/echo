@@ -1,4 +1,4 @@
-use crate::entities::signal_group;
+use crate::entities::{group_admin_data, signal_group};
 use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::types::*;
@@ -90,16 +90,38 @@ pub async fn group_update(
 
     let txn = env.dbx.begin().await?;
     let req = req.into_inner();
-    let mut group = signal_group::Entity::find_by_id(req.master_key.clone())
+    let m_group = group_admin_data::Entity::find()
+        .filter(
+            group_admin_data::Column::GroupMasterKey
+                .eq(&req.master_key.clone()),
+        )
+        .one(&txn)
+        .await
+        .context(h!())?;
+    let mut group_data = match m_group {
+        Some(group) => group,
+        None => group_admin_data::ActiveModel {
+            group_master_key: Set(Some(req.master_key.clone())),
+            short_note: Set(req.short_note.clone()),
+            long_note: Set(req.long_note.clone()),
+            id: NotSet,
+            created_at: NotSet,
+        }
+        .insert(&txn)
+        .await
+        .context(h!())?,
+    }
+    .into_active_model();
+
+    group_data.short_note = Set(req.short_note);
+    group_data.long_note = Set(req.long_note);
+    let group_data = group_data.update(&txn).await.context(h!())?;
+
+    let group = signal_group::Entity::find_by_id(req.master_key.clone())
         .one(&txn)
         .await
         .context(h!())?
-        .context(h!())?
-        .into_active_model();
-
-    group.short_note = Set(req.short_note);
-    group.long_note = Set(req.long_note);
-    let group = group.update(&txn).await.context(h!())?;
+        .context(h!())?;
 
     let stats = collect_group_stats(vec![group.master_key.clone()], &env.dbx)
         .await
@@ -114,8 +136,8 @@ pub async fn group_update(
         master_key: group.master_key,
         name: group.name.unwrap_or("".to_string()),
         ignore_operativny: group.ignore_operativny,
-        short_note: group.short_note,
-        long_note: group.long_note,
+        short_note: group_data.short_note,
+        long_note: group_data.long_note,
         group_stats: stats,
     }))
 }

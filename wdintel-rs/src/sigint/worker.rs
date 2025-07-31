@@ -214,8 +214,6 @@ pub async fn do_sync_state(
                     is_secret: Set(false),
                     created_at: NotSet,
                     ignore_operativny: Default::default(),
-                    short_note: NotSet,
-                    long_note: NotSet,
                 }
                 .insert(dbx)
                 .await

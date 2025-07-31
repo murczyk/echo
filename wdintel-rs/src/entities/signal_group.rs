@@ -16,10 +16,6 @@ pub struct Model {
     pub created_at: DateTime,
     pub ignore_operativny: bool,
     pub is_secret: bool,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub short_note: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub long_note: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -32,6 +28,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Datasource,
+    #[sea_orm(has_many = "super::group_admin_data::Entity")]
+    GroupAdminData,
     #[sea_orm(has_many = "super::organism_group::Entity")]
     OrganismGroup,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
@@ -45,6 +43,12 @@ pub enum Relation {
 impl Related<super::datasource::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Datasource.def()
+    }
+}
+
+impl Related<super::group_admin_data::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::GroupAdminData.def()
     }
 }
 

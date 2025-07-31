@@ -356,9 +356,8 @@ pub struct SignalGroupEntry {
     pub master_key: String,
     pub name: String,
     pub ignore_operativny: bool,
-    pub short_note: Option<String>,
-    pub long_note: Option<String>,
     pub group_stats: SignalGroupStats,
+    pub admin_data: Option<GroupAdminData>,
 }
 
 #[derive(
@@ -377,6 +376,22 @@ pub struct SignalGroupStats {
     pub activity_last_week: i64,
 }
 
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
+)]
+pub struct GroupAdminData {
+    pub short_note: Option<String>,
+    pub long_note: Option<String>,
+}
+
 /// Запис групи, яка не прив'язана до жодного напрямку
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -393,8 +408,7 @@ pub struct OrphanSignalGroupEntry {
     /// Час створення групи (в мілісекундах від epoch)
     pub created_at: i64,
     pub group_stats: SignalGroupStats,
-    pub short_note: Option<String>,
-    pub long_note: Option<String>,
+    pub group_admin_data: Option<GroupAdminData>,
 }
 
 #[derive(

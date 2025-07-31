@@ -108,6 +108,7 @@ mod m20250716_150622_add_mothership_post;
 mod m20250722_144413_add_messenger_account;
 mod m20250730_084125_add_area_of_responsibility;
 mod m20250730_090455_add_messenger_account_description;
+mod m20250730_181007_add_group_admin_data;
 
 pub struct Migrator;
 
@@ -223,6 +224,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250722_144413_add_messenger_account::Migration),
             Box::new(m20250730_084125_add_area_of_responsibility::Migration),
             Box::new(m20250730_090455_add_messenger_account_description::Migration),
+            Box::new(m20250730_181007_add_group_admin_data::Migration),
         ]
     }
 }

@@ -1,7 +1,7 @@
 use self::types::*;
 use crate::delta::bgtask_log;
 use crate::entities::signal_profile::Model;
-use crate::entities::{prelude::*, *};
+use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
@@ -50,12 +50,15 @@ async fn attachment(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let attachment_id = path.0;
     let attachment: signal_attachment::Model =
-        SignalAttachment::find_by_id(attachment_id)
+        signal_attachment::Entity::find_by_id(attachment_id)
             .one(&env.dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or(AppError::NotFound)?;
     let file = actix_files::NamedFile::open_async(&Path::new(&attachment.path))
         .await
@@ -69,7 +72,9 @@ async fn rer_importer_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<RerImporterCallsignsReq>,
 ) -> Result<Json<Vec<CallsignWithFrequencies>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let sixty_days_ago_offset =
         OffsetDateTime::now_utc() - TimeDuration::days(60);
     let sixty_days_ago_primitive = PrimitiveDateTime::new(
@@ -93,7 +98,8 @@ where sm.created_at >= $1 and sii.checked and l.login=$2
         user.id()?
     )
     .fetch_all(env.dbx.get_postgres_connection_pool())
-    .await?;
+    .await
+    .context(h!())?;
 
     let mut res = vec![];
     for x in res1.iter() {
@@ -122,17 +128,20 @@ async fn list_messages(
     env: actix_web::web::Data<Env>,
     req: actix_web::web::Query<MessagesReq>,
 ) -> Result<Json<Vec<MessageRsp>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
         &env.config,
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     Ok(Json(
-        SignalMessage::find()
+        signal_message::Entity::find()
             .columns([
                 signal_message::Column::Id,
                 signal_message::Column::Body,
@@ -185,7 +194,8 @@ async fn list_messages(
             })
             .into_model::<MessageRsp>()
             .all(&env.dbx)
-            .await?,
+            .await
+            .context(h!())?,
     ))
 }
 
@@ -194,8 +204,13 @@ async fn callsigns_alchemy(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<CallsignsAlchemyRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let callsigns = NetworkCallsign::find().all(&env.dbx).await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    let callsigns = network_callsign::Entity::find()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
     let mut callsigns_s = vec![];
     for callsign in callsigns.iter() {
         if !callsigns_s.contains(&callsign.callsign) {
@@ -281,7 +296,9 @@ pub async fn unread_counters(
     env: actix_web::web::Data<Env>,
     req: Json<UnreadCountersReq>,
 ) -> Result<Json<UnreadCountersRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let newer_msg_count = match req.only_show_unprocessed {
         Some(true) => {
             sqlx::query!(
@@ -295,7 +312,8 @@ WHERE sm.id > $1 AND sm.duplicate_of is null
                 req.last_id,
             )
             .fetch_one(env.dbx.get_postgres_connection_pool())
-            .await?
+            .await
+            .context(h!())?
             .cnt
         }
         _ => {
@@ -308,7 +326,8 @@ WHERE sm.id > $1 AND sm.duplicate_of is null
                 req.last_id,
             )
             .fetch_one(env.dbx.get_postgres_connection_pool())
-            .await?
+            .await
+            .context(h!())?
             .cnt
         }
     };
@@ -323,11 +342,14 @@ pub async fn signal_group_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupReq>,
 ) -> Result<Json<SignalGroupRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let m_signal_group = SignalGroup::find()
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    let m_signal_group = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&req.master_key))
         .one(&env.dbx)
-        .await?;
+        .await
+        .context(h!())?;
     match m_signal_group {
         None => Ok(Json(SignalGroupRsp { name: None })),
         Some(signal_group) => Ok(Json(SignalGroupRsp {
@@ -342,13 +364,17 @@ pub async fn signal_group_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalGroupReq>,
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
         .await
         .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
-    let data = collect_groups(keys, &env.dbx, is_admin).await?;
+    let data = collect_groups(keys, &env.dbx, is_admin)
+        .await
+        .context(h!())?;
     Ok(Json(SignalGroupsRsp { data }))
 }
 
@@ -363,7 +389,9 @@ pub async fn orphan_signal_groups(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+        .await
+        .context(h!())?;
 
     // Отримати всі master_key, які вже прив'язані
     let assigned_keys: Vec<String> = sigint_zone_datasource::Entity::find()
@@ -383,12 +411,20 @@ pub async fn orphan_signal_groups(
         .await
         .context(h!())?;
 
-    let keys = orphan_groups.iter().map(|b| b.master_key.clone()).collect();
-    let stats = collect_group_stats(keys, &env.dbx).await.context(h!())?;
+    let keys: Vec<String> =
+        orphan_groups.iter().map(|b| b.master_key.clone()).collect();
+    let stats = collect_group_stats(keys.clone(), &env.dbx)
+        .await
+        .context(h!())?;
+    let group_admin_data = collect_group_admin_data(keys, &env.dbx)
+        .await
+        .context(h!())?;
     let data: Vec<OrphanSignalGroupEntry> = orphan_groups
         .into_iter()
         .filter_map(|g| {
             let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
+            let group_admin_data =
+                group_admin_data.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
@@ -396,8 +432,7 @@ pub async fn orphan_signal_groups(
                 datasource_id: g.datasource_id,
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
-                short_note: g.short_note,
-                long_note: g.long_note,
+                group_admin_data,
             })
         })
         .collect();
@@ -411,14 +446,17 @@ pub async fn signal_profile_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileReq>,
 ) -> Result<Json<Option<SignalProfileRsp>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     // signal_profile::Column::Uuid
     //     .eq(&req.uuid)
     //     .or(signal_profile::Column::GivenName.eq(&req.uuid)),
-    let m_signal_profile = SignalProfile::find()
+    let m_signal_profile = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.eq(&req.uuid))
         .one(&env.dbx)
-        .await?;
+        .await
+        .context(h!())?;
     match m_signal_profile {
         None => Ok(Json(None)),
         Some(signal_profile) => Ok(Json(Some(SignalProfileRsp {
@@ -434,15 +472,17 @@ pub async fn signal_profile_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalProfileReq>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let txn = env.dbx.begin().await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
+    let txn = env.dbx.begin().await.context(h!())?;
     // signal_profile::Column::Uuid
     //     .eq(&req.uuid)
     //     .or(signal_profile::Column::GivenName.eq(&req.uuid)),
     let ids: Vec<String> =
         req.profiles.iter().map(|p| p.uuid.clone()).collect();
-    let data = collect_profiles_data(&txn, ids).await?;
-    txn.commit().await?;
+    let data = collect_profiles_data(&txn, ids).await.context(h!())?;
+    txn.commit().await.context(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 
@@ -452,7 +492,9 @@ pub async fn signal_profile_save(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileSaveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     signal_profile::Entity::insert(signal_profile::ActiveModel {
         uuid: Set(req.uuid.clone()),
         given_name: Set(req.given_name.clone()),
@@ -468,14 +510,15 @@ pub async fn signal_profile_save(
             .to_owned(),
     )
     .exec(&env.dbx)
-    .await?;
+    .await
+    .context(h!())?;
     Ok(Json(()))
 }
 
 #[tokio::main]
 pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     println!("> starting oneoff_round_freq");
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
     let group = crate::config::read_config(mode)?.signal_import_group_name;
 
@@ -503,7 +546,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
     // println!("Query: {}", q);
 
-    let res = dbx.execute(q).await?;
+    let res = dbx.execute(q).await.context(h!())?;
 
     println!("> rounded {} freqs", res.rows_affected());
 
@@ -513,18 +556,18 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 #[tokio::main]
 pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     println!("> starting oneoff_nominalize_freq");
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
-    let inbox_items =
-        SigintInboxItem::find().order_by_asc(sigint_inbox_item::Column::Id);
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let inbox_items = sigint_inbox_item::Entity::find()
+        .order_by_asc(sigint_inbox_item::Column::Id);
     // println!(
     //     "> inbox items query: {}",
     //     inbox_items.build(DbBackend::Postgres).to_string()
     // );
-    let count: u64 = inbox_items.clone().count(&dbx).await?;
+    let count: u64 = inbox_items.clone().count(&dbx).await.context(h!())?;
     println!("> overall: {count}");
-    let mut inbox_items = inbox_items.stream(&dbx).await?;
+    let mut inbox_items = inbox_items.stream(&dbx).await.context(h!())?;
     let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await? {
+    while let Some(item) = inbox_items.try_next().await.context(h!())? {
         pb.inc(1);
 
         if let Some(ref freq) = item.freq.as_ref() {
@@ -532,7 +575,7 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
             if &freq2 != *freq {
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
-                item.update(&dbx).await?;
+                item.update(&dbx).await.context(h!())?;
             }
         }
     }
@@ -542,7 +585,7 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
 #[tokio::main]
 pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords");
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let config = crate::config::read_config(mode)?;
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(
@@ -551,7 +594,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
         .unwrap(),
     ));
 
-    let q = SigintInboxItem::find()
+    let q = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
@@ -562,16 +605,17 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .order_by_asc(sigint_inbox_item::Column::Id);
-    // let count = q.clone().count(&dbx).await?;
-    let mut inbox_items = q.stream(&dbx).await?;
+    // let count = q.clone().count(&dbx).await
+    let mut inbox_items = q.stream(&dbx).await.context(h!())?;
     // let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await? {
+    while let Some(item) = inbox_items.try_next().await.context(h!())? {
         // pb.inc(1);
         let id = item.id;
-        let inbox_message = SignalMessage::find_by_id(id)
+        let inbox_message = signal_message::Entity::find_by_id(id)
             .filter(signal_message::Column::Deleted.eq(false))
             .one(&dbx)
-            .await?
+            .await
+            .context(h!())?
             .ok_or("error 17263")?;
 
         let unit_old = item.unit.clone();
@@ -617,7 +661,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
             item.location = Set(result.locality);
             item.location_v2 = Set(location_v2);
             item.parsed_unit_v2 = Set(false);
-            item.update(&dbx).await?;
+            item.update(&dbx).await.context(h!())?;
             reset_inbox_pelengs(id, &dbx).await.context(h!())?;
         }
     }
@@ -630,16 +674,19 @@ pub async fn latest_senders(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
     let login = user.id()?;
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .context(h!())?;
     let now = Utc::now();
     #[derive(FromQueryResult)]
     struct Res {
         sender: String,
     }
-    let txn = env.dbx.begin().await?;
-    let master_keys =
-        crate::users::get_identity_sigint_groups(&txn, &login).await?;
-    let sender_uuids: Vec<String> = SignalMessage::find()
+    let txn = env.dbx.begin().await.context(h!())?;
+    let master_keys = crate::users::get_identity_sigint_groups(&txn, &login)
+        .await
+        .context(h!())?;
+    let sender_uuids: Vec<String> = signal_message::Entity::find()
         .select_only()
         .column_as(signal_message::Column::Sender, "sender")
         .filter(signal_message::Column::Deleted.eq(false))
@@ -651,12 +698,15 @@ pub async fn latest_senders(
         .group_by(signal_message::Column::Sender)
         .into_model::<Res>()
         .all(&txn)
-        .await?
+        .await
+        .context(h!())?
         .iter()
         .map(|x| x.sender.clone())
         .collect();
-    let data = collect_profiles_data(&txn, sender_uuids).await?;
-    txn.commit().await?;
+    let data = collect_profiles_data(&txn, sender_uuids)
+        .await
+        .context(h!())?;
+    txn.commit().await.context(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 
@@ -667,10 +717,11 @@ pub async fn collect_profiles_data<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let profiles: BTreeMap<String, Model> = SignalProfile::find()
+    let profiles: BTreeMap<String, Model> = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.is_in(sender_uuids.clone()))
         .all(txn)
-        .await?
+        .await
+        .context(h!())?
         .iter()
         .map(|p| (p.uuid.clone(), p.clone()))
         .collect();
@@ -690,12 +741,18 @@ pub async fn collect_groups(
     txn: &DatabaseConnection,
     is_admin: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
-    let signal_groups = SignalGroup::find()
+    let signal_groups = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
         .all(txn)
         .await
         .context(h!())?;
-    let group_stats = collect_group_stats(keys, txn).await?;
+    let group_stats =
+        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+    let group_admin_data = if is_admin {
+        collect_group_admin_data(keys, txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
     let data: Vec<SignalGroupEntry> = signal_groups
         .iter()
         .filter_map(|g| {
@@ -703,13 +760,14 @@ pub async fn collect_groups(
                 .get(g.master_key.as_str())
                 .cloned()
                 .unwrap_or_default();
+            let group_admin_data =
+                group_admin_data.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| SignalGroupEntry {
                 name,
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
-                long_note: g.long_note.clone().filter(|_| is_admin),
-                short_note: g.short_note.clone().filter(|_| is_admin),
                 group_stats: stats,
+                admin_data: group_admin_data,
             })
         })
         .collect();
@@ -744,6 +802,33 @@ pub async fn collect_group_stats(
             },
         );
     }
+    Ok(result)
+}
+
+pub async fn collect_group_admin_data<'a, 'async_trait, C>(
+    keys: Vec<String>,
+    txn: &'a C,
+) -> Result<BTreeMap<String, GroupAdminData>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let result = group_admin_data::Entity::find()
+        .filter(group_admin_data::Column::GroupMasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|g| {
+            (
+                g.group_master_key.clone(),
+                GroupAdminData {
+                    short_note: g.short_note,
+                    long_note: g.long_note,
+                },
+            )
+        })
+        .flat_map(|(m_id, data)| m_id.map(|m_id| (m_id, data)))
+        .collect::<BTreeMap<String, GroupAdminData>>();
     Ok(result)
 }
 
