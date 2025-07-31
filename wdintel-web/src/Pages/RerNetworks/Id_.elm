@@ -172,6 +172,7 @@ type alias Model =
     , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
     , mapPoints : RemoteData ApiError (List B.NetworkPoint)
     , groupsActivity : RemoteData ApiError GroupsByDate
+    , networkFreqsActivity : RemoteData ApiError (Dict String (Dict String Int))
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
@@ -205,6 +206,7 @@ init route shared () =
       , callsigns = NotAsked
       , mapPoints = NotAsked
       , groupsActivity = NotAsked
+      , networkFreqsActivity = NotAsked
       , freqs = NotAsked
       , freqsEditingState = Readonly
       , callsignsEditingState = Readonly
@@ -272,6 +274,7 @@ type Msg
     | NetworkReturnedByApi (Result ApiError B.Network)
     | MapPointsReturnedByApi (Result ApiError B.ListNetworkPointsRsp)
     | GroupsActivityReturnedByApi (Result ApiError GroupsByDate)
+    | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
     | FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
     | CallsignsPopupOpenedByUser String
     | CallsignsPopupClosedByUser
@@ -374,6 +377,7 @@ update shared msg model =
                     , tillDateNoninclusiveMs = res.activeTo
                     }
                 , E.getSingleNetworkGroupsActivity GroupsActivityReturnedByApi { networkId = res.id, tillDateNoninclusiveMs = Nothing }
+                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = res.id }
                 , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = res.id }
                 , E.getNetworksList NetworksReturnedByApi
                     { sinceDateInclusiveMs = Just res.activeFrom
@@ -405,6 +409,14 @@ update shared msg model =
 
         GroupsActivityReturnedByApi (Ok res) ->
             ( { model | groupsActivity = Success res }, E.none )
+
+        NetworkFreqsActivityReturnedByApi (Err e) ->
+            ( { model | networkFreqsActivity = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності частот мережі" e
+            )
+
+        NetworkFreqsActivityReturnedByApi (Ok res) ->
+            ( { model | networkFreqsActivity = Success res }, E.none )
 
         FreqsReturnedByApi (Err e) ->
             ( { model | freqs = Failure e }
@@ -1492,6 +1504,29 @@ freqsTable freq model shared =
                     text ""
             ]
         , td []
+            [ case model.networkFreqsActivity of
+                Success data ->
+                    case Dict.get freq.freq data of
+                        Just freqActivity ->
+                            let
+                                freqActivityJson =
+                                    Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freq.freq freqActivity)
+                            in
+                            div [ style "width" "150px", style "height" "60px" ]
+                                [ Html.node "freq-activity-chart"
+                                    [ property "data" <| freqActivityJson
+                                    , property "lastDay" <| Encode.int shared.now
+                                    ]
+                                    []
+                                ]
+
+                        Nothing ->
+                            text "Немає активності"
+
+                _ ->
+                    Le.Block.Spinner.loadingSpinnerSm
+            ]
+        , td []
             [ case freq.lastDatetime of
                 Just lastDatetime ->
                     text <|
@@ -1564,6 +1599,29 @@ freqsTableEditing updateFreqReq freq model shared =
 
             _ ->
                 text ""
+        , td []
+            [ case model.networkFreqsActivity of
+                Success data ->
+                    case Dict.get freq.freq data of
+                        Just freqActivity ->
+                            let
+                                freqActivityJson =
+                                    Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freq.freq freqActivity)
+                            in
+                            div [ style "width" "150px", style "height" "60px" ]
+                                [ Html.node "freq-activity-chart"
+                                    [ property "data" <| freqActivityJson
+                                    , property "lastDay" <| Encode.int shared.now
+                                    ]
+                                    []
+                                ]
+
+                        Nothing ->
+                            text "Немає активності"
+
+                _ ->
+                    Le.Block.Spinner.loadingSpinnerSm
+            ]
         , td []
             [ case freq.lastDatetime of
                 Just lastDatetime ->
@@ -1892,6 +1950,7 @@ contentBlock user shared network model =
                                     , th [] [ text "Модуляція" ]
                                     , th [] [ text "Кількість перехоплень" ]
                                     , th [] [ text "Позивні" ]
+                                    , th [] [ text "Активність" ]
                                     , th [] [ text "Останній раз в етері" ]
                                     , th [] [ text "Дата прив'язки" ]
                                     , th [] [ text "Активна з" ]
@@ -2380,3 +2439,6 @@ updateActiveToFromInput input timeZone currentValue =
             Time.Extra.partsToPosix timeZone parts
                 |> Time.posixToMillis
                 |> Just
+
+
+
