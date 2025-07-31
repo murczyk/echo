@@ -27,13 +27,15 @@ pub struct Model {
     #[sea_orm(column_type = "Double", nullable)]
     pub right_lon: Option<f64>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub left_settelment: Option<String>,
+    pub left_settlement: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub right_settelment: Option<String>,
+    pub right_settlement: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub updated_by: Option<String>,
     pub updated_at: DateTime,
     pub created_at: DateTime,
+    pub deleted: bool,
+    pub is_top_level: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
