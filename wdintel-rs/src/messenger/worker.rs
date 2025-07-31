@@ -398,6 +398,10 @@ async fn receive_once(
     rq: &Client,
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
 ) -> Result<(), AppError> {
+    if m.group_id.is_none() {
+        warn!("skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
+        return Ok(())
+    }
     let datasource_id =
         datasources.get(&m.message_source).map(|m| m.id.clone());
     let body = m.text.clone();
