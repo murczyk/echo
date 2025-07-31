@@ -8,6 +8,10 @@ import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Components.SegmentedControl as SegmentedControl
+import Components.Table as Table
+import Components.Table.Column as TableColumn
+import Components.Table.Config as TableConfig
+import Components.Table.Sorter as TableSorter
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File.Download as Download
@@ -197,6 +201,7 @@ type alias Model =
     , reportIncludeSigintSigns : Bool
     , reportIncludeConfirmation : Bool
     , freqsActivityFilter : FreqActivityFilter
+    , freqsTableState : Table.State
     }
 
 
@@ -255,6 +260,7 @@ init route shared () =
       , reportIncludeSigintSigns = True
       , reportIncludeConfirmation = True
       , freqsActivityFilter = AllFreqs
+      , freqsTableState = Table.initialSort "Частота"
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -326,6 +332,7 @@ type Msg
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
     | FreqsActivityFilterChangedByUser FreqActivityFilter
+    | SetFreqsTableState Table.State
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1112,6 +1119,9 @@ update shared msg model =
         FreqsActivityFilterChangedByUser filter ->
             ( { model | freqsActivityFilter = filter }, E.none )
 
+        SetFreqsTableState newState ->
+            ( { model | freqsTableState = newState }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1121,6 +1131,221 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.none
 
+
+
+-- TABLE CONFIGURATION
+
+freqsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkFreqsRes Msg
+freqsTableConfig shared model user =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customRowAttrs : B.NetworkFreqsRes -> List (Html.Attribute Msg)
+        customRowAttrs freq =
+            if not freq.isActive then
+                [ class "bg-[#f8f9fa] dark:bg-[#2C2C2E]" ]
+
+            else
+                []
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+                , rowAttrs = customRowAttrs
+            }
+    in
+    Table.customConfig
+        { toId = .freq
+        , toMsg = SetFreqsTableState
+        , columns =
+            [ Table.stringColumn "Частота" .freq |> Table.withColumnWidth "10%"
+            , Table.customColumn
+                { name = "Модуляція"
+                , viewData = \freq -> Maybe.withDefault "" freq.modulation
+                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.modulation)
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.intColumn "Кількість перехоплень" .messageCount |> Table.withColumnWidth "12%"
+            , Table.veryCustomColumn
+                { name = "Позивні"
+                , viewData =
+                    \freq ->
+                        case freq.callsigns of
+                            Just callsigns ->
+                                let
+                                    isOpen =
+                                        case model.callsignsOpenedPopupId of
+                                            Just openCallsignsPopup ->
+                                                openCallsignsPopup == freq.freq
+
+                                            Nothing ->
+                                                False
+                                in
+                                { attributes = []
+                                , children =
+                                    [ CallsignsPopup.view
+                                        { isOpened = isOpen
+                                        , onClose = CallsignsPopupClosedByUser
+                                        , onOpen = CallsignsPopupOpenedByUser freq.freq
+                                        , callsigns = callsigns
+                                        , callsignsInfo = shared.callsignsInfo
+                                        , masterUnits = RD.withDefault Dict.empty shared.masterUnits
+                                        }
+                                        (FreqsPage
+                                            freq.freq
+                                            (RD.withDefault Dict.empty model.networks)
+                                        )
+                                    ]
+                                }
+
+                            _ ->
+                                { attributes = []
+                                , children = [ text "" ]
+                                }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "Активність"
+                , viewData =
+                    \freq ->
+                        case model.networkFreqsActivity of
+                            Success data ->
+                                case Dict.get freq.freq data of
+                                    Just freqActivity ->
+                                        let
+                                            freqActivityJson =
+                                                Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freq.freq freqActivity)
+                                        in
+                                        { attributes = []
+                                        , children =
+                                            [ div [ style "width" "150px", style "height" "60px" ]
+                                                [ Html.node "freq-activity-chart"
+                                                    [ property "data" <| freqActivityJson
+                                                    , property "lastDay" <| Encode.int shared.now
+                                                    ]
+                                                    []
+                                                ]
+                                            ]
+                                        }
+
+                                    Nothing ->
+                                        { attributes = []
+                                        , children = [ text "Немає активності" ]
+                                        }
+
+                            _ ->
+                                { attributes = []
+                                , children = [ Le.Block.Spinner.loadingSpinnerSm ]
+                                }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "Останній раз в етері"
+                , viewData =
+                    \freq ->
+                        case freq.lastDatetime of
+                            Just lastDatetime ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
+                                }
+
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault 0 freq.lastDatetime)
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.veryCustomColumn
+                { name = "Дата прив'язки"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix freq.createdAt) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Активна з"
+                , viewData =
+                    \freq ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix freq.activeFrom) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .activeFrom
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Активна по"
+                , viewData =
+                    \freq ->
+                        case freq.activeTo of
+                            Just x ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x) ]
+                                }
+
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault 0 freq.activeTo)
+                }
+                |> Table.withColumnWidth "10%"
+            ]
+        , customizations = customizations
+        }
 
 
 -- VIEW
@@ -1939,42 +2164,11 @@ contentBlock user shared network model =
                     filteredFreqs =
                         filterFreqsByActivity model.freqsActivityFilter freqs
                 in
-                div [ class "overflow-y-auto grow-1" ]
+                div [ class "table-responsive-modern" ]
                     [ if List.isEmpty filteredFreqs then
                         emptyFreqsPlaceholder model.freqsActivityFilter
                       else
-                        table [ class "table-fixed w-full" ]
-                            [ thead [ class "text-[13px]/[110%] font-medium" ]
-                                [ tr [ class "" ]
-                                    [ th [] [ text "Частота" ]
-                                    , th [] [ text "Модуляція" ]
-                                    , th [] [ text "Кількість перехоплень" ]
-                                    , th [] [ text "Позивні" ]
-                                    , th [] [ text "Активність" ]
-                                    , th [] [ text "Останній раз в етері" ]
-                                    , th [] [ text "Дата прив'язки" ]
-                                    , th [] [ text "Активна з" ]
-                                    , th [] [ text "Активна по" ]
-                                    ]
-                                ]
-                            , tbody []
-                                (List.map
-                                    (\freq ->
-                                        case model.freqsEditingState of
-                                            Readonly ->
-                                                freqsTable freq model shared
-
-                                            Editing updateFreqsDict ->
-                                                case Dict.get freq.freq updateFreqsDict of
-                                                    Just updateFreqReq ->
-                                                        freqsTableEditing updateFreqReq freq model shared
-
-                                                    Nothing ->
-                                                        freqsTable freq model shared
-                                    )
-                                    filteredFreqs
-                                )
-                            ]
+                        Table.view (freqsTableConfig shared model user) model.freqsTableState filteredFreqs
                     ]
 
             _ ->
