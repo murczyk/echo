@@ -123,7 +123,7 @@ fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
     let left_coordinates =
         match (aor.left_lat, aor.left_lon, aor.left_settlement) {
             (Some(latitude), Some(longitude), settlement) => {
-                Some(Coordinates {
+                Some(AorCoordinates {
                     latitude,
                     longitude,
                     settlement,
@@ -134,7 +134,7 @@ fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
     let right_coordinates =
         match (aor.right_lat, aor.right_lon, aor.right_settlement) {
             (Some(latitude), Some(longitude), settlement) => {
-                Some(Coordinates {
+                Some(AorCoordinates {
                     latitude,
                     longitude,
                     settlement,
@@ -157,7 +157,7 @@ fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
 }
 
 async fn from_coordinates(
-    coordinates: Option<Coordinates>,
+    coordinates: Option<AorCoordinates>,
     mil_geo: &MilGeo,
 ) -> Result<(Option<f64>, Option<f64>, Option<String>), AppError> {
     Ok(match coordinates.clone() {

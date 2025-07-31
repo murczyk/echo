@@ -11,15 +11,15 @@ pub struct AreaOfResponsibility {
     pub is_top_level: bool,
     pub left_bound: f64,
     pub right_bound: f64,
-    pub left_coordinates: Option<Coordinates>,
-    pub right_coordinates: Option<Coordinates>,
+    pub left_coordinates: Option<AorCoordinates>,
+    pub right_coordinates: Option<AorCoordinates>,
     pub created_at: i64,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct Coordinates {
+pub struct AorCoordinates {
     pub latitude: f64,
     pub longitude: f64,
     pub settlement: Option<String>,
@@ -49,8 +49,8 @@ pub struct AreaOfResponsibilityInsert {
     pub is_top_level: bool,
     pub left_bound: f64,
     pub right_bound: f64,
-    pub left_coordinates: Option<Coordinates>,
-    pub right_coordinates: Option<Coordinates>,
+    pub left_coordinates: Option<AorCoordinates>,
+    pub right_coordinates: Option<AorCoordinates>,
 }
 
 #[derive(
