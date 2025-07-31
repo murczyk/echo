@@ -5503,6 +5503,127 @@ groupAdminDataEncoder struct =
         ]
 
 
+type alias AreaOfResponsibility =
+    { id : Int
+    , name : String
+    , description : Maybe String
+    , isTopLevel : Bool
+    , leftBound : Float
+    , rightBound : Float
+    , leftCoordinates : Maybe AorCoordinates
+    , rightCoordinates : Maybe AorCoordinates
+    , createdAt : Int
+    }
+
+
+areaOfResponsibilityEncoder : AreaOfResponsibility -> Json.Encode.Value
+areaOfResponsibilityEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "name", Json.Encode.string struct.name )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        , ( "is_top_level", Json.Encode.bool struct.isTopLevel )
+        , ( "left_bound", Json.Encode.float struct.leftBound )
+        , ( "right_bound", Json.Encode.float struct.rightBound )
+        , ( "left_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map aorCoordinatesEncoder) struct.leftCoordinates )
+        , ( "right_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map aorCoordinatesEncoder) struct.rightCoordinates )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        ]
+
+
+type alias AorCoordinates =
+    { latitude : Float
+    , longitude : Float
+    , settlement : Maybe String
+    }
+
+
+aorCoordinatesEncoder : AorCoordinates -> Json.Encode.Value
+aorCoordinatesEncoder struct =
+    Json.Encode.object
+        [ ( "latitude", Json.Encode.float struct.latitude )
+        , ( "longitude", Json.Encode.float struct.longitude )
+        , ( "settlement", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.settlement )
+        ]
+
+
+type alias AreaOfResponsibilityInsert =
+    { name : String
+    , description : Maybe String
+    , isTopLevel : Bool
+    , leftBound : Float
+    , rightBound : Float
+    , leftCoordinates : Maybe AorCoordinates
+    , rightCoordinates : Maybe AorCoordinates
+    }
+
+
+areaOfResponsibilityInsertEncoder : AreaOfResponsibilityInsert -> Json.Encode.Value
+areaOfResponsibilityInsertEncoder struct =
+    Json.Encode.object
+        [ ( "name", Json.Encode.string struct.name )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.description )
+        , ( "is_top_level", Json.Encode.bool struct.isTopLevel )
+        , ( "left_bound", Json.Encode.float struct.leftBound )
+        , ( "right_bound", Json.Encode.float struct.rightBound )
+        , ( "left_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map aorCoordinatesEncoder) struct.leftCoordinates )
+        , ( "right_coordinates", (Maybe.withDefault Json.Encode.null << Maybe.map aorCoordinatesEncoder) struct.rightCoordinates )
+        ]
+
+
+type alias UpdateAreaOfResponsibilityReq =
+    { id : Int
+    , insert : AreaOfResponsibilityInsert
+    }
+
+
+updateAreaOfResponsibilityReqEncoder : UpdateAreaOfResponsibilityReq -> Json.Encode.Value
+updateAreaOfResponsibilityReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "insert", areaOfResponsibilityInsertEncoder struct.insert )
+        ]
+
+
+type alias DeleteAreaOfResponsibilityReq =
+    { id : Int
+    }
+
+
+deleteAreaOfResponsibilityReqEncoder : DeleteAreaOfResponsibilityReq -> Json.Encode.Value
+deleteAreaOfResponsibilityReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        ]
+
+
+type ListAreasOfResponsibilitySortBy
+    = AreaOfResponsibilityNameDesc
+    | AreaOfResponsibilityNameAsc
+
+
+listAreasOfResponsibilitySortByEncoder : ListAreasOfResponsibilitySortBy -> Json.Encode.Value
+listAreasOfResponsibilitySortByEncoder enum =
+    case enum of
+        AreaOfResponsibilityNameDesc ->
+            Json.Encode.string "AreaOfResponsibilityNameDesc"
+
+        AreaOfResponsibilityNameAsc ->
+            Json.Encode.string "AreaOfResponsibilityNameAsc"
+
+
+type alias ListAreasOfResponsibilityReq =
+    { sortBy : Maybe ListAreasOfResponsibilitySortBy
+    }
+
+
+listAreasOfResponsibilityReqEncoder : ListAreasOfResponsibilityReq -> Json.Encode.Value
+listAreasOfResponsibilityReqEncoder struct =
+    Json.Encode.object
+        [ ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map listAreasOfResponsibilitySortByEncoder) struct.sortBy )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -8398,6 +8519,85 @@ groupAdminDataDecoder =
     Json.Decode.succeed GroupAdminData
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
+
+
+areaOfResponsibilityDecoder : Json.Decode.Decoder AreaOfResponsibility
+areaOfResponsibilityDecoder =
+    Json.Decode.succeed AreaOfResponsibility
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_top_level" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_bound" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_bound" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_coordinates" (Json.Decode.nullable aorCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_coordinates" (Json.Decode.nullable aorCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+
+
+aorCoordinatesDecoder : Json.Decode.Decoder AorCoordinates
+aorCoordinatesDecoder =
+    Json.Decode.succeed AorCoordinates
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latitude" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "longitude" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement" (Json.Decode.nullable Json.Decode.string)))
+
+
+areaOfResponsibilityInsertDecoder : Json.Decode.Decoder AreaOfResponsibilityInsert
+areaOfResponsibilityInsertDecoder =
+    Json.Decode.succeed AreaOfResponsibilityInsert
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_top_level" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_bound" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_bound" Json.Decode.float))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_coordinates" (Json.Decode.nullable aorCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_coordinates" (Json.Decode.nullable aorCoordinatesDecoder)))
+
+
+updateAreaOfResponsibilityReqDecoder : Json.Decode.Decoder UpdateAreaOfResponsibilityReq
+updateAreaOfResponsibilityReqDecoder =
+    Json.Decode.succeed UpdateAreaOfResponsibilityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "insert" areaOfResponsibilityInsertDecoder))
+
+
+deleteAreaOfResponsibilityReqDecoder : Json.Decode.Decoder DeleteAreaOfResponsibilityReq
+deleteAreaOfResponsibilityReqDecoder =
+    Json.Decode.succeed DeleteAreaOfResponsibilityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+
+
+listAreasOfResponsibilitySortByDecoder : Json.Decode.Decoder ListAreasOfResponsibilitySortBy
+listAreasOfResponsibilitySortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "AreaOfResponsibilityNameDesc" ->
+                            Json.Decode.succeed AreaOfResponsibilityNameDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "AreaOfResponsibilityNameAsc" ->
+                            Json.Decode.succeed AreaOfResponsibilityNameAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+listAreasOfResponsibilityReqDecoder : Json.Decode.Decoder ListAreasOfResponsibilityReq
+listAreasOfResponsibilityReqDecoder =
+    Json.Decode.succeed ListAreasOfResponsibilityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable listAreasOfResponsibilitySortByDecoder)))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl

@@ -1442,3 +1442,39 @@ messenger_edit_group toMsg req =
         , body = Http.jsonBody (groupUpdateReqEncoder req)
         , expect = leExpectJson toMsg groupEntryF1Decoder
         }
+
+
+aor_list : (Result ApiError (List AreaOfResponsibility) -> msg) -> ListAreasOfResponsibilityReq -> Cmd msg
+aor_list toMsg req =
+    Http.post
+        { url = "/api/sigint/aor"
+        , body = Http.jsonBody (listAreasOfResponsibilityReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.list areaOfResponsibilityDecoder)
+        }
+
+
+create_aor : (Result ApiError AreaOfResponsibility -> msg) -> AreaOfResponsibilityInsert -> Cmd msg
+create_aor toMsg req =
+    Http.post
+        { url = "/api/sigint/aor/create"
+        , body = Http.jsonBody (areaOfResponsibilityInsertEncoder req)
+        , expect = leExpectJson toMsg areaOfResponsibilityDecoder
+        }
+
+
+update_aor : (Result ApiError AreaOfResponsibility -> msg) -> UpdateAreaOfResponsibilityReq -> Cmd msg
+update_aor toMsg req =
+    Http.post
+        { url = "/api/sigint/aor/update"
+        , body = Http.jsonBody (updateAreaOfResponsibilityReqEncoder req)
+        , expect = leExpectJson toMsg areaOfResponsibilityDecoder
+        }
+
+
+delete_aor : (Result ApiError () -> msg) -> DeleteAreaOfResponsibilityReq -> Cmd msg
+delete_aor toMsg req =
+    Http.post
+        { url = "/api/sigint/aor/delete"
+        , body = Http.jsonBody (deleteAreaOfResponsibilityReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }

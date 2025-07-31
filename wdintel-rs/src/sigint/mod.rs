@@ -20,6 +20,7 @@ use std::path::Path;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+pub mod area_of_responsibility;
 pub mod callsign;
 pub mod etalonka;
 pub mod freq;

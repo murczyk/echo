@@ -55,6 +55,12 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
             ]
+                ++ (if hasRole "Admin" user then
+                        [ Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги" ]
+
+                    else
+                        []
+                   )
 
         importSubs =
             [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"
@@ -70,6 +76,7 @@ navBar user shared activeName props =
             ]
                 ++ (if hasRole "Admin" user then
                         [ Menu (Internal Route.Path.RadiosConvert) "radios-convert" "радіо kmz конвертер" ]
+
                     else
                         []
                    )
@@ -143,21 +150,34 @@ navBar user shared activeName props =
                     ]
                 , div [ class "flex gap-1 items-center" ]
                     [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
-                    , div 
+                    , div
                         [ class "w-6 h-6 flex items-center justify-center"
                         , onClick props.onNavbarVisibilityChange
                         ]
-                        [ i 
+                        [ i
                             [ class "bi bi-arrows-fullscreen text-[var(--color-text)] cursor-pointer hover:text-[var(--color-text)] transition-colors duration-200"
-                            , style "opacity" (if props.isRerDuty then "1" else "0")
-                            , style "pointer-events" (if props.isRerDuty then "auto" else "none")
-                            ] 
-                            [] 
+                            , style "opacity"
+                                (if props.isRerDuty then
+                                    "1"
+
+                                 else
+                                    "0"
+                                )
+                            , style "pointer-events"
+                                (if props.isRerDuty then
+                                    "auto"
+
+                                 else
+                                    "none"
+                                )
+                            ]
+                            []
                         ]
                     ]
                 ]
             ]
         ]
+
 
 menuItem activeName hrefLink activeNameExp nameText =
     li []
@@ -168,6 +188,7 @@ menuItem activeName hrefLink activeNameExp nameText =
             ]
             [ text nameText ]
         ]
+
 
 menuItemWithSubs : String -> String -> String -> List Menu -> Html msg
 menuItemWithSubs activeName activeNameExp nameText subs =
@@ -185,9 +206,11 @@ menuItemWithSubs activeName activeNameExp nameText subs =
                             [ span [] [ text sub.label ]
                             , if sub.activeName == activeName then
                                 i [ class "bi bi-check text-[var(--color-text)] ml-2" ] []
+
                               else
                                 text ""
                             ]
+
                     External link ->
                         a
                             [ class "flex items-center justify-between px-4 py-2 hover:bg-[var(--color-column)] hover:text-[var(--color-text)] rounded transition-all duration-200"

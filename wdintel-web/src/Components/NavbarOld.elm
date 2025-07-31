@@ -59,6 +59,12 @@ navBar user shared activeName props =
             , Menu (Internal Route.Path.RerSignals) "signals" "сигнали"
             , Menu (Internal Route.Path.RerNetworks) "networks" "мережі"
             ]
+                ++ (if hasRole "Admin" user then
+                        [ Menu (Internal Route.Path.AreasOfResponsibility) "areasOfResponsibility" "смуги" ]
+
+                    else
+                        []
+                   )
 
         importSubs =
             [ Menu (Internal Route.Path.RerDeltaImport) "rer-delta-import" "імпорт delta"
@@ -268,4 +274,3 @@ menuItemWithSubs isDarkMode activeName activeNameExp nameText subs =
                 (List.map dropdownItem subs)
             ]
         ]
-
