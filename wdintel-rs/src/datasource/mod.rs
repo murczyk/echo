@@ -76,11 +76,14 @@ pub async fn datasource_group_list(
         }
         let res = select
             .group_by(Expr::cust("1"))
-            .into_tuple::<String>()
+            .into_tuple::<Option<String>>()
             .all(&env.dbx)
             .await
             .context(h!())?;
-        return Ok(Json(res));
+        if res.iter().any(|x| x.is_none()) {
+            warn!("Found null group_master_key list for datasource id={}", datasource_id);
+        }
+        return Ok(Json(res.into_iter().flatten().collect()));
     } else if datasource.kind == "api" {
         let datasource = datasource::Entity::find_by_id(datasource_id)
             .one(&env.dbx)
