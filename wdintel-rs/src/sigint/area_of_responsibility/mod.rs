@@ -15,7 +15,7 @@ pub async fn aor_list(
     env: Data<Env>,
     req: Json<ListAreasOfResponsibilityReq>,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Rer", "Api"])
+    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
         .await
         .context(h!())?;
 
