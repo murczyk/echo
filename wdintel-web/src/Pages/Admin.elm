@@ -962,8 +962,8 @@ update msg model =
                                     , masterKey = groupKey
                                     , isSecret = False
                                     , userLogins = []
-                                    , shortNote = Nothing
-                                    , longNote = Nothing
+                                    , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote
+                                    , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
                                     }
                             in
                             ( { model | orphanGroupAssignmentInProgress = Just groupKey, orphanGroupAssignmentError = Nothing }
@@ -1024,23 +1024,33 @@ update msg model =
                 updatedGroupInfos =
                     case response.groupName of
                         Just name ->
-                            -- Get existing group stats from orphan group data
+                            -- Get existing group stats and admin data from orphan group data
                             let
+                                existingOrphanGroup =
+                                    findOrphanGroup model response.groupMasterKey
+
                                 existingGroupStats =
-                                    case findOrphanGroup model response.groupMasterKey of
+                                    case existingOrphanGroup of
                                         Just orphanGroup ->
                                             orphanGroup.groupStats
                                         
                                         Nothing ->
                                             { activityLastDay = 0, activityLastWeek = 0 }
+
+                                existingAdminData =
+                                    case existingOrphanGroup of
+                                        Just orphanGroup ->
+                                            orphanGroup.groupAdminData
+                                        
+                                        Nothing ->
+                                            Nothing
                             in
                             Dict.insert response.groupMasterKey
                                 { masterKey = response.groupMasterKey
                                 , name = name
                                 , ignoreOperativny = False -- Default value
-                                , shortNote = Nothing
-                                , longNote = Nothing
                                 , groupStats = existingGroupStats
+                                , adminData = existingAdminData -- Preserve existing admin data from orphan group
                                 }
                                 model.groupInfos
 
@@ -1185,8 +1195,7 @@ update msg model =
                                         , ignoreOperativny = groupInfo |> Maybe.map .ignoreOperativny |> Maybe.withDefault False
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
                                         , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
-                                        , shortNote = groupInfo |> Maybe.andThen .shortNote
-                                        , longNote = groupInfo |> Maybe.andThen .longNote
+                                        , groupAdminData = groupInfo |> Maybe.andThen .adminData
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1278,8 +1287,8 @@ update msg model =
                                             , masterKey = selector.groupKey
                                             , isSecret = False
                                             , userLogins = []
-                                            , shortNote = Nothing
-                                            , longNote = Nothing
+                                            , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote
+                                            , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
                                             }
                                     in
                                         Api.zone_datasource_group_add AssignOrphanGroupDone req
@@ -1384,8 +1393,8 @@ update msg model =
                                                             , masterKey = dialog.groupKey
                                                             , isSecret = dialog.isSecret
                                                             , userLogins = dialog.selectedUsers
-                                                            , shortNote = Nothing
-                                                            , longNote = Nothing
+                                                            , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote
+                                                            , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
                                                             }
                                                     in
                                                         Api.zone_datasource_group_add AssignOrphanGroupDone req
@@ -1738,8 +1747,8 @@ update msg model =
                             Just
                                 { groupKey = groupKey
                                 , groupName = groupName
-                                , shortNote = orphanGroup.shortNote |> Maybe.withDefault ""
-                                , longNote = orphanGroup.longNote |> Maybe.withDefault ""
+                                , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote |> Maybe.withDefault ""
+                                , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote |> Maybe.withDefault ""
                                 , isLoading = False
                                 , error = Nothing
                                 }
@@ -1820,10 +1829,19 @@ update msg model =
                                 |> List.map
                                     (\group ->
                                         if group.masterKey == updatedGroup.masterKey then
-                                            { group
-                                                | shortNote = updatedGroup.shortNote
-                                                , longNote = updatedGroup.longNote
-                                            }
+                                            let
+                                                newAdminData =
+                                                    case (updatedGroup.shortNote, updatedGroup.longNote) of
+                                                        (Nothing, Nothing) ->
+                                                            Nothing
+                                                        
+                                                        _ ->
+                                                            Just
+                                                                { shortNote = updatedGroup.shortNote
+                                                                , longNote = updatedGroup.longNote
+                                                                }
+                                            in
+                                            { group | groupAdminData = newAdminData }
                                         else
                                             group
                                     )
@@ -2443,7 +2461,7 @@ renderOrphanGroupsTable model groups =
             let
                 displayText : String
                 displayText =
-                    case group.shortNote of
+                    case group.groupAdminData |> Maybe.andThen .shortNote of
                         Just note ->
                             if String.length note > 50 then
                                 String.left 50 note ++ "..."
@@ -2455,7 +2473,7 @@ renderOrphanGroupsTable model groups =
 
                 tooltipText : String
                 tooltipText =
-                    case group.shortNote of
+                    case group.groupAdminData |> Maybe.andThen .shortNote of
                         Just note ->
                             note
 
@@ -2474,7 +2492,7 @@ renderOrphanGroupsTable model groups =
             let
                 displayText : String
                 displayText =
-                    case group.longNote of
+                    case group.groupAdminData |> Maybe.andThen .longNote of
                         Just note ->
                             if String.length note > 50 then
                                 String.left 50 note ++ "..."
@@ -2486,7 +2504,7 @@ renderOrphanGroupsTable model groups =
 
                 tooltipText : String
                 tooltipText =
-                    case group.longNote of
+                    case group.groupAdminData |> Maybe.andThen .longNote of
                         Just note ->
                             note
 
