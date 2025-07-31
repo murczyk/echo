@@ -2,6 +2,7 @@ use crate::rer_importer::types::SignalGroupStats;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct EchoAccountF1 {
@@ -27,6 +28,7 @@ pub struct GroupEntryF1 {
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     pub group_stats: SignalGroupStats,
+    pub area_of_responsibility: Option<AreaOfResponsibility>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]

@@ -2,7 +2,7 @@ use crate::entities::{group_admin_data, signal_group};
 use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::types::*;
-use crate::rer_importer::collect_group_stats;
+use crate::rer_importer::{collect_group_aors, collect_group_stats};
 use crate::types::{AppError, Env};
 use actix_web::post;
 use actix_web::web::Json;
@@ -129,6 +129,11 @@ pub async fn group_update(
         .get(&group.master_key)
         .cloned()
         .unwrap_or_default();
+    let group_aors =
+        collect_group_aors(vec![group.master_key.clone()], &env.dbx).await.context(h!())?;
+    let aor = group_aors
+        .get(group.master_key.as_str())
+        .cloned();
 
     txn.commit().await?;
 
@@ -139,6 +144,7 @@ pub async fn group_update(
         short_note: group_data.short_note,
         long_note: group_data.long_note,
         group_stats: stats,
+        area_of_responsibility: aor,
     }))
 }
 

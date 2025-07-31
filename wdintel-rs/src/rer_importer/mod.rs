@@ -5,6 +5,8 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
+use crate::sigint::area_of_responsibility::render_aor;
+use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
@@ -416,6 +418,8 @@ pub async fn orphan_signal_groups(
     let stats = collect_group_stats(keys.clone(), &env.dbx)
         .await
         .context(h!())?;
+    let group_aors =
+        collect_group_aors(keys.clone(), &env.dbx).await.context(h!())?;
     let group_admin_data = collect_group_admin_data(keys, &env.dbx)
         .await
         .context(h!())?;
@@ -425,6 +429,9 @@ pub async fn orphan_signal_groups(
             let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
+            let aor = group_aors
+                .get(g.master_key.as_str())
+                .cloned();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
@@ -433,6 +440,7 @@ pub async fn orphan_signal_groups(
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
                 group_admin_data,
+                area_of_responsibility: aor,
             })
         })
         .collect();
@@ -748,6 +756,8 @@ pub async fn collect_groups(
         .context(h!())?;
     let group_stats =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
+    let group_aors =
+        collect_group_aors(keys.clone(), txn).await.context(h!())?;
     let group_admin_data = if is_admin {
         collect_group_admin_data(keys, txn).await.context(h!())?
     } else {
@@ -760,6 +770,9 @@ pub async fn collect_groups(
                 .get(g.master_key.as_str())
                 .cloned()
                 .unwrap_or_default();
+            let aor = group_aors
+                .get(g.master_key.as_str())
+                .cloned();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| SignalGroupEntry {
@@ -767,6 +780,7 @@ pub async fn collect_groups(
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
                 group_stats: stats,
+                area_of_responsibility: aor,
                 admin_data: group_admin_data,
             })
         })
@@ -801,6 +815,26 @@ pub async fn collect_group_stats(
                 activity_last_week,
             },
         );
+    }
+    Ok(result)
+}
+
+pub async fn collect_group_aors(
+    keys: Vec<String>,
+    txn: &DatabaseConnection,
+) -> Result<BTreeMap<String, AreaOfResponsibility>, AppError> {
+    let mut result = BTreeMap::new();
+    let aors = area_of_responsibility::Entity::find()
+        .find_with_related(signal_group_aor::Entity)
+        .filter(signal_group_aor::Column::MasterKey.is_in(keys.clone()))
+        .all(txn)
+        .await
+        .context(h!())?;
+    for (aor, signal_aors) in aors {
+        if let Some(signal_aor) = signal_aors.into_iter().next() {
+            let aor = render_aor(aor.clone());
+            result.insert(signal_aor.master_key, aor);
+        }
     }
     Ok(result)
 }
