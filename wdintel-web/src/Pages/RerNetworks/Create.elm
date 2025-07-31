@@ -124,15 +124,7 @@ type alias Model =
     , freqKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , modulations : RemoteData ApiError (List B.ModulationRec)
-    , freqInpDebounce : Debounce String
-    , requestCounter : Int
-    , currentRequestTracker : Maybe String
-    , freqGroupsActivityForNetworkAdd : RemoteData ApiError B.FreqDailyActivityCount
     , freqDescriptionInp : String
-
-    -- Frequency validation
-    , freqValidationState : RemoteData ApiError Bool
-    , freqValidationError : Maybe String
     }
 
 
@@ -222,15 +214,7 @@ init route shared () =
             , selected = Nothing
             }
       , modulations = NotAsked
-      , freqInpDebounce = Debounce.init
-      , requestCounter = 0
-      , currentRequestTracker = Nothing
-      , freqGroupsActivityForNetworkAdd = NotAsked
       , freqDescriptionInp = ""
-
-      -- Frequency validation
-      , freqValidationState = NotAsked
-      , freqValidationError = Nothing
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -244,11 +228,7 @@ init route shared () =
     )
 
 
-freqInpDebounceConfig : Debounce.Config Msg
-freqInpDebounceConfig =
-    { strategy = Debounce.later 300
-    , transform = FreqInpDebounceMsg
-    }
+
 
 
 
@@ -273,15 +253,11 @@ type Msg
     | OpenFreqSidebar
     | CloseFreqSidebar
     | UpdateFreqField (B.AddNetworkFreq -> B.AddNetworkFreq)
-    | UpdateFreqName String
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | FreqDescriptionInputChangedByUser String
     | AddFreqToNetwork
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
-    | FreqInpDebounceMsg Debounce.Msg
-    | CheckIfFreqExistDone (Result ApiError ())
-    | FreqGroupsActivityReturnedByApi (Result ApiError B.FreqDailyActivityCount)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -609,8 +585,6 @@ update shared msg model =
                 | createNetworkState = newNetworkState
                 , freqCreateState = resetFreqState
                 , freqSidebarOpen = False
-                , freqValidationState = NotAsked
-                , freqValidationError = Nothing
                 , freqDescriptionInp = ""
               }
             , E.none
@@ -644,116 +618,8 @@ update shared msg model =
         ModulationsReturnedByApi (Err error) ->
             ( { model | modulations = RD.Failure error }, E.none )
 
-        UpdateFreqName inp ->
-            let
-                ( debounce, cmd ) =
-                    Debounce.push freqInpDebounceConfig inp model.freqInpDebounce
-
-                freqCreateState =
-                    model.freqCreateState
-
-                freqCreateState2 =
-                    { freqCreateState | freq = inp }
-
-                m2 =
-                    { model
-                        | freqCreateState = freqCreateState2
-                        , freqInpDebounce = debounce
-                        , freqValidationState = NotAsked
-                        , freqValidationError = Nothing
-                    }
-            in
-            ( m2, E.sendCmd cmd )
-
-        FreqInpDebounceMsg imsg ->
-            let
-                tracker =
-                    "freq-" ++ String.fromInt (model.requestCounter + 1)
-
-                cancelPrevious =
-                    case model.currentRequestTracker of
-                        Just prevTracker ->
-                            Http.cancel prevTracker
-
-                        Nothing ->
-                            Cmd.none
-
-                ( debounce, debounceCmd ) =
-                    Debounce.update
-                        freqInpDebounceConfig
-                        (Debounce.takeLast
-                            (\_ ->
-                                checkIfFreqExist
-                                    model.freqCreateState.freq
-                                    shared.now
-                                    tracker
-                            )
-                        )
-                        imsg
-                        model.freqInpDebounce
-
-                model2 =
-                    { model
-                        | freqInpDebounce = debounce
-                        , currentRequestTracker = Just tracker
-                        , requestCounter = model.requestCounter + 1
-                        , freqValidationState = Loading
-                    }
-            in
-            ( model2
-            , E.batch
-                [ E.sendCmd cancelPrevious
-                , E.sendCmd debounceCmd
-                ]
-            )
-
-        CheckIfFreqExistDone (Err e) ->
-            case e.httpError of
-                -- 404 means frequency not found in last 2 months
-                Http.BadStatus 404 ->
-                    ( { model
-                        | freqValidationState = Success False
-                        , freqValidationError = Just "Частота не знайдена в повідомленнях за останні 2 місяці"
-                      }
-                    , E.none
-                    )
-
-                -- Other errors
-                _ ->
-                    ( { model
-                        | freqValidationState = Failure e
-                        , freqValidationError = Just "Помилка при перевірці частоти"
-                      }
-                    , E.none
-                    )
-
-        CheckIfFreqExistDone (Ok _) ->
-            ( { model
-                | freqValidationState = Success True
-                , freqValidationError = Nothing
-              }
-            , E.none
-            )
-
-        FreqGroupsActivityReturnedByApi (Ok r) ->
-            ( { model | freqGroupsActivityForNetworkAdd = Success r }, E.none )
-
-        FreqGroupsActivityReturnedByApi (Err err) ->
-            Api.handleHttpError ToastMsg err { model | freqGroupsActivityForNetworkAdd = Failure err }
 
 
-checkIfFreqExist : String -> Int -> String -> Cmd Msg
-checkIfFreqExist freq currentTimeMs tracker =
-    let
-        -- Calculate 2 months ago (60 days)
-        twoMonthsAgo =
-            Time.posixToMillis (Le.Time.xDaysAgo 60 (Time.millisToPosix currentTimeMs))
-    in
-    Api.check_if_freq_exist CheckIfFreqExistDone
-        tracker
-        { freq = freq
-        , sinceDateInclusiveMs = twoMonthsAgo
-        }
 
 
 
@@ -1109,38 +975,19 @@ viewFreqSidebar shared model =
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота*" ]
                 , input
                     [ type_ "text"
-                    , class <|
-                        "w-full p-2 border rounded "
-                            ++ (if String.trim model.freqCreateState.freq == "" || model.freqValidationError /= Nothing then
-                                    "border-red-500"
-
-                                else
-                                    "border-border"
-                               )
+                    , class "w-full p-2 border border-border rounded"
                     , placeholder "наприклад, 146.500"
                     , value model.freqCreateState.freq
-                    , onInput UpdateFreqName
+                    , onInput (\freq -> UpdateFreqField (\state -> { state | freq = freq }))
                     ]
                     []
                 , div [ class "mt-1 min-h-[20px]" ]
-                    [ case model.freqValidationState of
-                        Loading ->
-                            div [ class "text-sm text-blue-600" ]
-                                [ text "Перевірка частоти..." ]
+                    [ if String.trim model.freqCreateState.freq == "" then
+                        div [ class "text-sm text-red-600" ]
+                            [ text "Це поле обов'язкове" ]
 
-                        _ ->
-                            case model.freqValidationError of
-                                Just error ->
-                                    div [ class "text-sm text-red-600" ]
-                                        [ text error ]
-
-                                Nothing ->
-                                    if String.trim model.freqCreateState.freq == "" then
-                                        div [ class "text-sm text-red-600" ]
-                                            [ text "Це поле обов'язкове" ]
-
-                                    else
-                                        text ""
+                      else
+                        text ""
                     ]
                 ]
             , div []
@@ -1280,16 +1127,6 @@ viewFreqSidebar shared model =
                     |> Button.withDisabled
                         (String.trim model.freqCreateState.freq
                             == ""
-                            || (case model.freqValidationState of
-                                    Success False ->
-                                        True
-
-                                    Failure _ ->
-                                        True
-
-                                    _ ->
-                                        False
-                               )
                         )
                     |> Button.view
                 ]
