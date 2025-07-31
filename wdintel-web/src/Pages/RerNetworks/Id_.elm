@@ -8,6 +8,7 @@ import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Components.SegmentedControl as SegmentedControl
+import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
@@ -202,6 +203,7 @@ type alias Model =
     , reportIncludeConfirmation : Bool
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
+    , freqEditSidebar : Maybe (String, B.UpdateNetworkFreqReq)
     }
 
 
@@ -261,6 +263,7 @@ init route shared () =
       , reportIncludeConfirmation = True
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
+      , freqEditSidebar = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -333,6 +336,10 @@ type Msg
     | ReportIncludeSigintSignsCheckedByUser Bool
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
+    | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
+    | CloseFreqEditSidebar
+    | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
+    | SaveFreqEditSidebar
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1122,6 +1129,25 @@ update shared msg model =
         SetFreqsTableState newState ->
             ( { model | freqsTableState = newState }, E.none )
 
+        OpenFreqEditSidebar freqId updateReq ->
+            ( { model | freqEditSidebar = Just (freqId, updateReq) }, E.none )
+
+        CloseFreqEditSidebar ->
+            ( { model | freqEditSidebar = Nothing }, E.none )
+
+        UpdateFreqEditSidebar updateReq ->
+            ( { model | freqEditSidebar = Maybe.map (\(freqId, _) -> (freqId, updateReq)) model.freqEditSidebar }, E.none )
+
+        SaveFreqEditSidebar ->
+            case model.freqEditSidebar of
+                Just (_, updateReq) ->
+                    ( { model | freqEditSidebar = Nothing }
+                    , E.updateNetworkFreq FreqUpdatedByApi updateReq
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1344,8 +1370,108 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             ]
+            ++ (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                    [ Table.veryCustomColumn
+                        { name = ""
+                        , viewData =
+                            \freq ->
+                                { attributes = []
+                                , children =
+                                    [ button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
+                                        , onClick <| OpenFreqEditSidebar freq.freq
+                                            { networkId = freq.networkFreqId
+                                            , freq = freq.freq
+                                            , kind = "VHF"
+                                            , modulationId = Nothing
+                                            , activeFrom = freq.activeFrom
+                                            , activeTo = freq.activeTo
+                                            }
+                                        ]
+                                        [ i [ class "bi bi-pencil-square" ] []
+                                        ]
+                                    ]
+                                }
+                        , sorter = TableSorter.unsortable
+                        }
+                        |> Table.withColumnWidth "5%"
+                    ]
+                else
+                    []
+               )
         , customizations = customizations
         }
+
+
+-- SIDEBAR CONTENT
+
+freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html Msg)
+freqEditSidebarContent shared model user freqId updateReq =
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати частоту" ]
+            , p [ class "text-sm text-muted-foreground" ] [ text ("Частота: " ++ freqId) ]
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "date"
+                        , Time.millisToPosix updateReq.activeFrom
+                            |> Le.Time.renderDateF4 shared.timeZone
+                            |> value
+                        , onInput <|
+                            UpdateFreqEditSidebar
+                                << (\v ->
+                                        { updateReq
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        updateReq.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна по" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "date"
+                        , Maybe.map Time.millisToPosix updateReq.activeTo
+                            |> Maybe.map (Le.Time.renderDateF4 shared.timeZone)
+                            |> Maybe.withDefault ""
+                            |> value
+                        , onInput <|
+                            UpdateFreqEditSidebar
+                                << (\v ->
+                                        { updateReq
+                                            | activeTo = updateActiveToFromInput v shared.timeZone updateReq.activeTo
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseFreqEditSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
+                    |> Button.view
+                ]
+            ]
+        ]
+    ]
 
 
 -- VIEW
@@ -2143,19 +2269,6 @@ contentBlock user shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Частоти" ]
-            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                case model.freqsEditingState of
-                    Readonly ->
-                        i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick FreqsEditStartedByUser ] []
-
-                    Editing _ ->
-                        div [ class "flex gap-[8px]" ]
-                            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick FreqsEditCanceledByUser ] []
-                            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick FreqsEditSavedByUser ] []
-                            ]
-
-              else
-                text ""
             ]
         , freqsActivityFilterView model
         , case model.freqs of
@@ -2438,6 +2551,12 @@ view user shared model =
                         _ ->
                             [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
                     )
+                , case model.freqEditSidebar of
+                    Just (freqId, updateReq) ->
+                        Sidebar.view True CloseFreqEditSidebar (freqEditSidebarContent shared model user freqId updateReq)
+
+                    Nothing ->
+                        text ""
                 , let
                     dialogContent =
                         [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
