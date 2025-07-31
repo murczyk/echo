@@ -46,6 +46,54 @@ mainBody user model shared route =
             List.length model.messages
         messagesCountOverall =
             extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
+        deleteConfirmationModal =
+            div
+                [ class "modal fade"
+                , attribute "tabindex" "-1"
+                , attribute "role" "dialog"
+                , attribute "aria-hidden" "true"
+                , id "deleteMessageModal"
+                ]
+                [ div
+                    [ class "modal-dialog"
+                    , attribute "role" "document"
+                    ]
+                    [ div
+                        [ class "modal-content" ]
+                        [ div
+                            [ class "modal-header" ]
+                            [ h5 [ class "modal-title" ] [ text "Видалення повідомлення" ]
+                            , button
+                                [ class "btn-close"
+                                , type_ "button"
+                                , attribute "data-bs-dismiss" "modal"
+                                , attribute "ariaLabel" "Close"
+                                ]
+                                []
+                            ]
+                        , div
+                            [ class "modal-body p-3" ]
+                            [ text "Ви впевнені, що хочете видалити це повідомлення?"
+                            ]
+                        , div
+                            [ class "modal-footer" ]
+                            [ button
+                                [ class "btn btn-secondary"
+                                , type_ "button"
+                                , attribute "data-bs-dismiss" "modal"
+                                ]
+                                [ text "Скасувати" ]
+                            , button
+                                [ class "btn btn-danger"
+                                , type_ "button"
+                                , onClick DeleteMessageConfirm
+                                , attribute "data-bs-dismiss" "modal"
+                                ]
+                                [ text "Видалити" ]
+                            ]
+                        ]
+                    ]
+                ]
         messagesBlock =
             case model.counts |> RD.toMaybe |> mmap (\r -> r.countOverall) of
                 Just 0 ->
@@ -71,57 +119,6 @@ mainBody user model shared route =
                                         , text "завантажити ще"
                                         ]
                                     ]
-
-                        deleteConfirmationModal =
-                            div
-                                [ class "modal fade"
-                                , attribute "tabindex" "-1"
-                                , attribute "role" "dialog"
-                                , attribute "aria-hidden" "true"
-                                , id "deleteMessageModal"
-                                ]
-                                [ div
-                                    [ class "modal-dialog"
-                                    , attribute "role" "document"
-                                    ]
-                                    [ div
-                                        [ class "modal-content" ]
-                                        [ div
-                                            [ class "modal-header" ]
-                                            [ h5 [ class "modal-title" ] [ text "Видалення повідомлення" ]
-                                            , button
-                                                [ class "btn-close"
-                                                , type_ "button"
-                                                , attribute "data-bs-dismiss" "modal"
-                                                , attribute "ariaLabel" "Close"
-                                                ]
-                                                []
-                                            ]
-                                        , div
-                                            [ class "modal-body p-3" ]
-                                            [ text "Ви впевнені, що хочете видалити це повідомлення?"
-                                            ]
-                                        , div
-                                            [ class "modal-footer" ]
-                                            [ button
-                                                [ class "btn btn-secondary"
-                                                , type_ "button"
-                                                , attribute "data-bs-dismiss" "modal"
-                                                ]
-                                                [ text "Скасувати" ]
-                                            , button
-                                                [ class "btn btn-danger"
-                                                , type_ "button"
-                                                , onClick DeleteMessageConfirm
-                                                , attribute "data-bs-dismiss" "modal"
-                                                ]
-                                                [ text "Видалити" ]
-                                            ]
-                                        ]
-                                    ]
-                                ]
-                    in
-                    let
                         vps =
                             { profiles = model.profiles
                             , groupInfos = model.groupInfos
@@ -158,6 +155,7 @@ mainBody user model shared route =
                                     (enumerate model.messages)
                                 )
                             )
+                        , loadMoreBtn
                         ]
     in
     [ div [] <|
@@ -211,6 +209,7 @@ mainBody user model shared route =
                 ]
             ]
         , messagesBlock
+        , deleteConfirmationModal
         ]
     ]
 
