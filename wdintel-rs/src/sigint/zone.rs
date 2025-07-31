@@ -96,14 +96,6 @@ pub async fn zones_datasources_groups_list(
         .column_as(secret_group_user::Column::Login, "login")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
-        .join(
-            JoinType::InnerJoin,
-            sigint_zone_datasource::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_group::Relation::SecretGroupUser.def(),
-        )
         .filter(sigint_zone_datasource::Column::SigintZoneId.eq(req.zone_id))
         .filter(
             sigint_zone_datasource::Column::DatasourceId.eq(req.datasource_id),
