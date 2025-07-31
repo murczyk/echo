@@ -30,6 +30,7 @@ import Shared
 import Time
 import Time.Extra
 import View exposing (View)
+import Char
 
 
 
@@ -55,6 +56,35 @@ validateCreateNetworkReq req =
     , isValid = Dict.isEmpty errors
     }
 
+
+-- Frequency format validation
+validateFrequencyFormat : String -> Bool
+validateFrequencyFormat freq =
+    let
+        trimmed =
+            String.trim freq
+    in
+    if String.isEmpty trimmed then
+        True  -- Empty is handled by required validation
+    else
+        -- Check if it contains only digits and at most one decimal point
+        let
+            hasOnlyValidChars =
+                String.all (\char -> Char.isDigit char || char == '.') trimmed
+            
+            decimalCount =
+                String.foldl (\char count -> if char == '.' then count + 1 else count) 0 trimmed
+            
+            startsWithDecimal =
+                String.startsWith "." trimmed
+            
+            endsWithDecimal =
+                String.endsWith "." trimmed
+        in
+        hasOnlyValidChars 
+            && decimalCount <= 1 
+            && not startsWithDecimal 
+            && not endsWithDecimal
 
 
 -- Helper function to check if form is valid for save button
@@ -125,6 +155,7 @@ type alias Model =
     , freqModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , freqDescriptionInp : String
+    , freqFormatError : Maybe String
     }
 
 
@@ -215,6 +246,7 @@ init route shared () =
             }
       , modulations = NotAsked
       , freqDescriptionInp = ""
+      , freqFormatError = Nothing
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -485,10 +517,27 @@ update shared msg model =
             ( { model | freqSidebarOpen = True }, E.none )
 
         CloseFreqSidebar ->
-            ( { model | freqSidebarOpen = False, freqDescriptionInp = "" }, E.none )
+            ( { model | freqSidebarOpen = False, freqDescriptionInp = "", freqFormatError = Nothing }, E.none )
 
         UpdateFreqField updateFunc ->
-            ( { model | freqCreateState = updateFunc model.freqCreateState }, E.none )
+            let
+                newFreqState =
+                    updateFunc model.freqCreateState
+                
+                formatError =
+                    if String.trim newFreqState.freq == "" then
+                        Nothing
+                    else if not (validateFrequencyFormat newFreqState.freq) then
+                        Just "Невірний формат частоти. (наприклад: 146.500)"
+                    else
+                        Nothing
+            in
+            ( { model 
+                | freqCreateState = newFreqState
+                , freqFormatError = formatError
+              }
+            , E.none
+            )
 
         FreqKindSelectMsg selectMsg ->
             let
@@ -586,6 +635,7 @@ update shared msg model =
                 , freqCreateState = resetFreqState
                 , freqSidebarOpen = False
                 , freqDescriptionInp = ""
+                , freqFormatError = Nothing
               }
             , E.none
             )
@@ -975,7 +1025,13 @@ viewFreqSidebar shared model =
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота*" ]
                 , input
                     [ type_ "text"
-                    , class "w-full p-2 border border-border rounded"
+                    , class <|
+                        "w-full p-2 border rounded "
+                            ++ (if String.trim model.freqCreateState.freq == "" || model.freqFormatError /= Nothing then
+                                    "border-red-500"
+                                else
+                                    "border-border"
+                               )
                     , placeholder "наприклад, 146.500"
                     , value model.freqCreateState.freq
                     , onInput (\freq -> UpdateFreqField (\state -> { state | freq = freq }))
@@ -985,9 +1041,13 @@ viewFreqSidebar shared model =
                     [ if String.trim model.freqCreateState.freq == "" then
                         div [ class "text-sm text-red-600" ]
                             [ text "Це поле обов'язкове" ]
-
                       else
-                        text ""
+                        case model.freqFormatError of
+                            Just error ->
+                                div [ class "text-sm text-red-600" ]
+                                    [ text error ]
+                            Nothing ->
+                                text ""
                     ]
                 ]
             , div []
@@ -1125,9 +1185,7 @@ viewFreqSidebar shared model =
                     |> Button.view
                 , Button.new { label = "Додати", onClick = AddFreqToNetwork }
                     |> Button.withDisabled
-                        (String.trim model.freqCreateState.freq
-                            == ""
-                        )
+                        (String.trim model.freqCreateState.freq == "" || model.freqFormatError /= Nothing)
                     |> Button.view
                 ]
             ]
