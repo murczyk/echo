@@ -418,8 +418,9 @@ pub async fn orphan_signal_groups(
     let stats = collect_group_stats(keys.clone(), &env.dbx)
         .await
         .context(h!())?;
-    let group_aors =
-        collect_group_aors(keys.clone(), &env.dbx).await.context(h!())?;
+    let group_aors = collect_group_aors(keys.clone(), &env.dbx)
+        .await
+        .context(h!())?;
     let group_admin_data = collect_group_admin_data(keys, &env.dbx)
         .await
         .context(h!())?;
@@ -429,9 +430,7 @@ pub async fn orphan_signal_groups(
             let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
-            let aor = group_aors
-                .get(g.master_key.as_str())
-                .cloned();
+            let aor = group_aors.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
@@ -770,9 +769,7 @@ pub async fn collect_groups(
                 .get(g.master_key.as_str())
                 .cloned()
                 .unwrap_or_default();
-            let aor = group_aors
-                .get(g.master_key.as_str())
-                .cloned();
+            let aor = group_aors.get(g.master_key.as_str()).cloned();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| SignalGroupEntry {

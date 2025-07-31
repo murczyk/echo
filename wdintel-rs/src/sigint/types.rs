@@ -1,5 +1,6 @@
 use crate::types::*;
 
+use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
 #[derive(
@@ -28,6 +29,7 @@ pub struct ZoneDatasourceGroup {
     pub allowed_users: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    pub area_of_responsibility: Option<AreaOfResponsibility>,
 }
 
 #[derive(
@@ -46,6 +48,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub user_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    pub area_of_responsibility_id: Option<i64>,
 }
 
 #[derive(

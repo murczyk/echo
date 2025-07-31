@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::messenger::bl;
+use crate::rer_importer::collect_group_aors;
+use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
@@ -129,25 +132,34 @@ pub async fn zones_datasources_groups_list(
         }
     }
 
+    let keys = res.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+    let group_aors = collect_group_aors(keys.clone(), &env.dbx)
+        .await
+        .context(h!())?;
+
+    let zone_datasource_groups = res
+        .into_iter()
+        .map(
+            |(
+                master_key,
+                (is_secret, szd_id, allowed_users, short_note, long_note),
+            )| {
+                let aor = group_aors.get(&master_key).cloned();
+                ZoneDatasourceGroup {
+                    area_of_responsibility: aor,
+                    sigint_zone_datasource_id: szd_id,
+                    group_master_key: master_key,
+                    is_group_secret: is_secret,
+                    allowed_users,
+                    short_note,
+                    long_note,
+                }
+            },
+        )
+        .collect();
+
     Ok(Json(ZoneDatasourceGroupListRsp {
-        zone_datasource_groups: res
-            .into_iter()
-            .map(
-                |(
-                    master_key,
-                    (is_secret, szd_id, allowed_users, short_note, long_note),
-                )| {
-                    ZoneDatasourceGroup {
-                        sigint_zone_datasource_id: szd_id,
-                        group_master_key: master_key,
-                        is_group_secret: is_secret,
-                        allowed_users,
-                        short_note,
-                        long_note,
-                    }
-                },
-            )
-            .collect(),
+        zone_datasource_groups,
     }))
 }
 
@@ -213,12 +225,21 @@ pub async fn zones_datasources_group_update(
         .context(h!())?
         .unwrap_or((None, None));
 
+    let aor = bl::upsert_group_area_of_responsibility(
+        &txn,
+        &szd.group_master_key,
+        req.area_of_responsibility_id.clone(),
+    )
+    .await
+    .context(h!())?;
+
     txn.commit().await?;
 
     Ok(Json(ZoneDatasourceGroup {
         sigint_zone_datasource_id: szd.id,
         group_master_key: szd.group_master_key,
         is_group_secret: is_secret,
+        area_of_responsibility: aor.map(render_aor),
         allowed_users,
         short_note,
         long_note,
@@ -292,17 +313,25 @@ pub async fn zones_datasources_group_add(
         .context(h!())?
         .unwrap_or((None, None));
 
+    let group_master_key = szd.group_master_key.clone();
+    let area_of_responsibility =
+        collect_group_aors(vec![group_master_key.clone()], &env.dbx)
+            .await
+            .context(h!())?
+            .remove(&group_master_key);
+
     txn.commit().await?;
 
     Ok(Json(ZoneDatasourceGroupAddRsp {
         zone_id: req.zone_id,
         datasource_id: req.datasource_id,
-        group_master_key: req.master_key,
+        group_master_key: group_master_key.clone(),
         group_name,
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
-            group_master_key: szd.group_master_key,
             is_group_secret: req.is_secret,
+            area_of_responsibility,
+            group_master_key,
             allowed_users,
             short_note,
             long_note,

@@ -1,11 +1,11 @@
 use crate::location::SettlementDetails;
+use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
 use crate::sigint::network::types::Network;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
