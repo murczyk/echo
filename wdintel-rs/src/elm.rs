@@ -292,6 +292,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::types::LinkAccountRsp,
             crate::messenger::types::GroupUpdateReq,
             crate::messenger::types::GroupEntryF1,
+            crate::rer_importer::types::GroupAdminData,
         ],
         decoders: [
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
@@ -559,6 +560,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
             crate::rer_importer::types::InboxByGroupDigestRsp,
+            crate::rer_importer::types::GroupAdminData,
             crate::delta::login::DeltaLoginUrl,
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,

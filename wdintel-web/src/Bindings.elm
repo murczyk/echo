@@ -5489,6 +5489,20 @@ groupEntryF1Encoder struct =
         ]
 
 
+type alias GroupAdminData =
+    { shortNote : Maybe String
+    , longNote : Maybe String
+    }
+
+
+groupAdminDataEncoder : GroupAdminData -> Json.Encode.Value
+groupAdminDataEncoder struct =
+    Json.Encode.object
+        [ ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -8377,6 +8391,13 @@ inboxByGroupDigestRspDecoder : Json.Decode.Decoder InboxByGroupDigestRsp
 inboxByGroupDigestRspDecoder =
     Json.Decode.succeed InboxByGroupDigestRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stats_per_minute" (Json.Decode.list inboxGroupStatsByMinuteDecoder)))
+
+
+groupAdminDataDecoder : Json.Decode.Decoder GroupAdminData
+groupAdminDataDecoder =
+    Json.Decode.succeed GroupAdminData
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl
