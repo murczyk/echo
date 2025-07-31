@@ -1,13 +1,14 @@
 module Pages.AreasOfResponsibility exposing (Model, Msg, page)
 
+import Auth
 import Effect exposing (Effect)
-import Route exposing (Route)
 import Html
+import Layouts
 import Page exposing (Page)
+import Route exposing (Route)
 import Shared
 import View exposing (View)
-import Layouts
-import Auth
+
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared route =
@@ -26,6 +27,9 @@ toLayout user model =
         { user = user
         , activeName = "areasOfResponsibility"
         }
+
+
+
 -- INIT
 
 
@@ -72,6 +76,6 @@ subscriptions model =
 
 view : Model -> View Msg
 view model =
-    { title = "Pages.Areas"
+    { title = "Смуги"
     , body = [ Html.text "/areas" ]
     }
