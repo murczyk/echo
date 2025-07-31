@@ -755,13 +755,19 @@ pub async fn collect_groups(
         .context(h!())?;
     let group_stats =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
-    let group_aors =
-        collect_group_aors(keys.clone(), txn).await.context(h!())?;
+
+    let group_aors = if is_admin {
+        collect_group_aors(keys.clone(), txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
+
     let group_admin_data = if is_admin {
         collect_group_admin_data(keys, txn).await.context(h!())?
     } else {
         BTreeMap::new()
     };
+
     let data: Vec<SignalGroupEntry> = signal_groups
         .iter()
         .filter_map(|g| {

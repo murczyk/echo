@@ -2145,8 +2145,13 @@ async fn collect_group_names(
         .collect();
     let stats: BTreeMap<String, SignalGroupStats> =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
-    let group_aors =
-        collect_group_aors(keys.clone(), txn).await.context(h!())?;
+
+    let group_aors = if is_admin {
+        collect_group_aors(keys.clone(), txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
+
     let group_admin_data = if is_admin {
         collect_group_admin_data(keys, txn).await.context(h!())?
     } else {
