@@ -1862,8 +1862,14 @@ update msg model =
                                                                 { shortNote = updatedGroup.shortNote
                                                                 , longNote = updatedGroup.longNote
                                                                 }
+
+                                                -- Use the area of responsibility from the updated group
+                                                newAreaOfResponsibility = updatedGroup.areaOfResponsibility
                                             in
-                                            { group | groupAdminData = newAdminData }
+                                            { group
+                                                | groupAdminData = newAdminData
+                                                , areaOfResponsibility = newAreaOfResponsibility
+                                            }
                                         else
                                             group
                                     )
@@ -2114,11 +2120,11 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                                     |> List.head
                                                     |> Maybe.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
                                             Nothing -> Nothing
-                                    
+
                                     availableItems =
                                         dialog.areaOfResponsibilitySelector.available
                                             |> List.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
-                                    
+
                                     selectConfig =
                                         { loading = False
                                         , disabled = dialog.isLoading
@@ -2429,6 +2435,12 @@ renderOrphanGroupsTable model groups =
                         }
                         |> Table.withColumnWidth "15%"
                     , Table.veryCustomColumn
+                        { name = "Смуга"
+                        , viewData = renderAreaOfResponsibilityColumn
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "12%"
+                    , Table.veryCustomColumn
                         { name = "Активність"
                         , viewData = renderActivityColumn
                         , sorter = Table.decreasingBy (.groupStats >> .activityLastDay)
@@ -2439,13 +2451,13 @@ renderOrphanGroupsTable model groups =
                         , viewData = renderShortNoteColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "18%"
+                        |> Table.withColumnWidth "15%"
                     , Table.veryCustomColumn
                         { name = "Довга нотатка"
                         , viewData = renderLongNoteColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "20%"
+                        |> Table.withColumnWidth "18%"
                     , Table.veryCustomColumn
                         { name = "Дії"
                         , viewData = renderActionsColumn model
@@ -2582,6 +2594,38 @@ renderOrphanGroupsTable model groups =
             , children =
                 [ span [ class "text-sm", title "Активність за день / за тиждень" ]
                     [ text activityText ]
+                ]
+            }
+
+        renderAreaOfResponsibilityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderAreaOfResponsibilityColumn group =
+            let
+                displayText : String
+                displayText =
+                    case group.areaOfResponsibility of
+                        Just area ->
+                            area.name
+
+                        Nothing ->
+                            "-"
+
+                tooltipText : String
+                tooltipText =
+                    case group.areaOfResponsibility of
+                        Just area ->
+                            case area.description of
+                                Just desc ->
+                                    area.name ++ " - " ++ desc
+                                Nothing ->
+                                    area.name
+
+                        Nothing ->
+                            "Смуга не призначена"
+            in
+            { attributes = []
+            , children =
+                [ span [ class "text-sm", title tooltipText ]
+                    [ text displayText ]
                 ]
             }
 
