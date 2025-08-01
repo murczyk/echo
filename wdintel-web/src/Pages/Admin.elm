@@ -65,6 +65,11 @@ type alias OrphanGroupEditDialog =
     , groupName : String
     , shortNote : String
     , longNote : String
+    , areaOfResponsibilitySelector :
+        { selected : Maybe Int
+        , available : List B.AreaOfResponsibility
+        , selectState : Select.State
+        }
     , isLoading : Bool
     , error : Maybe String
     }
@@ -401,6 +406,8 @@ type Msg
     | SaveGroupEditDone (Result ApiError B.ZoneDatasourceGroup)
     | LoadAreasOfResponsibility
     | AreasOfResponsibilityLoaded (Result ApiError (List B.AreaOfResponsibility))
+    | OrphanGroupAreaSelectMsg (Select.Msg String)
+    | UpdateOrphanGroupAreaOfResponsibility (Maybe Int)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -1758,6 +1765,11 @@ update msg model =
                                 , groupName = groupName
                                 , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote |> Maybe.withDefault ""
                                 , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote |> Maybe.withDefault ""
+                                , areaOfResponsibilitySelector =
+                                    { selected = orphanGroup.areaOfResponsibility |> Maybe.map .id
+                                    , available = RD.withDefault [] model.areasOfResponsibility
+                                    , selectState = Select.initState (Select.selectIdentifier "area-select")
+                                    }
                                 , isLoading = False
                                 , error = Nothing
                                 }
@@ -1816,7 +1828,7 @@ update msg model =
                                     Nothing
                                 else
                                     Just dialog.longNote
-                            , areaOfResponsibilityId = Nothing --TODO
+                            , areaOfResponsibilityId = dialog.areaOfResponsibilitySelector.selected
                             }
                     in
                     ( { model
@@ -1896,6 +1908,41 @@ update msg model =
             ( { model | areasOfResponsibility = RD.Failure e }
             , E.none
             )
+
+        OrphanGroupAreaSelectMsg imsg ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg dialog.areaOfResponsibilitySelector.selectState
+
+                        selected : Maybe Int
+                        selected =
+                            Le.Block.Select.singleUpd mAction (dialog.areaOfResponsibilitySelector.selected |> Maybe.map String.fromInt)
+                                |> Maybe.andThen String.toInt
+                    in
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | areaOfResponsibilitySelector = { selected = selected, available = dialog.areaOfResponsibilitySelector.available, selectState = imodel2 } }
+                      }
+                    , E.sendCmd <| Cmd.map OrphanGroupAreaSelectMsg icmd
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateOrphanGroupAreaOfResponsibility newArea ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea, available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -2047,6 +2094,65 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                     ]
                                     []
                                 ]
+                            ]
+                        ]
+                    , -- Секція смуг
+                      div []
+                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                            [ text "📡 Смуги" ]
+                        , div [ class "space-y-3" ]
+                                                        [ -- Селектор смуг
+                              div []
+                                [ label [ class <| "block text-sm font-medium mb-2 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                    [ text "Смуга відповідальності:" ]
+                                , let
+                                    selectedItem =
+                                        case dialog.areaOfResponsibilitySelector.selected of
+                                            Just areaId ->
+                                                dialog.areaOfResponsibilitySelector.available
+                                                    |> List.filter (\area -> area.id == areaId)
+                                                    |> List.head
+                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
+                                            Nothing -> Nothing
+                                    
+                                    availableItems =
+                                        dialog.areaOfResponsibilitySelector.available
+                                            |> List.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
+                                    
+                                    selectConfig =
+                                        { loading = False
+                                        , disabled = dialog.isLoading
+                                        , isDark = isDark
+                                        , clearable = True
+                                        }
+                                  in
+                                  Html.map OrphanGroupAreaSelectMsg <|
+                                      Styled.toUnstyled <|
+                                          Le.Block.Select.renderSelectSingle
+                                              selectedItem
+                                              dialog.areaOfResponsibilitySelector.selectState
+                                              availableItems
+                                              "виберіть смугу"
+                                              selectConfig
+                                ]
+                            , -- Інформація про вибрану смугу
+                              case dialog.areaOfResponsibilitySelector.selected of
+                                Just areaId ->
+                                    case List.filter (\area -> area.id == areaId) dialog.areaOfResponsibilitySelector.available |> List.head of
+                                        Just area ->
+                                            div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
+                                                [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
+                                                , case area.description of
+                                                    Just desc ->
+                                                        div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
+                                                    Nothing -> text ""
+                                                , div [ class "text-xs text-blue-500 mt-2" ]
+                                                    [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
+                                                    ]
+                                                ]
+                                        Nothing -> text ""
+                                Nothing ->
+                                    div [ class "text-sm text-gray-500 italic" ] [ text "Смуга не вибрана" ]
                             ]
                         ]
                     , -- Error message
