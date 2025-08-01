@@ -1,4 +1,5 @@
 ## NEXT
+- [#1148](https://github.com/echoua/echo/issues/1148) Виправлено помилку злиття мереж
 - [#1107](https://github.com/echoua/echo/issues/1107) Сторінка адміністрування смуг `еталонка -> смуги`, тільки для адмінів
 - [#1129](https://github.com/echoua/echo/issues/1129) лічильники активності груп
 - [#1125](https://github.com/echoua/echo/issues/1125) Нотатки до груп і опис до месенджерів
