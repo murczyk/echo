@@ -110,6 +110,7 @@ type alias Model =
     , orphanGroupEditDialog : Maybe OrphanGroupEditDialog
     , orphanGroupEditInProgress : Maybe String -- groupKey being edited
     , orphanGroupEditError : Maybe String
+    , areasOfResponsibility : RemoteData ApiError (List B.AreaOfResponsibility)
     }
 
 
@@ -334,11 +335,13 @@ init _ =
       , orphanGroupEditDialog = Nothing
       , orphanGroupEditInProgress = Nothing
       , orphanGroupEditError = Nothing
+      , areasOfResponsibility = RD.NotAsked
       }
     , E.sendCmd <|
         Cmd.batch
             [ Api.datasource_list GotDatasourceList
             , Api.orphan_signal_groups GotOrphanGroups
+            , Api.aor_list AreasOfResponsibilityLoaded { sortBy = Nothing }
             ]
     )
 
@@ -396,6 +399,8 @@ type Msg
     | GroupEditUserSelectMsg (Select.Msg String)
     | SaveGroupEdit
     | SaveGroupEditDone (Result ApiError B.ZoneDatasourceGroup)
+    | LoadAreasOfResponsibility
+    | AreasOfResponsibilityLoaded (Result ApiError (List B.AreaOfResponsibility))
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -838,6 +843,7 @@ update msg model =
                                     , userLogins = model.userSelectorSelect.selectedItems
                                     , shortNote = g.shortNote
                                     , longNote = g.longNote
+                                    , areaOfResponsibilityId = Nothing --TODO
                                     }
                             in
                             ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
@@ -1033,7 +1039,7 @@ update msg model =
                                     case existingOrphanGroup of
                                         Just orphanGroup ->
                                             orphanGroup.groupStats
-                                        
+
                                         Nothing ->
                                             { activityLastDay = 0, activityLastWeek = 0 }
 
@@ -1041,16 +1047,17 @@ update msg model =
                                     case existingOrphanGroup of
                                         Just orphanGroup ->
                                             orphanGroup.groupAdminData
-                                        
+
                                         Nothing ->
                                             Nothing
                             in
                             Dict.insert response.groupMasterKey
                                 { masterKey = response.groupMasterKey
                                 , name = name
-                                , ignoreOperativny = False -- Default value
+                                , ignoreOperativny = False
                                 , groupStats = existingGroupStats
-                                , adminData = existingAdminData -- Preserve existing admin data from orphan group
+                                , adminData = existingAdminData
+                                , areaOfResponsibility = Nothing --TODO
                                 }
                                 model.groupInfos
 
@@ -1196,6 +1203,7 @@ update msg model =
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
                                         , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
                                         , groupAdminData = groupInfo |> Maybe.andThen .adminData
+                                        , areaOfResponsibility = Nothing --TODO
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1634,6 +1642,7 @@ update msg model =
 
                                         else
                                             Just dialog.longNote
+                                    , areaOfResponsibilityId = Nothing --TODO
                                     }
                             in
                             ( { model
@@ -1807,6 +1816,7 @@ update msg model =
                                     Nothing
                                 else
                                     Just dialog.longNote
+                            , areaOfResponsibilityId = Nothing --TODO
                             }
                     in
                     ( { model
@@ -1834,7 +1844,7 @@ update msg model =
                                                     case (updatedGroup.shortNote, updatedGroup.longNote) of
                                                         (Nothing, Nothing) ->
                                                             Nothing
-                                                        
+
                                                         _ ->
                                                             Just
                                                                 { shortNote = updatedGroup.shortNote
@@ -1873,6 +1883,19 @@ update msg model =
 
                 Nothing ->
                     ( model, E.none )
+
+        LoadAreasOfResponsibility ->
+            ( model, E.sendCmd <| Api.aor_list AreasOfResponsibilityLoaded { sortBy = Nothing } )
+
+        AreasOfResponsibilityLoaded (Ok areas) ->
+            ( { model | areasOfResponsibility = RD.Success areas }
+            , E.none
+            )
+
+        AreasOfResponsibilityLoaded (Err e) ->
+            ( { model | areasOfResponsibility = RD.Failure e }
+            , E.none
+            )
 
 
 subscriptions : Model -> Sub Msg
