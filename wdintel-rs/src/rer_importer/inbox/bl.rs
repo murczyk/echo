@@ -284,7 +284,24 @@ pub async fn fill_callsigns(
 pub async fn load_inbox_networks(
     inbox_items: &Vec<(i64, InboxMessage)>,
     txn: &DatabaseTransaction,
+// ) -> Result<Vec<(i64, Vec<Network>)>, AppError> {
 ) -> Result<Vec<Network>, AppError> {
+
+    // Get all (group_master_key, freq) pairs from inbox items
+    let mut group_freq_map: HashMap<String, HashSet<String>> = HashMap::new();
+    for (_, msg) in inbox_items {
+        if let (Some(group_key), Some(freq)) =
+            (&msg.group_master_key, &msg.freq)
+        {
+            group_freq_map
+                .entry(group_key.clone())
+                .or_default()
+                .insert(freq.clone());
+        }
+    }
+    let group_ids: Vec<String> = group_freq_map.keys().copied().collect();
+
+
     let freqs = inbox_items
         .iter()
         .filter_map(|x| x.1.freq.clone())
