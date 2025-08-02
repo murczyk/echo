@@ -24,8 +24,11 @@ import Le.ErrorHandling
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.RerMessage
 import Le.Types exposing (..)
+import Le.Time
 import Le.Utils as Utils exposing (..)
 import Maybe
+import Time
+import TimeZone
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
@@ -2840,16 +2843,16 @@ renderOrphanGroupsTable model groups =
                 { toId = .masterKey
                 , toMsg = OrphanGroupsTableStateChanged
                 , columns =
-                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "15%"
+                    [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "16%"
                     , Table.customColumn
                         { name = "Створено"
                         , viewData = formatCreatedAt
                         , sorter = Table.decreasingBy .createdAt
                         }
-                        |> Table.withColumnWidth "12%"
-                    , Table.customColumn
+                        |> Table.withColumnWidth "10%"
+                    , Table.veryCustomColumn
                         { name = "Джерело даних"
-                        , viewData = getDatasourceName
+                        , viewData = renderDatasourceIcon
                         , sorter = Table.unsortable
                         }
                         |> Table.withColumnWidth "15%"
@@ -2870,7 +2873,7 @@ renderOrphanGroupsTable model groups =
                         , viewData = renderShortNoteColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "15%"
+                        |> Table.withColumnWidth "13%"
                     , Table.veryCustomColumn
                         { name = "Довга нотатка"
                         , viewData = renderLongNoteColumn
@@ -2963,10 +2966,18 @@ renderOrphanGroupsTable model groups =
 
                 date : String
                 date =
-                    -- Convert milliseconds to date string
-                    -- This is a simple implementation - in production you'd want a proper date library
+                    -- Convert milliseconds to date string in DD-MM-YY format
                     if timestamp > 0 then
-                        "2024-01-" ++ String.fromInt (modBy 31 (timestamp // 86400000) + 1)
+                        let
+                            posixTime =
+                                Time.millisToPosix timestamp
+                            
+                            -- Use Europe/Kyiv timezone (hardcoded for now)
+                            timeZone =
+                                TimeZone.europe__kyiv ()
+                        in
+                        Le.Time.renderDateF6 timeZone posixTime
+                            |> String.replace "." "-"
 
                     else
                         "-"
@@ -2992,6 +3003,61 @@ renderOrphanGroupsTable model groups =
 
                 Nothing ->
                     "-"
+
+        renderDatasourceIcon : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderDatasourceIcon group =
+            let
+                datasourceInfo =
+                    case group.datasourceId of
+                        Just datasourceId ->
+                            List.filterMap
+                                (\( id, datasource ) ->
+                                    if id == datasourceId then
+                                        Just datasource
+
+                                    else
+                                        Nothing
+                                )
+                                model.datasources
+                                |> List.head
+
+                        Nothing ->
+                            Nothing
+
+                ( iconClass, tooltipText, iconColor ) =
+                    case datasourceInfo of
+                        Just datasource ->
+                            case String.toLower datasource.kind of
+                                "signal" ->
+                                    ( "bi-signal", "Signal", "text-blue-600" )
+
+                                "whatsapp" ->
+                                    ( "bi-whatsapp", "WhatsApp", "text-green-600" )
+
+                                _ ->
+                                    ( "bi-question-circle", datasource.displayName, "text-gray-500" )
+
+                        Nothing ->
+                            ( "bi-question-circle", "Невідоме джерело", "text-gray-500" )
+            in
+            { attributes = []
+            , children =
+                [ div [ class "flex items-center justify-center gap-2" ]
+                    [ i [ class ("bi " ++ iconClass ++ " " ++ iconColor ++ " text-lg"), title tooltipText ] []
+                    , case datasourceInfo of
+                        Just datasource ->
+                            case datasource.signalPhone of
+                                Just phone ->
+                                    span [ class "text-sm text-gray-600" ] [ text phone ]
+                                
+                                Nothing ->
+                                    text ""
+                        
+                        Nothing ->
+                            text ""
+                    ]
+                ]
+            }
 
         formatActivity : B.OrphanSignalGroupEntry -> String
         formatActivity group =
