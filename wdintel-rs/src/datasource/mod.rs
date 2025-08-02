@@ -8,6 +8,7 @@ use chrono::prelude::*;
 use sea_orm::*;
 use sea_query::Expr;
 
+pub(crate) mod importer;
 pub mod types;
 
 #[post("/api/datasources/list")]

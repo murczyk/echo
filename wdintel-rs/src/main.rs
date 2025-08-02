@@ -261,6 +261,24 @@ pub struct OneoffExportEtalonDataPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffImportDataSourcePs {
+    #[arg(long, value_enum)]
+    pub source_path: String,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffExportDataSourcePs {
+    #[arg(long, value_enum)]
+    pub destination_path: String,
+    #[arg(long, value_enum)]
+    pub datasource_id: i64,
+    #[arg(long, value_enum)]
+    pub since_epoch_ms: Option<i64>,
+    #[arg(long, value_enum)]
+    pub till_epoch_ms: Option<i64>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct RenewTailscaleCertPs {
     #[arg(long, value_enum)]
     pub force: Option<bool>,
@@ -314,6 +332,8 @@ enum Cmd {
     OneoffExportEtalonData(OneoffExportEtalonDataPs),
     OneoffBackupVaultSecretsToBitwarden,
     OneoffRestoreVaultSecretsFromBitwarden,
+    OneoffImportDataSource(OneoffImportDataSourcePs),
+    OneoffExportDataSource(OneoffExportDataSourcePs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -576,6 +596,12 @@ fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffRestoreVaultSecretsFromBitwarden => {
             crate::secret::oneoff_restore_vault_secrets_from_bitwarden(mode)
+        }
+        Cmd::OneoffImportDataSource(ps) => {
+            crate::datasource::importer::oneoff_import_datasource(mode, ps)
+        }
+        Cmd::OneoffExportDataSource(ps) => {
+            crate::datasource::importer::oneoff_export_datasource(mode, ps)
         }
     }
 }

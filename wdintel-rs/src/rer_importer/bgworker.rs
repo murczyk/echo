@@ -19,6 +19,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
     config: &Config,
     redis: &mut redis::aio::ConnectionManager,
     message_id: i64,
+    m_created_at: Option<NaiveDateTime>,
 ) where
     C: ConnectionTrait + 'async_trait,
 {
@@ -36,6 +37,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
             message_id,
             &mut cache,
             redis,
+            m_created_at,
         )
         .await
         {
@@ -57,6 +59,7 @@ async fn inbox_item_worker_1<'a, 'async_trait, C>(
     message_id: i64,
     cache: &mut TopKCache<String, String>,
     redis: &mut redis::aio::ConnectionManager,
+    m_created_at: Option<NaiveDateTime>,
 ) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -175,6 +178,11 @@ where
 
     let message = try_set_commintify_sender(&body, message, txn).await?;
 
+    let datetime = match m_created_at {
+        Some(ts) => Set(Some(ts)),
+        None => NotSet,
+    };
+
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
         date: Set(date_v),
@@ -206,7 +214,7 @@ where
         callsigns_alg2: Set(Some(
             serde_json::to_value(callsigns_alg2).context(h!())?,
         )),
-        datetime: NotSet,
+        datetime,
         signal_tokens: Set(Some(
             serde_json::to_value(signal_tokens).context(h!())?,
         )),

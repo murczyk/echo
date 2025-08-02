@@ -198,6 +198,7 @@ pub async fn rer_delta_kmz_import_go(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = signal_message::Entity::insert(message)
             .exec(dbx)
@@ -210,6 +211,7 @@ pub async fn rer_delta_kmz_import_go(
             &config,
             redis,
             db_message_id,
+            None,
         )
         .await;
         crate::sigint::worker::incoming_message_after_insert(

@@ -582,6 +582,7 @@ async fn xlsx_import_process_one(
         format: Set(Some(2)),
         datasource_id: Set(Some(datasource_id as i64)),
         deleted: NotSet,
+        external_id: NotSet,
     };
 
     let db_message_id: i64 = SignalMessage::insert(message)
@@ -595,6 +596,7 @@ async fn xlsx_import_process_one(
         &config,
         redis,
         db_message_id,
+        None,
     )
     .await;
 

@@ -4,10 +4,6 @@ use log::*;
 #[tokio::main]
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode.clone())?;
-    if !config.read_from_legacy_data_sources.unwrap_or(true) {
-        info!("legacy datasource processing disabled, exiting...");
-        return Ok(());
-    }
 
     crate::migration::run_migration_1(mode)
         .await
@@ -20,12 +16,23 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
     ));
 
     let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-    let datasources = datasource::Entity::find()
+    let all_datasources = datasource::Entity::find()
         .filter(datasource::Column::Enabled.eq(true))
         .order_by_asc(datasource::Column::Id)
         .all(&dbx)
         .await
         .context(h!())?;
+    let mut datasources = vec![];
+    for datasource in all_datasources {
+        if datasource.echo_client_lock_id.is_some() {
+            info!(
+                "datasource {} is being handled by echo-im worker, skipping...",
+                datasource.display_name
+            );
+        } else {
+            datasources.push(datasource);
+        }
+    }
     let jset = tokio::task::LocalSet::new();
     info!("found enabled datasources: {}", datasources.len());
     for datasource in datasources {
@@ -369,6 +376,7 @@ pub async fn process_incoming_message_restapi(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = SignalMessage::insert(message)
             .exec(dbx)
@@ -410,6 +418,7 @@ pub async fn process_incoming_message_restapi(
             &config,
             redis,
             db_message_id,
+            None,
         )
         .await;
 

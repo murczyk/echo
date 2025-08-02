@@ -117,6 +117,7 @@ pub async fn oneoff_rer_csv_import_1(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = signal_message::Entity::insert(message)
             .exec(&dbx)
@@ -129,6 +130,7 @@ pub async fn oneoff_rer_csv_import_1(
             &config,
             redis,
             db_message_id,
+            None,
         )
         .await;
         crate::sigint::worker::incoming_message_after_insert(
@@ -358,6 +360,7 @@ pub async fn rer_delta_csv_import_go(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = signal_message::Entity::insert(message)
             .exec(dbx)
@@ -370,6 +373,7 @@ pub async fn rer_delta_csv_import_go(
             &config,
             redis,
             db_message_id,
+            None,
         )
         .await;
         crate::sigint::worker::incoming_message_after_insert(

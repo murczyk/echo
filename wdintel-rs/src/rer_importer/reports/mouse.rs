@@ -625,7 +625,10 @@ pub async fn report_docx_kind_mouse(
                 .map(|item| (item.id, item))
                 .collect();
         let comments = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids.clone()))
+            .filter(
+                sigint_comment::Column::SignalMessageId
+                    .is_in(message_ids.clone()),
+            )
             .filter(sigint_comment::Column::Login.is_in(logins.clone()))
             .all(&env.dbx)
             .await
