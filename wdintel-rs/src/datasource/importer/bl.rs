@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::entities::*;
 use crate::h;
 use crate::location::SettlementsData;
+use crate::sigint::worker::incoming_message_after_insert;
 use anyhow::Context;
 use itertools::Itertools;
 use log::{debug, info};
@@ -180,7 +181,11 @@ pub async fn upsert_messages(
                 continue;
             }
             let new_message = entry.message.clone();
-            let created_at = entry.inbox_item.datetime.clone();
+            let m_created_at =
+                match (&entry.inbox_item.date, &entry.inbox_item.time) {
+                    (Some(d), Some(t)) => Some((d.clone(), t.clone())),
+                    _ => None,
+                };
             let current_progress = processed as f64 * 100.0 / total_messages;
             if progress < current_progress {
                 info!("upsert_messages progress: {}%", progress);
@@ -212,9 +217,12 @@ pub async fn upsert_messages(
                 &config,
                 &mut redis,
                 new_id,
-                created_at,
+                m_created_at,
             )
             .await;
+            incoming_message_after_insert(&txn, new_id)
+                .await
+                .context(h!())?;
             txn.commit().await.context(h!())?;
         }
     }
