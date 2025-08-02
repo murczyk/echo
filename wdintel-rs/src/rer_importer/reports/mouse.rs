@@ -4,7 +4,8 @@ use crate::error::AppError;
 use crate::types::*;
 use crate::utils::*;
 use actix_identity::Identity;
-use anyhow::Context; // Add this import if h!() uses anyhow::Context
+use anyhow::Context;
+// Add this import if h!() uses anyhow::Context
 use chrono::prelude::*;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;
@@ -590,6 +591,45 @@ pub async fn report_docx_kind_mouse(
                     )
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             )]));
+        let datasource_map: BTreeMap<i64, datasource::Model> =
+            datasource::Entity::find()
+                .all(&env.dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .map(|datasource| (datasource.id, datasource))
+                .collect();
+        let message_ids = freq_msgs
+            .iter()
+            .map(|(message_id, _)| *message_id)
+            .collect::<Vec<_>>();
+        let message_map: BTreeMap<i64, signal_message::Model> =
+            signal_message::Entity::find()
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(signal_message::Column::Id.is_in(message_ids.clone()))
+                .all(&env.dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .map(|item| (item.id, item))
+                .collect();
+        let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
+            sigint_inbox_item::Entity::find()
+                .filter(
+                    sigint_inbox_item::Column::Id.is_in(message_ids.clone()),
+                )
+                .all(&env.dbx)
+                .await
+                .context(h!())?
+                .into_iter()
+                .map(|item| (item.id, item))
+                .collect();
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids.clone()))
+            .filter(sigint_comment::Column::Login.is_in(logins.clone()))
+            .all(&env.dbx)
+            .await
+            .context(h!())?;
         for (message_id, message) in freq_msgs {
             let Some(freq) = message.freq.as_ref() else {
                 continue;
@@ -599,26 +639,16 @@ pub async fn report_docx_kind_mouse(
             };
             let mut body_cell =
                 TableCell::new().width(width_unit * 6, WidthType::Dxa);
-            let Some(msg) = signal_message::Entity::find_by_id(message_id)
-                .filter(signal_message::Column::Deleted.eq(false))
-                .one(&env.dbx)
-                .await?
-            else {
+            let Some(msg) = message_map.get(&message_id).cloned() else {
                 continue;
             };
             let Some(datasource_id) = msg.datasource_id else {
                 continue;
             };
-            let Some(inbox) = sigint_inbox_item::Entity::find_by_id(message_id)
-                .one(&env.dbx)
-                .await?
-            else {
+            let Some(inbox) = inbox_map.get(&message_id).cloned() else {
                 continue;
             };
-            let Some(datasource) =
-                datasource::Entity::find_by_id(datasource_id)
-                    .one(&env.dbx)
-                    .await?
+            let Some(datasource) = datasource_map.get(&datasource_id).cloned()
             else {
                 continue;
             };
@@ -633,11 +663,11 @@ pub async fn report_docx_kind_mouse(
             if bookmark_ids.contains(&message_id) {
                 need_highlight = true;
             }
-            let m_comment = sigint_comment::Entity::find()
-                .filter(sigint_comment::Column::SignalMessageId.eq(message_id))
-                .filter(sigint_comment::Column::Login.is_in(logins.clone()))
-                .one(&env.dbx)
-                .await?;
+            let m_comment = comments
+                .iter()
+                .filter(|x| x.signal_message_id.eq(&message_id))
+                .next()
+                .cloned();
             let mut full_text =
                 message_full_text(&msg, &inbox, &datasource, &m_comment)?;
             if need_highlight {

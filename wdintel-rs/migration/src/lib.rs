@@ -111,6 +111,7 @@ mod m20250730_090455_add_messenger_account_description;
 mod m20250730_181007_add_group_admin_data;
 mod m20250731_115541_expand_aor_table;
 mod m20250801_080750_add_cascade_fk;
+mod m20250802_081423_migrate_account_to_datasource;
 
 pub struct Migrator;
 
@@ -229,6 +230,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250730_181007_add_group_admin_data::Migration),
             Box::new(m20250731_115541_expand_aor_table::Migration),
             Box::new(m20250801_080750_add_cascade_fk::Migration),
+            Box::new(m20250802_081423_migrate_account_to_datasource::Migration),
         ]
     }
 }

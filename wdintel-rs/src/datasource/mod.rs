@@ -81,7 +81,10 @@ pub async fn datasource_group_list(
             .await
             .context(h!())?;
         if res.iter().any(|x| x.is_none()) {
-            warn!("Found null group_master_key list for datasource id={}", datasource_id);
+            warn!(
+                "Found null group_master_key list for datasource id={}",
+                datasource_id
+            );
         }
         return Ok(Json(res.into_iter().flatten().collect()));
     } else if datasource.kind == "api" {

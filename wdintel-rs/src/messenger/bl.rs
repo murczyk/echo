@@ -48,7 +48,7 @@ pub async fn edit_account(
     } else {
         AccountStatus::Paused
     };
-    let mut account = messenger_account::Entity::find_by_id(id)
+    let mut account = datasource::Entity::find_by_id(id)
         .one(txn)
         .await
         .context(h!())?
@@ -82,7 +82,7 @@ pub async fn deactivate_account(
         .await
         .context(h!())?,
     };
-    messenger_account::Entity::delete_by_id(account.id)
+    datasource::Entity::delete_by_id(account.id)
         .exec(txn)
         .await
         .context(h!())?;
@@ -130,11 +130,10 @@ pub async fn link_account(
     }
 
     let port = find_port_available(8010, 9000).await.context(h!())?;
+    let src_display_name = src.to_string().to_lowercase();
     let attachment_path = format!(
         "/etc/echo/{}-cli-data/{}/{}-cli/attachments/",
-        src.to_string().to_lowercase(),
-        system_service_name,
-        src.to_string().to_lowercase()
+        src_display_name, system_service_name, src_display_name
     );
     info!("attachment path created: {attachment_path}");
     echo_im::attach_new_client(
@@ -164,13 +163,20 @@ pub async fn link_account(
     .await
     .cae(h!())?;
 
-    let id = messenger_account::ActiveModel {
+    let id = datasource::ActiveModel {
         echo_client_lock_id: Set(Some(lock.id as i64)),
         id: NotSet,
         status: NotSet,
         created_at: NotSet,
         display_name: Set(display_name.to_string()),
+        signal_phone: NotSet,
+        signal_docker_port: NotSet,
+        api_endpoint: NotSet,
+        enabled: NotSet,
+        group_master_key: NotSet,
+        sender_uuid: NotSet,
         description: Set(description),
+        kind: Set(src_display_name),
     }
     .insert(txn)
     .await
@@ -178,29 +184,25 @@ pub async fn link_account(
     .id;
 
     match src {
-        echo_im::types::MessageSource::Signal => {
-            os_specific::start_new_signal_client(
-                &system_service_name,
-                port,
-                SIGNAL_CLIENT_DIR,
-                SIGNAL_UNIT_NAME,
-                CLIENT_DATA_DIR_NAME,
-                &SignalCliMode::Native,
-            )
-            .await
-            .context(h!())?
-        }
-        echo_im::types::MessageSource::Whatsapp => {
-            os_specific::start_new_whatsapp_client(
-                &system_service_name,
-                WHATSAPP_CLIENT_CONFIG,
-                WHATSAPP_CLIENT_DIR,
-                WHATSAPP_UNIT_NAME,
-                CLIENT_DATA_DIR_NAME,
-            )
-            .await
-            .context(h!())?
-        }
+        MessageSource::Signal => os_specific::start_new_signal_client(
+            &system_service_name,
+            port,
+            SIGNAL_CLIENT_DIR,
+            SIGNAL_UNIT_NAME,
+            CLIENT_DATA_DIR_NAME,
+            &SignalCliMode::Native,
+        )
+        .await
+        .context(h!())?,
+        MessageSource::Whatsapp => os_specific::start_new_whatsapp_client(
+            &system_service_name,
+            WHATSAPP_CLIENT_CONFIG,
+            WHATSAPP_CLIENT_DIR,
+            WHATSAPP_UNIT_NAME,
+            CLIENT_DATA_DIR_NAME,
+        )
+        .await
+        .context(h!())?,
     };
 
     load_echo_account(id, txn).await
@@ -245,10 +247,10 @@ pub async fn list_linked_accounts(
         pub is_linked: bool,
     }
 
-    let messenger_accounts = messenger_account::Entity::find()
+    let datasources = datasource::Entity::find()
         .join(
             JoinType::InnerJoin,
-            messenger_account::Relation::EchoClientLock.def(),
+            datasource::Relation::EchoClientLock.def(),
         )
         .join(
             JoinType::InnerJoin,
@@ -260,11 +262,11 @@ pub async fn list_linked_accounts(
         )
         .filter(echo_client::Column::Deleted.eq(false))
         .select_only()
-        .column(messenger_account::Column::Id)
-        .column(messenger_account::Column::DisplayName)
-        .column(messenger_account::Column::Description)
-        .column(messenger_account::Column::Status)
-        .column(messenger_account::Column::CreatedAt)
+        .column(datasource::Column::Id)
+        .column(datasource::Column::DisplayName)
+        .column(datasource::Column::Description)
+        .column(datasource::Column::Status)
+        .column(datasource::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
         .column_as(echo_client::Column::Name, "system_service_name")
         .column(echo_account::Column::Source)
@@ -288,7 +290,7 @@ pub async fn list_linked_accounts(
             description: a.description,
         })
         .collect();
-    Ok(messenger_accounts)
+    Ok(datasources)
 }
 
 pub async fn find_port_available(

@@ -41,7 +41,7 @@ pub enum Relation {
         from = "Column::NetworkId",
         to = "super::sigint_network::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     SigintNetwork,
     #[sea_orm(
@@ -49,7 +49,7 @@ pub enum Relation {
         from = "Column::SigintNetworkFreqId",
         to = "super::sigint_network_freq::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     SigintNetworkFreq,
     #[sea_orm(

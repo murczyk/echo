@@ -141,12 +141,14 @@ pub async fn report_docx_kind_tag(
         )
         .add_paragraph(Paragraph::new());
 
-    let datasources =
-        datasource::Entity::find().all(&txn).await.context(h!())?;
-    let datasource_per_id: BTreeMap<i64, datasource::Model> = datasources
-        .iter()
-        .map(|datasource| (datasource.id, datasource.clone()))
-        .collect();
+    let datasource_map: BTreeMap<i64, datasource::Model> =
+        datasource::Entity::find()
+            .all(&txn)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|datasource| (datasource.id, datasource))
+            .collect();
 
     let mut rows: Vec<Paragraph> = vec![];
     for (message_id, message) in messages.iter() {
@@ -175,7 +177,7 @@ pub async fn report_docx_kind_tag(
         else {
             continue;
         };
-        let Some(datasource) = datasource_per_id.get(&datasource_id) else {
+        let Some(datasource) = datasource_map.get(&datasource_id) else {
             //
             continue;
         };

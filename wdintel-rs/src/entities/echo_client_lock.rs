@@ -18,6 +18,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::datasource::Entity")]
+    Datasource,
     #[sea_orm(
         belongs_to = "super::echo_account::Entity",
         from = "Column::AccountId",
@@ -36,6 +38,12 @@ pub enum Relation {
     EchoClient,
     #[sea_orm(has_many = "super::messenger_account::Entity")]
     MessengerAccount,
+}
+
+impl Related<super::datasource::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Datasource.def()
+    }
 }
 
 impl Related<super::echo_account::Entity> for Entity {

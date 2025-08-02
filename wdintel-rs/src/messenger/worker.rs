@@ -1,5 +1,4 @@
 use crate::config::{read_config, Config};
-use crate::entities::datasource::Model;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
@@ -115,16 +114,9 @@ async fn sync_groups(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
 ) -> anyhow::Result<()> {
-    let mut datasources = collect_datasources(txn)
+    let datasource = load_client_datasource(txn, client_name)
         .await
-        .context(h!())?
-        .into_iter()
-        .map(|(kind, model)| (kind, model.id))
-        .collect::<BTreeMap<_, _>>();
-    let signal_datasource_id =
-        datasources.remove(&MessageSource::Signal).context(h!())?;
-    let whatsapp_datasource_id =
-        datasources.remove(&MessageSource::Whatsapp).context(h!())?;
+        .context(h!())?;
     let now = Utc::now().naive_utc();
     if let Some(last_updated_ts) =
         client_groups_sync_ts_map.get(client_name).cloned()
@@ -176,7 +168,7 @@ async fn sync_groups(
                 id: g.master_key,
                 name: g.name,
                 created_at: g.created_at,
-                datasource_id: signal_datasource_id,
+                datasource_id: datasource.id,
             })
         });
     whatsapp_group::Entity::find()
@@ -192,7 +184,7 @@ async fn sync_groups(
                 id: g.jid,
                 name: Some(g.name),
                 created_at: g.created_at,
-                datasource_id: whatsapp_datasource_id,
+                datasource_id: datasource.id,
             })
         });
     for g in groups_raw {
@@ -213,15 +205,11 @@ async fn sync_groups(
 
     for g in groups {
         let group_id = g.id.clone();
-        let datasource_id = match g.message_source {
-            MessageSource::Signal => signal_datasource_id,
-            MessageSource::Whatsapp => whatsapp_datasource_id,
-        };
-        match existing_groups.get(&(group_id.clone(), datasource_id)) {
+        match existing_groups.get(&(group_id.clone(), datasource.id)) {
             None => {
                 signal_group::ActiveModel {
                     name: Set(Some(g.name.clone())),
-                    datasource_id: Set(Some(whatsapp_datasource_id)),
+                    datasource_id: Set(Some(datasource.id)),
                     created_at: NotSet,
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
@@ -302,8 +290,10 @@ async fn sync_inbox(
     settlements: Arc<RwLock<SettlementsData>>,
 ) -> anyhow::Result<()> {
     debug!("syncing inbox for client_name={client_name}");
+    let datasource = load_client_datasource(db, client_name)
+        .await
+        .context(h!())?;
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
-    let datasources = collect_datasources(db).await.context(h!())?;
     let txn = db.begin().await.context(h!())?;
     let inbox_messages =
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
@@ -337,7 +327,7 @@ async fn sync_inbox(
                 if let Err(e) = receive_once(
                     &m,
                     &txn,
-                    &datasources,
+                    &datasource,
                     redis,
                     config,
                     rq,
@@ -357,29 +347,6 @@ async fn sync_inbox(
     Ok(())
 }
 
-async fn collect_datasources<'a, 'async_trait, C>(
-    db: &'a C,
-) -> anyhow::Result<BTreeMap<MessageSource, Model>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let mut all_data_sources = datasource::Entity::find()
-        .all(db)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|s| (s.kind.clone(), s))
-        .collect::<BTreeMap<_, _>>();
-    let mut result = BTreeMap::new();
-    if let Some(source) = all_data_sources.remove("signal") {
-        result.insert(MessageSource::Signal, source);
-    }
-    if let Some(source) = all_data_sources.remove("whatsapp") {
-        result.insert(MessageSource::Whatsapp, source);
-    }
-    Ok(result)
-}
-
 async fn list_clients(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
@@ -392,7 +359,7 @@ async fn list_clients(
 async fn receive_once(
     m: &MessageF1,
     txn: &DatabaseTransaction,
-    datasources: &BTreeMap<MessageSource, Model>,
+    datasource: &datasource::Model,
     redis: &mut ConnectionManager,
     config: &Config,
     rq: &Client,
@@ -400,10 +367,8 @@ async fn receive_once(
 ) -> Result<(), AppError> {
     if m.group_id.is_none() {
         warn!("skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
-        return Ok(())
+        return Ok(());
     }
-    let datasource_id =
-        datasources.get(&m.message_source).map(|m| m.id.clone());
     let body = m.text.clone();
     // Normalize body
     let body = body.replace("\r\n", "\n");
@@ -420,7 +385,7 @@ async fn receive_once(
         sender: Set(m.sender.clone().map(|s| s.uuid)),
         duplicate_of: Set(m_duplicate_id),
         format: NotSet,
-        datasource_id: Set(datasource_id),
+        datasource_id: Set(Some(datasource.id)),
         deleted: NotSet,
     }
     .insert(txn)
@@ -456,4 +421,27 @@ async fn receive_once(
     .await
     .context(h!())?;
     Ok(())
+}
+
+async fn load_client_datasource<'a, 'async_trait, C>(
+    txn: &'a C,
+    client_name: &str,
+) -> anyhow::Result<datasource::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    datasource::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            datasource::Relation::EchoClientLock.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            echo_client_lock::Relation::EchoClient.def(),
+        )
+        .filter(echo_client::Column::Name.eq(client_name))
+        .one(txn)
+        .await
+        .context(h!())?
+        .context(h!())
 }
