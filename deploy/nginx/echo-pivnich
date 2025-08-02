@@ -1,5 +1,5 @@
 server {
-    server_name echo-pivnich.hyakutake-chromatic.ts.net;
+    server_name echo-pivnich.hyakutake-chromatic.ts.net pivnich.echoua.info;
 
     root /usr/share/echo;
     index index.html;

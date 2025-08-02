@@ -188,8 +188,8 @@ pub async fn upsert_messages(
                 };
             let current_progress = processed as f64 * 100.0 / total_messages;
             if progress < current_progress {
-                info!("upsert_messages progress: {}%", progress);
-                progress += 1.0;
+                info!("upsert_messages progress: {:.1}%", progress);
+                progress += 0.1;
             }
             processed += 1;
             let sender = match &new_message.sender {

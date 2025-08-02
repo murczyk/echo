@@ -121,8 +121,31 @@ async fn collect_datasource_data(
         .await
         .context(h!())?;
 
-    let messages = sigint_inbox_item::Entity::find()
-        .find_with_related(signal_message::Entity)
+    let mut messages_q = sigint_inbox_item::Entity::find()
+        .find_with_related(signal_message::Entity);
+
+    if let Some(since_ms) = params.since_epoch_ms {
+        if let Some(datetime) =
+            chrono::DateTime::from_timestamp_millis(since_ms)
+        {
+            let since = datetime.naive_utc();
+            info!("collecting messages since {}", since);
+            messages_q = messages_q
+                .filter(sigint_inbox_item::Column::Datetime.gte(since));
+        }
+    }
+
+    if let Some(till_ms) = params.till_epoch_ms {
+        if let Some(datetime) = chrono::DateTime::from_timestamp_millis(till_ms)
+        {
+            let till = datetime.naive_utc();
+            info!("collecting messages till {}", till);
+            messages_q = messages_q
+                .filter(sigint_inbox_item::Column::Datetime.lte(till));
+        }
+    }
+
+    let messages = messages_q
         .all(&db)
         .await
         .context(h!())?
@@ -169,6 +192,8 @@ async fn import_data(
         bl::upsert_signal_profiles(&db, imported_data.profiles)
             .await
             .context(h!())?;
+    println!("imported {} signal profiles", signal_profiles_map.len());
+    let count = imported_data.signal_groups.len();
     bl::upsert_signal_groups(
         &db,
         imported_data.signal_groups,
@@ -176,9 +201,12 @@ async fn import_data(
     )
     .await
     .context(h!())?;
+    println!("imported {} signal groups", count);
+    let count = imported_data.whatsapp_groups.len();
     bl::upsert_whatsapp_groups(&db, imported_data.whatsapp_groups)
         .await
         .context(h!())?;
+    println!("imported {} whatsapp groups", count);
     bl::upsert_messages(
         &db,
         imported_data.messages,
