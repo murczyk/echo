@@ -49,9 +49,10 @@ pub async fn oneoff_export_datasource(
     let db = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
-    let mut destination_file = tokio::fs::File::create(&params.destination_path)
-        .await
-        .context(h!())?;
+    let mut destination_file =
+        tokio::fs::File::create(&params.destination_path)
+            .await
+            .context(h!())?;
     let exported_data =
         collect_datasource_data(params, db).await.context(h!())?;
 
@@ -65,7 +66,10 @@ pub async fn oneoff_export_datasource(
     };
 
     let data = serde_json::to_string(&result).context(h!())?;
-    destination_file.write_all(data.as_bytes()).await.context(h!())?;
+    destination_file
+        .write_all(data.as_bytes())
+        .await
+        .context(h!())?;
     info!("done oneoff_export_datasource!");
     Ok(())
 }
@@ -74,10 +78,18 @@ async fn collect_datasource_data(
     params: OneoffExportDataSourcePs,
     db: DatabaseConnection,
 ) -> anyhow::Result<DatasourceDetails> {
-    let datasource = datasource::Entity::find_by_id(params.datasource_id).one(&db).await.context(h!())?.context(h!())?;
+    let datasource = datasource::Entity::find_by_id(params.datasource_id)
+        .one(&db)
+        .await
+        .context(h!())?
+        .context(h!())?;
 
     let exported_data = DatasourceDetails {
-        ..Default::default()
+        datasource,
+        profiles: vec![],
+        signal_groups: vec![],
+        whatsapp_groups: vec![],
+        messages: vec![],
     };
     Ok(exported_data)
 }

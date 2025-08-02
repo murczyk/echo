@@ -8,8 +8,8 @@ use chrono::prelude::*;
 use sea_orm::*;
 use sea_query::Expr;
 
-pub mod types;
 pub(crate) mod importer;
+pub mod types;
 
 #[post("/api/datasources/list")]
 pub async fn list_datasources(
