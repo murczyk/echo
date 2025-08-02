@@ -43,6 +43,7 @@ import Time
 import Time.Extra
 import Url.Builder
 import View exposing (View)
+import Le.Block.Popup as Popup
 
 
 page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
@@ -204,6 +205,7 @@ type alias Model =
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
     , freqEditSidebar : Maybe (String, B.UpdateNetworkFreqReq)
+    , freqDetailPopup : Maybe String
     }
 
 
@@ -264,6 +266,7 @@ init route shared () =
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
       , freqEditSidebar = Nothing
+      , freqDetailPopup = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -340,6 +343,8 @@ type Msg
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
     | SaveFreqEditSidebar
+    | OpenFreqDetailPopup String
+    | CloseFreqDetailPopup
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1148,6 +1153,12 @@ update shared msg model =
                 Nothing ->
                     ( model, E.none )
 
+        OpenFreqDetailPopup freqId ->
+            ( { model | freqDetailPopup = Just freqId }, E.none )
+
+        CloseFreqDetailPopup ->
+            ( { model | freqDetailPopup = Nothing }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1293,7 +1304,7 @@ freqsTableConfig shared model user =
                                         in
                                         { attributes = []
                                         , children =
-                                            [ div [ style "width" "150px", style "height" "60px" ]
+                                            [ div [ style "width" "150px", style "height" "60px", style "cursor" "pointer", onClick (OpenFreqDetailPopup freq.freq) ]
                                                 [ Html.node "freq-activity-chart"
                                                     [ property "data" <| freqActivityJson
                                                     , property "lastDay" <| Encode.int shared.now
@@ -2554,6 +2565,23 @@ view user shared model =
                 , case model.freqEditSidebar of
                     Just (freqId, updateReq) ->
                         Sidebar.view True CloseFreqEditSidebar (freqEditSidebarContent shared model user freqId updateReq)
+
+                    Nothing ->
+                        text ""
+                , case model.freqDetailPopup of
+                    Just freqId ->
+                        Popup.new
+                            { body = div [] []
+                            , popupBody = div [ class "p-6" ]
+                                [ h3 [ class "text-lg font-semibold mb-4" ] [ text ("Детальний графік активності: " ++ freqId) ]
+                                , div [ class "text-center text-gray-500" ] [ text "Тут буде детальний графік" ]
+                                ]
+                            , isOpen = True
+                            , onOpen = OpenFreqDetailPopup freqId
+                            , onClose = CloseFreqDetailPopup
+                            , disabled = False
+                            }
+                            |> Popup.view
 
                     Nothing ->
                         text ""
