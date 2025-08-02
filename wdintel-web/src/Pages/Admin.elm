@@ -179,11 +179,11 @@ renderGroup model zoneId activeSourceId group =
             Dict.get group.groupMasterKey model.groupInfos
                 |> Maybe.map .groupStats
     in
-    div [ class "border rounded-lg mb-3 p-4 bg-[var(--bs-tertiary-bg)]" ]
+    div [ class "border rounded-lg mb-3 p-2 bg-[var(--bs-tertiary-bg)]" ]
         [ -- Header row: Group name, secret icon, action buttons
           div [ class "flex items-center justify-between mb-2" ]
             [ div [ class "flex items-center" ]
-                [ span [ class "font-semibold mr-2 text-lg" ] [ text groupName ]
+                [ span [ class "font-semibold mr-2 text-base" ] [ text groupName ]
                 , -- Group stats display
                   case groupStats of
                     Just stats ->
@@ -191,8 +191,7 @@ renderGroup model zoneId activeSourceId group =
                             [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
                             , span [ class "text-sm text-gray-600 flex items-center" ]
                                 [ span [ class "mr-1" ] [ text "Активність" ]
-                                , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
-                                , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt stats.activityLastDay ++ " / " ++ String.fromInt stats.activityLastWeek) ]
+                                , span [ class "ml-1 font-medium" ] [ text (": день " ++ String.fromInt stats.activityLastDay ++ " / тиждень " ++ String.fromInt stats.activityLastWeek) ]
                                 ]
                             ]
 
@@ -223,7 +222,7 @@ renderGroup model zoneId activeSourceId group =
                   if hasLongNote then
                     button
                         [ class <|
-                            "flex items-center justify-center w-8 h-8 rounded-full transition-colors "
+                            "flex items-center justify-center w-6 h-6 rounded-full transition-colors "
                                 ++ (if isExpanded then
                                         "bg-blue-100 text-blue-700 hover:bg-blue-200"
 
@@ -253,7 +252,7 @@ renderGroup model zoneId activeSourceId group =
                     text ""
                 , -- Edit button
                   button
-                    [ class "flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                    [ class "flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                     , onClick (EditGroup zoneId activeSourceId group.groupMasterKey)
                     , title "Редагувати групу"
                     ]
@@ -266,7 +265,7 @@ renderGroup model zoneId activeSourceId group =
                     text ""
                 , -- Delete button
                   button
-                    [ class "flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                    [ class "flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
                     , onClick (ShowRemoveGroupConfirmation zoneId activeSourceId group.groupMasterKey)
                     , title "Видалити групу з цього напрямку"
                     ]
@@ -2844,9 +2843,15 @@ renderOrphanGroupsTable model groups =
                 , toMsg = OrphanGroupsTableStateChanged
                 , columns =
                     [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "16%"
-                    , Table.customColumn
+                    , Table.veryCustomColumn
                         { name = "Створено"
-                        , viewData = formatCreatedAt
+                        , viewData =
+                            \o ->
+                                { attributes = [ class "col-narrow" ]
+                                , children =
+                                    [ text <| formatCreatedAt o
+                                    ]
+                                }
                         , sorter = Table.decreasingBy .createdAt
                         }
                         |> Table.withColumnWidth "10%"
@@ -2971,7 +2976,7 @@ renderOrphanGroupsTable model groups =
                         let
                             posixTime =
                                 Time.millisToPosix timestamp
-                            
+
                             -- Use Europe/Kyiv timezone (hardcoded for now)
                             timeZone =
                                 TimeZone.europe__kyiv ()
@@ -2983,26 +2988,6 @@ renderOrphanGroupsTable model groups =
                         "-"
             in
             date
-
-        getDatasourceName : B.OrphanSignalGroupEntry -> String
-        getDatasourceName group =
-            case group.datasourceId of
-                Just datasourceId ->
-                    -- Find datasource name by ID
-                    List.filterMap
-                        (\( id, datasource ) ->
-                            if id == datasourceId then
-                                Just datasource.displayName
-
-                            else
-                                Nothing
-                        )
-                        model.datasources
-                        |> List.head
-                        |> Maybe.withDefault (String.fromInt datasourceId)
-
-                Nothing ->
-                    "-"
 
         renderDatasourceIcon : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderDatasourceIcon group =
@@ -3048,25 +3033,16 @@ renderOrphanGroupsTable model groups =
                         Just datasource ->
                             case datasource.signalPhone of
                                 Just phone ->
-                                    span [ class "text-sm text-gray-600" ] [ text phone ]
-                                
+                                    span [ class "text-sm text-muted" ] [ text phone ]
+
                                 Nothing ->
                                     text ""
-                        
+
                         Nothing ->
                             text ""
                     ]
                 ]
             }
-
-        formatActivity : B.OrphanSignalGroupEntry -> String
-        formatActivity group =
-            let
-                activityText : String
-                activityText =
-                    String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek
-            in
-            activityText
 
         renderActivityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderActivityColumn group =
@@ -3273,133 +3249,6 @@ renderOrphanGroupsTable model groups =
         , Pager.view updatedPager
             |> Html.map OrphanGroupsPagerMsg
         ]
-
-
-renderOrphanGroup : Model -> B.OrphanSignalGroupEntry -> Html Msg
-renderOrphanGroup model group =
-    let
-        groupName : String
-        groupName =
-            if String.isEmpty group.name then
-                String.right 5 group.masterKey
-
-            else
-                group.name
-
-        isAssigning : Bool
-        isAssigning =
-            model.orphanGroupAssignmentInProgress == Just group.masterKey
-
-        zoneCount : Int
-        zoneCount =
-            List.length model.zones
-    in
-    div [ class "flex items-center justify-between border rounded-lg p-4 bg-[var(--bs-tertiary-bg)] hover:bg-[var(--bs-secondary-bg)] transition-colors" ]
-        [ div [ class "flex-1" ]
-            [ div [ class "font-semibold" ] [ text groupName ]
-            , div [ class "text-sm text-gray-600" ] [ text group.masterKey ]
-            , -- Group stats display for orphan groups
-              div [ class "mt-2 text-sm text-gray-600 flex items-center" ]
-                [ span [ class "mr-1" ] [ text "Активність" ]
-                , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
-                , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek) ]
-                ]
-            , case model.orphanGroupAssignmentError of
-                Just error ->
-                    div [ class "mt-2 text-xs text-red-600" ] [ text error ]
-
-                Nothing ->
-                    text ""
-            ]
-        , div [ class "flex items-center gap-3" ]
-            [ if isAssigning then
-                div [ class "flex items-center gap-2" ]
-                    [ Le.Block.Spinner.loadingSpinner2Sm
-                    , span [ class "text-sm text-gray-600" ] [ text "Призначення..." ]
-                    ]
-
-              else if zoneCount == 0 then
-                span [ class "text-sm text-gray-500" ] [ text "Немає напрямків" ]
-
-              else if zoneCount == 1 then
-                -- Тільки одна зона - показуємо тільки іконку додати
-                case List.head model.zones of
-                    Just ( zoneId, zone ) ->
-                        div [ class "flex items-center gap-2" ]
-                            [ span [ class "text-sm text-gray-700" ] [ text ("→ " ++ zone.name) ]
-                            , button
-                                [ class "flex items-center justify-center w-8 h-8 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors"
-                                , onClick (OpenOrphanGroupAssignmentDialog group.masterKey [ zoneId ])
-                                , title ("Додати до " ++ zone.name)
-                                ]
-                                [ i [ class "bi bi-plus text-lg" ] [] ]
-                            ]
-
-                    Nothing ->
-                        text ""
-
-              else
-                -- Кілька зон - показуємо теги з напрямками
-                let
-                    selectedZones =
-                        case model.orphanGroupZoneSelector of
-                            Just selector ->
-                                if selector.groupKey == group.masterKey then
-                                    selector.selectedZones
-
-                                else
-                                    []
-
-                            Nothing ->
-                                []
-
-                    hasSelection =
-                        not (List.isEmpty selectedZones)
-                in
-                div [ class "flex items-center gap-2 flex-wrap" ]
-                    ([ span [ class "text-sm text-gray-700" ] [ text "→" ] ]
-                        ++ List.map
-                            (\( zoneId, zone ) ->
-                                let
-                                    isSelected =
-                                        List.member zoneId selectedZones
-                                in
-                                button
-                                    [ class <|
-                                        "px-2 py-1 text-xs rounded-full transition-colors "
-                                            ++ (if isSelected then
-                                                    "bg-blue-100 text-blue-700 border border-blue-300"
-
-                                                else
-                                                    "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
-                                               )
-                                    , onClick (ToggleOrphanGroupZone group.masterKey zoneId)
-                                    , title <|
-                                        if isSelected then
-                                            "Прибрати " ++ zone.name
-
-                                        else
-                                            "Додати " ++ zone.name
-                                    ]
-                                    [ text zone.name ]
-                            )
-                            model.zones
-                        ++ (if hasSelection then
-                                [ button
-                                    [ class "flex items-center justify-center w-6 h-6 rounded-full bg-green-100 hover:bg-green-200 text-green-700 transition-colors ml-1"
-                                    , onClick (OpenOrphanGroupAssignmentDialog group.masterKey selectedZones)
-                                    , title "Додати до вибраних напрямків"
-                                    ]
-                                    [ i [ class "bi bi-plus text-sm" ] [] ]
-                                ]
-
-                            else
-                                []
-                           )
-                    )
-            ]
-        ]
-
 
 groupDatasourcesByType : Int -> Model -> List DatasourceType
 groupDatasourcesByType zoneId model =
