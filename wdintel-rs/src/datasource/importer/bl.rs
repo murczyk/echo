@@ -84,7 +84,6 @@ pub async fn upsert_signal_groups(
     let group_keys = groups.iter().map(|g| g.master_key.clone()).collect_vec();
     let existing_groups = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.is_in(group_keys))
-        .filter(signal_group::Column::DatasourceId.eq(target_datasource_id))
         .all(db)
         .await
         .context(h!())?
