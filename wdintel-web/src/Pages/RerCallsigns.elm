@@ -24,7 +24,7 @@ import Html.Styled as Styled
 import Layouts
 import Le.Auth
 import Le.Block.DateTime
-import Le.Block.Popup
+import FloatingPopup
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
@@ -1539,18 +1539,15 @@ callsignsTableConfig shared model user =
                                                                 _ ->
                                                                     False
                                                     in
-                                                    [ Le.Block.Popup.new
-                                                        { body = body
-                                                        , popupBody = popupBody
+                                                    [ FloatingPopup.new
+                                                        { anchorContent = body
+                                                        , popupContent = popupBody
                                                         , isOpen = isOpen
                                                         , onClose = RowShowAllPopupChanged Nothing
                                                         , onOpen = RowShowAllPopupChanged <| Just ( callsign.id, ShowAllUnits )
-                                                        , disabled = isOpen  -- Вимкнути кліки коли попап відкритий
                                                         }
-                                                        |> Le.Block.Popup.withCloseButton
-                                                        |> Le.Block.Popup.withPlacementTop
-                                                        |> Le.Block.Popup.withSkidding "0"
-                                                        |> Le.Block.Popup.view
+                                                        |> FloatingPopup.withPlacement FloatingPopup.Top
+                                                        |> FloatingPopup.view
                                                     ]
 
                                                 else
