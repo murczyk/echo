@@ -199,7 +199,7 @@ pub struct InboxMessagesReq {
 )]
 pub struct InboxMessagesRsp {
     pub inbox_items: Vec<(i64, InboxMessage)>,
-    pub networks: Vec<Network>,
+    pub networks: Vec<(i64, Vec<Network>)>,
     pub callsigns: Vec<CallsignInfoRes>,
     pub signal_profiles: BTreeMap<String, Option<SignalProfileEntry>>,
     pub signal_groups: Vec<SignalGroupEntry>,

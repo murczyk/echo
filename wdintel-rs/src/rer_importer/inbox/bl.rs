@@ -284,34 +284,190 @@ pub async fn fill_callsigns(
 pub async fn load_inbox_networks(
     inbox_items: &Vec<(i64, InboxMessage)>,
     txn: &DatabaseTransaction,
-// ) -> Result<Vec<(i64, Vec<Network>)>, AppError> {
-) -> Result<Vec<Network>, AppError> {
-
-    // Get all (group_master_key, freq) pairs from inbox items
-    let mut group_freq_map: HashMap<String, HashSet<String>> = HashMap::new();
+) -> Result<Vec<(i64, Vec<Network>)>, AppError> {
+    // Step 1: Collect group_ids and freqs from messages
+    let mut group_master_keys = HashSet::new();
+    let mut freqs = HashSet::new();
     for (_, msg) in inbox_items {
-        if let (Some(group_key), Some(freq)) =
+        if let (Some(group_master_key), Some(freq)) =
             (&msg.group_master_key, &msg.freq)
         {
-            group_freq_map
-                .entry(group_key.clone())
-                .or_default()
-                .insert(freq.clone());
+            group_master_keys.insert(group_master_key.clone());
+            freqs.insert(freq.clone());
         }
     }
-    let group_ids: Vec<String> = group_freq_map.keys().copied().collect();
 
-
-    let freqs = inbox_items
-        .iter()
-        .filter_map(|x| x.1.freq.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect_vec();
-    let networks = crate::sigint::network::bl_network_info_freqs(freqs, txn)
+    // Step 2. Load groups bounds
+    let groups_with_aors = signal_group_aor::Entity::find()
+        .find_with_related(area_of_responsibility::Entity)
+        .filter(
+            signal_group_aor::Column::MasterKey
+                .is_in(group_master_keys.clone()),
+        )
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .all(txn)
         .await
         .context(h!())?;
-    Ok(networks)
+
+    let mut group_bounds_map: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+    for (group_aor, aors) in groups_with_aors {
+        for aor in aors {
+            group_bounds_map
+                .entry(group_aor.master_key.clone())
+                .or_default()
+                .push((aor.left_bound, aor.right_bound));
+        }
+    }
+
+    // Step 3: Load network_freq + networks, collect network_ids
+    let freq_networks = sigint_network_freq::Entity::find()
+        .find_also_related(sigint_network::Entity)
+        .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
+        .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    let mut network_ids = HashSet::new();
+    let mut freq_networks_map: HashMap<String, Vec<sigint_network::Model>> =
+        HashMap::new();
+    for (nf, maybe_net) in freq_networks {
+        if let Some(net) = maybe_net {
+            network_ids.insert(net.id);
+            freq_networks_map
+                .entry(nf.freq.clone())
+                .or_default()
+                .push(net);
+        }
+    }
+
+    // Step 5: Load AORs for networks
+    let network_aors = sigint_network_aor::Entity::find()
+        .find_with_related(area_of_responsibility::Entity)
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(
+            sigint_network_aor::Column::NetworkId.is_in(network_ids.clone()),
+        )
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    let mut network_bounds_map: HashMap<i64, Vec<(f64, f64)>> = HashMap::new();
+    for (na, aors) in network_aors {
+        for aor in aors {
+            network_bounds_map
+                .entry(na.network_id)
+                .or_default()
+                .push((aor.left_bound, aor.right_bound));
+        }
+    }
+
+    // Step 6: Match messages to networks
+    let res = match_networks_for_messages(
+        inbox_items,
+        &group_bounds_map,
+        &network_bounds_map,
+        &freq_networks_map,
+        txn,
+    )
+    .await
+    .context(h!())?;
+
+    Ok(res)
+}
+
+pub async fn match_networks_for_messages(
+    inbox_items: &[(i64, InboxMessage)],
+    group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
+    network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
+    freq_networks_map: &HashMap<String, Vec<sigint_network::Model>>,
+    txn: &DatabaseTransaction,
+) -> Result<Vec<(i64, Vec<Network>)>, AppError> {
+    let mut result = Vec::new();
+    let mut matched_network_ids = HashSet::new();
+    let mut msg_to_network_ids: HashMap<i64, HashSet<i64>> = HashMap::new();
+
+    for (msg_id, msg) in inbox_items {
+        let Some(group_master_key) = &msg.group_master_key else {
+            result.push((*msg_id, vec![]));
+            continue;
+        };
+        let Some(freq) = &msg.freq else {
+            result.push((*msg_id, vec![]));
+            continue;
+        };
+
+        let mut matched_ids = HashSet::new();
+
+        if let Some(group_bounds) = group_bounds_map.get(group_master_key) {
+            if let Some(candidate_networks) = freq_networks_map.get(freq) {
+                for network in candidate_networks {
+                    let net_id = network.id;
+                    if matched_ids.contains(&net_id) {
+                        continue;
+                    }
+                    if let Some(net_bounds) = network_bounds_map.get(&net_id) {
+                        for (gl, gr) in group_bounds {
+                            for (nl, nr) in net_bounds {
+                                if (gl >= nl && gl <= nr)
+                                    || (gr >= nl && gr <= nr)
+                                {
+                                    matched_ids.insert(net_id);
+                                    matched_network_ids.insert(net_id);
+                                    msg_to_network_ids
+                                        .entry(*msg_id)
+                                        .or_default()
+                                        .insert(net_id);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Step: Transform only the matched networks
+    let all_needed_networks: Vec<sigint_network::Model> = freq_networks_map
+        .values()
+        .flat_map(|v| v.iter())
+        .filter(|n| matched_network_ids.contains(&n.id))
+        .cloned()
+        .collect();
+
+    let transformed_list =
+        crate::sigint::network::render_networks(all_needed_networks, txn)
+            .await
+            .context(h!())?;
+    let id_to_network: HashMap<i64, Network> = transformed_list
+        .into_iter()
+        .map(|net| (net.id, net))
+        .collect();
+
+    // Build final result Vec<(i64, Vec<Network>)>
+    for (msg_id, net_ids) in msg_to_network_ids {
+        let mut networks = Vec::new();
+        for net_id in net_ids {
+            if let Some(network) = id_to_network.get(&net_id) {
+                networks.push(network.clone());
+            }
+        }
+        result.push((msg_id, networks));
+    }
+
+    // Also include messages that had no matches
+    let matched_msg_ids: HashSet<i64> =
+        result.iter().map(|(id, _)| *id).collect();
+    for (msg_id, _) in inbox_items {
+        if !matched_msg_ids.contains(msg_id) {
+            result.push((*msg_id, vec![]));
+        }
+    }
+
+    Ok(result)
 }
 
 pub async fn load_inbox_callsigns(
