@@ -2570,10 +2570,42 @@ view user shared model =
                         text ""
                 , case model.freqDetailPopup of
                     Just freqId ->
+                        let
+                            -- Знаходимо дані активності для цієї частоти
+                            freqActivityData =
+                                case model.networkFreqsActivity of
+                                    Success data ->
+                                        case Dict.get freqId data of
+                                            Just freqActivity ->
+                                                let
+                                                    -- Використовуємо новий freq-detail-chart
+                                                    freqActivityJson =
+                                                        Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freqId freqActivity)
+                                                in
+                                                div [ style "width" "100%", style "height" "300px", style "border" "1px solid #e5e7eb", style "border-radius" "8px", style "padding" "16px" ]
+                                                    [ h4 [ class "text-sm font-medium mb-4", style "color" "#374151" ] [ text ("Активність частоти " ++ freqId) ]
+                                                    , div [ style "width" "100%", style "height" "250px", style "min-height" "250px", style "display" "block" ]
+                                                        [ Html.node "freq-detail-chart"
+                                                            [ property "data" <| freqActivityJson
+                                                            , property "lastDay" <| Encode.int shared.now
+                                                            , style "width" "100%"
+                                                            , style "height" "100%"
+                                                            , style "display" "block"
+                                                            ]
+                                                            []
+                                                        ]
+                                                    ]
+
+                                            Nothing ->
+                                                div [ class "text-center text-gray-500", style "height" "300px", style "display" "flex", style "align-items" "center", style "justify-content" "center" ] [ text "Немає даних активності" ]
+
+                                    _ ->
+                                        div [ class "text-center", style "height" "300px", style "display" "flex", style "align-items" "center", style "justify-content" "center" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+                        in
                         ModalDialog.modalDialog True CloseFreqDetailPopup []
                             [ div [ class "p-6", style "width" "600px", style "height" "400px" ]
                                 [ h3 [ class "text-lg font-semibold mb-4" ] [ text ("Детальний графік активності: " ++ freqId) ]
-                                , div [ class "text-center text-gray-500" ] [ text "Тут буде детальний графік" ]
+                                , freqActivityData
                                 ]
                             ]
 
