@@ -166,6 +166,7 @@ pub async fn upsert_messages(
     let message_chunks = messages.chunks(10000);
     let mut redis = redis;
     let mut message_ids_map = BTreeMap::new();
+    let mut new_messages_counter = 0;
     for messages in message_chunks.into_iter() {
         let message_ids = messages.iter().map(|x| x.message.id).collect_vec();
         let existing_messages = signal_message::Entity::find()
@@ -180,6 +181,12 @@ pub async fn upsert_messages(
             .flat_map(|m| m.external_id.map(|id| (id, m)))
             .collect::<BTreeMap<_, _>>();
         for entry in messages {
+            let current_progress = processed as f64 * 100.0 / total_messages;
+            if progress < current_progress {
+                info!("upsert_messages progress: {:.1}%", progress);
+                progress += 0.1;
+            }
+            processed += 1;
             let source_message_id = entry.message.id;
             if existing_messages.contains_key(&source_message_id) {
                 debug!("message {source_message_id} already exists");
@@ -191,12 +198,6 @@ pub async fn upsert_messages(
                     (Some(d), Some(t)) => Some((d.clone(), t.clone())),
                     _ => None,
                 };
-            let current_progress = processed as f64 * 100.0 / total_messages;
-            if progress < current_progress {
-                info!("upsert_messages progress: {:.1}%", progress);
-                progress += 0.1;
-            }
-            processed += 1;
             let sender = match &new_message.sender {
                 None => None,
                 Some(id) => signal_profiles_map.get(id).cloned(),
@@ -213,6 +214,7 @@ pub async fn upsert_messages(
             rec.duplicate_of = Set(duplicate_of);
             let new_id = rec.insert(db).await.context(h!())?.id;
             message_ids_map.insert(source_message_id, new_id);
+            new_messages_counter += 1;
 
             let txn = db.begin().await.context(h!())?;
             crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
@@ -231,5 +233,6 @@ pub async fn upsert_messages(
             txn.commit().await.context(h!())?;
         }
     }
+    info!("inserted {new_messages_counter} new messages");
     Ok(())
 }
