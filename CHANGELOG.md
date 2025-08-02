@@ -1,6 +1,7 @@
 ## NEXT
 - [#1148](https://github.com/echoua/echo/issues/1148) Виправлено помилку злиття мереж
 - [#1107](https://github.com/echoua/echo/issues/1107) Сторінка адміністрування смуг `еталонка -> смуги`, тільки для адмінів
+- [#1108](https://github.com/echoua/echo/issues/1108) В адмінці групи додано можливість поміняти її смуги
 - [#1129](https://github.com/echoua/echo/issues/1129) лічильники активності груп
 - [#1125](https://github.com/echoua/echo/issues/1125) Нотатки до груп і опис до месенджерів
 - [#1101](https://github.com/echoua/echo/issues/1101) Звіт "бабак". Виправлено формування звіту для повідомлень без прив'язаних мереж

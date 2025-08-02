@@ -3,6 +3,7 @@ use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::types::*;
 use crate::rer_importer::collect_group_stats;
+use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::{AppError, Env};
 use actix_web::post;
 use actix_web::web::Json;
@@ -113,6 +114,14 @@ pub async fn group_update(
     }
     .into_active_model();
 
+    let aor = bl::upsert_group_area_of_responsibility(
+        &txn,
+        &req.master_key,
+        req.area_of_responsibility_id.clone(),
+    )
+    .await
+    .context(h!())?;
+
     group_data.short_note = Set(req.short_note);
     group_data.long_note = Set(req.long_note);
     let group_data = group_data.update(&txn).await.context(h!())?;
@@ -139,6 +148,7 @@ pub async fn group_update(
         short_note: group_data.short_note,
         long_note: group_data.long_note,
         group_stats: stats,
+        area_of_responsibility: aor.map(render_aor),
     }))
 }
 

@@ -119,7 +119,7 @@ where
     Ok(None)
 }
 
-fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
+pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
     let left_coordinates =
         match (aor.left_lat, aor.left_lon, aor.left_settlement) {
             (Some(latitude), Some(longitude), settlement) => {

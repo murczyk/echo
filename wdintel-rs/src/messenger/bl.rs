@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::entities::area_of_responsibility::Model;
 use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
@@ -328,4 +329,50 @@ fn parse_message_source(
         "whatsapp" => Ok(MessageSource::Whatsapp),
         _ => bail!("Unknown message source: {messenger}"),
     }
+}
+
+pub async fn upsert_group_area_of_responsibility(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+    area_of_responsibility_id: Option<i64>,
+) -> Result<Option<Model>, AppError> {
+    Ok(match area_of_responsibility_id {
+        None => {
+            signal_group_aor::Entity::delete_many()
+                .filter(signal_group_aor::Column::MasterKey.eq(master_key))
+                .exec(txn)
+                .await
+                .context(h!())?;
+            None
+        }
+        Some(id) => {
+            let sg_aor = signal_group_aor::Entity::find()
+                .filter(signal_group_aor::Column::MasterKey.eq(master_key))
+                .one(txn)
+                .await
+                .context(h!())?;
+            let has_old_sg_aor =
+                sg_aor.clone().map(|x| !x.aor_id.eq(&id)).is_some();
+            let has_ok_sg_aor =
+                sg_aor.clone().map(|x| x.aor_id.eq(&id)).is_some();
+            if has_old_sg_aor {
+                sg_aor.context(h!())?.delete(txn).await.context(h!())?;
+            }
+            if !has_ok_sg_aor {
+                signal_group_aor::ActiveModel {
+                    master_key: Set(master_key.to_string()),
+                    aor_id: Set(id),
+                    id: NotSet,
+                    created_at: NotSet,
+                }
+                .insert(txn)
+                .await
+                .context(h!())?;
+            }
+            area_of_responsibility::Entity::find_by_id(id)
+                .one(txn)
+                .await
+                .context(h!())?
+        }
+    })
 }

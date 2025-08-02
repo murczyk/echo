@@ -1,4 +1,5 @@
 use crate::location::SettlementDetails;
+use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
 use crate::sigint::network::types::Network;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -358,6 +359,7 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
+    pub area_of_responsibility: Option<AreaOfResponsibility>,
 }
 
 #[derive(
@@ -409,6 +411,7 @@ pub struct OrphanSignalGroupEntry {
     pub created_at: i64,
     pub group_stats: SignalGroupStats,
     pub group_admin_data: Option<GroupAdminData>,
+    pub area_of_responsibility: Option<AreaOfResponsibility>,
 }
 
 #[derive(

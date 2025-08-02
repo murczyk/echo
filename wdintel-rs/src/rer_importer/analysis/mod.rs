@@ -4,7 +4,9 @@ use crate::delta::types::GeoJson;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
-use crate::rer_importer::{collect_group_admin_data, collect_group_stats};
+use crate::rer_importer::{
+    collect_group_admin_data, collect_group_aors, collect_group_stats,
+};
 use crate::types::*;
 use crate::users;
 use crate::users::*;
@@ -2143,6 +2145,13 @@ async fn collect_group_names(
         .collect();
     let stats: BTreeMap<String, SignalGroupStats> =
         collect_group_stats(keys.clone(), txn).await.context(h!())?;
+
+    let group_aors = if is_admin {
+        collect_group_aors(keys.clone(), txn).await.context(h!())?
+    } else {
+        BTreeMap::new()
+    };
+
     let group_admin_data = if is_admin {
         collect_group_admin_data(keys, txn).await.context(h!())?
     } else {
@@ -2153,6 +2162,7 @@ async fn collect_group_names(
         if let Some(name) = name {
             resolved_keys.push(master_key.clone());
             let stats = stats.get(&master_key).cloned().unwrap_or_default();
+            let aor = group_aors.get(master_key.as_str()).cloned();
             let group_admin_data =
                 group_admin_data.get(master_key.as_str()).cloned();
             result.push(SignalGroupEntry {
@@ -2161,6 +2171,7 @@ async fn collect_group_names(
                 ignore_operativny,
                 group_stats: stats,
                 admin_data: group_admin_data,
+                area_of_responsibility: aor,
             });
         }
     }
@@ -2178,12 +2189,14 @@ async fn collect_group_names(
         let stats = stats.get(&master_key).cloned().unwrap_or_default();
         let group_admin_data =
             group_admin_data.get(master_key.as_str()).cloned();
+        let aor = group_aors.get(master_key.as_str()).cloned();
         result.push(SignalGroupEntry {
             master_key,
             name,
             ignore_operativny,
             group_stats: stats,
             admin_data: group_admin_data,
+            area_of_responsibility: aor,
         });
     }
     Ok(result)

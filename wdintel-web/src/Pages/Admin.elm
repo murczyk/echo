@@ -11,7 +11,6 @@ import Components.Table as Table
 import Components.Table.Config as Config
 import Components.Tabs as Tabs
 import Components.Toggle as Toggle
-import Components.Watermark as Watermark
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -33,12 +32,11 @@ import Select
 import Set exposing (Set)
 import Shared
 import View exposing (View)
-import Views
 
 
 type alias OrphanGroupAssignmentDialog =
     { groupKey : String
-    , zoneIds : List Int -- для множинного додавання
+    , zoneIds : List Int
     , isSecret : Bool
     , selectedUsers : List String
     , userSelectState : Select.State
@@ -55,6 +53,11 @@ type alias GroupEditDialog =
     , isSecret : Bool
     , selectedUsers : List String
     , userSelectState : Select.State
+    , areaOfResponsibilitySelector :
+        { selected : Maybe Int
+        , available : List B.AreaOfResponsibility
+        , selectState : Select.State
+        }
     , isLoading : Bool
     , error : Maybe String
     }
@@ -65,6 +68,11 @@ type alias OrphanGroupEditDialog =
     , groupName : String
     , shortNote : String
     , longNote : String
+    , areaOfResponsibilitySelector :
+        { selected : Maybe Int
+        , available : List B.AreaOfResponsibility
+        , selectState : Select.State
+        }
     , isLoading : Bool
     , error : Maybe String
     }
@@ -110,6 +118,9 @@ type alias Model =
     , orphanGroupEditDialog : Maybe OrphanGroupEditDialog
     , orphanGroupEditInProgress : Maybe String -- groupKey being edited
     , orphanGroupEditError : Maybe String
+    , areasOfResponsibility : RemoteData ApiError (List B.AreaOfResponsibility)
+    , areaOfResponsibilityFilter : Maybe Int
+    , areaOfResponsibilityFilterSelectState : Select.State
     }
 
 
@@ -173,16 +184,33 @@ renderGroup model zoneId activeSourceId group =
                 , -- Group stats display
                   case groupStats of
                     Just stats ->
-                        span [ class "ml-4 text-sm text-gray-600 flex items-center" ]
-                            [ span [ class "mr-1" ] [ text "Активність" ]
-                            , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
-                            , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt stats.activityLastDay ++ " / " ++ String.fromInt stats.activityLastWeek) ]
+                        div [ class "flex items-center" ]
+                            [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
+                            , span [ class "text-sm text-gray-600 flex items-center" ]
+                                [ span [ class "mr-1" ] [ text "Активність" ]
+                                , span [ class "text-gray-400 cursor-help", title "Активність за день / за тиждень" ] [ text "?" ]
+                                , span [ class "ml-1 font-medium" ] [ text (": " ++ String.fromInt stats.activityLastDay ++ " / " ++ String.fromInt stats.activityLastWeek) ]
+                                ]
+                            ]
+
+                    Nothing ->
+                        text ""
+                , -- Area of responsibility display
+                  case group.areaOfResponsibility of
+                    Just area ->
+                        div [ class "flex items-center" ]
+                            [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
+                            , span [ class "text-sm text-gray-600 flex items-center" ]
+                                [ i [ class "bi bi-geo-alt mr-1" ] []
+                                , span [ class "mr-1" ] [ text "Смуга:" ]
+                                , span [ class "font-medium" ] [ text area.name ]
+                                ]
                             ]
 
                     Nothing ->
                         text ""
                 , if group.isGroupSecret then
-                    span [ class "ml-1 text-lg text-amber-600" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
+                    span [ class "ml-2 text-lg text-amber-600" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
                   else
                     text ""
@@ -272,7 +300,6 @@ renderGroup model zoneId activeSourceId group =
                             )
                             group.allowedUsers
                     )
-
                 ]
 
           else
@@ -334,11 +361,15 @@ init _ =
       , orphanGroupEditDialog = Nothing
       , orphanGroupEditInProgress = Nothing
       , orphanGroupEditError = Nothing
+      , areasOfResponsibility = RD.NotAsked
+      , areaOfResponsibilityFilter = Nothing
+      , areaOfResponsibilityFilterSelectState = Select.initState (Select.selectIdentifier "area-filter")
       }
     , E.sendCmd <|
         Cmd.batch
             [ Api.datasource_list GotDatasourceList
             , Api.orphan_signal_groups GotOrphanGroups
+            , Api.aor_list AreasOfResponsibilityLoaded { sortBy = Nothing }
             ]
     )
 
@@ -396,6 +427,14 @@ type Msg
     | GroupEditUserSelectMsg (Select.Msg String)
     | SaveGroupEdit
     | SaveGroupEditDone (Result ApiError B.ZoneDatasourceGroup)
+    | LoadAreasOfResponsibility
+    | AreasOfResponsibilityLoaded (Result ApiError (List B.AreaOfResponsibility))
+    | OrphanGroupAreaSelectMsg (Select.Msg Int)
+    | UpdateOrphanGroupAreaOfResponsibility (Maybe Int)
+    | GroupAreaSelectMsg (Select.Msg String)
+    | UpdateGroupAreaOfResponsibility (Maybe Int)
+    | UpdateAreaOfResponsibilityFilter (Maybe Int)
+    | AreaOfResponsibilityFilterMsg (Select.Msg Int)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -761,6 +800,7 @@ update msg model =
                                     | groupEditDialog =
                                         Just { dialog | isLoading = False }
                                 }
+
                             else
                                 model
 
@@ -838,6 +878,7 @@ update msg model =
                                     , userLogins = model.userSelectorSelect.selectedItems
                                     , shortNote = g.shortNote
                                     , longNote = g.longNote
+                                    , areaOfResponsibilityId = Nothing --TODO
                                     }
                             in
                             ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
@@ -921,8 +962,6 @@ update msg model =
             ( { model | userSelectorError = Just "Не вдалося зберегти" }
             , E.none
             )
-
-
 
         ZoneTabChanged zoneId sourceId ->
             ( { model | zoneActiveTabs = Dict.insert zoneId sourceId model.zoneActiveTabs }
@@ -1033,7 +1072,7 @@ update msg model =
                                     case existingOrphanGroup of
                                         Just orphanGroup ->
                                             orphanGroup.groupStats
-                                        
+
                                         Nothing ->
                                             { activityLastDay = 0, activityLastWeek = 0 }
 
@@ -1041,16 +1080,17 @@ update msg model =
                                     case existingOrphanGroup of
                                         Just orphanGroup ->
                                             orphanGroup.groupAdminData
-                                        
+
                                         Nothing ->
                                             Nothing
                             in
                             Dict.insert response.groupMasterKey
                                 { masterKey = response.groupMasterKey
                                 , name = name
-                                , ignoreOperativny = False -- Default value
+                                , ignoreOperativny = False
                                 , groupStats = existingGroupStats
-                                , adminData = existingAdminData -- Preserve existing admin data from orphan group
+                                , adminData = existingAdminData
+                                , areaOfResponsibility = Nothing --TODO
                                 }
                                 model.groupInfos
 
@@ -1196,6 +1236,7 @@ update msg model =
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
                                         , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
                                         , groupAdminData = groupInfo |> Maybe.andThen .adminData
+                                        , areaOfResponsibility = Nothing --TODO
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1291,7 +1332,7 @@ update msg model =
                                             , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
                                             }
                                     in
-                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
                                 )
                                 selector.selectedZones
                     in
@@ -1397,7 +1438,7 @@ update msg model =
                                                             , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote
                                                             }
                                                     in
-                                                        Api.zone_datasource_group_add AssignOrphanGroupDone req
+                                                    Api.zone_datasource_group_add AssignOrphanGroupDone req
                                                 )
                                                 dialog.zoneIds
                                     in
@@ -1452,6 +1493,7 @@ update msg model =
                 updatedExpanded =
                     if Set.member groupMasterKey model.expandedGroupNotes then
                         Set.remove groupMasterKey model.expandedGroupNotes
+
                     else
                         Set.insert groupMasterKey model.expandedGroupNotes
             in
@@ -1496,6 +1538,11 @@ update msg model =
                                     , isSecret = g.isGroupSecret
                                     , selectedUsers = g.allowedUsers
                                     , userSelectState = Select.initState (Select.selectIdentifier ("group-edit-users-" ++ groupMasterKey))
+                                    , areaOfResponsibilitySelector =
+                                        { selected = g.areaOfResponsibility |> Maybe.map .id
+                                        , available = RD.withDefault [] model.areasOfResponsibility
+                                        , selectState = Select.initState (Select.selectIdentifier "group-area-select")
+                                        }
                                     , isLoading = True
                                     , error = Nothing
                                     }
@@ -1516,6 +1563,11 @@ update msg model =
                                     , isSecret = g.isGroupSecret
                                     , selectedUsers = g.allowedUsers
                                     , userSelectState = Select.initState (Select.selectIdentifier ("group-edit-users-" ++ groupMasterKey))
+                                    , areaOfResponsibilitySelector =
+                                        { selected = g.areaOfResponsibility |> Maybe.map .id
+                                        , available = RD.withDefault [] model.areasOfResponsibility
+                                        , selectState = Select.initState (Select.selectIdentifier "group-area-select")
+                                        }
                                     , isLoading = False
                                     , error = Nothing
                                     }
@@ -1564,12 +1616,16 @@ update msg model =
                         | groupEditDialog =
                             Just
                                 { dialog
-                                | isSecret = not dialog.isSecret
-                                , selectedUsers =
-                                    if not dialog.isSecret then
-                                        dialog.selectedUsers  -- Keep existing users when enabling secret mode
-                                    else
-                                        []  -- Clear users when disabling secret mode
+                                    | isSecret = not dialog.isSecret
+                                    , selectedUsers =
+                                        if not dialog.isSecret then
+                                            dialog.selectedUsers
+                                            -- Keep existing users when enabling secret mode
+
+                                        else
+                                            []
+
+                                    -- Clear users when disabling secret mode
                                 }
                       }
                     , E.none
@@ -1634,6 +1690,7 @@ update msg model =
 
                                         else
                                             Just dialog.longNote
+                                    , areaOfResponsibilityId = dialog.areaOfResponsibilitySelector.selected
                                     }
                             in
                             ( { model
@@ -1698,7 +1755,24 @@ update msg model =
                     List.map
                         (\g ->
                             if g.groupMasterKey == groupMasterKey then
-                                updatedGroup
+                                -- Update the area of responsibility from the dialog state
+                                let
+                                    newAreaOfResponsibility =
+                                        case model.groupEditDialog of
+                                            Just dialog ->
+                                                case dialog.areaOfResponsibilitySelector.selected of
+                                                    Just areaId ->
+                                                        RD.withDefault [] model.areasOfResponsibility
+                                                            |> List.filter (\area -> area.id == areaId)
+                                                            |> List.head
+
+                                                    Nothing ->
+                                                        Nothing
+
+                                            Nothing ->
+                                                updatedGroup.areaOfResponsibility
+                                in
+                                { updatedGroup | areaOfResponsibility = newAreaOfResponsibility }
 
                             else
                                 g
@@ -1739,6 +1813,7 @@ update msg model =
                         groupName =
                             if String.isEmpty orphanGroup.name then
                                 String.right 5 groupKey
+
                             else
                                 orphanGroup.name
                     in
@@ -1749,6 +1824,11 @@ update msg model =
                                 , groupName = groupName
                                 , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote |> Maybe.withDefault ""
                                 , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote |> Maybe.withDefault ""
+                                , areaOfResponsibilitySelector =
+                                    { selected = orphanGroup.areaOfResponsibility |> Maybe.map .id
+                                    , available = RD.withDefault [] model.areasOfResponsibility
+                                    , selectState = Select.initState (Select.selectIdentifier "area-select")
+                                    }
                                 , isLoading = False
                                 , error = Nothing
                                 }
@@ -1800,13 +1880,16 @@ update msg model =
                             , shortNote =
                                 if String.isEmpty (String.trim dialog.shortNote) then
                                     Nothing
+
                                 else
                                     Just dialog.shortNote
                             , longNote =
                                 if String.isEmpty (String.trim dialog.longNote) then
                                     Nothing
+
                                 else
                                     Just dialog.longNote
+                            , areaOfResponsibilityId = dialog.areaOfResponsibilitySelector.selected
                             }
                     in
                     ( { model
@@ -1831,17 +1914,25 @@ update msg model =
                                         if group.masterKey == updatedGroup.masterKey then
                                             let
                                                 newAdminData =
-                                                    case (updatedGroup.shortNote, updatedGroup.longNote) of
-                                                        (Nothing, Nothing) ->
+                                                    case ( updatedGroup.shortNote, updatedGroup.longNote ) of
+                                                        ( Nothing, Nothing ) ->
                                                             Nothing
-                                                        
+
                                                         _ ->
                                                             Just
                                                                 { shortNote = updatedGroup.shortNote
                                                                 , longNote = updatedGroup.longNote
                                                                 }
+
+                                                -- Use the area of responsibility from the updated group
+                                                newAreaOfResponsibility =
+                                                    updatedGroup.areaOfResponsibility
                                             in
-                                            { group | groupAdminData = newAdminData }
+                                            { group
+                                                | groupAdminData = newAdminData
+                                                , areaOfResponsibility = newAreaOfResponsibility
+                                            }
+
                                         else
                                             group
                                     )
@@ -1873,6 +1964,109 @@ update msg model =
 
                 Nothing ->
                     ( model, E.none )
+
+        LoadAreasOfResponsibility ->
+            ( model, E.sendCmd <| Api.aor_list AreasOfResponsibilityLoaded { sortBy = Nothing } )
+
+        AreasOfResponsibilityLoaded (Ok areas) ->
+            ( { model | areasOfResponsibility = RD.Success areas }
+            , E.none
+            )
+
+        AreasOfResponsibilityLoaded (Err e) ->
+            ( { model | areasOfResponsibility = RD.Failure e }
+            , E.none
+            )
+
+        OrphanGroupAreaSelectMsg imsg ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg dialog.areaOfResponsibilitySelector.selectState
+
+                        selected : Maybe Int
+                        selected =
+                            Le.Block.Select.singleUpd mAction dialog.areaOfResponsibilitySelector.selected
+                    in
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | areaOfResponsibilitySelector = { selected = selected, available = dialog.areaOfResponsibilitySelector.available, selectState = imodel2 } }
+                      }
+                    , E.sendCmd <| Cmd.map OrphanGroupAreaSelectMsg icmd
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateOrphanGroupAreaOfResponsibility newArea ->
+            case model.orphanGroupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | orphanGroupEditDialog =
+                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea, available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        GroupAreaSelectMsg imsg ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg dialog.areaOfResponsibilitySelector.selectState
+
+                        selected : Maybe Int
+                        selected =
+                            Le.Block.Select.singleUpd mAction (dialog.areaOfResponsibilitySelector.selected |> Maybe.map String.fromInt)
+                                |> Maybe.andThen String.toInt
+                    in
+                    ( { model
+                        | groupEditDialog =
+                            Just { dialog | areaOfResponsibilitySelector = { selected = selected, available = dialog.areaOfResponsibilitySelector.available, selectState = imodel2 } }
+                      }
+                    , E.sendCmd <| Cmd.map GroupAreaSelectMsg icmd
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateGroupAreaOfResponsibility newArea ->
+            case model.groupEditDialog of
+                Just dialog ->
+                    ( { model
+                        | groupEditDialog =
+                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea, available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateAreaOfResponsibilityFilter newFilter ->
+            ( { model | areaOfResponsibilityFilter = newFilter }
+            , E.none
+            )
+
+        AreaOfResponsibilityFilterMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.areaOfResponsibilityFilterSelectState
+
+                selected : Maybe Int
+                selected =
+                    Le.Block.Select.singleUpd mAction model.areaOfResponsibilityFilter
+            in
+            ( { model
+                | areaOfResponsibilityFilter = selected
+                , areaOfResponsibilityFilterSelectState = imodel2
+              }
+            , E.sendCmd <| Cmd.map AreaOfResponsibilityFilterMsg icmd
+            )
 
 
 subscriptions : Model -> Sub Msg
@@ -1973,18 +2167,52 @@ getZoneName model zoneId =
 
 renderOrphanGroupEditSidebar : Bool -> Model -> OrphanGroupEditDialog -> Html Msg
 renderOrphanGroupEditSidebar isDark model dialog =
-    Sidebar.view True CloseOrphanGroupEdit
+    Sidebar.view True
+        CloseOrphanGroupEdit
         [ div [ class "flex flex-col h-full" ]
             [ -- Header
-              div [ class <| "px-6 py-3 border-b " ++ (if isDark then "border-gray-600" else "border-gray-200") ]
+              div
+                [ class <|
+                    "px-6 py-3 border-b "
+                        ++ (if isDark then
+                                "border-gray-600"
+
+                            else
+                                "border-gray-200"
+                           )
+                ]
                 [ div [ class "flex items-center justify-between" ]
                     [ div []
-                        [ div [ class <| "text-sm " ++ (if isDark then "text-gray-400" else "text-gray-500") ] [ text "Редагувати групу" ]
-                        , h3 [ class <| "text-lg font-semibold leading-tight " ++ (if isDark then "text-gray-100" else "text-gray-900") ]
+                        [ div
+                            [ class <|
+                                "text-sm "
+                                    ++ (if isDark then
+                                            "text-gray-400"
+
+                                        else
+                                            "text-gray-500"
+                                       )
+                            ]
+                            [ text "Редагувати групу" ]
+                        , h3
+                            [ class <|
+                                "text-lg font-semibold leading-tight "
+                                    ++ (if isDark then
+                                            "text-gray-100"
+
+                                        else
+                                            "text-gray-900"
+                                       )
+                            ]
                             [ text dialog.groupName ]
                         ]
                     , button
-                        [ class <| if isDark then "text-gray-400 hover:text-gray-200" else "text-gray-500 hover:text-gray-700"
+                        [ class <|
+                            if isDark then
+                                "text-gray-400 hover:text-gray-200"
+
+                            else
+                                "text-gray-500 hover:text-gray-700"
                         , onClick CloseOrphanGroupEdit
                         ]
                         [ i [ class "bi bi-x-lg" ] [] ]
@@ -1995,35 +2223,159 @@ renderOrphanGroupEditSidebar isDark model dialog =
                 [ div [ class "space-y-6" ]
                     [ -- Notes section
                       div []
-                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                        [ h4
+                            [ class <|
+                                "text-sm font-semibold mb-3 "
+                                    ++ (if isDark then
+                                            "text-gray-300"
+
+                                        else
+                                            "text-gray-700"
+                                       )
+                            ]
                             [ text "📝 Нотатки" ]
                         , div [ class "space-y-3" ]
                             [ -- Short note field
                               div []
-                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                [ label
+                                    [ class <|
+                                        "block text-sm font-medium mb-1 "
+                                            ++ (if isDark then
+                                                    "text-gray-300"
+
+                                                else
+                                                    "text-gray-700"
+                                               )
+                                    ]
                                     [ text "Коротка нотатка:" ]
                                 , input
                                     [ type_ "text"
                                     , value dialog.shortNote
                                     , onInput UpdateOrphanGroupShortNote
                                     , placeholder "Коротка нотатка для швидкого перегляду..."
-                                    , class <| "w-full px-3 py-2 border rounded-md " ++ (if isDark then "bg-gray-700 border-gray-600 text-gray-100" else "bg-white border-gray-300 text-gray-900")
+                                    , class <|
+                                        "w-full px-3 py-2 border rounded-md "
+                                            ++ (if isDark then
+                                                    "bg-gray-700 border-gray-600 text-gray-100"
+
+                                                else
+                                                    "bg-white border-gray-300 text-gray-900"
+                                               )
                                     ]
                                     []
                                 ]
                             , -- Long note field
                               div []
-                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                [ label
+                                    [ class <|
+                                        "block text-sm font-medium mb-1 "
+                                            ++ (if isDark then
+                                                    "text-gray-300"
+
+                                                else
+                                                    "text-gray-700"
+                                               )
+                                    ]
                                     [ text "Довга нотатка:" ]
                                 , textarea
                                     [ value dialog.longNote
                                     , onInput UpdateOrphanGroupLongNote
                                     , placeholder "Детальна інформація про групу..."
                                     , rows 6
-                                    , class <| "w-full px-3 py-2 border rounded-md " ++ (if isDark then "bg-gray-700 border-gray-600 text-gray-100" else "bg-white border-gray-300 text-gray-900")
+                                    , class <|
+                                        "w-full px-3 py-2 border rounded-md "
+                                            ++ (if isDark then
+                                                    "bg-gray-700 border-gray-600 text-gray-100"
+
+                                                else
+                                                    "bg-white border-gray-300 text-gray-900"
+                                               )
                                     ]
                                     []
                                 ]
+                            ]
+                        ]
+                    , -- Секція смуг
+                      div []
+                        [ h4
+                            [ class <|
+                                "text-sm font-semibold mb-3 "
+                                    ++ (if isDark then
+                                            "text-gray-300"
+
+                                        else
+                                            "text-gray-700"
+                                       )
+                            ]
+                            [ text "🗺️ Смуга відповідальності" ]
+                        , div [ class "space-y-3" ]
+                            [ -- Селектор смуг
+                              div []
+                                [ label
+                                    [ class <|
+                                        "block text-sm font-medium mb-2 "
+                                            ++ (if isDark then
+                                                    "text-gray-300"
+
+                                                else
+                                                    "text-gray-700"
+                                               )
+                                    ]
+                                    [ text "Смуга відповідальності:" ]
+                                , let
+                                    selectedItem =
+                                        Maybe.andThen
+                                            (\areaId ->
+                                                dialog.areaOfResponsibilitySelector.available
+                                                    |> List.filter (\area -> area.id == areaId)
+                                                    |> List.head
+                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
+                                            )
+                                            dialog.areaOfResponsibilitySelector.selected
+
+                                    availableItems =
+                                        dialog.areaOfResponsibilitySelector.available
+                                            |> List.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
+
+                                    selectConfig =
+                                        { loading = False
+                                        , disabled = dialog.isLoading
+                                        , isDark = isDark
+                                        , clearable = True
+                                        }
+                                  in
+                                  Html.map OrphanGroupAreaSelectMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            selectedItem
+                                            dialog.areaOfResponsibilitySelector.selectState
+                                            availableItems
+                                            "виберіть смугу"
+                                            selectConfig
+                                ]
+                            , -- Інформація про вибрану смугу
+                              case dialog.areaOfResponsibilitySelector.selected of
+                                Just areaId ->
+                                    case List.filter (\area -> area.id == areaId) dialog.areaOfResponsibilitySelector.available |> List.head of
+                                        Just area ->
+                                            div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
+                                                [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
+                                                , case area.description of
+                                                    Just desc ->
+                                                        div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
+
+                                                    Nothing ->
+                                                        text ""
+                                                , div [ class "text-xs text-blue-500 mt-2" ]
+                                                    [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
+                                                    ]
+                                                ]
+
+                                        Nothing ->
+                                            text ""
+
+                                Nothing ->
+                                    div [ class "text-sm text-gray-500 italic" ] [ text "Смуга не вибрана" ]
                             ]
                         ]
                     , -- Error message
@@ -2038,7 +2390,16 @@ renderOrphanGroupEditSidebar isDark model dialog =
                     ]
                 ]
             , -- Footer
-              div [ class <| "px-6 py-3 border-t " ++ (if isDark then "border-gray-600" else "border-gray-200") ]
+              div
+                [ class <|
+                    "px-6 py-3 border-t "
+                        ++ (if isDark then
+                                "border-gray-600"
+
+                            else
+                                "border-gray-200"
+                           )
+                ]
                 [ div [ class "flex justify-end gap-3" ]
                     [ Button.view
                         (Button.new { label = "Скасувати", onClick = CloseOrphanGroupEdit }
@@ -2063,18 +2424,52 @@ renderOrphanGroupEditSidebar isDark model dialog =
 
 renderGroupEditSidebar : Bool -> Model -> GroupEditDialog -> Html Msg
 renderGroupEditSidebar isDark model dialog =
-    Sidebar.view True CloseGroupEdit
+    Sidebar.view True
+        CloseGroupEdit
         [ div [ class "flex flex-col h-full" ]
             [ -- Header
-              div [ class <| "px-6 py-3 border-b " ++ (if isDark then "border-gray-600" else "border-gray-200") ]
+              div
+                [ class <|
+                    "px-6 py-3 border-b "
+                        ++ (if isDark then
+                                "border-gray-600"
+
+                            else
+                                "border-gray-200"
+                           )
+                ]
                 [ div [ class "flex items-center justify-between" ]
                     [ div []
-                        [ div [ class <| "text-sm " ++ (if isDark then "text-gray-400" else "text-gray-500") ] [ text "Редагувати групу" ]
-                        , h3 [ class <| "text-lg font-semibold leading-tight " ++ (if isDark then "text-gray-100" else "text-gray-900") ]
+                        [ div
+                            [ class <|
+                                "text-sm "
+                                    ++ (if isDark then
+                                            "text-gray-400"
+
+                                        else
+                                            "text-gray-500"
+                                       )
+                            ]
+                            [ text "Редагувати групу" ]
+                        , h3
+                            [ class <|
+                                "text-lg font-semibold leading-tight "
+                                    ++ (if isDark then
+                                            "text-gray-100"
+
+                                        else
+                                            "text-gray-900"
+                                       )
+                            ]
                             [ text dialog.groupName ]
                         ]
                     , button
-                        [ class <| if isDark then "text-gray-400 hover:text-gray-200" else "text-gray-500 hover:text-gray-700"
+                        [ class <|
+                            if isDark then
+                                "text-gray-400 hover:text-gray-200"
+
+                            else
+                                "text-gray-500 hover:text-gray-700"
                         , onClick CloseGroupEdit
                         ]
                         [ i [ class "bi bi-x-lg" ] [] ]
@@ -2083,9 +2478,104 @@ renderGroupEditSidebar isDark model dialog =
             , -- Content
               div [ class "flex-1 overflow-y-auto px-6 py-4" ]
                 [ div [ class "space-y-6" ]
-                    [ -- Visibility section (first to avoid dropdown clipping)
+                    [ -- Area of Responsibility section (first)
                       div []
-                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                        [ h4
+                            [ class <|
+                                "text-sm font-semibold mb-3 "
+                                    ++ (if isDark then
+                                            "text-gray-300"
+
+                                        else
+                                            "text-gray-700"
+                                       )
+                            ]
+                            [ text "🗺️ Смуга відповідальності" ]
+                        , div [ class "space-y-3" ]
+                            [ -- Area selector
+                              div []
+                                [ label
+                                    [ class <|
+                                        "block text-sm font-medium mb-2 "
+                                            ++ (if isDark then
+                                                    "text-gray-300"
+
+                                                else
+                                                    "text-gray-700"
+                                               )
+                                    ]
+                                    [ text "Виберіть смугу:" ]
+                                , let
+                                    selectedItem =
+                                        case dialog.areaOfResponsibilitySelector.selected of
+                                            Just areaId ->
+                                                dialog.areaOfResponsibilitySelector.available
+                                                    |> List.filter (\area -> area.id == areaId)
+                                                    |> List.head
+                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
+
+                                            Nothing ->
+                                                Nothing
+
+                                    availableItems =
+                                        dialog.areaOfResponsibilitySelector.available
+                                            |> List.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
+
+                                    selectConfig =
+                                        { loading = False
+                                        , disabled = dialog.isLoading
+                                        , isDark = isDark
+                                        , clearable = True
+                                        }
+                                  in
+                                  Html.map GroupAreaSelectMsg <|
+                                    Styled.toUnstyled <|
+                                        Le.Block.Select.renderSelectSingle
+                                            selectedItem
+                                            dialog.areaOfResponsibilitySelector.selectState
+                                            availableItems
+                                            "виберіть смугу"
+                                            selectConfig
+                                ]
+                            , -- Selected area info
+                              div []
+                                [ case dialog.areaOfResponsibilitySelector.selected of
+                                    Just areaId ->
+                                        case List.filter (\area -> area.id == areaId) dialog.areaOfResponsibilitySelector.available |> List.head of
+                                            Just area ->
+                                                div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
+                                                    [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
+                                                    , case area.description of
+                                                        Just desc ->
+                                                            div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
+
+                                                        Nothing ->
+                                                            text ""
+                                                    , div [ class "text-xs text-blue-500 mt-2" ]
+                                                        [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
+                                                        ]
+                                                    ]
+
+                                            Nothing ->
+                                                text ""
+
+                                    Nothing ->
+                                        div [ class "text-sm text-gray-500 italic" ] [ text "Смуга не вибрана" ]
+                                ]
+                            ]
+                        ]
+                    , -- Visibility section (second)
+                      div []
+                        [ h4
+                            [ class <|
+                                "text-sm font-semibold mb-3 "
+                                    ++ (if isDark then
+                                            "text-gray-300"
+
+                                        else
+                                            "text-gray-700"
+                                       )
+                            ]
                             [ text "🔒 Видимість" ]
                         , div [ class "space-y-3" ]
                             [ -- Secret checkbox
@@ -2099,7 +2589,16 @@ renderGroupEditSidebar isDark model dialog =
                               div [ class "min-h-16" ]
                                 [ if dialog.isSecret then
                                     div []
-                                        [ label [ class <| "block text-sm font-medium mb-2 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                        [ label
+                                            [ class <|
+                                                "block text-sm font-medium mb-2 "
+                                                    ++ (if isDark then
+                                                            "text-gray-300"
+
+                                                        else
+                                                            "text-gray-700"
+                                                       )
+                                            ]
                                             [ text "👥 Користувачі, яким видима група:" ]
                                         , Html.map GroupEditUserSelectMsg <|
                                             Styled.toUnstyled <|
@@ -2112,19 +2611,46 @@ renderGroupEditSidebar isDark model dialog =
                                         ]
 
                                   else
-                                    div [ class <| "flex items-center h-16 text-sm " ++ (if isDark then "text-gray-400" else "text-gray-500") ]
+                                    div
+                                        [ class <|
+                                            "flex items-center h-16 text-sm "
+                                                ++ (if isDark then
+                                                        "text-gray-400"
+
+                                                    else
+                                                        "text-gray-500"
+                                                   )
+                                        ]
                                         [ text "👁️ Група видима всім користувачам" ]
                                 ]
                             ]
                         ]
-                    , -- Notes section (moved to second position)
+                    , -- Notes section (third)
                       div []
-                        [ h4 [ class <| "text-sm font-semibold mb-3 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                        [ h4
+                            [ class <|
+                                "text-sm font-semibold mb-3 "
+                                    ++ (if isDark then
+                                            "text-gray-300"
+
+                                        else
+                                            "text-gray-700"
+                                       )
+                            ]
                             [ text "📝 Нотатки" ]
                         , div [ class "space-y-3" ]
                             [ -- Short note field
                               div []
-                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                [ label
+                                    [ class <|
+                                        "block text-sm font-medium mb-1 "
+                                            ++ (if isDark then
+                                                    "text-gray-300"
+
+                                                else
+                                                    "text-gray-700"
+                                               )
+                                    ]
                                     [ text "Коротка нотатка:" ]
                                 , input
                                     [ type_ "text"
@@ -2145,7 +2671,16 @@ renderGroupEditSidebar isDark model dialog =
                                 ]
                             , -- Long note field
                               div []
-                                [ label [ class <| "block text-sm font-medium mb-1 " ++ (if isDark then "text-gray-300" else "text-gray-700") ]
+                                [ label
+                                    [ class <|
+                                        "block text-sm font-medium mb-1 "
+                                            ++ (if isDark then
+                                                    "text-gray-300"
+
+                                                else
+                                                    "text-gray-700"
+                                               )
+                                    ]
                                     [ text "Детальна інформація:" ]
                                 , textarea
                                     [ value dialog.longNote
@@ -2177,7 +2712,16 @@ renderGroupEditSidebar isDark model dialog =
                     ]
                 ]
             , -- Footer with actions
-              div [ class <| "px-6 py-4 border-t " ++ (if isDark then "border-gray-600 bg-gray-800" else "border-gray-200 bg-gray-50") ]
+              div
+                [ class <|
+                    "px-6 py-4 border-t "
+                        ++ (if isDark then
+                                "border-gray-600 bg-gray-800"
+
+                            else
+                                "border-gray-200 bg-gray-50"
+                           )
+                ]
                 [ div [ class "flex justify-end gap-3" ]
                     [ Button.view
                         (Button.new { label = "Скасувати", onClick = CloseGroupEdit }
@@ -2187,7 +2731,17 @@ renderGroupEditSidebar isDark model dialog =
                     , if dialog.isLoading then
                         div [ class "flex items-center gap-2 px-4 py-2" ]
                             [ Le.Block.Spinner.loadingSpinner2Sm
-                            , span [ class <| "text-sm " ++ (if isDark then "text-gray-300" else "text-gray-600") ] [ text "Збереження..." ]
+                            , span
+                                [ class <|
+                                    "text-sm "
+                                        ++ (if isDark then
+                                                "text-gray-300"
+
+                                            else
+                                                "text-gray-600"
+                                           )
+                                ]
+                                [ text "Збереження..." ]
                             ]
 
                       else
@@ -2285,7 +2839,7 @@ renderOrphanGroupsTable model groups =
             Table.customConfig
                 { toId = .masterKey
                 , toMsg = OrphanGroupsTableStateChanged
-                ,                 columns =
+                , columns =
                     [ Table.stringColumn "Назва групи" getGroupDisplayNameLocal |> Table.withColumnWidth "15%"
                     , Table.customColumn
                         { name = "Створено"
@@ -2300,6 +2854,12 @@ renderOrphanGroupsTable model groups =
                         }
                         |> Table.withColumnWidth "15%"
                     , Table.veryCustomColumn
+                        { name = "Смуга"
+                        , viewData = renderAreaOfResponsibilityColumn
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "12%"
+                    , Table.veryCustomColumn
                         { name = "Активність"
                         , viewData = renderActivityColumn
                         , sorter = Table.decreasingBy (.groupStats >> .activityLastDay)
@@ -2310,13 +2870,13 @@ renderOrphanGroupsTable model groups =
                         , viewData = renderShortNoteColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "18%"
+                        |> Table.withColumnWidth "15%"
                     , Table.veryCustomColumn
                         { name = "Довга нотатка"
                         , viewData = renderLongNoteColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "20%"
+                        |> Table.withColumnWidth "18%"
                     , Table.veryCustomColumn
                         { name = "Дії"
                         , viewData = renderActionsColumn model
@@ -2456,6 +3016,39 @@ renderOrphanGroupsTable model groups =
                 ]
             }
 
+        renderAreaOfResponsibilityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderAreaOfResponsibilityColumn group =
+            let
+                displayText : String
+                displayText =
+                    case group.areaOfResponsibility of
+                        Just area ->
+                            area.name
+
+                        Nothing ->
+                            "-"
+
+                tooltipText : String
+                tooltipText =
+                    case group.areaOfResponsibility of
+                        Just area ->
+                            case area.description of
+                                Just desc ->
+                                    area.name ++ " - " ++ desc
+
+                                Nothing ->
+                                    area.name
+
+                        Nothing ->
+                            "Смуга не призначена"
+            in
+            { attributes = []
+            , children =
+                [ span [ class "text-sm", title tooltipText ]
+                    [ text displayText ]
+                ]
+            }
+
         renderShortNoteColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderShortNoteColumn group =
             let
@@ -2465,6 +3058,7 @@ renderOrphanGroupsTable model groups =
                         Just note ->
                             if String.length note > 50 then
                                 String.left 50 note ++ "..."
+
                             else
                                 note
 
@@ -2496,6 +3090,7 @@ renderOrphanGroupsTable model groups =
                         Just note ->
                             if String.length note > 50 then
                                 String.left 50 note ++ "..."
+
                             else
                                 note
 
@@ -2872,8 +3467,22 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                                                         name
                                                )
                                 in
-                                String.isEmpty model.groupNameFilter
-                                    || String.contains (String.toLower model.groupNameFilter) (String.toLower groupName)
+                                let
+                                    nameMatches : Bool
+                                    nameMatches =
+                                        String.isEmpty model.groupNameFilter
+                                            || String.contains (String.toLower model.groupNameFilter) (String.toLower groupName)
+
+                                    areaMatches : Bool
+                                    areaMatches =
+                                        case model.areaOfResponsibilityFilter of
+                                            Just areaId ->
+                                                group.areaOfResponsibility |> Maybe.map .id |> Maybe.withDefault 0 |> (==) areaId
+
+                                            Nothing ->
+                                                True
+                                in
+                                nameMatches && areaMatches
                             )
                         |> List.sortBy
                             (\group ->
@@ -2947,7 +3556,8 @@ mainBlock isDark model user =
                 [ class
                     (if isDark then
                         "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-gray-800 to-gray-700 border border-gray-600 rounded-lg shadow-lg transform transition-all duration-300 ease-in-out hover:shadow-xl"
-                    else
+
+                     else
                         "mb-6 flex items-center gap-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-sm transform transition-all duration-300 ease-in-out hover:shadow-md hover:border-blue-300"
                     )
                 ]
@@ -2955,7 +3565,8 @@ mainBlock isDark model user =
                     [ class
                         (if isDark then
                             "flex items-center gap-2 text-blue-300"
-                        else
+
+                         else
                             "flex items-center gap-2 text-blue-700"
                         )
                     ]
@@ -2974,7 +3585,8 @@ mainBlock isDark model user =
                             , class
                                 (if isDark then
                                     "px-3 py-2 text-sm border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-gray-700 text-gray-100 placeholder-gray-400 shadow-sm transition-all duration-200"
-                                else
+
+                                 else
                                     "px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm transition-all duration-200"
                                 )
                             ]
@@ -2984,7 +3596,8 @@ mainBlock isDark model user =
                         [ class
                             (if isDark then
                                 "flex items-center gap-2 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm"
-                            else
+
+                             else
                                 "flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm"
                             )
                         ]
@@ -2995,6 +3608,43 @@ mainBlock isDark model user =
                             , id = "show-only-hidden-filter"
                             }
                             |> Toggle.view model.showOnlyHidden
+                        ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\areaId ->
+                                    Select.basicMenuItem
+                                        { item = areaId
+                                        , label =
+                                            RD.withDefault [] model.areasOfResponsibility
+                                                |> List.filter (\area -> area.id == areaId)
+                                                |> List.head
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ("Смуга " ++ String.fromInt areaId)
+                                        }
+                                )
+                                model.areaOfResponsibilityFilter
+
+                        availableItems =
+                            RD.withDefault [] model.areasOfResponsibility
+                                |> List.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
+
+                        selectConfig =
+                            { loading = False
+                            , disabled = False
+                            , isDark = isDark
+                            , clearable = True
+                            }
+                      in
+                      div [ class "w-64" ]
+                        [ Html.map AreaOfResponsibilityFilterMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    selectedItem
+                                    model.areaOfResponsibilityFilterSelectState
+                                    availableItems
+                                    "Всі смуги"
+                                    selectConfig
                         ]
                     ]
                 ]
