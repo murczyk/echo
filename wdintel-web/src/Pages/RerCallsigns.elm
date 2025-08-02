@@ -24,6 +24,7 @@ import Html.Styled as Styled
 import Layouts
 import Le.Auth
 import Le.Block.DateTime
+import Le.Block.Popup
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
@@ -105,7 +106,12 @@ type alias Model =
     , sidebarEditing : Bool
     , editingCallsign : Maybe B.Callsign
     , validationError : Maybe String
+    , rowShowAllPopupStatus : Maybe (Int, ShowAllPopupFor)
     }
+
+
+type ShowAllPopupFor
+    = ShowAllUnits
 
 
 type SortingOrder
@@ -166,6 +172,7 @@ init req _ =
             , sidebarEditing = False
             , editingCallsign = Nothing
             , validationError = Nothing
+            , rowShowAllPopupStatus = Nothing
             }
     in
     ( m2
@@ -227,6 +234,7 @@ type Msg
     | CloseEditSidebar
     | SaveEditSidebar
     | CancelEditSidebar
+    | RowShowAllPopupChanged (Maybe (Int, ShowAllPopupFor))
 
 
 type alias AddState =
@@ -1296,6 +1304,11 @@ update req shared msg model =
             , loadCallsigns updatedModel
             )
 
+        RowShowAllPopupChanged popupStatus ->
+            ( { model | rowShowAllPopupStatus = popupStatus }
+            , E.none
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -1460,7 +1473,7 @@ callsignsTableConfig shared model user =
                 { name = "Зустрічається у підрозділах"
                 , viewData =
                     \callsign ->
-                        { attributes = [ style "width" "210px" ]
+                        { attributes = []
                         , children =
                             case model.callsignsWithUnitsFromInbox of
                                 Loading ->
@@ -1479,25 +1492,71 @@ callsignsTableConfig shared model user =
                                                     String.contains (Tuple.first callsignWithUnitsFromInbox_) callsign.callsign
                                                 )
                                                 callsignsWithUnitsFromInbox
+
+                                        unitsList =
+                                            case callsignWithUnitsFromInbox of
+                                                Nothing ->
+                                                    []
+
+                                                Just callsignWithUnitsFromInbox_ ->
+                                                    case unit of
+                                                        Nothing ->
+                                                            callsignWithUnitsFromInbox_
+                                                                |> Tuple.second
+
+                                                        Just unit_ ->
+                                                            callsignWithUnitsFromInbox_
+                                                                |> Tuple.second
+                                                                |> List.filter (\s -> not (String.contains s unit_.name))
                                     in
-                                    [ case callsignWithUnitsFromInbox of
-                                        Nothing ->
-                                            text ""
+                                    [ div [ class "flex flex-col gap-[4px]" ]
+                                        ((List.map (\u -> span [] [ text u ]) unitsList
+                                            |> List.take 3
+                                        )
+                                            ++ (if List.length unitsList > 3 then
+                                                    let
+                                                        body =
+                                                            span
+                                                                [ style "font-size" "12px"
+                                                                , style "font-weight" "300"
+                                                                , style "cursor" (if isOpen then "default" else "pointer")
+                                                                , style "display" "block"
+                                                                , style "padding-right" "6px"
+                                                                , style "text-decoration" "underline"
+                                                                , style "pointer-events" (if isOpen then "none" else "auto")
+                                                                ]
+                                                                [ text ("Показати всі " ++ (unitsList |> List.length |> String.fromInt)) ]
 
-                                        Just callsignWithUnitsFromInbox_ ->
-                                            text
-                                                (case unit of
-                                                    Nothing ->
-                                                        callsignWithUnitsFromInbox_
-                                                            |> Tuple.second
-                                                            |> String.join ", "
+                                                        popupBody =
+                                                            div [ class "flex flex-wrap gap-2 h-[400px] max-w-[800px] p-2 overflow-y-auto", style "position" "relative", style "z-index" "40" ]
+                                                                (List.map (\unitName -> span [] [ text unitName ]) unitsList)
 
-                                                    Just unit_ ->
-                                                        callsignWithUnitsFromInbox_
-                                                            |> Tuple.second
-                                                            |> List.filter (\s -> not (String.contains s unit_.name))
-                                                            |> String.join ", "
-                                                )
+                                                        isOpen =
+                                                            case model.rowShowAllPopupStatus of
+                                                                Just ( callsignId, ShowAllUnits ) ->
+                                                                    callsignId == callsign.id
+
+                                                                _ ->
+                                                                    False
+                                                    in
+                                                    [ Le.Block.Popup.new
+                                                        { body = body
+                                                        , popupBody = popupBody
+                                                        , isOpen = isOpen
+                                                        , onClose = RowShowAllPopupChanged Nothing
+                                                        , onOpen = RowShowAllPopupChanged <| Just ( callsign.id, ShowAllUnits )
+                                                        , disabled = isOpen  -- Вимкнути кліки коли попап відкритий
+                                                        }
+                                                        |> Le.Block.Popup.withCloseButton
+                                                        |> Le.Block.Popup.withPlacementTop
+                                                        |> Le.Block.Popup.withSkidding "0"
+                                                        |> Le.Block.Popup.view
+                                                    ]
+
+                                                else
+                                                    [ text "" ]
+                                               )
+                                        )
                                     ]
 
                                 _ ->
