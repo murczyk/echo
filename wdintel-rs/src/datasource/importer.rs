@@ -84,12 +84,43 @@ async fn collect_datasource_data(
         .context(h!())?
         .context(h!())?;
 
+    let profiles = signal_profile::Entity::find()
+        .all(&db)
+        .await
+        .context(h!())?;
+
+    let signal_groups =
+        signal_group::Entity::find().all(&db).await.context(h!())?;
+
+    let whatsapp_groups = whatsapp_group::Entity::find()
+        .all(&db)
+        .await
+        .context(h!())?;
+
+    let messages = sigint_inbox_item::Entity::find()
+        .find_with_related(signal_message::Entity)
+        .all(&db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|(item, messages)| {
+            messages
+                .into_iter()
+                .map(move |message| (item.clone(), message))
+        })
+        .map(|(inbox_item, message)| Message {
+            inbox_item,
+            message,
+        })
+        .collect::<Vec<_>>();
+
     let exported_data = DatasourceDetails {
         datasource,
-        profiles: vec![],
-        signal_groups: vec![],
-        whatsapp_groups: vec![],
-        messages: vec![],
+        profiles,
+        signal_groups,
+        whatsapp_groups,
+        messages,
     };
+
     Ok(exported_data)
 }
