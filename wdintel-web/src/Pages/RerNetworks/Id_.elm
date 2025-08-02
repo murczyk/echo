@@ -2570,18 +2570,12 @@ view user shared model =
                         text ""
                 , case model.freqDetailPopup of
                     Just freqId ->
-                        Popup.new
-                            { body = div [] []
-                            , popupBody = div [ class "p-6" ]
+                        ModalDialog.modalDialog True CloseFreqDetailPopup []
+                            [ div [ class "p-6", style "width" "600px", style "height" "400px" ]
                                 [ h3 [ class "text-lg font-semibold mb-4" ] [ text ("Детальний графік активності: " ++ freqId) ]
                                 , div [ class "text-center text-gray-500" ] [ text "Тут буде детальний графік" ]
                                 ]
-                            , isOpen = True
-                            , onOpen = OpenFreqDetailPopup freqId
-                            , onClose = CloseFreqDetailPopup
-                            , disabled = False
-                            }
-                            |> Popup.view
+                            ]
 
                     Nothing ->
                         text ""
