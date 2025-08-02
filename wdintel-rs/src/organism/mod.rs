@@ -265,6 +265,7 @@ pub async fn list_organisms(
     req: Json<ListOrganismsReq>,
 ) -> Result<Json<Vec<Organism>>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    let default_sorting = req.sort_by.is_none();
 
     let (sort_by, order) = match req.sort_by {
         Some(ListOrganismsSortBy::OrganismCreatedAtDesc) => {
@@ -294,23 +295,25 @@ pub async fn list_organisms(
         .await
         .context(h!())?;
 
-    Ok(Json(
-        organisms
-            .into_iter()
-            .map(|o| Organism {
-                id: o.id,
-                parent_id: o.parent_id,
-                name: o.name,
-                enabled: o.enabled,
-                created_at: o.created_at.and_utc().timestamp_millis(),
-                roles: serde_json::from_value(o.roles).unwrap_or(vec![]),
-                group_auto_link: o.group_auto_link.unwrap_or(false),
-                groups: organism_groups
-                    .iter()
-                    .filter(|x| x.organism_id.eq(&o.id))
-                    .map(|og| og.signal_group_master_key.clone())
-                    .collect(),
-            })
-            .collect(),
-    ))
+    let mut list = organisms
+        .into_iter()
+        .map(|o| Organism {
+            id: o.id,
+            parent_id: o.parent_id,
+            name: o.name,
+            enabled: o.enabled,
+            created_at: o.created_at.and_utc().timestamp_millis(),
+            roles: serde_json::from_value(o.roles).unwrap_or(vec![]),
+            group_auto_link: o.group_auto_link.unwrap_or(false),
+            groups: organism_groups
+                .iter()
+                .filter(|x| x.organism_id.eq(&o.id))
+                .map(|og| og.signal_group_master_key.clone())
+                .collect(),
+        })
+        .collect_vec();
+    if default_sorting {
+        list.sort_by_key(|e| e.parent_id.map(|id| id * 0).unwrap_or(-1)); // first goes root elements, then the others
+    }
+    Ok(Json(list))
 }

@@ -3,11 +3,15 @@ use log::*;
 
 #[tokio::main]
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
+    let config = crate::config::read_config(mode.clone())?;
+    if !config.read_from_legacy_data_sources.unwrap_or(true) {
+        info!("legacy datasource processing disabled, exiting...");
+        return Ok(());
+    }
+
     crate::migration::run_migration_1(mode)
         .await
         .context(h!())?;
-
-    let config = crate::config::read_config(mode.clone())?;
 
     let redis = crate::new_redis(&config).await.context(h!())?;
     let settlements = Arc::new(RwLock::new(

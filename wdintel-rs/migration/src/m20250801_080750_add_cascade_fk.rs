@@ -60,7 +60,7 @@ BEGIN
 END $$;
             ",
         )
-            .await?;        
+            .await?;
 
         Ok(())
     }
@@ -118,7 +118,7 @@ BEGIN
 END $$;
             ",
         )
-            .await?;    
+            .await?;
 
         Ok(())
     }
