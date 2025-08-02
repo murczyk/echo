@@ -13,6 +13,7 @@
 - [#1152](https://github.com/echoua/echo/issues/1152) Позивні: показувати один альтернативний підрозділ, інші в попапі
 - [#1088](https://github.com/echoua/echo/issues/1088) Мережа: доданий графік активності частоти.
 - [#1172](https://github.com/echoua/echo/issues/1172) Мережа. Виправлено помилку відображення активності при відсутності такої за період
+- [#1105](https://github.com/echoua/echo/issues/1105) Прив'язана мережа в аналізі та оперативному підтягується згідно смуг
 - [#1155](https://github.com/echoua/echo/issues/1155) Додано just команду `export-datasource-to-target` для експорту джерела із перехопленнями між серверами
 - [#1148](https://github.com/echoua/echo/issues/1148) Виправлено помилку злиття мереж
 - [#1107](https://github.com/echoua/echo/issues/1107) Сторінка адміністрування смуг `еталонка -> смуги`, тільки для адмінів
