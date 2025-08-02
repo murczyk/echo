@@ -58,7 +58,6 @@ pub async fn upsert_signal_profiles(
         let target_profile_id = match existing_profile {
             None => {
                 let mut rec = new_profile.into_active_model();
-                rec.uuid = NotSet;
                 rec.created_at = NotSet;
                 rec.insert(db).await.context(h!())?.uuid
             }

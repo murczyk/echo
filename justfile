@@ -794,6 +794,6 @@ unlink-mothership:
     ssh echo-luhansk -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
 
 export-datasource-to-target:
-    ssh {{ server }} -t '{{ echo_bin }} --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }}'
+    ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }}'
     scp {{ server }}:/tmp/ds_export_{{ dt1 }}.json {{ target }}:/tmp/ds_import_{{ dt1 }}.json
     ssh {{ target }} -t '{{ echo_bin }}  --mode=live oneoff-import-data-source --source-path /tmp/ds_import_{{ dt1 }}.json'
