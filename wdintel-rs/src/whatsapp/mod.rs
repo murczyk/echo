@@ -99,6 +99,7 @@ async fn receive_once(
                 format: NotSet,
                 datasource_id: Set(Some(datasource.id)),
                 deleted: NotSet,
+                external_id: NotSet,
             }
             .insert(&txn)
             .await

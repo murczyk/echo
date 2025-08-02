@@ -22,6 +22,7 @@ pub struct Model {
     pub format: Option<i64>,
     pub datasource_id: Option<i64>,
     pub deleted: bool,
+    pub external_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

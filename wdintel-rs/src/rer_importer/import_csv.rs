@@ -117,6 +117,7 @@ pub async fn oneoff_rer_csv_import_1(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = signal_message::Entity::insert(message)
             .exec(&dbx)
@@ -359,6 +360,7 @@ pub async fn rer_delta_csv_import_go(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = signal_message::Entity::insert(message)
             .exec(dbx)

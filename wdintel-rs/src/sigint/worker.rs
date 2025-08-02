@@ -376,6 +376,7 @@ pub async fn process_incoming_message_restapi(
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
+            external_id: NotSet,
         };
         let db_message_id: i64 = SignalMessage::insert(message)
             .exec(dbx)
