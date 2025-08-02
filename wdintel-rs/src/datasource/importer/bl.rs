@@ -211,6 +211,7 @@ pub async fn upsert_messages(
             rec.datasource_id = Set(Some(target_datasource_id));
             rec.sender = Set(sender);
             rec.duplicate_of = Set(duplicate_of);
+            rec.external_id = Set(Some(source_message_id));
             let new_id = rec.insert(db).await.context(h!())?.id;
             message_ids_map.insert(source_message_id, new_id);
             new_messages_counter += 1;
