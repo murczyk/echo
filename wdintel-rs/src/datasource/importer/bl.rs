@@ -183,7 +183,7 @@ pub async fn upsert_messages(
             let current_progress = processed as f64 * 100.0 / total_messages;
             if current_progress - progress > 0.1 {
                 info!("upsert_messages progress: {:.1}%", progress);
-                progress += current_progress;
+                progress = current_progress;
             }
             processed += 1;
             let source_message_id = entry.message.id;
