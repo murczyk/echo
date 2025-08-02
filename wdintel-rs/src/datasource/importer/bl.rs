@@ -93,22 +93,24 @@ pub async fn upsert_signal_groups(
         .collect::<BTreeMap<_, _>>();
     for new_group in groups {
         let source_group_id = new_group.master_key.clone();
-        let target_group_id = match existing_groups.get(&source_group_id).cloned() {
-            None => {
-                let mut rec = new_group.into_active_model();
-                rec.datasource_id = Set(Some(target_datasource_id));
-                rec.created_at = NotSet;
-                rec.insert(db).await.context(h!())?.master_key
-            }
-            Some(existing_group) => {
-                let mut rec = existing_group.into_active_model();
-                rec.ignore_operativny = Set(new_group.ignore_operativny);
-                rec.name = Set(new_group.name);
-                rec.is_secret = Set(new_group.is_secret);
-                rec.datasource_id = Set(Some(target_datasource_id));
-                rec.update(db).await.context(h!())?.master_key
-            }
-        };
+        let target_group_id =
+            match existing_groups.get(&source_group_id).cloned() {
+                None => {
+                    info!("inserting group {}", new_group.master_key);
+                    let mut rec = new_group.into_active_model();
+                    rec.datasource_id = Set(Some(target_datasource_id));
+                    rec.created_at = NotSet;
+                    rec.insert(db).await.context(h!())?.master_key
+                }
+                Some(existing_group) => {
+                    let mut rec = existing_group.into_active_model();
+                    rec.ignore_operativny = Set(new_group.ignore_operativny);
+                    rec.name = Set(new_group.name);
+                    rec.is_secret = Set(new_group.is_secret);
+                    rec.datasource_id = Set(Some(target_datasource_id));
+                    rec.update(db).await.context(h!())?.master_key
+                }
+            };
         result.insert(source_group_id, target_group_id);
     }
     Ok(())

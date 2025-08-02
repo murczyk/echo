@@ -113,8 +113,11 @@ async fn collect_datasource_data(
         .await
         .context(h!())?;
 
-    let signal_groups =
-        signal_group::Entity::find().all(&db).await.context(h!())?;
+    let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::DatasourceId.eq(params.datasource_id))
+        .all(&db)
+        .await
+        .context(h!())?;
 
     let whatsapp_groups = whatsapp_group::Entity::find()
         .all(&db)
@@ -122,7 +125,8 @@ async fn collect_datasource_data(
         .context(h!())?;
 
     let mut messages_q = sigint_inbox_item::Entity::find()
-        .find_with_related(signal_message::Entity);
+        .find_with_related(signal_message::Entity)
+        .filter(signal_message::Column::DatasourceId.eq(params.datasource_id));
 
     if let Some(since_ms) = params.since_epoch_ms {
         if let Some(datetime) =
