@@ -9,6 +9,7 @@ use sea_orm::*;
 use sea_query::Expr;
 
 pub mod types;
+pub(crate) mod importer;
 
 #[post("/api/datasources/list")]
 pub async fn list_datasources(

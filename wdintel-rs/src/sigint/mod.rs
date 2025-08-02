@@ -595,6 +595,7 @@ async fn xlsx_import_process_one(
         &config,
         redis,
         db_message_id,
+        None,
     )
     .await;
 

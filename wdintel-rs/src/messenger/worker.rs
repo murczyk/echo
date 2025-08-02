@@ -411,6 +411,7 @@ async fn receive_once(
         config,
         redis,
         signal_message.id,
+        None,
     )
     .await;
 

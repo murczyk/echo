@@ -210,6 +210,7 @@ pub async fn rer_delta_kmz_import_go(
             &config,
             redis,
             db_message_id,
+            None,
         )
         .await;
         crate::sigint::worker::incoming_message_after_insert(
