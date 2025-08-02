@@ -151,7 +151,6 @@ async fn inbox_messages(
         .await
         .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
-    let networks = load_inbox_networks(&inbox_items, &txn).await?;
     let callsigns: Vec<CallsignInfoRes> =
         load_inbox_callsigns(&inbox_items, &env).await?;
     let signal_profiles =
@@ -170,7 +169,6 @@ async fn inbox_messages(
 
     Ok(Json(InboxMessagesRsp {
         inbox_items,
-        networks,
         callsigns,
         signal_profiles,
         signal_groups,
