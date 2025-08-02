@@ -295,6 +295,37 @@
 			"response": []
 		},
 		{
+			"name": "rer-importer/get-inbox",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"since_id_noninclusive\": null,\n    \"before_id_noninclusive\": null,\n    \"since_date_inclusive_ms\": 1753563600000,\n    \"till_date_inclusive_ms\": 1754168400000,\n    \"only_show_unprocessed\": null,\n    \"checked_only\": false,\n    \"selected_groups\": [\"120363418408644385@g.us\"],\n    \"selected_senders\": null,\n    \"denied_senders\": null,\n    \"selected_freqs\": [\"154.2500\"],\n    \"selected_posts\": null,\n    \"denied_posts\": null,\n    \"denied_freqs\": null,\n    \"selected_callsigns\": null,\n    \"selected_units\": null,\n    \"selected_locations\": null,\n    \"nolimit\": true,\n    \"or_with_extended_form\": false,\n    \"load_latest\": null,\n    \"return_duplicates\": null,\n    \"or_bookmarked\": false,\n    \"or_important\": false,\n    \"or_with_coords\": false,\n    \"newest_first\": true,\n    \"search\": null,\n    \"highlight_callsigns\": null,\n    \"highlight_keywords\": null,\n    \"highlight_searchres\": true,\n    \"highlight_signals\": null,\n    \"selected_tags\": null,\n    \"sort_by\": null,\n    \"report_tags_only_this_unit\": false,\n    \"ignore_imported_coords\": null,\n    \"include_peleng_locations\": true,\n    \"units_exact_match_only\": null,\n    \"calculate_freq_pelengs_summary\": null,\n    \"filter_tags_option\": \"OneOfTags\",\n    \"page_id\": \"rer-analysis\"\n}\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/rer-importer/get-inbox",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"rer-importer",
+						"get-inbox"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "sigint/etalonka/report-networks-batch-id",
 			"request": {
 				"auth": {
