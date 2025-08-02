@@ -81,16 +81,19 @@ pub async fn upsert_signal_groups(
 ) -> anyhow::Result<()> {
     let (_, target_datasource_id) = datasource_mapping;
     let mut result = BTreeMap::new();
+    let group_keys = groups.iter().map(|g| g.master_key.clone()).collect_vec();
+    let existing_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.is_in(group_keys))
+        .filter(signal_group::Column::DatasourceId.eq(target_datasource_id))
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|g| (g.master_key.clone(), g))
+        .collect::<BTreeMap<_, _>>();
     for new_group in groups {
         let source_group_id = new_group.master_key.clone();
-        let existing_group = signal_group::Entity::find()
-            .filter(signal_group::Column::MasterKey.eq(source_group_id.clone()))
-            .filter(signal_group::Column::DatasourceId.eq(target_datasource_id))
-            .one(db)
-            .await
-            .context(h!())?;
-
-        let target_group_id = match existing_group {
+        let target_group_id = match existing_groups.get(&source_group_id).cloned() {
             None => {
                 let mut rec = new_group.into_active_model();
                 rec.datasource_id = Set(Some(target_datasource_id));
