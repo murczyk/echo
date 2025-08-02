@@ -182,7 +182,7 @@ pub async fn upsert_messages(
             .collect::<BTreeMap<_, _>>();
         for entry in messages {
             let current_progress = processed as f64 * 100.0 / total_messages;
-            if progress < current_progress {
+            if current_progress - progress > 0.1 {
                 info!("upsert_messages progress: {:.1}%", progress);
                 progress += current_progress;
             }
