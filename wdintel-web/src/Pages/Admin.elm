@@ -11,7 +11,6 @@ import Components.Table as Table
 import Components.Table.Config as Config
 import Components.Tabs as Tabs
 import Components.Toggle as Toggle
-import Components.Watermark as Watermark
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -33,12 +32,11 @@ import Select
 import Set exposing (Set)
 import Shared
 import View exposing (View)
-import Views
 
 
 type alias OrphanGroupAssignmentDialog =
     { groupKey : String
-    , zoneIds : List Int -- для множинного додавання
+    , zoneIds : List Int
     , isSecret : Bool
     , selectedUsers : List String
     , userSelectState : Select.State
@@ -121,6 +119,8 @@ type alias Model =
     , orphanGroupEditInProgress : Maybe String -- groupKey being edited
     , orphanGroupEditError : Maybe String
     , areasOfResponsibility : RemoteData ApiError (List B.AreaOfResponsibility)
+    , areaOfResponsibilityFilter : Maybe Int
+    , areaOfResponsibilityFilterSelectState : Select.State
     }
 
 
@@ -362,6 +362,8 @@ init _ =
       , orphanGroupEditInProgress = Nothing
       , orphanGroupEditError = Nothing
       , areasOfResponsibility = RD.NotAsked
+      , areaOfResponsibilityFilter = Nothing
+      , areaOfResponsibilityFilterSelectState = Select.initState (Select.selectIdentifier "area-filter")
       }
     , E.sendCmd <|
         Cmd.batch
@@ -427,10 +429,12 @@ type Msg
     | SaveGroupEditDone (Result ApiError B.ZoneDatasourceGroup)
     | LoadAreasOfResponsibility
     | AreasOfResponsibilityLoaded (Result ApiError (List B.AreaOfResponsibility))
-    | OrphanGroupAreaSelectMsg (Select.Msg String)
+    | OrphanGroupAreaSelectMsg (Select.Msg Int)
     | UpdateOrphanGroupAreaOfResponsibility (Maybe Int)
     | GroupAreaSelectMsg (Select.Msg String)
     | UpdateGroupAreaOfResponsibility (Maybe Int)
+    | UpdateAreaOfResponsibilityFilter (Maybe Int)
+    | AreaOfResponsibilityFilterMsg (Select.Msg Int)
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -1983,8 +1987,7 @@ update msg model =
 
                         selected : Maybe Int
                         selected =
-                            Le.Block.Select.singleUpd mAction (dialog.areaOfResponsibilitySelector.selected |> Maybe.map String.fromInt)
-                                |> Maybe.andThen String.toInt
+                            Le.Block.Select.singleUpd mAction dialog.areaOfResponsibilitySelector.selected
                     in
                     ( { model
                         | orphanGroupEditDialog =
@@ -2043,6 +2046,27 @@ update msg model =
 
                 Nothing ->
                     ( model, E.none )
+
+        UpdateAreaOfResponsibilityFilter newFilter ->
+            ( { model | areaOfResponsibilityFilter = newFilter }
+            , E.none
+            )
+
+        AreaOfResponsibilityFilterMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.areaOfResponsibilityFilterSelectState
+
+                selected : Maybe Int
+                selected =
+                    Le.Block.Select.singleUpd mAction model.areaOfResponsibilityFilter
+            in
+            ( { model
+                | areaOfResponsibilityFilter = selected
+                , areaOfResponsibilityFilterSelectState = imodel2
+              }
+            , E.sendCmd <| Cmd.map AreaOfResponsibilityFilterMsg icmd
+            )
 
 
 subscriptions : Model -> Sub Msg
@@ -2300,19 +2324,18 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                     [ text "Смуга відповідальності:" ]
                                 , let
                                     selectedItem =
-                                        case dialog.areaOfResponsibilitySelector.selected of
-                                            Just areaId ->
+                                        Maybe.andThen
+                                            (\areaId ->
                                                 dialog.areaOfResponsibilitySelector.available
                                                     |> List.filter (\area -> area.id == areaId)
                                                     |> List.head
-                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
-
-                                            Nothing ->
-                                                Nothing
+                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
+                                            )
+                                            dialog.areaOfResponsibilitySelector.selected
 
                                     availableItems =
                                         dialog.areaOfResponsibilitySelector.available
-                                            |> List.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
+                                            |> List.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
 
                                     selectConfig =
                                         { loading = False
@@ -3444,8 +3467,22 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                                                         name
                                                )
                                 in
-                                String.isEmpty model.groupNameFilter
-                                    || String.contains (String.toLower model.groupNameFilter) (String.toLower groupName)
+                                let
+                                    nameMatches : Bool
+                                    nameMatches =
+                                        String.isEmpty model.groupNameFilter
+                                            || String.contains (String.toLower model.groupNameFilter) (String.toLower groupName)
+
+                                    areaMatches : Bool
+                                    areaMatches =
+                                        case model.areaOfResponsibilityFilter of
+                                            Just areaId ->
+                                                group.areaOfResponsibility |> Maybe.map .id |> Maybe.withDefault 0 |> (==) areaId
+
+                                            Nothing ->
+                                                True
+                                in
+                                nameMatches && areaMatches
                             )
                         |> List.sortBy
                             (\group ->
@@ -3571,6 +3608,43 @@ mainBlock isDark model user =
                             , id = "show-only-hidden-filter"
                             }
                             |> Toggle.view model.showOnlyHidden
+                        ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\areaId ->
+                                    Select.basicMenuItem
+                                        { item = areaId
+                                        , label =
+                                            RD.withDefault [] model.areasOfResponsibility
+                                                |> List.filter (\area -> area.id == areaId)
+                                                |> List.head
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault ("Смуга " ++ String.fromInt areaId)
+                                        }
+                                )
+                                model.areaOfResponsibilityFilter
+
+                        availableItems =
+                            RD.withDefault [] model.areasOfResponsibility
+                                |> List.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
+
+                        selectConfig =
+                            { loading = False
+                            , disabled = False
+                            , isDark = isDark
+                            , clearable = True
+                            }
+                      in
+                      div [ class "w-64" ]
+                        [ Html.map AreaOfResponsibilityFilterMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    selectedItem
+                                    model.areaOfResponsibilityFilterSelectState
+                                    availableItems
+                                    "Всі смуги"
+                                    selectConfig
                         ]
                     ]
                 ]
