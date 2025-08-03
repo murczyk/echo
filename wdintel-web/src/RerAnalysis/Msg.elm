@@ -99,6 +99,7 @@ type Msg
     | FilterUnitsInp String
     | GotTags (Result ApiError (List ( Int, B.Tag )))
     | ReportTemplateSelect ReportTemplate
+    | ToggleReportConstructor
     | ReportDownloadDocx
     | ReportDownloadDocxDone (Result ApiError Bytes)
     | ScrollMessagesToTop

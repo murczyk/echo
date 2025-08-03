@@ -98,7 +98,7 @@ type alias Model =
     , now : Maybe Time.Posix
     , tags : List ( Int, B.Tag )
 
-    -- , showReportConstructor : Bool
+    , showReportConstructor : Bool
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
 
