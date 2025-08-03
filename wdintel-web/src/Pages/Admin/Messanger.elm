@@ -278,6 +278,22 @@ validateAorId maybeAorId =
             Err "Потрібно вибрати смугу відповідальності"
 
 
+-- Helper function to get AOR name by account ID
+getAorName : Int -> RemoteData ApiError (List B.AreaOfResponsibility) -> String
+getAorName accountId aorList =
+    case aorList of
+        RD.Success aors ->
+            case List.filter (\aor -> aor.id == accountId) aors |> List.head of
+                Just aor ->
+                    aor.name
+                
+                Nothing ->
+                    "—"
+        
+        _ ->
+            "—"
+
+
 -- Helper function to get messenger type label
 
 
@@ -861,7 +877,7 @@ mainBlock isDark model =
             RD.Success accounts ->
                 div [ class "table-responsive-modern" ]
                     [ Table.view
-                        (messengerAccountsTableConfig model.deleteLoading)
+                        (messengerAccountsTableConfig model.deleteLoading model.aorList)
                         model.tableState
                         accounts
                     ]
@@ -1085,8 +1101,8 @@ linkAccountSidebarContent isDark shared model =
             ]
 
 
-messengerAccountsTableConfig : Bool -> Table.Config B.EchoAccountF1 Msg
-messengerAccountsTableConfig isLoading =
+messengerAccountsTableConfig : Bool -> RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.EchoAccountF1 Msg
+messengerAccountsTableConfig isLoading aorList =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1201,6 +1217,15 @@ messengerAccountsTableConfig isLoading =
                 , sorter = Table.unsortable
                 }
                 |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Смуга відповідальності"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ text (getAorName account.id aorList) ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
                 { name = "Статус"
                 , viewData =
