@@ -1,7 +1,5 @@
 import { computePosition, flip, shift, offset, autoUpdate } from '@floating-ui/dom';
 
-type Placement = 'top' | 'bottom' | 'left' | 'right';
-
 interface FloatingPopupState {
   isOpen: boolean;
   cleanup?: () => void;
@@ -17,7 +15,7 @@ class FloatingPopup extends HTMLElement {
   private bodyOverlayElement: HTMLElement | null = null;
 
   static get observedAttributes() {
-    return ['open', 'placement', 'overlay'];
+    return ['open', 'overlay'];
   }
 
   constructor() {
@@ -28,7 +26,6 @@ class FloatingPopup extends HTMLElement {
   connectedCallback() {
     this.render();
     this.setupEventListeners();
-    // Move popup to document.body to avoid table stacking context issues
     this.movePopupToBody();
   }
 
@@ -62,22 +59,9 @@ class FloatingPopup extends HTMLElement {
         }
 
         .popup {
-          position: fixed;
-          z-index: 9999;
-          opacity: 0;
-          visibility: hidden;
-          transform: scale(0.95);
-          transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0.15s ease-out;
-          background: white;
-          border: 1px solid #e5e5e5;
-          border-radius: 8px;
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+          ${FloatingPopup.PORTAL_STYLES.popup}
           max-width: 400px;
           min-width: 200px;
-          will-change: transform;
-          backface-visibility: hidden;
-          transform-style: preserve-3d;
-          pointer-events: none;
         }
 
         .popup.open {
@@ -88,16 +72,8 @@ class FloatingPopup extends HTMLElement {
         }
 
         .overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
+          ${FloatingPopup.PORTAL_STYLES.overlay}
           z-index: 999;
-          background: rgba(0, 0, 0, 0.1);
-          opacity: 0;
-          visibility: hidden;
-          transition: opacity 0.15s ease-out, visibility 0.15s ease-out;
         }
 
         .overlay.open {
@@ -106,35 +82,16 @@ class FloatingPopup extends HTMLElement {
         }
 
         .popup-content {
-          position: relative;
-          padding: 16px;
-          padding-top: 48px;
+          ${FloatingPopup.PORTAL_STYLES.popupContent}
         }
 
         .close-button {
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          background: none;
-          border: none;
-          font-size: 16px;
-          cursor: pointer;
-          padding: 8px;
-          line-height: 1;
-          color: #6b7280;
-          border-radius: 6px;
-          width: 32px;
-          height: 32px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.15s ease;
-          z-index: 1;
+          ${FloatingPopup.PORTAL_STYLES.closeButton}
         }
 
         .close-button:hover {
-          background: #f3f4f6;
-          color: #374151;
+          background: var(--color-bg-muted);
+          color: var(--color-text);
           transform: scale(1.05);
         }
 
@@ -182,9 +139,7 @@ class FloatingPopup extends HTMLElement {
 
   private updatePopupVisibility() {
     if (!this.popupElement || !this.overlayElement) return;
-    if (this.state.isTransitioning) return; // Prevent multiple transitions
-
-
+    if (this.state.isTransitioning) return;
 
     if (this.state.isOpen) {
       this.showPopup();
@@ -195,8 +150,7 @@ class FloatingPopup extends HTMLElement {
 
   private async showPopup() {
     if (!this.anchorElement || !this.bodyPopupElement) return;
-    if (this.state.isTransitioning) return; // Already transitioning
-
+    if (this.state.isTransitioning) return;
 
     this.state.isTransitioning = true;
 
@@ -209,34 +163,42 @@ class FloatingPopup extends HTMLElement {
       return;
     }
 
-    const placement = (this.getAttribute('placement') || 'bottom') as Placement;
     const hasOverlay = this.hasAttribute('overlay');
 
     // Copy current slot content to body popup
     this.copySlotContent();
 
-    // Show overlay if needed (in body)
+    // Show overlay if needed
     if (hasOverlay && this.bodyOverlayElement) {
       this.bodyOverlayElement.style.opacity = '1';
       this.bodyOverlayElement.style.visibility = 'visible';
     }
 
-    // Calculate position once and set it - NO AUTO UPDATE
-    const position = await computePosition(actualAnchor, this.bodyPopupElement, {
-      placement,
-      strategy: 'fixed',
-      middleware: [
-        offset(8),
-        flip(),
-        shift({ padding: 8 })
-      ]
-    });
+    // ВИДАЛЯЄМО ДУБЛЮВАННЯ КОДУ - використовуємо autoUpdate
+    const updatePosition = () => {
+      if (!this.bodyPopupElement || !this.state.isOpen) return;
+      
+      computePosition(actualAnchor, this.bodyPopupElement, {
+        // Автоматичний placement на основі позиції в viewport
+        placement: this.getOptimalPlacement(actualAnchor),
+        strategy: 'fixed',
+        middleware: [
+          offset(8),
+          flip(),
+          shift({ padding: 8 })
+        ]
+      }).then(({ x, y }) => {
+        if (this.bodyPopupElement) {
+          Object.assign(this.bodyPopupElement.style, {
+            left: `${x}px`,
+            top: `${y}px`
+          });
+        }
+      });
+    };
 
-    // Set position only once
-    Object.assign(this.bodyPopupElement.style, {
-      left: `${position.x}px`,
-      top: `${position.y}px`
-    });
+    // Використовуємо autoUpdate замість власної логіки
+    this.state.cleanup = autoUpdate(actualAnchor, this.bodyPopupElement, updatePosition);
 
     // Show popup with animation
     requestAnimationFrame(() => {
@@ -246,58 +208,41 @@ class FloatingPopup extends HTMLElement {
         this.bodyPopupElement.style.transform = 'scale(1)';
         this.bodyPopupElement.style.pointerEvents = 'auto';
       }
-      // Reset transition flag after animation
       setTimeout(() => {
         this.state.isTransitioning = false;
-      }, 150); // Match CSS transition duration
+      }, 150);
     });
+  }
 
-    // Debounced reposition function to avoid too frequent updates
-    let repositionTimeout: number | null = null;
-    const handleReposition = async () => {
-      if (!this.bodyPopupElement || !this.state.isOpen) return;
-      
-      // Clear previous timeout
-      if (repositionTimeout) {
-        clearTimeout(repositionTimeout);
-      }
-      
-      // Debounce the reposition
-      repositionTimeout = setTimeout(async () => {
-        if (!this.bodyPopupElement) return;
-        
-        const newPosition = await computePosition(actualAnchor, this.bodyPopupElement, {
-          placement,
-          strategy: 'fixed',
-          middleware: [
-            offset(8),
-            flip(),
-            shift({ padding: 8 })
-          ]
-        });
-        
-        if (this.bodyPopupElement) {
-          Object.assign(this.bodyPopupElement.style, {
-            left: `${newPosition.x}px`,
-            top: `${newPosition.y}px`
-          });
-        }
-      }, 16); // ~60fps
-    };
-
-    // Only update on specific events
-    window.addEventListener('scroll', handleReposition, { passive: true });
-    window.addEventListener('resize', handleReposition, { passive: true });
-
-    this.state.cleanup = () => {
-      window.removeEventListener('scroll', handleReposition);
-      window.removeEventListener('resize', handleReposition);
-    };
+  // НОВИЙ МЕТОД: Автоматичний placement на основі позиції елемента
+  private getOptimalPlacement(anchor: HTMLElement): 'top' | 'bottom' | 'left' | 'right' {
+    const rect = anchor.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    
+    // Розраховуємо центр елемента
+    const centerY = rect.top + rect.height / 2;
+    const centerX = rect.left + rect.width / 2;
+    
+    // Визначаємо в якій частині viewport знаходиться елемент
+    const isInTopHalf = centerY < viewportHeight / 2;
+    const isInLeftHalf = centerX < viewportWidth / 2;
+    
+    // Якщо елемент в верхній половині - показуємо popup знизу
+    // Якщо в нижній - зверху
+    if (isInTopHalf) {
+      return 'bottom';
+    } else {
+      return 'top';
+    }
+    
+    // Можна розширити для left/right якщо потрібно
+    // if (isInLeftHalf) return 'right';
+    // else return 'left';
   }
 
   private hidePopup() {
-    if (this.state.isTransitioning) return; // Already transitioning
-    
+    if (this.state.isTransitioning) return;
 
     this.state.isTransitioning = true;
     
@@ -316,10 +261,9 @@ class FloatingPopup extends HTMLElement {
       this.bodyOverlayElement.style.visibility = 'hidden';
     }
     
-    // Reset transition flag after animation
     setTimeout(() => {
       this.state.isTransitioning = false;
-    }, 150); // Match CSS transition duration
+    }, 150);
   }
 
   private cleanup() {
@@ -334,17 +278,9 @@ class FloatingPopup extends HTMLElement {
     this.dispatchEvent(new CustomEvent('popup-close', { bubbles: true }));
   }
 
-  private movePopupToBody() {
-    if (!this.popupElement || !this.overlayElement) return;
-
-    // Create copies in document.body (portal pattern)
-    this.bodyOverlayElement = this.overlayElement.cloneNode(true) as HTMLElement;
-    this.bodyPopupElement = this.popupElement.cloneNode(true) as HTMLElement;
-
-    // Note: Content will be copied on each show to ensure it's up to date
-
-    // Apply the same styles but outside shadow DOM
-    this.bodyOverlayElement.style.cssText = `
+  // СПІЛЬНІ СТИЛІ для shadow DOM та body порталів
+  private static readonly PORTAL_STYLES = {
+    overlay: `
       position: fixed;
       top: 0;
       left: 0;
@@ -355,17 +291,16 @@ class FloatingPopup extends HTMLElement {
       opacity: 0;
       visibility: hidden;
       transition: opacity 0.15s ease-out, visibility 0.15s ease-out;
-    `;
-
-    this.bodyPopupElement.style.cssText = `
+    `,
+    popup: `
       position: fixed;
       z-index: 9999;
       opacity: 0;
       visibility: hidden;
       transform: scale(0.95);
       transition: opacity 0.15s ease-out, transform 0.15s ease-out, visibility 0.15s ease-out;
-      background: white;
-      border: 1px solid #e5e5e5;
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
       border-radius: 8px;
       box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
       max-width: 800px;
@@ -374,60 +309,91 @@ class FloatingPopup extends HTMLElement {
       backface-visibility: hidden;
       transform-style: preserve-3d;
       pointer-events: none;
-    `;
+    `,
+    popupContent: `
+      position: relative;
+      padding: 16px;
+      padding-top: 48px;
+      color: var(--color-text);
+    `,
+    closeButton: `
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: none;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 8px;
+      line-height: 1;
+      color: var(--color-text-muted);
+      border-radius: 6px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      z-index: 1;
+    `
+  };
 
-    // Apply styles to popup content in body element
+  private movePopupToBody() {
+    if (!this.popupElement || !this.overlayElement) return;
+
+    // Create copies in document.body (portal pattern)
+    this.bodyOverlayElement = this.overlayElement.cloneNode(true) as HTMLElement;
+    this.bodyPopupElement = this.popupElement.cloneNode(true) as HTMLElement;
+
+    // Apply shared styles
+    this.bodyOverlayElement.style.cssText = FloatingPopup.PORTAL_STYLES.overlay;
+    this.bodyPopupElement.style.cssText = FloatingPopup.PORTAL_STYLES.popup;
+
+    // Apply styles to nested elements
     const bodyPopupContent = this.bodyPopupElement.querySelector('.popup-content');
     if (bodyPopupContent) {
-      (bodyPopupContent as HTMLElement).style.cssText = `
-        position: relative;
-        padding: 16px;
-        padding-top: 48px;
-      `;
+      (bodyPopupContent as HTMLElement).style.cssText = FloatingPopup.PORTAL_STYLES.popupContent;
     }
 
-    // Apply styles to close button in body element  
     const bodyCloseButton = this.bodyPopupElement.querySelector('.close-button');
     if (bodyCloseButton) {
-      (bodyCloseButton as HTMLElement).style.cssText = `
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        background: none;
-        border: none;
-        font-size: 16px;
-        cursor: pointer;
-        padding: 8px;
-        line-height: 1;
-        color: #6b7280;
-        border-radius: 6px;
-        width: 32px;
-        height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.15s ease;
-        z-index: 1;
-      `;
+      (bodyCloseButton as HTMLElement).style.cssText = FloatingPopup.PORTAL_STYLES.closeButton;
     }
 
-    // Add event listeners to body elements
+    // Setup event listeners for body elements
+    this.setupBodyEventListeners();
+
+    // Append to body
+    document.body.appendChild(this.bodyOverlayElement);
+    document.body.appendChild(this.bodyPopupElement);
+
+    // Hide original elements in shadow DOM
+    if (this.popupElement) this.popupElement.style.display = 'none';
+    if (this.overlayElement) this.overlayElement.style.display = 'none';
+  }
+
+  // НОВИЙ МЕТОД: Налаштування event listeners для body елементів
+  private setupBodyEventListeners() {
+    if (!this.bodyOverlayElement || !this.bodyPopupElement) return;
+
+    // Overlay click
     this.bodyOverlayElement.addEventListener('click', () => this.close());
     
+    // Close button
     const closeButton = this.bodyPopupElement.querySelector('.close-button');
     if (closeButton) {
       closeButton.addEventListener('click', () => this.close());
       
-      // Add hover effects
+      // Hover effects
       closeButton.addEventListener('mouseenter', () => {
-        (closeButton as HTMLElement).style.background = '#f3f4f6';
-        (closeButton as HTMLElement).style.color = '#374151';
+        (closeButton as HTMLElement).style.background = 'var(--color-bg-muted)';
+        (closeButton as HTMLElement).style.color = 'var(--color-text)';
         (closeButton as HTMLElement).style.transform = 'scale(1.05)';
       });
       
       closeButton.addEventListener('mouseleave', () => {
         (closeButton as HTMLElement).style.background = 'none';
-        (closeButton as HTMLElement).style.color = '#6b7280';
+        (closeButton as HTMLElement).style.color = 'var(--color-text-muted)';
         (closeButton as HTMLElement).style.transform = 'scale(1)';
       });
       
@@ -439,47 +405,38 @@ class FloatingPopup extends HTMLElement {
         (closeButton as HTMLElement).style.transform = 'scale(1.05)';
       });
     }
-
-    // Append to body
-    document.body.appendChild(this.bodyOverlayElement);
-    document.body.appendChild(this.bodyPopupElement);
-
-    // Hide original elements in shadow DOM
-    if (this.popupElement) this.popupElement.style.display = 'none';
-    if (this.overlayElement) this.overlayElement.style.display = 'none';
   }
 
+  // СПРОЩЕНИЙ МЕТОД: Копіювання контенту в body popup
   private copySlotContent() {
     if (!this.bodyPopupElement) return;
 
-    // Get the original content slot
     const contentSlot = this.querySelector('[slot="content"]');
-    if (contentSlot) {
-      // Find the popup content container in body popup
-      const popupContent = this.bodyPopupElement.querySelector('.popup-content');
-      if (popupContent) {
-        // Clear existing content except close button
-        const closeButton = popupContent.querySelector('.close-button');
-        popupContent.innerHTML = '';
-        
-        // Add close button back if it exists
-        if (closeButton) {
-          popupContent.appendChild(closeButton);
-          // Re-attach event listener
-          closeButton.addEventListener('click', () => this.close());
-        }
-        
-        // Add the actual content
-        const contentClone = contentSlot.cloneNode(true) as HTMLElement;
-        contentClone.removeAttribute('slot'); // Remove slot attribute
-        
-        // Insert content before close button or at the beginning
-        if (closeButton) {
-          popupContent.insertBefore(contentClone, closeButton);
-        } else {
-          popupContent.appendChild(contentClone);
-        }
-      }
+    if (!contentSlot) return;
+
+    const popupContent = this.bodyPopupElement.querySelector('.popup-content');
+    if (!popupContent) return;
+
+    // Зберігаємо close button
+    const closeButton = popupContent.querySelector('.close-button');
+    
+    // Очищаємо контент
+    popupContent.innerHTML = '';
+    
+    // Додаємо close button назад
+    if (closeButton) {
+      popupContent.appendChild(closeButton);
+    }
+    
+    // Клонуємо та додаємо контент
+    const contentClone = contentSlot.cloneNode(true) as HTMLElement;
+    contentClone.removeAttribute('slot');
+    
+    // Вставляємо контент перед close button
+    if (closeButton) {
+      popupContent.insertBefore(contentClone, closeButton);
+    } else {
+      popupContent.appendChild(contentClone);
     }
   }
 

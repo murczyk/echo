@@ -16,6 +16,7 @@ import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import EnumeratedList as EL exposing (EnumeratedList)
+import FloatingPopup
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
@@ -24,7 +25,6 @@ import Html.Styled as Styled
 import Layouts
 import Le.Auth
 import Le.Block.DateTime
-import FloatingPopup
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
@@ -106,7 +106,7 @@ type alias Model =
     , sidebarEditing : Bool
     , editingCallsign : Maybe B.Callsign
     , validationError : Maybe String
-    , rowShowAllPopupStatus : Maybe (Int, ShowAllPopupFor)
+    , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
     }
 
 
@@ -234,7 +234,7 @@ type Msg
     | CloseEditSidebar
     | SaveEditSidebar
     | CancelEditSidebar
-    | RowShowAllPopupChanged (Maybe (Int, ShowAllPopupFor))
+    | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor ))
 
 
 type alias AddState =
@@ -306,13 +306,18 @@ initLoad model =
         ]
 
 
+
 -- Helper function to populate unit menu from shared masterUnits
+
+
 populateUnitMenu : Shared.Model -> List (Select.MenuItem Int)
 populateUnitMenu shared =
     case shared.masterUnits of
-        Success units -> 
+        Success units ->
             List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
-        _ -> []
+
+        _ ->
+            []
 
 
 loadCallsignsCmd : Model -> Cmd Msg
@@ -611,11 +616,16 @@ update req shared msg model =
                     Le.Block.Select.singleUpd mAction model.inpUnit
 
                 mUnit =
-                    mUnitId |> andThen (\unitId -> 
-                        case shared.masterUnits of
-                            Success units -> ListX.find (\y -> y.id == unitId) (Dict.values units)
-                            _ -> Nothing
-                    )
+                    mUnitId
+                        |> andThen
+                            (\unitId ->
+                                case shared.masterUnits of
+                                    Success units ->
+                                        ListX.find (\y -> y.id == unitId) (Dict.values units)
+
+                                    _ ->
+                                        Nothing
+                            )
 
                 -- Only update filterUnit if there's an actual selection change
                 shouldUpdateFilter =
@@ -747,11 +757,13 @@ update req shared msg model =
                                         (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt id)
                                 , inpUnitSelMenu =
                                     case shared.masterUnits of
-                                        Success units -> 
+                                        Success units ->
                                             List.map
                                                 (\u -> Select.basicMenuItem { item = u.id, label = u.name })
                                                 (Dict.values units)
-                                        _ -> []
+
+                                        _ ->
+                                            []
                                 , inpDeveloping = callsign.developing
                                 , inpRadioFreq = callsign.radioFreq |> def ""
                                 }
@@ -1197,11 +1209,13 @@ update req shared msg model =
                         , inpUnitId = callsign.unitId
                         , inpSourceId = callsign.sourceId
                         , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt callsign.id)
-                        , inpUnitSelMenu = 
+                        , inpUnitSelMenu =
                             case shared.masterUnits of
-                                Success units -> 
+                                Success units ->
                                     List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
-                                _ -> []
+
+                                _ ->
+                                    []
                         , inpDeveloping = callsign.developing
                         , inpRadioFreq = callsign.radioFreq |> def ""
                         }
@@ -1454,10 +1468,13 @@ callsignsTableConfig shared model user =
                     \callsign ->
                         { attributes = []
                         , children =
-                            [ case 
+                            [ case
                                 case shared.masterUnits of
-                                    Success units -> ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
-                                    _ -> Nothing
+                                    Success units ->
+                                        ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+
+                                    _ ->
+                                        Nothing
                               of
                                 Nothing ->
                                     text "<Виберіть підрозділ>"
@@ -1483,8 +1500,11 @@ callsignsTableConfig shared model user =
                                     let
                                         unit =
                                             case shared.masterUnits of
-                                                Success units -> ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
-                                                _ -> Nothing
+                                                Success units ->
+                                                    ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+
+                                                _ ->
+                                                    Nothing
 
                                         callsignWithUnitsFromInbox =
                                             ListX.find
@@ -1511,25 +1531,52 @@ callsignsTableConfig shared model user =
                                     in
                                     [ div [ class "flex flex-col gap-[4px]" ]
                                         ((List.map (\u -> span [] [ text u ]) unitsList
-                                            |> List.take 3
-                                        )
-                                            ++ (if List.length unitsList > 3 then
+                                            |> List.take 1
+                                         )
+                                            ++ (if List.length unitsList > 1 then
                                                     let
                                                         body =
                                                             span
-                                                                [ style "font-size" "12px"
-                                                                , style "font-weight" "300"
-                                                                , style "cursor" (if isOpen then "default" else "pointer")
-                                                                , style "display" "block"
-                                                                , style "padding-right" "6px"
-                                                                , style "text-decoration" "underline"
-                                                                , style "pointer-events" (if isOpen then "none" else "auto")
+                                                                [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                                                , style "cursor"
+                                                                    (if isOpen then
+                                                                        "default"
+
+                                                                     else
+                                                                        "pointer"
+                                                                    )
+                                                                , style "pointer-events"
+                                                                    (if isOpen then
+                                                                        "none"
+
+                                                                     else
+                                                                        "auto"
+                                                                    )
                                                                 ]
-                                                                [ text ("Показати всі " ++ (unitsList |> List.length |> String.fromInt)) ]
+                                                                [ text ("Показати всі " ++ (unitsList |> List.length |> String.fromInt))
+                                                                , i [ class "bi bi-chevron-down text-xs" ] []
+                                                                ]
 
                                                         popupBody =
-                                                            div [ class "flex flex-wrap gap-2 h-[400px] max-w-[800px] p-2 overflow-y-auto", style "position" "relative", style "z-index" "40" ]
-                                                                (List.map (\unitName -> span [] [ text unitName ]) unitsList)
+                                                            div
+                                                                [ class "p-4 max-h-[300px] max-w-[400px] overflow-y-auto"
+                                                                , style "position" "relative"
+                                                                , style "z-index" "40"
+                                                                ]
+                                                                [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                                    [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                                        [ text ("Підрозділи (" ++ (unitsList |> List.length |> String.fromInt) ++ ")") ]
+                                                                    ]
+                                                                , div [ class "space-y-2" ]
+                                                                    (List.map
+                                                                        (\unitName ->
+                                                                            div
+                                                                                [ class "px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700" ]
+                                                                                [ text unitName ]
+                                                                        )
+                                                                        unitsList
+                                                                    )
+                                                                ]
 
                                                         isOpen =
                                                             case model.rowShowAllPopupStatus of
@@ -1566,7 +1613,7 @@ callsignsTableConfig shared model user =
                 { name = "Джерело"
                 , viewData =
                     \callsign ->
-                        { attributes = []
+                        { attributes = [ class "text-sm" ]
                         , children =
                             [ case ListX.find (\s -> s.id == callsign.sourceId) model.sources of
                                 Nothing ->
@@ -1708,8 +1755,12 @@ editSidebarContent model shared user =
                                     selectItem : Maybe (Select.MenuItem Int)
                                     selectItem =
                                         (case shared.masterUnits of
-                                            Success units -> ListX.find (\unit -> unit.id == editState.inpUnitId) (Dict.values units)
-                                            _ -> Nothing)
+                                            Success units ->
+                                                ListX.find (\unit -> unit.id == editState.inpUnitId) (Dict.values units)
+
+                                            _ ->
+                                                Nothing
+                                        )
                                             |> Maybe.map
                                                 (\unit ->
                                                     Select.basicMenuItem
@@ -1884,11 +1935,15 @@ contentBlock shared model user =
                         let
                             selectItem =
                                 model.inpUnit
-                                    |> Maybe.andThen (\unitId -> 
-                                        case shared.masterUnits of
-                                            Success units -> ListX.find (\u -> u.id == unitId) (Dict.values units)
-                                            _ -> Nothing
-                                    )
+                                    |> Maybe.andThen
+                                        (\unitId ->
+                                            case shared.masterUnits of
+                                                Success units ->
+                                                    ListX.find (\u -> u.id == unitId) (Dict.values units)
+
+                                                _ ->
+                                                    Nothing
+                                        )
                                     |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                         in
                         div [ class "flex items-center gap-2" ]
@@ -2189,11 +2244,14 @@ contentBlock shared model user =
                                     (\callsign ->
                                         let
                                             unitName =
-                                                case 
+                                                case
                                                     case shared.masterUnits of
-                                                        Success units -> ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
-                                                        _ -> Nothing
-                                                  of
+                                                        Success units ->
+                                                            ListX.find (\u -> u.id == callsign.unitId) (Dict.values units)
+
+                                                        _ ->
+                                                            Nothing
+                                                of
                                                     Nothing ->
                                                         "<Виберіть підрозділ>"
 
@@ -2294,10 +2352,14 @@ unitsBlock shared model =
                 , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
                     [ Html.text "Оберіть підрозділ для фільтрації" ]
                 ]
-            , UnitHierarchy.view config 
+            , UnitHierarchy.view config
                 (case shared.masterUnits of
-                    Success units -> Dict.values units
-                    _ -> []) 
+                    Success units ->
+                        Dict.values units
+
+                    _ ->
+                        []
+                )
                 model.unitStats
             ]
 
