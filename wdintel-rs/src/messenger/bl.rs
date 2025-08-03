@@ -280,7 +280,7 @@ pub async fn list_accounts(
         )
         .select_only()
         .column(datasource::Column::Id)
-        .column(datasource::Column::DefaultAorId)
+        .column_as(datasource::Column::DefaultAorId, "aor_id")
         .column(datasource::Column::Kind)
         .column_as(datasource::Column::SignalPhone, "datasource_phone_number")
         .column(datasource::Column::DisplayName)
