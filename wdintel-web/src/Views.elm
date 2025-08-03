@@ -13,9 +13,9 @@ headerAndContent :
     -> Html msg
 headerAndContent title toastMsg toasts content =
     Le.Block.Toast.view toastMsg toasts <|
-        div [ class "container-xxl bd-gutter pt-md-1 main-container" ]
-            [ div [ class "row" ]
-                [ div [ class "col-12" ]
+        div [ class "w-4/5 mx-auto px-4 pt-4" ]
+            [ div [ class "flex" ]
+                [ div [ class "w-full" ]
                     [ h1 [ class "py-4" ] [ text title ]
                     , content
                     ]
@@ -36,7 +36,7 @@ h1SupLbl txt =
         , style "transform" "translateY(-5px)"
         , style "min-width" "60px"
         ]
-        [ span [ class "badge rounded-pill text-bg-light" ]
+        [ span [ class "inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full" ]
             [ text txt ]
         ]
 
@@ -50,9 +50,9 @@ headerAndContentLabeled :
     -> Html msg
 headerAndContentLabeled title lbl toastMsg toasts content =
     Le.Block.Toast.view toastMsg toasts <|
-        div [ class "container-xxl bd-gutter pt-md-1 main-container" ]
-            [ div [ class "row" ]
-                [ div [ class "col-12 p-0" ]
+        div [ class "w-4/5 mx-auto px-4 pt-4" ]
+            [ div [ class "flex" ]
+                [ div [ class "w-full p-0" ]
                     [ h1 [ class "py-2" ] <|
                         text title
                             :: lbl

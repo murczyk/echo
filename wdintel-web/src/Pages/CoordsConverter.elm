@@ -196,80 +196,82 @@ view shared user model =
 
 mainContentV : Model -> Html Msg
 mainContentV model =
-    div [ class "row" ]
-        [ div [ class "col-sm-6 mb-2" ] <|
-            [ textarea
-                [ class "form-control"
-                , placeholder "уск2000 -> wgs84"
-                , style "height" "150px"
-                , onInput <| ToWgsChanged
-                , value model.toWgsContent
+    div [ class "" ]
+        [ div [ class "flex gap-4" ]
+            [ div [ class "w-1/2 mb-2" ] <|
+                [ textarea
+                    [ class "w-full px-3 py-2 border border-gray-300 rounded-md"
+                    , placeholder "уск2000 -> wgs84"
+                    , style "height" "150px"
+                    , onInput <| ToWgsChanged
+                    , value model.toWgsContent
+                    ]
+                    []
+                , small
+                    [ class "text-blue-600 cursor-pointer"
+                    , onClick <| ToWgsChanged "52-20714 65-51696"
+                    , attribute "tabindex" "-1"
+                    ]
+                    [ text "наприклад" ]
                 ]
-                []
-            , small
-                [ class "text-action cursor-pointer"
-                , onClick <| ToWgsChanged "52-20714 65-51696"
-                , attribute "tabindex" "-1"
+                    ++ (case model.toWgsRes of
+                            Nothing ->
+                                []
+
+                            Just coords ->
+                                [ div [ class "text-center text-2xl" ]
+                                    [ text <| C.render <| C.Wgs84LatLng coords
+                                    , text " "
+                                    , sup []
+                                        [ googleMapsOutLink coords.lat coords.lng ]
+                                    ]
+                                ]
+                       )
+                    ++ (case model.toMgrsRes |> ListX.find (\x -> x.viewId == 1) of
+                            Nothing ->
+                                []
+
+                            Just data ->
+                                [ div [ class "text-center text-2xl" ]
+                                    [ text <| C.render <| C.MGRS data.coords
+                                    ]
+                                ]
+                       )
+            , div [ class "w-1/2 mb-2" ] <|
+                [ textarea
+                    [ class "w-full px-3 py-2 border border-gray-300 rounded-md"
+                    , placeholder "wgs84 -> уск2000"
+                    , style "height" "150px"
+                    , onInput <| ToUskChanged
+                    , value model.toUskContent
+                    ]
+                    []
+                , small
+                    [ class "text-blue-600 cursor-pointer"
+                    , onClick <| ToUskChanged "47.1305050, 33.7418280"
+                    , attribute "tabindex" "-1"
+                    ]
+                    [ text "наприклад" ]
                 ]
-                [ text "наприклад" ]
+                    ++ (case model.toUskRes of
+                            Nothing ->
+                                []
+
+                            Just coords ->
+                                [ div [ class "text-center text-2xl" ]
+                                    [ text <| C.render <| C.Usk2000 coords
+                                    ]
+                                ]
+                       )
+                    ++ (case model.toMgrsRes |> ListX.find (\x -> x.viewId == 2) of
+                            Nothing ->
+                                []
+
+                            Just data ->
+                                [ div [ class "text-center text-2xl" ]
+                                    [ text <| C.render <| C.MGRS data.coords
+                                    ]
+                                ]
+                       )
             ]
-                ++ (case model.toWgsRes of
-                        Nothing ->
-                            []
-
-                        Just coords ->
-                            [ div [ class "text-center fs-3" ]
-                                [ text <| C.render <| C.Wgs84LatLng coords
-                                , text " "
-                                , sup []
-                                    [ googleMapsOutLink coords.lat coords.lng ]
-                                ]
-                            ]
-                   )
-                ++ (case model.toMgrsRes |> ListX.find (\x -> x.viewId == 1) of
-                        Nothing ->
-                            []
-
-                        Just data ->
-                            [ div [ class "text-center fs-3" ]
-                                [ text <| C.render <| C.MGRS data.coords
-                                ]
-                            ]
-                   )
-        , div [ class "col-sm-6 mb-2" ] <|
-            [ textarea
-                [ class "form-control"
-                , placeholder "wgs84 -> уск2000"
-                , style "height" "150px"
-                , onInput <| ToUskChanged
-                , value model.toUskContent
-                ]
-                []
-            , small
-                [ class "text-action cursor-pointer"
-                , onClick <| ToUskChanged "47.1305050, 33.7418280"
-                , attribute "tabindex" "-1"
-                ]
-                [ text "наприклад" ]
-            ]
-                ++ (case model.toUskRes of
-                        Nothing ->
-                            []
-
-                        Just coords ->
-                            [ div [ class "text-center fs-3" ]
-                                [ text <| C.render <| C.Usk2000 coords
-                                ]
-                            ]
-                   )
-                ++ (case model.toMgrsRes |> ListX.find (\x -> x.viewId == 2) of
-                        Nothing ->
-                            []
-
-                        Just data ->
-                            [ div [ class "text-center fs-3" ]
-                                [ text <| C.render <| C.MGRS data.coords
-                                ]
-                            ]
-                   )
         ]
