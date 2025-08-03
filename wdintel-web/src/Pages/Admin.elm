@@ -990,7 +990,7 @@ update msg model =
                 currentPager = model.orphanGroupsPager
                 updatedPager = { currentPager | totalItems = List.length groups }
             in
-            ( { model 
+            ( { model
                 | orphanGroups = RD.Success groups
                 , orphanGroupsPager = updatedPager
               }
@@ -1002,7 +1002,7 @@ update msg model =
                 currentPager = model.orphanGroupsPager
                 updatedPager = { currentPager | totalItems = 0 }
             in
-            ( { model 
+            ( { model
                 | orphanGroups = RD.Failure e
                 , orphanGroupsPager = updatedPager
               }
@@ -2142,8 +2142,8 @@ renderFullNoteModal isDark model =
     case model.fullNoteModal of
         Just modal ->
             div [ class "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" ]
-                [ div 
-                    [ class 
+                [ div
+                    [ class
                         (if isDark then
                             "bg-gray-800 border border-gray-600 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
                          else
@@ -2151,14 +2151,14 @@ renderFullNoteModal isDark model =
                         )
                     ]
                     [ div [ class "flex items-center justify-between mb-4" ]
-                        [ h3 
-                            [ class 
+                        [ h3
+                            [ class
                                 (if isDark then
                                     "text-gray-100 text-lg font-semibold"
                                  else
                                     "text-gray-900 text-lg font-semibold"
                                 )
-                            ] 
+                            ]
                             [ text "Повна нотатка" ]
                         , button
                             [ class "text-gray-500 hover:text-gray-700 transition-colors"
@@ -2166,14 +2166,14 @@ renderFullNoteModal isDark model =
                             ]
                             [ i [ class "bi bi-x-lg text-xl" ] [] ]
                         ]
-                    , div 
-                        [ class 
+                    , div
+                        [ class
                             (if isDark then
                                 "text-gray-200 whitespace-pre-wrap"
                              else
                                 "text-gray-800 whitespace-pre-wrap"
                             )
-                        ] 
+                        ]
                         [ text modal.note ]
                     ]
                 ]
@@ -3017,19 +3017,19 @@ renderOrphanGroupsTable model groups =
                                         "var(--color-text-muted)"
                                     )
                                 ]
-                                [ text " ↓" ]
+                                [ text " ⇓" ]
 
                         Config.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
 
                         Config.Reversible (Just isReversed) ->
                             span [ style "color" "var(--ochre-normal)" ]
                                 [ text
                                     (if isReversed then
-                                        " ↑"
+                                        " ⇑"
 
                                      else
-                                        " ↓"
+                                        " ⇓"
                                     )
                                 ]
 
@@ -3124,16 +3124,11 @@ renderOrphanGroupsTable model groups =
             in
             { attributes = []
             , children =
-                [ div [ class "flex items-center justify-center gap-2" ]
+                [ div [ class "flex items-center justify-start gap-2" ]
                     [ i [ class ("bi " ++ iconClass ++ " " ++ iconColor ++ " text-lg"), title tooltipText ] []
                     , case datasourceInfo of
                         Just datasource ->
-                            case datasource.signalPhone of
-                                Just phone ->
-                                    span [ class "text-sm text-muted" ] [ text phone ]
-
-                                Nothing ->
-                                    text ""
+                            span [ class "text-sm text-muted" ] [ text datasource.displayName ]
 
                         Nothing ->
                             text ""
@@ -3392,14 +3387,26 @@ groupDatasourcesByType zoneId model =
                 |> List.indexedMap
                     (\index ( kind, datasources ) ->
                         let
-                            -- Get signal_phone from the first datasource in the group
-                            -- All datasources in a group should have the same signal_phone
-                            signalPhone : String
-                            signalPhone =
+                            -- Get displayName from the first datasource in the group
+                            -- All datasources in a group should have the same displayName
+                            displayName : String
+                            displayName =
                                 List.head datasources
-                                    |> Maybe.map (\( _, ds ) -> ds.signalPhone)
-                                    |> Maybe.withDefault Nothing
+                                    |> Maybe.map (\( _, ds ) -> ds.displayName)
                                     |> Maybe.withDefault "Unknown"
+
+                            -- Get icon for datasource type (same as in orphan groups table)
+                            iconClass : String
+                            iconClass =
+                                case String.toLower kind of
+                                    "signal" ->
+                                        "bi-signal"
+
+                                    "whatsapp" ->
+                                        "bi-whatsapp"
+
+                                    _ ->
+                                        "bi-question-circle"
 
                             -- Calculate total groups for this datasource type
                             totalGroups : Int
@@ -3417,7 +3424,7 @@ groupDatasourcesByType zoneId model =
                                     datasources
                         in
                         { id = index + 1
-                        , name = Utils.capitalize kind ++ " " ++ signalPhone ++ " (" ++ String.fromInt totalGroups ++ " груп)"
+                        , name = iconClass ++ " " ++ displayName ++ " (" ++ String.fromInt totalGroups ++ " груп)"
                         , datasources = List.reverse datasources -- Keep original order
                         }
                     )
@@ -3437,13 +3444,75 @@ zoneCard2 isDark model user ( zoneId, zone ) =
         datasourceTypes =
             groupDatasourcesByType zoneId model
 
-        -- Create tab definitions
-        tabDefinitions : List { id : Int, label : String }
+        -- Create tab definitions with icon info
+        tabDefinitions : List { id : Int, label : String, iconClass : String, displayName : String, totalGroups : Int }
         tabDefinitions =
             List.map
                 (\dsType ->
+                    let
+                        -- Calculate total groups for this datasource type
+                        totalGroups : Int
+                        totalGroups =
+                            List.foldl
+                                (\( sourceId, _ ) acc ->
+                                    let
+                                        groups : List B.ZoneDatasourceGroup
+                                        groups =
+                                            Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+                                    in
+                                    acc + List.length groups
+                                )
+                                0
+                                dsType.datasources
+
+                        -- Get icon class for datasource type
+                        iconClass : String
+                        iconClass =
+                            case List.head dsType.datasources of
+                                Just ( _, datasource ) ->
+                                    case String.toLower datasource.kind of
+                                        "signal" ->
+                                            "bi-signal"
+
+                                        "whatsapp" ->
+                                            "bi-whatsapp"
+
+                                        _ ->
+                                            "bi-question-circle"
+
+                                Nothing ->
+                                    "bi-question-circle"
+                    in
                     { id = dsType.id
                     , label = dsType.name
+                    , iconClass = iconClass
+                    , displayName =
+                        case List.head dsType.datasources of
+                            Just ( _, datasource ) ->
+                                datasource.displayName
+                            Nothing ->
+                                dsType.name
+                    , totalGroups = totalGroups
+                    }
+                )
+                datasourceTypes
+
+        -- Create tab definitions with icons for custom rendering
+        tabDefinitionsWithIcons : List { id : Int, label : String, iconClass : String, displayName : String, totalGroups : Int }
+        tabDefinitionsWithIcons =
+            List.map
+                (\dsType ->
+                    let
+                        parts = String.split " " dsType.name
+                        iconClass = List.head parts |> Maybe.withDefault "bi-question-circle"
+                        displayName = List.drop 1 parts |> List.take (List.length parts - 2) |> String.join " "
+                        totalGroups = List.drop (List.length parts - 1) parts |> List.head |> Maybe.withDefault "0" |> String.dropLeft 1 |> String.dropRight 6 |> String.toInt |> Maybe.withDefault 0
+                    in
+                    { id = dsType.id
+                    , label = dsType.name
+                    , iconClass = iconClass
+                    , displayName = displayName
+                    , totalGroups = totalGroups
                     }
                 )
                 datasourceTypes
@@ -3531,6 +3600,37 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                 Nothing ->
                     div [ class "text-center opacity-70" ]
                         [ text "Немає доступних джерел даних" ]
+
+        -- Custom tab rendering with HTML icons
+        renderCustomTabs : Html Msg
+        renderCustomTabs =
+            div [ class "tabs-container" ]
+                [ div [ class "tabs-nav" ]
+                    (List.map (renderCustomTab activeTab) tabDefinitions)
+                ]
+
+        renderCustomTab : Int -> { id : Int, label : String, iconClass : String, displayName : String, totalGroups : Int } -> Html Msg
+        renderCustomTab activeTabId tab =
+            let
+                isActive = tab.id == activeTabId
+            in
+            button
+                [ classList
+                    [ ( "tab-button active", isActive )
+                    , ( "tab-button", not isActive )
+                    ]
+                , onClick (ZoneTabChanged zoneId tab.id)
+                ]
+                [ i [ class ("bi " ++ tab.iconClass ++ " mr-2") ] []
+                , span [] [ text tab.displayName ]
+                , span [ class "ml-1 text-xs opacity-70" ] [ text ("(" ++ String.fromInt tab.totalGroups ++ ")") ]
+                , if isActive then
+                    div [ class "tab-indicator" ] []
+                  else
+                    text ""
+                ]
+
+
     in
     div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-0 mb-6 overflow-hidden" ]
         [ div [ class "px-6 py-4 border-b" ]
@@ -3543,8 +3643,8 @@ zoneCard2 isDark model user ( zoneId, zone ) =
 
           else
             div [ class "p-6" ]
-                [ -- Tab navigation
-                  Tabs.view tabDefinitions activeTab (ZoneTabChanged zoneId)
+                [ -- Tab navigation with HTML icons
+                  renderCustomTabs
                 , -- Tab content
                   div [ class "mt-4" ] [ tabContent ]
                 ]
