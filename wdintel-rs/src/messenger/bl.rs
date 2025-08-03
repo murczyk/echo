@@ -4,6 +4,7 @@ use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
 use crate::messenger::types::EchoAccountF1;
+use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::AppError;
 use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::{
@@ -247,6 +248,7 @@ pub async fn list_accounts(
     #[derive(FromQueryResult)]
     struct LinkedAccountRow {
         pub id: i64,
+        pub aor_id: Option<i64>,
         pub kind: String,
         pub datasource_phone_number: Option<String>,
         pub display_name: String,
@@ -276,6 +278,7 @@ pub async fn list_accounts(
         )
         .select_only()
         .column(datasource::Column::Id)
+        .column(datasource::Column::DefaultAorId)
         .column(datasource::Column::Kind)
         .column_as(datasource::Column::SignalPhone, "datasource_phone_number")
         .column(datasource::Column::DisplayName)
@@ -308,8 +311,18 @@ pub async fn list_accounts(
             (a.datasource_phone_number.context(h!())?, true, a.kind)
         };
 
+        let area_of_responsibility = match a.aor_id {
+            None => None,
+            Some(id) => area_of_responsibility::Entity::find_by_id(id)
+                .one(txn)
+                .await
+                .context(h!())?
+                .map(render_aor),
+        };
+
         datasources.push(EchoAccountF1 {
             id: a.id,
+            area_of_responsibility,
             status: a.status.into_value().to_string(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
