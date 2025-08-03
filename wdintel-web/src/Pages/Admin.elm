@@ -124,6 +124,7 @@ type alias Model =
     , areasOfResponsibility : RemoteData ApiError (List B.AreaOfResponsibility)
     , areaOfResponsibilityFilter : Maybe Int
     , areaOfResponsibilityFilterSelectState : Select.State
+    , fullNoteModal : Maybe { groupKey : String, note : String }
     }
 
 
@@ -362,10 +363,11 @@ init _ =
       , groupEditDialog = Nothing
       , orphanGroupEditDialog = Nothing
       , orphanGroupEditInProgress = Nothing
-      , orphanGroupEditError = Nothing
-      , areasOfResponsibility = RD.NotAsked
-      , areaOfResponsibilityFilter = Nothing
-      , areaOfResponsibilityFilterSelectState = Select.initState (Select.selectIdentifier "area-filter")
+              , orphanGroupEditError = Nothing
+        , areasOfResponsibility = RD.NotAsked
+        , areaOfResponsibilityFilter = Nothing
+        , areaOfResponsibilityFilterSelectState = Select.initState (Select.selectIdentifier "area-filter")
+        , fullNoteModal = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -433,6 +435,8 @@ type Msg
     | AreasOfResponsibilityLoaded (Result ApiError (List B.AreaOfResponsibility))
     | OrphanGroupAreaSelectMsg (Select.Msg Int)
     | UpdateOrphanGroupAreaOfResponsibility (Maybe Int)
+    | ShowFullNoteModal String String -- groupKey, note
+    | CloseFullNoteModal
     | GroupAreaSelectMsg (Select.Msg String)
     | UpdateGroupAreaOfResponsibility (Maybe Int)
     | UpdateAreaOfResponsibilityFilter (Maybe Int)
@@ -2014,6 +2018,16 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
+        ShowFullNoteModal groupKey note ->
+            ( { model | fullNoteModal = Just { groupKey = groupKey, note = note } }
+            , E.none
+            )
+
+        CloseFullNoteModal ->
+            ( { model | fullNoteModal = Nothing }
+            , E.none
+            )
+
         GroupAreaSelectMsg imsg ->
             case model.groupEditDialog of
                 Just dialog ->
@@ -2086,6 +2100,50 @@ type alias DatasourceType =
     , datasources : List ( Int, B.Datasource )
     }
 
+
+renderFullNoteModal : Bool -> Model -> Html Msg
+renderFullNoteModal isDark model =
+    case model.fullNoteModal of
+        Just modal ->
+            div [ class "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" ]
+                [ div 
+                    [ class 
+                        (if isDark then
+                            "bg-gray-800 border border-gray-600 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+                         else
+                            "bg-white border border-gray-300 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+                        )
+                    ]
+                    [ div [ class "flex items-center justify-between mb-4" ]
+                        [ h3 
+                            [ class 
+                                (if isDark then
+                                    "text-gray-100 text-lg font-semibold"
+                                 else
+                                    "text-gray-900 text-lg font-semibold"
+                                )
+                            ] 
+                            [ text "Повна нотатка" ]
+                        , button
+                            [ class "text-gray-500 hover:text-gray-700 transition-colors"
+                            , onClick CloseFullNoteModal
+                            ]
+                            [ i [ class "bi bi-x-lg text-xl" ] [] ]
+                        ]
+                    , div 
+                        [ class 
+                            (if isDark then
+                                "text-gray-200 whitespace-pre-wrap"
+                             else
+                                "text-gray-800 whitespace-pre-wrap"
+                            )
+                        ] 
+                        [ text modal.note ]
+                    ]
+                ]
+
+        Nothing ->
+            text ""
 
 renderOrphanGroupsSection : Bool -> Model -> B.User -> Html Msg
 renderOrphanGroupsSection isDark model user =
@@ -2856,7 +2914,7 @@ renderOrphanGroupsTable model groups =
                         }
                         |> Table.withColumnWidth "10%"
                     , Table.veryCustomColumn
-                        { name = "Джерело даних"
+                        { name = "Джерело"
                         , viewData = renderDatasourceIcon
                         , sorter = Table.unsortable
                         }
@@ -2866,25 +2924,25 @@ renderOrphanGroupsTable model groups =
                         , viewData = renderAreaOfResponsibilityColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "12%"
+                        |> Table.withColumnWidth "14%"
                     , Table.veryCustomColumn
-                        { name = "Активність"
-                        , viewData = renderActivityColumn
+                        { name = "День"
+                        , viewData = renderDayActivityColumn
                         , sorter = Table.decreasingBy (.groupStats >> .activityLastDay)
                         }
-                        |> Table.withColumnWidth "10%"
+                        |> Table.withColumnWidth "6%"
                     , Table.veryCustomColumn
-                        { name = "Коротка нотатка"
-                        , viewData = renderShortNoteColumn
+                        { name = "Тиждень"
+                        , viewData = renderWeekActivityColumn
+                        , sorter = Table.decreasingBy (.groupStats >> .activityLastWeek)
+                        }
+                        |> Table.withColumnWidth "6%"
+                    , Table.veryCustomColumn
+                        { name = "Нотатки"
+                        , viewData = renderCombinedNoteColumn
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "13%"
-                    , Table.veryCustomColumn
-                        { name = "Довга нотатка"
-                        , viewData = renderLongNoteColumn
-                        , sorter = Table.unsortable
-                        }
-                        |> Table.withColumnWidth "18%"
+                        |> Table.withColumnWidth "23%"
                     , Table.veryCustomColumn
                         { name = "Дії"
                         , viewData = renderActionsColumn model
@@ -3044,17 +3102,21 @@ renderOrphanGroupsTable model groups =
                 ]
             }
 
-        renderActivityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
-        renderActivityColumn group =
-            let
-                activityText : String
-                activityText =
-                    String.fromInt group.groupStats.activityLastDay ++ " / " ++ String.fromInt group.groupStats.activityLastWeek
-            in
+        renderDayActivityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderDayActivityColumn group =
             { attributes = []
             , children =
-                [ span [ class "text-sm", title "Активність за день / за тиждень" ]
-                    [ text activityText ]
+                [ span [ class "text-sm", title "Активність за день" ]
+                    [ text (String.fromInt group.groupStats.activityLastDay) ]
+                ]
+            }
+
+        renderWeekActivityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderWeekActivityColumn group =
+            { attributes = []
+            , children =
+                [ span [ class "text-sm", title "Активність за тиждень" ]
+                    [ text (String.fromInt group.groupStats.activityLastWeek) ]
                 ]
             }
 
@@ -3091,12 +3153,22 @@ renderOrphanGroupsTable model groups =
                 ]
             }
 
-        renderShortNoteColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
-        renderShortNoteColumn group =
+
+
+        renderCombinedNoteColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
+        renderCombinedNoteColumn group =
             let
+                shortNote : Maybe String
+                shortNote =
+                    group.groupAdminData |> Maybe.andThen .shortNote
+
+                longNote : Maybe String
+                longNote =
+                    group.groupAdminData |> Maybe.andThen .longNote
+
                 displayText : String
                 displayText =
-                    case group.groupAdminData |> Maybe.andThen .shortNote of
+                    case shortNote of
                         Just note ->
                             if String.length note > 50 then
                                 String.left 50 note ++ "..."
@@ -3107,51 +3179,30 @@ renderOrphanGroupsTable model groups =
                         Nothing ->
                             "-"
 
-                tooltipText : String
-                tooltipText =
-                    case group.groupAdminData |> Maybe.andThen .shortNote of
+                hasLongNote : Bool
+                hasLongNote =
+                    case longNote of
                         Just note ->
-                            note
+                            not (String.isEmpty (String.trim note))
 
                         Nothing ->
-                            "Немає короткої нотатки"
+                            False
             in
             { attributes = []
             , children =
-                [ span [ class "text-sm", title tooltipText ]
-                    [ text displayText ]
-                ]
-            }
+                [ div [ class "flex items-center gap-2" ]
+                    [ span [ class "text-sm" ] [ text displayText ]
+                    , if hasLongNote then
+                        button
+                            [ class "flex items-center justify-center w-5 h-5 rounded-full text-blue-500 hover:text-blue-600 transition-all duration-200"
+                            , onClick (ShowFullNoteModal group.masterKey (Maybe.withDefault "" longNote))
+                            , title "Показати повну нотатку"
+                            ]
+                            [ i [ class "bi bi-info-circle-fill text-xs" ] [] ]
 
-        renderLongNoteColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
-        renderLongNoteColumn group =
-            let
-                displayText : String
-                displayText =
-                    case group.groupAdminData |> Maybe.andThen .longNote of
-                        Just note ->
-                            if String.length note > 50 then
-                                String.left 50 note ++ "..."
-
-                            else
-                                note
-
-                        Nothing ->
-                            "-"
-
-                tooltipText : String
-                tooltipText =
-                    case group.groupAdminData |> Maybe.andThen .longNote of
-                        Just note ->
-                            note
-
-                        Nothing ->
-                            "Немає довгої нотатки"
-            in
-            { attributes = []
-            , children =
-                [ span [ class "text-sm", title tooltipText ]
-                    [ text displayText ]
+                      else
+                        text ""
+                    ]
                 ]
             }
 
@@ -3465,6 +3516,7 @@ mainBlock : Bool -> Model -> B.User -> Html Msg
 mainBlock isDark model user =
     div [ class "space-y-6" ]
         [ renderOrphanGroupsSection isDark model user
+        , renderFullNoteModal isDark model
         , div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
             [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Напрямки" ]
             , div
