@@ -115,11 +115,11 @@ view shared user model =
     { title = "головна"
     , body =
         [ div [ class "my-4 w-4/5 mx-auto" ]
-            [ section []
+            [ section [class "mb-2"]
                 [ h1 [ class "" ] [ text "Головна" ]
                 ]
             , section [ class "flex gap-4 h-[50vh]" ]
-                [ a [ target "_blank", href "/docs", class "basis-[35%] bg-card border border-[var(--ochre-normal)] rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
+                [ a [ target "_blank", href "/docs", class "basis-[35%] bg-card border border-border rounded-lg p-6 flex flex-col items-center justify-center gap-3 hover:shadow-lg hover:shadow-[var(--ochre-normal)]/30 transition-all duration-300 group" ]
                     [ div [ class "w-16 h-16 bg-gradient-to-br from-[var(--ochre-normal)] to-[var(--ochre-normal-hover)] rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300" ]
                         [ i [ class "bi bi-book text-white text-2xl" ] []
                         ]
@@ -133,7 +133,7 @@ view shared user model =
                         ]
                     ]
                 , HtmlX.viewIf (Le.Auth.hasRole "Rer" user) <|
-                    div [ class "grow-1 border rounded-sm relative" ]
+                    div [ class "flex-1 bg-card border border-border rounded-sm relative" ]
                         [ h4 [ class "pl-2 pt-2" ] [ text "Активність груп" ]
                         , div [ class "h-[45vh]" ]
                             [ Html.node "bar-chart-2"
@@ -143,7 +143,7 @@ view shared user model =
                                 []
                             ]
                         , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
-                            span [ class "absolute top-[50%] left-[50%]" ] [ Le.Block.Spinner.loadingSpinner ]
+                            span [ class "absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
                         ]
                 ]
             ]
