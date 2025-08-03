@@ -32,6 +32,7 @@ pub async fn load_echo_account(
 
 pub async fn edit_account(
     id: i64,
+    aor_id: Option<i64>,
     set_active: bool,
     display_name: String,
     description: Option<String>,
@@ -57,6 +58,7 @@ pub async fn edit_account(
         .context(h!())?
         .context(h!())?
         .into_active_model();
+    account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
     account.description = Set(description);
     account.status = Set(new_status);

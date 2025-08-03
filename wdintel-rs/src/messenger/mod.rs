@@ -77,6 +77,7 @@ pub async fn edit(
     let txn = env.dbx.begin().await.cae(h!())?;
     bl::edit_account(
         req.account_id,
+        req.aor_id,
         req.is_active,
         req.display_name.to_string(),
         req.description.clone(),

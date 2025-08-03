@@ -77,6 +77,7 @@ pub struct IsAccountLinkedRsp {
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct AccountStatusReq {
     pub account_id: i64,
+    pub aor_id: Option<i64>,
     pub is_active: bool,
     pub display_name: String,
     pub description: Option<String>,
