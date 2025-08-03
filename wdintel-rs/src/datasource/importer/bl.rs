@@ -5,7 +5,7 @@ use crate::location::SettlementsData;
 use crate::sigint::worker::incoming_message_after_insert;
 use anyhow::Context;
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, error, info};
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
@@ -36,7 +36,10 @@ pub async fn upsert_datasource(
         }
         Some(existing_datasource) => {
             let mut rec = existing_datasource.into_active_model();
-            rec.display_name = Set(new_datasource.display_name);
+            let display_name = new_datasource.display_name;
+            if !display_name.is_empty() {
+                rec.display_name = Set(display_name);
+            }
             rec.update(db).await.context(h!())?.id
         }
     };
@@ -46,8 +49,7 @@ pub async fn upsert_datasource(
 pub async fn upsert_signal_profiles(
     db: &DatabaseConnection,
     profiles: Vec<signal_profile::Model>,
-) -> anyhow::Result<BTreeMap<String, String>> {
-    let mut result = BTreeMap::new();
+) -> anyhow::Result<()> {
     for new_profile in profiles {
         let source_profile_id = new_profile.uuid.clone();
         let existing_profile = signal_profile::Entity::find()
@@ -56,22 +58,31 @@ pub async fn upsert_signal_profiles(
             .await
             .context(h!())?;
 
-        let target_profile_id = match existing_profile {
+        match existing_profile {
             None => {
                 let mut rec = new_profile.into_active_model();
                 rec.created_at = NotSet;
-                rec.insert(db).await.context(h!())?.uuid
+                if let Err(e) = rec.insert(db).await.context(h!()) {
+                    error!("failed to insert new profile: {e:?}")
+                }
             }
             Some(existing_profile) => {
                 let mut rec = existing_profile.into_active_model();
-                rec.family_name = Set(new_profile.family_name);
-                rec.given_name = Set(new_profile.given_name);
-                rec.update(db).await.context(h!())?.uuid
+                if let Some(family_name) = new_profile.family_name {
+                    rec.family_name = Set(Some(family_name));
+                }
+                if let Some(given_name) = new_profile.given_name {
+                    rec.given_name = Set(Some(given_name));
+                }
+                if let Err(e) = rec.update(db).await.context(h!()) {
+                    error!(
+                        "failed to update profile {source_profile_id} : {e:?}"
+                    )
+                }
             }
         };
-        result.insert(source_profile_id, target_profile_id);
     }
-    Ok(result)
+    Ok(())
 }
 
 pub async fn upsert_signal_groups(
@@ -80,7 +91,6 @@ pub async fn upsert_signal_groups(
     datasource_mapping: (i64, i64),
 ) -> anyhow::Result<()> {
     let (_, target_datasource_id) = datasource_mapping;
-    let mut result = BTreeMap::new();
     let group_keys = groups.iter().map(|g| g.master_key.clone()).collect_vec();
     let existing_groups = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.is_in(group_keys))
@@ -91,26 +101,30 @@ pub async fn upsert_signal_groups(
         .map(|g| (g.master_key.clone(), g))
         .collect::<BTreeMap<_, _>>();
     for new_group in groups {
-        let source_group_id = new_group.master_key.clone();
-        let target_group_id =
-            match existing_groups.get(&source_group_id).cloned() {
-                None => {
-                    info!("inserting group {}", new_group.master_key);
-                    let mut rec = new_group.into_active_model();
-                    rec.datasource_id = Set(Some(target_datasource_id));
-                    rec.created_at = NotSet;
-                    rec.insert(db).await.context(h!())?.master_key
+        let source_master_key = new_group.master_key.clone();
+        match existing_groups.get(&source_master_key).cloned() {
+            None => {
+                info!("inserting group {}", new_group.master_key);
+                let mut rec = new_group.into_active_model();
+                rec.datasource_id = Set(Some(target_datasource_id));
+                rec.created_at = NotSet;
+                if let Err(e) = rec.insert(db).await.context(h!()) {
+                    error!("failed to insert new group: {e:?}")
                 }
-                Some(existing_group) => {
-                    let mut rec = existing_group.into_active_model();
-                    rec.ignore_operativny = Set(new_group.ignore_operativny);
-                    rec.name = Set(new_group.name);
-                    rec.is_secret = Set(new_group.is_secret);
-                    rec.datasource_id = Set(Some(target_datasource_id));
-                    rec.update(db).await.context(h!())?.master_key
+            }
+            Some(existing_group) => {
+                let mut rec = existing_group.into_active_model();
+                if let Some(name) = new_group.name {
+                    rec.name = Set(Some(name));
                 }
-            };
-        result.insert(source_group_id, target_group_id);
+                rec.ignore_operativny = Set(new_group.ignore_operativny);
+                rec.is_secret = Set(new_group.is_secret);
+                rec.datasource_id = Set(Some(target_datasource_id));
+                if let Err(e) = rec.update(db).await.context(h!()) {
+                    error!("failed to update group {source_master_key} : {e:?}")
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -150,7 +164,6 @@ pub async fn upsert_messages(
     db: &DatabaseConnection,
     messages: Vec<super::types::Message>,
     datasource_mapping: (i64, i64),
-    signal_profiles_map: BTreeMap<String, String>,
     settlements: Arc<RwLock<SettlementsData>>,
     config: Config,
     redis: ConnectionManager,
@@ -197,10 +210,6 @@ pub async fn upsert_messages(
                     (Some(d), Some(t)) => Some((d.clone(), t.clone())),
                     _ => None,
                 };
-            let sender = match &new_message.sender {
-                None => None,
-                Some(id) => signal_profiles_map.get(id).cloned(),
-            };
             let duplicate_of = match new_message.duplicate_of {
                 None => None,
                 Some(id) => message_ids_map.get(&id).cloned(),
@@ -209,7 +218,6 @@ pub async fn upsert_messages(
             let mut rec = new_message.into_active_model();
             rec.id = NotSet;
             rec.datasource_id = Set(Some(target_datasource_id));
-            rec.sender = Set(sender);
             rec.duplicate_of = Set(duplicate_of);
             rec.external_id = Set(Some(source_message_id));
             let new_id = rec.insert(db).await.context(h!())?.id;

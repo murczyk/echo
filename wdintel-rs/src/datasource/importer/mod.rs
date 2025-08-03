@@ -192,11 +192,13 @@ async fn import_data(
         "imported datasource {} as {}",
         datasource_id_mapping.0, datasource_id_mapping.1
     );
-    let signal_profiles_map =
-        bl::upsert_signal_profiles(&db, imported_data.profiles)
-            .await
-            .context(h!())?;
-    println!("imported {} signal profiles", signal_profiles_map.len());
+
+    let count = imported_data.profiles.len();
+    bl::upsert_signal_profiles(&db, imported_data.profiles)
+        .await
+        .context(h!())?;
+    println!("imported {count} signal profiles");
+
     let count = imported_data.signal_groups.len();
     bl::upsert_signal_groups(
         &db,
@@ -205,17 +207,18 @@ async fn import_data(
     )
     .await
     .context(h!())?;
-    println!("imported {} signal groups", count);
+    println!("imported {count} signal groups");
+
     let count = imported_data.whatsapp_groups.len();
     bl::upsert_whatsapp_groups(&db, imported_data.whatsapp_groups)
         .await
         .context(h!())?;
-    println!("imported {} whatsapp groups", count);
+    println!("imported {count} whatsapp groups");
+
     bl::upsert_messages(
         &db,
         imported_data.messages,
         datasource_id_mapping,
-        signal_profiles_map,
         settlements,
         config,
         redis,
@@ -223,5 +226,5 @@ async fn import_data(
     )
     .await
     .context(h!())?;
-    Ok(()) // fixme
+    Ok(())
 }

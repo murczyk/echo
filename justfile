@@ -221,13 +221,13 @@ _copy-db:
     echo "Run: sudo -u postgres pg_restore -d wd ~/Downloads/wd-{{ dt1 }}.pgrestore"
     set -x
 
-copy-db-echo-tgt-art:
+copy-db-gpu:
     #!/bin/bash
     set -euxo pipefail
     if [[ "{{ server }}" == "" ]]; then
         just _print-servers; exit 1;
     fi
-    just server={{ server }} target='tgt-art' copy-db-to-server
+    just server={{ server }} target='echo-gpu' copy-db-to-target
 
 copy-db-to-target:
     #!/bin/bash
