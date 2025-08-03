@@ -2,7 +2,7 @@ use crate::config::{read_config, Config};
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
-use crate::messenger::bl::list_linked_accounts;
+use crate::messenger::bl::list_accounts;
 use crate::messenger::types::EchoAccountF1;
 use crate::types::*;
 use crate::{h, new_redis};
@@ -36,7 +36,9 @@ pub async fn receive_thread_nofail(mode: Mode) {
             }
         };
         for cli in clients {
-            let client_name = cli.system_service_name;
+            let Some(client_name) = cli.system_service_name else {
+                continue;
+            };
             if let Err(e) = receive_thread(
                 &client_name,
                 &mut client_groups_sync_ts_map,
@@ -207,17 +209,17 @@ async fn sync_groups(
         let group_id = g.id.clone();
         match existing_groups.get(&(group_id.clone(), datasource.id)) {
             None => {
-                signal_group::ActiveModel {
+                let model = signal_group::ActiveModel {
                     name: Set(Some(g.name.clone())),
                     datasource_id: Set(Some(datasource.id)),
                     created_at: NotSet,
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
                     is_secret: NotSet,
-                }
-                .insert(txn)
-                .await
-                .context(h!())?;
+                };
+                crate::messenger::group::add_group(model, txn)
+                    .await
+                    .context(h!())?;
                 if g.message_source.eq(&MessageSource::Whatsapp) {
                     whatsapp_group::ActiveModel {
                         name: Set(g.name.clone()),
@@ -351,7 +353,7 @@ async fn list_clients(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
     let txn = dbx.begin().await.context(h!())?;
-    let live_clients = list_linked_accounts(&txn).await.context(h!())?;
+    let live_clients = list_accounts(&txn).await.context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(live_clients)
 }

@@ -88,9 +88,8 @@ pub async fn upsert_signal_profiles(
 pub async fn upsert_signal_groups(
     db: &DatabaseConnection,
     groups: Vec<signal_group::Model>,
-    datasource_mapping: (i64, i64),
+    target_datasource_id: i64,
 ) -> anyhow::Result<()> {
-    let (_, target_datasource_id) = datasource_mapping;
     let group_keys = groups.iter().map(|g| g.master_key.clone()).collect_vec();
     let existing_groups = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.is_in(group_keys))
@@ -102,13 +101,17 @@ pub async fn upsert_signal_groups(
         .collect::<BTreeMap<_, _>>();
     for new_group in groups {
         let source_master_key = new_group.master_key.clone();
-        match existing_groups.get(&source_master_key).cloned() {
+        let existing_group = existing_groups.get(&source_master_key).cloned();
+        match existing_group {
             None => {
                 info!("inserting group {}", new_group.master_key);
                 let mut rec = new_group.into_active_model();
                 rec.datasource_id = Set(Some(target_datasource_id));
                 rec.created_at = NotSet;
-                if let Err(e) = rec.insert(db).await.context(h!()) {
+                if let Err(e) = crate::messenger::group::add_group(rec, db)
+                    .await
+                    .context(h!())
+                {
                     error!("failed to insert new group: {e:?}")
                 }
             }

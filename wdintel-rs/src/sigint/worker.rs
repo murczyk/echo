@@ -218,17 +218,17 @@ pub async fn do_sync_state(
                 }
             }
             None => {
-                signal_group::ActiveModel {
+                let group = signal_group::ActiveModel {
                     master_key: Set(group.master_key.clone()),
                     name: Set(Some(group.name.clone())),
                     datasource_id: Set(Some(datasource_id)),
                     is_secret: Set(false),
                     created_at: NotSet,
                     ignore_operativny: Default::default(),
-                }
-                .insert(dbx)
-                .await
-                .context(h!())?;
+                };
+                crate::messenger::group::add_group(group, dbx)
+                    .await
+                    .context(h!())?;
             }
         }
     }

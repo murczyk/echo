@@ -19,7 +19,7 @@ pub async fn load_echo_account(
     id: i64,
     txn: &DatabaseTransaction,
 ) -> Result<EchoAccountF1, AppError> {
-    let account = list_linked_accounts(txn)
+    let account = list_accounts(txn)
         .await
         .context(h!())?
         .into_iter()
@@ -66,16 +66,17 @@ pub async fn deactivate_account(
     let account = load_echo_account(id, txn).await.context(h!())?;
     let messenger =
         EchoMessageSource::try_from_value(&account.messenger).context(h!())?;
+    let service_name = account.system_service_name.context(h!())?;
     match messenger {
         EchoMessageSource::Signal => os_specific::stop_signal_client(
-            &account.system_service_name,
+            &service_name,
             SIGNAL_CLIENT_DIR,
             SIGNAL_UNIT_NAME,
         )
         .await
         .context(h!())?,
         EchoMessageSource::Whatsapp => os_specific::stop_whatsapp_client(
-            &account.system_service_name,
+            &service_name,
             WHATSAPP_CLIENT_DIR,
             WHATSAPP_UNIT_NAME,
         )
@@ -95,6 +96,7 @@ pub async fn link_account(
     system_service_name: &str,
     source: &str,
     description: Option<String>,
+    aor_id: i64,
     txn: &DatabaseTransaction,
 ) -> Result<EchoAccountF1, AppError> {
     if !is_valid_service_name(&system_service_name) {
@@ -114,10 +116,15 @@ pub async fn link_account(
         }
     };
     let unit_name = format!("{src_name}@{display_name}");
-    let accounts = list_linked_accounts(txn).await.context(h!())?;
+    let accounts = list_accounts(txn).await.context(h!())?;
     let existing_account = accounts
         .into_iter()
-        .filter(|a| a.system_service_name.eq(system_service_name))
+        .filter(|a| {
+            a.system_service_name
+                .clone()
+                .map(|s| s.eq(system_service_name))
+                .is_some()
+        })
         .filter(|a| a.phone_number.eq(phone_number))
         .filter(|a| a.messenger.eq(&src_name))
         .into_iter()
@@ -177,6 +184,7 @@ pub async fn link_account(
         sender_uuid: NotSet,
         description: Set(description),
         kind: Set(src_display_name),
+        default_aor_id: Set(Some(aor_id)),
     }
     .insert(txn)
     .await
@@ -212,7 +220,7 @@ pub async fn get_qr_code(
     account_id: i64,
     txn: &DatabaseTransaction,
 ) -> Result<String, AppError> {
-    let account = list_linked_accounts(txn)
+    let account = list_accounts(txn)
         .await
         .context(h!())?
         .into_iter()
@@ -221,33 +229,35 @@ pub async fn get_qr_code(
         .context(h!())?;
 
     let messenger = parse_message_source(&account).context(h!())?;
-
-    let code =
-        echo_im::link_account(&account.system_service_name, messenger, txn)
-            .await
-            .context(h!())?;
+    let system_service_name = account.system_service_name.context(h!())?;
+    let code = echo_im::link_account(&system_service_name, messenger, txn)
+        .await
+        .context(h!())?;
 
     Ok(code)
 }
 
-pub async fn list_linked_accounts(
+pub async fn list_accounts(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
     #[derive(FromQueryResult)]
     struct LinkedAccountRow {
         pub id: i64,
+        pub kind: String,
+        pub datasource_phone_number: Option<String>,
         pub display_name: String,
         pub description: Option<String>,
         pub status: AccountStatus,
         pub created_at: DateTime,
-        pub client_id: i32,
-        pub system_service_name: String,
+        pub client_id: Option<i32>,
+        pub system_service_name: Option<String>,
         pub source: sea_orm_active_enums::EchoMessageSource,
-        pub phone_number: String,
-        pub is_linked: bool,
+        pub echo_phone_number: Option<String>,
+        pub is_linked: Option<bool>,
+        pub is_client_deleted: Option<bool>,
     }
 
-    let datasources = datasource::Entity::find()
+    let datasource_recs = datasource::Entity::find()
         .join(
             JoinType::InnerJoin,
             datasource::Relation::EchoClientLock.def(),
@@ -260,9 +270,10 @@ pub async fn list_linked_accounts(
             JoinType::InnerJoin,
             echo_client_lock::Relation::EchoAccount.def(),
         )
-        .filter(echo_client::Column::Deleted.eq(false))
         .select_only()
         .column(datasource::Column::Id)
+        .column(datasource::Column::Kind)
+        .column_as(datasource::Column::SignalPhone, "datasource_phone_number")
         .column(datasource::Column::DisplayName)
         .column(datasource::Column::Description)
         .column(datasource::Column::Status)
@@ -270,26 +281,43 @@ pub async fn list_linked_accounts(
         .column(echo_client_lock::Column::ClientId)
         .column_as(echo_client::Column::Name, "system_service_name")
         .column(echo_account::Column::Source)
-        .column(echo_account::Column::PhoneNumber)
+        .column_as(echo_account::Column::PhoneNumber, "echo_phone_number")
         .column(echo_account::Column::IsLinked)
+        .column_as(echo_client::Column::Deleted, "is_client_deleted")
         .into_model::<LinkedAccountRow>()
         .all(txn)
         .await
-        .context(h!())?
-        .into_iter()
-        .map(|a| EchoAccountF1 {
+        .context(h!())?;
+
+    let mut datasources = vec![];
+    for a in datasource_recs {
+        if a.is_client_deleted.unwrap_or(false) {
+            continue;
+        }
+        let (phone_number, is_imported, messenger) = if a.client_id.is_some() {
+            (
+                a.echo_phone_number.context(h!())?,
+                false,
+                a.source.into_value().to_string(),
+            )
+        } else {
+            (a.datasource_phone_number.context(h!())?, true, a.kind)
+        };
+
+        datasources.push(EchoAccountF1 {
             id: a.id,
             status: a.status.into_value().to_string(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
             display_name: a.display_name,
             system_service_name: a.system_service_name,
-            messenger: a.source.into_value().to_string(),
-            phone_number: a.phone_number,
-            is_linked: a.is_linked,
+            messenger,
+            phone_number,
+            is_linked: a.is_linked.unwrap_or(false),
             description: a.description,
-        })
-        .collect();
+            is_imported,
+        });
+    }
     Ok(datasources)
 }
 
