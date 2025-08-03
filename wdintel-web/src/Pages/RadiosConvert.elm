@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Components.Button as Button
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -192,18 +193,15 @@ contentBlock model =
     div []
         [ p []
             [ text "Приймає файли типу РАДІОСТАНЦІЇ_29.09-03.10.2023.kmz" ]
-        , button
-            [ class "btn btn-sm btn-outline-secondary me-2"
-            , type_ "button"
-            , onClick <| UploadFileToConvert
-            ]
-            [ if not (Le.Console.isInProgress model.console) then
-                i [ class "bi bi-file-zip" ] []
-
-              else
-                Le.Block.Spinner.loadingSpinnerSm
-            , text " додати kmz"
-            ]
+        , Button.new { label = " додати kmz", onClick = UploadFileToConvert }
+            |> Button.withStyleSecondary
+            |> Button.withIcon 
+                [ if not (Le.Console.isInProgress model.console) then
+                    i [ class "bi bi-file-zip" ] []
+                  else
+                    Le.Block.Spinner.loadingSpinnerSm
+                ]
+            |> Button.view
         , Le.Console.view model.console
         ]
 
@@ -212,13 +210,13 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Конвертер радіо kmz-файлу"
     , body =
-        [ div [ class "w-4/5 mx-auto bd-gutter" ]
-            [ div [ class "row" ]
-                [ div [ class "col-12" ]
+        [ div [ class "w-4/5 mx-auto px-4" ]
+            [ div [ class "flex" ]
+                [ div [ class "w-full" ]
                     [ h1 [ class "py-4" ] [ text "Конвертер радіо kmz-файлу" ]
                     , div [ class "page-radios-convert" ] <|
-                        [ div [ class "row" ]
-                            [ div [ class "col-sm-12" ]
+                        [ div [ class "flex" ]
+                            [ div [ class "w-full" ]
                                 [ contentBlock model ]
                             ]
                         ]

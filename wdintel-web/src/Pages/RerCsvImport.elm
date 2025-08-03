@@ -3,6 +3,7 @@ module Pages.RerCsvImport exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Components.Button as Button
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -114,31 +115,27 @@ contentBlock model =
     div [class "mt-2"]
         [ h3 []
             [ text "Приймає CSV-файл з єдиною колонкою, що містить перехоплення виду:" ]
-        , div [ class "flex justify-center items-center" ]
+        , div [ class "flex justify-between items-center gap-2" ]
             [ pre
-                [ class "bg-card p-3 grow flex-[45%]"
+                [ class "bg-card p-3 basis-1/2 overflow-x-auto"
                 ]
                 [ text "29.02.2024_15:50 F=446.1125(МГц) П54\nУКХ р/м 70 мсп 42 мсд 58 А (СХ НОВОПРОКОПІВКА)\nЛАВИНА\nСЕРБ\nОРЕНБУРГ\nВОЛГОГРАД\n- (1) СЕРБ я ЛАВИНА дай мне ОРЕНБУРГА на связь  \n- (2) ЛАВИНА ... да сейчас!\n- (1) ОРЕНБУРГ на приёме \n- (2) ОРЕНБУРГ вызови к себе пожалуйста МАРКА ИРТЫША  и САВУ  и до САВЫ собери всех к САВЕ я сейчас буду там , еду уже с этого населённика про который я тебе говорил  , сейчас переговорим !\n\n47.4067019, 35.8642446" ]
-            , div [ class "ms-4 me-4 shrink" ] [ p [] [ text "або:" ] ]
+            , div [ class "ms-4 me-4 shrink-1" ] [ p [] [ text "або:" ] ]
             , pre
-                [ class "bg-card p-3 flex-[45%]"
+                [ class "bg-card p-3 basis-1/2 overflow-x-auto"
                 ]
                 [ text "Дата: 2024-03-02;\nЧас: 07:09;\nЧастота: 460.3250;\nПост: П325;\nЛокація: Авдіївка - Ласточкіне;\nПідрозділ: УКХ р/м 1 мсб 5 омсбр;\nХто: КАЛУГА;\nКому: БРЕСТ;\nТекст:\n- Калуга\n- Брест\n- Это кассеты по нам работают, не надо назад, вперед не останавливайтесь.Какие нахуй соседи по вам ложат, мы стреляем по лесополосе,вперед пошли пока ничего не летеит, быстрее. У нас БКне безгранично, идем пока держым.Вы чо сука охуели, почему вперед не идёте, Быстрее пошли пока нету воздействия, пока идем по всем фронтам, что один раз прилитело и вы обосрались, сейчас вон по 455 ебашут нахуй потому что там пацаны тоже идут. Пошли быстрее\n- СТарший я Брест я не понял в чем дело, мы только ебашим, прикрываем. Идем ребятки. Не по вам давайте быстрее и закрепляйтесь. Заходите закрепляйтесь молодци ребята, Ребята вы где уже в нашей полосе? Всё вы уже в блиндаже?сейчас подойду;\n\n48.1434076, 37.7146826"
                 ]
             ]
         , div [ class "text-center" ]
-            [ button
-                [ class "btn btn-lg btn-primary me-2 mb-4"
-                , type_ "button"
-                , onClick <| UploadFileToConvert
-                ]
-                [ if not (Le.Console.isInProgress model.console) then
-                    i [ class "bi bi-file-zip" ] []
-
-                  else
-                    Le.Block.Spinner.loadingSpinnerSm
-                , text " додати csv"
-                ]
+            [ Button.new { label = " додати csv", onClick = UploadFileToConvert }
+                |> Button.withIcon 
+                    [ if not (Le.Console.isInProgress model.console) then
+                        i [ class "bi bi-file-zip" ] []
+                      else
+                        Le.Block.Spinner.loadingSpinnerSm
+                    ]
+                |> Button.view
             ]
         , Le.Console.view model.console
         , div [ class "mb-4" ] []
@@ -149,9 +146,9 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "Імпорт csv"
     , body =
-        [ div [ class "w-4/5 mx-auto bd-gutter" ]
-            [ div [ class "row" ]
-                [ div [ class "col-sm-12" ]
+        [ div [ class "w-4/5 mx-auto" ]
+            [ div [ class "flex flex-col" ]
+                [ div [ class "w-full" ]
                     [ contentBlock model ]
                 ]
             ]
