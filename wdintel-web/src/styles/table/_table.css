@@ -27,7 +27,7 @@ html[data-bs-theme="dark"] .base-table {
     background: var(--bs-gray-50);
     color: var(--bs-gray-700);
     letter-spacing: 0.05em;
-    padding: 1rem 1.5rem;
+    padding: 0.5rem 0.75rem;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
     white-space: wrap;
@@ -88,7 +88,7 @@ html[data-bs-theme="dark"] .base-table thead th[onclick]:hover {
 
 /* Table body cells */
 .base-table tbody td {
-    padding: 1rem 1.5rem;
+    /* padding: 0.5rem 0.75rem; */
     border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
     transition: background-color 0.15s ease;
@@ -170,34 +170,22 @@ html[data-bs-theme="dark"] .base-table tbody tr:hover {
     }
 }
 
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    .base-table thead th {
-        padding: 0.75rem 1rem;
-        font-size: 0.7rem;
-    }
-
-    .base-table tbody td {
-        padding: 0.75rem 1rem;
-        font-size: 0.8rem;
-    }
-}
-
 /* Column padding based on width/content type */
 /* Default padding (col-normal) for all cells */
 .base-table th,
 .base-table td {
-    padding: 0.75rem 1rem;
-    /* Default to normal padding */
+    padding: 0.5rem 0.75rem;
+    /* Default to smaller padding */
 }
 
 .base-table .col-narrow {
-    padding: 0.5rem 0.75rem;
+    padding: 0.375rem 0.5rem;
     text-align: center;
 }
 
 .base-table .col-wide {
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 1rem;
+    /* Previous default padding moved here */
 }
 
 /* Table row editing state - highlight the row being edited in the sidebar */

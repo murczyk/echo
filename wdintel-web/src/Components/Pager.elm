@@ -258,4 +258,3 @@ getPageNumbers currentPage totalPages =
                     withStartEllipsis
         in
         withEndEllipsis
-
