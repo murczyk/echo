@@ -356,7 +356,7 @@ init _ =
       , orphanGroupAssignmentError = Nothing
       , groupRemovalConfirmation = Nothing
       , orphanGroupZoneSelector = Nothing
-      , orphanGroupsTableState = Table.initialSort "Створено"
+              , orphanGroupsTableState = Table.initialSort "Тиждень"
       , orphanGroupsPager = Pager.init
       , orphanGroupAssignmentDialog = Nothing
       , expandedGroupNotes = Set.empty
@@ -411,6 +411,7 @@ type Msg
     | SaveOrphanGroupZones
     | OrphanGroupsTableStateChanged Table.State
     | OrphanGroupsPagerMsg Pager.Msg
+    | UpdateOrphanGroupsPagerTotalItems Int
     | EditOrphanGroup String -- groupKey
     | CloseOrphanGroupEdit
     | UpdateOrphanGroupShortNote String
@@ -985,12 +986,26 @@ update msg model =
             )
 
         GotOrphanGroups (Ok groups) ->
-            ( { model | orphanGroups = RD.Success groups }
+            let
+                currentPager = model.orphanGroupsPager
+                updatedPager = { currentPager | totalItems = List.length groups }
+            in
+            ( { model 
+                | orphanGroups = RD.Success groups
+                , orphanGroupsPager = updatedPager
+              }
             , E.none
             )
 
         GotOrphanGroups (Err e) ->
-            ( { model | orphanGroups = RD.Failure e }
+            let
+                currentPager = model.orphanGroupsPager
+                updatedPager = { currentPager | totalItems = 0 }
+            in
+            ( { model 
+                | orphanGroups = RD.Failure e
+                , orphanGroupsPager = updatedPager
+              }
             , E.none
             )
 
@@ -1102,6 +1117,17 @@ update msg model =
 
                         Nothing ->
                             model.groupInfos
+                -- Update pager totalItems based on new orphan groups count
+                newOrphanGroupsCount =
+                    case updatedOrphanGroups of
+                        RD.Success groups ->
+                            List.length groups
+
+                        _ ->
+                            0
+
+                currentPager = model.orphanGroupsPager
+                updatedPager = { currentPager | totalItems = newOrphanGroupsCount }
             in
             ( { model
                 | orphanGroupAssignmentInProgress = Nothing
@@ -1110,6 +1136,7 @@ update msg model =
                 , datasourceGroups = updatedDatasourceGroups
                 , zoneSourceGroups = updatedZoneSourceGroups
                 , groupInfos = updatedGroupInfos
+                , orphanGroupsPager = updatedPager
               }
             , E.none
             )
@@ -1370,6 +1397,15 @@ update msg model =
 
         OrphanGroupsPagerMsg pagerMsg ->
             ( { model | orphanGroupsPager = Pager.update pagerMsg model.orphanGroupsPager }
+            , E.none
+            )
+
+        UpdateOrphanGroupsPagerTotalItems totalItems ->
+            let
+                currentPager = model.orphanGroupsPager
+                updatedPager = { currentPager | totalItems = totalItems }
+            in
+            ( { model | orphanGroupsPager = updatedPager }
             , E.none
             )
 
@@ -2888,8 +2924,11 @@ renderOrphanGroupsTable model groups =
         pager =
             model.orphanGroupsPager
 
+        totalItems =
+            List.length groups
+
         updatedPager =
-            { pager | totalItems = List.length groups }
+            { pager | totalItems = totalItems }
 
         paginatedGroups =
             Pager.getPageData updatedPager groups
