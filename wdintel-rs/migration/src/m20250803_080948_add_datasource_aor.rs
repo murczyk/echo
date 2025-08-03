@@ -23,7 +23,7 @@ impl MigrationTrait for Migration {
             alter table datasource drop column default_aor_id;
             ",
         )
-            .await?;
+        .await?;
         Ok(())
     }
 }

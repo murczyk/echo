@@ -246,9 +246,9 @@ copy-db-to-target:
     scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/tmp/
     rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz
     ssh -t {{ server }} '(cd /tmp && sudo tar -czf /tmp/wd-{{ dt1 }}.pgrestore.gz /tmp/wd-{{ dt1 }}.pgrestore) && sudo rm /tmp/wd-{{ dt1 }}.pgrestore.gz'
-    ssh -t {{ target }} "sudo -u postgres psql -c 'drop database {{pgdb}} with (FORCE)'"
-    ssh -t {{ target }} "sudo -u postgres psql -c 'create database {{pgdb}}'"
-    ssh -t {{ target }} "sudo -u postgres pg_restore -d {{pgdb}} /tmp/wd-{{ dt1 }}.pgrestore"
+    ssh -t {{ target }} "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'"
+    ssh -t {{ target }} "sudo -u postgres psql -c 'create database {{ pgdb }}'"
+    ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /tmp/wd-{{ dt1 }}.pgrestore"
 
 copy-db-local:
     #!/bin/bash

@@ -13,9 +13,9 @@ use regex::Regex;
 use sea_orm::*;
 
 pub mod bl;
+pub mod group;
 pub mod types;
 pub mod worker;
-pub mod group;
 
 #[post("/api/messenger/list")]
 pub async fn list_messengers(
@@ -75,9 +75,15 @@ pub async fn edit(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    bl::edit_account(req.account_id, req.is_active, &txn)
-        .await
-        .context(h!())?;
+    bl::edit_account(
+        req.account_id,
+        req.is_active,
+        req.display_name.to_string(),
+        req.description.clone(),
+        &txn,
+    )
+    .await
+    .context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(()))
 }

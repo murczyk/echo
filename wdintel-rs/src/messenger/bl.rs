@@ -32,6 +32,8 @@ pub async fn load_echo_account(
 pub async fn edit_account(
     id: i64,
     set_active: bool,
+    display_name: String,
+    description: Option<String>,
     txn: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     let account = load_echo_account(id, txn).await.context(h!())?;
@@ -54,6 +56,8 @@ pub async fn edit_account(
         .context(h!())?
         .context(h!())?
         .into_active_model();
+    account.display_name = Set(display_name);
+    account.description = Set(description);
     account.status = Set(new_status);
     account.update(txn).await.context(h!())?;
     Ok(())
