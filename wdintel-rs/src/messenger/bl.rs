@@ -267,15 +267,15 @@ pub async fn list_accounts(
 
     let datasource_recs = datasource::Entity::find()
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             datasource::Relation::EchoClientLock.def(),
         )
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             echo_client_lock::Relation::EchoClient.def(),
         )
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             echo_client_lock::Relation::EchoAccount.def(),
         )
         .select_only()
