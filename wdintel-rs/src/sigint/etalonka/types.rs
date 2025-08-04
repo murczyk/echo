@@ -72,6 +72,7 @@ pub struct FreqStatsRes {
 pub struct NetworkFreqsRes {
     pub network_freq_id: i64,
     pub freq: String,
+    pub modulation_id: Option<i32>,
     pub modulation: Option<String>,
     pub message_count: i64,
     pub callsigns: Option<Vec<String>>,
@@ -80,6 +81,7 @@ pub struct NetworkFreqsRes {
     pub is_active: bool,
     pub active_from: i64,
     pub active_to: Option<i64>,
+    pub kind: Option<String>,
 }
 
 #[derive(
