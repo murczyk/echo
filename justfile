@@ -242,10 +242,10 @@ copy-db-to-target:
     ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
     ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
     scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
-    ssh -t {{ server }} 'rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz'
+    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
     scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/tmp/
-    rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz
-    ssh -t {{ server }} '(cd /tmp && sudo tar -czf /tmp/wd-{{ dt1 }}.pgrestore.gz /tmp/wd-{{ dt1 }}.pgrestore) && sudo rm /tmp/wd-{{ dt1 }}.pgrestore.gz'
+    rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
+    ssh -t {{ server }} '(cd /tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
     ssh -t {{ target }} "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'"
     ssh -t {{ target }} "sudo -u postgres psql -c 'create database {{ pgdb }}'"
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /tmp/wd-{{ dt1 }}.pgrestore"
