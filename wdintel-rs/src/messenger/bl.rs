@@ -41,15 +41,6 @@ pub async fn edit_account(
     description: Option<String>,
     txn: &DatabaseTransaction,
 ) -> Result<EchoAccountF1, AppError> {
-    let account = load_echo_account(id, txn).await.context(h!())?;
-    let status =
-        AccountStatus::try_from_value(&account.status).context(h!())?;
-    let is_active = status == AccountStatus::Active;
-    info!("account={id}, set_active={set_active}");
-    if set_active == is_active {
-        warn!("nothing to do, skipping");
-        return Ok(account);
-    }
     let new_status = if set_active {
         AccountStatus::Active
     } else {
