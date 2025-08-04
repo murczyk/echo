@@ -1,4 +1,5 @@
 ## NEXT
+- [#1152](https://github.com/echoua/echo/issues/1152) Позивні: показувати один альтернативний підрозділ, інші в попапі
 - [#1088](https://github.com/echoua/echo/issues/1088) Мережа: доданий графік активності частоти.
 - [#1172](https://github.com/echoua/echo/issues/1172) Мережа. Виправлено помилку відображення активності при відсутності такої за період
 - [#1155](https://github.com/echoua/echo/issues/1155) Додано just команду `export-datasource-to-target` для експорту джерела із перехопленнями між серверами
