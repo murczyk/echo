@@ -854,14 +854,15 @@ pub async fn network_group_activity_one(
         network_ids: vec![req.network_id],
         till_date_noninclusive_ms: req.till_date_noninclusive_ms,
     });
-    return Ok(Json(
-        network_group_activity_bl(user, env, new_req)
-            .await
-            .context(h!())?
-            .get(&req.network_id.to_string())
-            .context(h!())?
-            .clone(),
-    ));
+
+    let networks_group_stat = network_group_activity_bl(user, env, new_req)
+        .await
+        .context(h!())?;
+    let res = networks_group_stat
+        .get(&req.network_id.to_string())
+        .cloned()
+        .unwrap_or_default();
+    return Ok(Json(res));
 }
 
 #[post("/api/sigint/network-group-activity")]
@@ -894,7 +895,7 @@ async fn network_group_activity_bl(
         Utc::now().naive_utc()
     };
 
-    let callsigns = signal_message::Entity::find()
+    let networks_group_stat = signal_message::Entity::find()
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -938,16 +939,16 @@ async fn network_group_activity_bl(
         .filter(Expr::cust_with_values("sigint_inbox_item.datetime >= $1 - INTERVAL '10 days'", vec![dt_till]))
         .filter(sigint_network_freq::Column::NetworkId.is_in(req.network_ids.clone()));
 
-    let callsigns = callsigns
+    let networks_group_stat = networks_group_stat
         .clone()
         .order_by_desc(Expr::cust("network_id, day, \"group\""));
 
     // println!(
     //     "> sql: {}",
-    //     callsigns.clone().build(DbBackend::Postgres).to_string()
+    //     networks_group_stat.clone().build(DbBackend::Postgres).to_string()
     // );
     #[derive(FromQueryResult)]
-    pub struct NetwrorkGroupsMessageCountByDay {
+    pub struct NetworkGroupsMessageCountByDay {
         pub network_id: i64,
         pub count: i64,
         pub group: String,
@@ -955,8 +956,8 @@ async fn network_group_activity_bl(
     }
 
     let mut res = HashMap::new();
-    for row in callsigns
-        .into_model::<NetwrorkGroupsMessageCountByDay>()
+    for row in networks_group_stat
+        .into_model::<NetworkGroupsMessageCountByDay>()
         .all(&env.dbx)
         .await
         .context(h!())?
