@@ -128,8 +128,11 @@ sumTableBlock2 model shared route sumTable =
     let
         masterUnitsDict =
             case shared.masterUnits of
-                Success units -> units
-                _ -> Dict.empty
+                Success units ->
+                    units
+
+                _ ->
+                    Dict.empty
 
         renderRow row =
             let
@@ -251,6 +254,13 @@ sumTableBlock2 model shared route sumTable =
                       <|
                         networkBlock
                             :: List.map (renderUnitWithEdit model row) row.units
+                    ]
+                , td [] <|
+                    [ ul
+                        [ class "list-unstyled mb-0"
+                        ]
+                      <|
+                        List.map renderLocation row.locations
                     ]
                 ]
 
