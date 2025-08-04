@@ -192,6 +192,7 @@ pub struct InboxMessagesReq {
     pub highlight_searchres: Option<bool>,
     pub highlight_signals: Option<bool>,
     pub selected_tags: Option<Vec<i64>>,
+    pub selected_aors: Option<Vec<i64>>,
     pub sort_by: Option<InboxMessagesSortBy>,
     /// report type "tags" specific param:
     pub report_tags_only_this_unit: Option<bool>,
@@ -1036,4 +1037,50 @@ pub struct MessageTimestampPerGroupStat {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct FreqPelengsActivityRsp {
     pub freq_pelengs_summary: Vec<FreqPelengsEntry>,
+}
+
+impl Default for InboxMessagesReq {
+    fn default() -> Self {
+        Self {
+            since_id_noninclusive: None,
+            before_id_noninclusive: None,
+            since_date_inclusive_ms: None,
+            till_date_inclusive_ms: None,
+            only_show_unprocessed: None,
+            checked_only: None,
+            selected_groups: None,
+            selected_senders: None,
+            denied_senders: None,
+            selected_freqs: None,
+            selected_posts: None,
+            denied_posts: None,
+            denied_freqs: None,
+            selected_callsigns: None,
+            selected_units: None,
+            selected_locations: None,
+            nolimit: None,
+            or_with_extended_form: None,
+            load_latest: None,
+            return_duplicates: None,
+            or_bookmarked: None,
+            or_important: None,
+            or_with_coords: None,
+            newest_first: None,
+            search: None,
+            highlight_callsigns: None,
+            highlight_keywords: None,
+            highlight_searchres: None,
+            highlight_signals: None,
+            selected_tags: None,
+            selected_aors: None,
+            sort_by: None,
+            report_tags_only_this_unit: None,
+            ignore_imported_coords: None,
+            include_peleng_locations: None,
+            units_exact_match_only: None,
+            calculate_freq_pelengs_summary: None,
+            filter_tags_option: None,
+            page_id: None,
+        }
+    }
 }

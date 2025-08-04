@@ -37,6 +37,7 @@ pub enum ListAreasOfResponsibilitySortBy {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ListAreasOfResponsibilityReq {
+    pub is_top_level: Option<bool>,
     pub sort_by: Option<ListAreasOfResponsibilitySortBy>,
 }
 

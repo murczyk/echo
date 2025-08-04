@@ -87,6 +87,8 @@ pub(crate) async fn build_inbox_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    // let q = filter_selected_aors(q, &req.selected_aors)?;
+
     if req.nolimit != Some(true) {
         q = q.limit(20);
     }
