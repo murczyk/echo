@@ -14,12 +14,14 @@ import "./ts/web-components/bar-chart"
 import "./ts/web-components/freq-activity-chart"
 import "./ts/web-components/freq-detail-chart"
 import "./style.css"
+import "./css/floating-popup.css"
 import { setupMap, addPointsToLayer } from './ts/maps/maps'
 import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types'
 import './ts/web-components/analysis-map'
 import './ts/web-components/modal-dialog.ts'
 import './ts/web-components/bar-chart-2.ts'
 import './ts/web-components/small-map.ts'
+import './ts/web-components/floating-popup.ts'
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
