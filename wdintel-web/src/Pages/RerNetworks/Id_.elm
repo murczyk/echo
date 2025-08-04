@@ -24,6 +24,7 @@ import Json.Encode as Encode
 import Layouts
 import Le.Auth
 import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Le.Block.Popup as Popup
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
@@ -43,7 +44,6 @@ import Time
 import Time.Extra
 import Url.Builder
 import View exposing (View)
-import Le.Block.Popup as Popup
 
 
 page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
@@ -204,7 +204,7 @@ type alias Model =
     , reportIncludeConfirmation : Bool
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
-    , freqEditSidebar : Maybe (String, B.UpdateNetworkFreqReq)
+    , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     }
 
@@ -891,8 +891,8 @@ update shared msg model =
                                     ( f.freq
                                     , { networkId = network.id
                                       , freq = f.freq
-                                      , kind = "VHF"  -- Default value since NetworkFreqsRes doesn't have kind
-                                      , modulationId = Nothing  -- NetworkFreqsRes doesn't have modulationId
+                                      , kind = "VHF" -- Default value since NetworkFreqsRes doesn't have kind
+                                      , modulationId = Nothing -- NetworkFreqsRes doesn't have modulationId
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
@@ -1135,17 +1135,17 @@ update shared msg model =
             ( { model | freqsTableState = newState }, E.none )
 
         OpenFreqEditSidebar freqId updateReq ->
-            ( { model | freqEditSidebar = Just (freqId, updateReq) }, E.none )
+            ( { model | freqEditSidebar = Just ( freqId, updateReq ) }, E.none )
 
         CloseFreqEditSidebar ->
             ( { model | freqEditSidebar = Nothing }, E.none )
 
         UpdateFreqEditSidebar updateReq ->
-            ( { model | freqEditSidebar = Maybe.map (\(freqId, _) -> (freqId, updateReq)) model.freqEditSidebar }, E.none )
+            ( { model | freqEditSidebar = Maybe.map (\( freqId, _ ) -> ( freqId, updateReq )) model.freqEditSidebar }, E.none )
 
         SaveFreqEditSidebar ->
             case model.freqEditSidebar of
-                Just (_, updateReq) ->
+                Just ( _, updateReq ) ->
                     ( { model | freqEditSidebar = Nothing }
                     , E.updateNetworkFreq FreqUpdatedByApi updateReq
                     )
@@ -1171,6 +1171,7 @@ subscriptions model =
 
 
 -- TABLE CONFIGURATION
+
 
 freqsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkFreqsRes Msg
 freqsTableConfig shared model user =
@@ -1291,42 +1292,6 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
-                { name = "Активність"
-                , viewData =
-                    \freq ->
-                        case model.networkFreqsActivity of
-                            Success data ->
-                                case Dict.get freq.freq data of
-                                    Just freqActivity ->
-                                        let
-                                            freqActivityJson =
-                                                Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freq.freq freqActivity)
-                                        in
-                                        { attributes = []
-                                        , children =
-                                            [ div [ style "width" "150px", style "height" "60px", style "cursor" "pointer", onClick (OpenFreqDetailPopup freq.freq) ]
-                                                [ Html.node "freq-activity-chart"
-                                                    [ property "data" <| freqActivityJson
-                                                    , property "lastDay" <| Encode.int shared.now
-                                                    ]
-                                                    []
-                                                ]
-                                            ]
-                                        }
-
-                                    Nothing ->
-                                        { attributes = []
-                                        , children = [ text "Немає активності" ]
-                                        }
-
-                            _ ->
-                                { attributes = []
-                                , children = [ Le.Block.Spinner.loadingSpinnerSm ]
-                                }
-                , sorter = TableSorter.unsortable
-                }
-                |> Table.withColumnWidth "15%"
-            , Table.veryCustomColumn
                 { name = "Останній раз в етері"
                 , viewData =
                     \freq ->
@@ -1354,7 +1319,44 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Активна з"
+                { name = "Активність"
+                , viewData =
+                    \freq ->
+                        case model.networkFreqsActivity of
+                            Success data ->
+                                case Dict.get freq.freq data of
+                                    Just freqActivity ->
+                                        let
+                                            freqActivityJson =
+                                                Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freq.freq freqActivity)
+                                        in
+                                        { attributes = []
+                                        , children =
+                                            [ div [ style "width" "150px", style "height" "60px", style "cursor" "pointer", style "position" "relative", style "border-radius" "4px", style "transition" "all 0.2s ease", onClick (OpenFreqDetailPopup freq.freq) ]
+                                                [ Html.node "freq-activity-chart"
+                                                    [ property "data" <| freqActivityJson
+                                                    , property "lastDay" <| Encode.int shared.now
+                                                    ]
+                                                    []
+                                                , i [ class "bi bi-zoom-in", style "position" "absolute", style "top" "0", style "right" "4px", style "font-size" "12px", style "color" "#6b7280", style "opacity" "0.7", style "pointer-events" "none", style "z-index" "10", style "transition" "all 0.2s ease" ] []
+                                                ]
+                                            ]
+                                        }
+
+                                    Nothing ->
+                                        { attributes = []
+                                        , children = [ text "Немає активності" ]
+                                        }
+
+                            _ ->
+                                { attributes = []
+                                , children = [ Le.Block.Spinner.loadingSpinnerSm ]
+                                }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.veryCustomColumn
+                { name = "З"
                 , viewData =
                     \freq ->
                         { attributes = []
@@ -1364,7 +1366,7 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
-                { name = "Активна по"
+                { name = "По"
                 , viewData =
                     \freq ->
                         case freq.activeTo of
@@ -1381,41 +1383,45 @@ freqsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "10%"
             ]
-            ++ (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                    [ Table.veryCustomColumn
-                        { name = ""
-                        , viewData =
-                            \freq ->
-                                { attributes = []
-                                , children =
-                                    [ button
-                                        [ class "table-action-btn"
-                                        , type_ "button"
-                                        , onClick <| OpenFreqEditSidebar freq.freq
-                                            { networkId = freq.networkFreqId
-                                            , freq = freq.freq
-                                            , kind = "VHF"
-                                            , modulationId = Nothing
-                                            , activeFrom = freq.activeFrom
-                                            , activeTo = freq.activeTo
-                                            }
+                ++ (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                        [ Table.veryCustomColumn
+                            { name = ""
+                            , viewData =
+                                \freq ->
+                                    { attributes = []
+                                    , children =
+                                        [ button
+                                            [ class "table-action-btn"
+                                            , type_ "button"
+                                            , onClick <|
+                                                OpenFreqEditSidebar freq.freq
+                                                    { networkId = freq.networkFreqId
+                                                    , freq = freq.freq
+                                                    , kind = "VHF"
+                                                    , modulationId = Nothing
+                                                    , activeFrom = freq.activeFrom
+                                                    , activeTo = freq.activeTo
+                                                    }
+                                            ]
+                                            [ i [ class "bi bi-pencil-square" ] []
+                                            ]
                                         ]
-                                        [ i [ class "bi bi-pencil-square" ] []
-                                        ]
-                                    ]
-                                }
-                        , sorter = TableSorter.unsortable
-                        }
-                        |> Table.withColumnWidth "5%"
-                    ]
-                else
-                    []
-               )
+                                    }
+                            , sorter = TableSorter.unsortable
+                            }
+                            |> Table.withColumnWidth "5%"
+                        ]
+
+                    else
+                        []
+                   )
         , customizations = customizations
         }
 
 
+
 -- SIDEBAR CONTENT
+
 
 freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html Msg)
 freqEditSidebarContent shared model user freqId updateReq =
@@ -1485,6 +1491,7 @@ freqEditSidebarContent shared model user freqId updateReq =
     ]
 
 
+
 -- VIEW
 
 
@@ -1515,11 +1522,11 @@ emptyFreqsPlaceholder filter =
                 InactiveFreqs ->
                     "Немає неактивних частот"
     in
-    div 
+    div
         [ class "flex flex-col items-center justify-center py-12 text-center" ]
         [ i [ class "bi bi-radio-tower text-4xl text-gray-400 mb-4" ] []
         , p [ class "text-gray-600 dark:text-gray-400 text-lg font-medium" ] [ text message ]
-        , p [ class "text-gray-500 dark:text-gray-500 text-sm mt-2" ] 
+        , p [ class "text-gray-500 dark:text-gray-500 text-sm mt-2" ]
             [ text "Спробуйте змінити фільтр або перевірте налаштування мережі" ]
         ]
 
@@ -1534,8 +1541,7 @@ freqsActivityFilterView model =
             ]
     in
     div [ class "flex gap-2 items-center mb-4" ]
-        [
-         SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
+        [ SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
             |> SegmentedControl.view
         ]
 
@@ -2291,6 +2297,7 @@ contentBlock user shared network model =
                 div [ class "table-responsive-modern" ]
                     [ if List.isEmpty filteredFreqs then
                         emptyFreqsPlaceholder model.freqsActivityFilter
+
                       else
                         Table.view (freqsTableConfig shared model user) model.freqsTableState filteredFreqs
                     ]
@@ -2563,7 +2570,7 @@ view user shared model =
                             [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
                     )
                 , case model.freqEditSidebar of
-                    Just (freqId, updateReq) ->
+                    Just ( freqId, updateReq ) ->
                         Sidebar.view True CloseFreqEditSidebar (freqEditSidebarContent shared model user freqId updateReq)
 
                     Nothing ->
@@ -2602,7 +2609,9 @@ view user shared model =
                                     _ ->
                                         div [ class "text-center", style "height" "300px", style "display" "flex", style "align-items" "center", style "justify-content" "center" ] [ Le.Block.Spinner.loadingSpinnerSm ]
                         in
-                        ModalDialog.modalDialog True CloseFreqDetailPopup []
+                        ModalDialog.modalDialog True
+                            CloseFreqDetailPopup
+                            []
                             [ div [ class "p-6", style "width" "600px", style "height" "400px" ]
                                 [ h3 [ class "text-lg font-semibold mb-4" ] [ text ("Детальний графік активності: " ++ freqId) ]
                                 , freqActivityData
@@ -2806,6 +2815,3 @@ updateActiveToFromInput input timeZone currentValue =
             Time.Extra.partsToPosix timeZone parts
                 |> Time.posixToMillis
                 |> Just
-
-
-
