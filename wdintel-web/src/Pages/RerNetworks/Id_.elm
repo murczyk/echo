@@ -1390,21 +1390,26 @@ freqsTableConfig shared model user =
                                 \freq ->
                                     { attributes = []
                                     , children =
-                                        [ button
-                                            [ class "table-action-btn"
-                                            , type_ "button"
-                                            , onClick <|
-                                                OpenFreqEditSidebar freq.freq
-                                                    { networkId = freq.networkFreqId
-                                                    , freq = freq.freq
-                                                    , kind = "VHF"
-                                                    , modulationId = Nothing
-                                                    , activeFrom = freq.activeFrom
-                                                    , activeTo = freq.activeTo
-                                                    }
-                                            ]
-                                            [ i [ class "bi bi-pencil-square" ] []
-                                            ]
+                                        [ case model.network of
+                                            Success network ->
+                                                button
+                                                    [ class "table-action-btn"
+                                                    , type_ "button"
+                                                    , onClick <|
+                                                        OpenFreqEditSidebar freq.freq
+                                                            { networkId = network.id
+                                                            , freq = freq.freq
+                                                            , kind = "VHF"
+                                                            , modulationId = Nothing
+                                                            , activeFrom = freq.activeFrom
+                                                            , activeTo = freq.activeTo
+                                                            }
+                                                    ]
+                                                    [ i [ class "bi bi-pencil-square" ] []
+                                                    ]
+
+                                            _ ->
+                                                text ""
                                         ]
                                     }
                             , sorter = TableSorter.unsortable
