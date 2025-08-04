@@ -310,7 +310,11 @@ pub async fn list_accounts(
                 a.source.context(h!())?.into_value().to_string(),
             )
         } else {
-            (a.datasource_phone_number.context(h!())?, true, a.kind)
+            let Some(phone) = a.datasource_phone_number else {
+                warn!("no phone number for datasource {}, skipping, at {}", a.id, h!());
+                continue;
+            };
+            (phone, true, a.kind)
         };
 
         let area_of_responsibility = match a.aor_id {
