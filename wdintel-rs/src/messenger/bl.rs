@@ -259,7 +259,7 @@ pub async fn list_accounts(
         pub created_at: DateTime,
         pub client_id: Option<i32>,
         pub system_service_name: Option<String>,
-        pub source: sea_orm_active_enums::EchoMessageSource,
+        pub source: Option<sea_orm_active_enums::EchoMessageSource>,
         pub echo_phone_number: Option<String>,
         pub is_linked: Option<bool>,
         pub is_client_deleted: Option<bool>,
@@ -307,7 +307,7 @@ pub async fn list_accounts(
             (
                 a.echo_phone_number.context(h!())?,
                 false,
-                a.source.into_value().to_string(),
+                a.source.context(h!())?.into_value().to_string(),
             )
         } else {
             (a.datasource_phone_number.context(h!())?, true, a.kind)
@@ -324,7 +324,7 @@ pub async fn list_accounts(
 
         datasources.push(EchoAccountF1 {
             id: a.id,
-            area_of_responsibility,
+            area_of_responsibility: area_of_responsibility,
             status: a.status.into_value().to_string(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
