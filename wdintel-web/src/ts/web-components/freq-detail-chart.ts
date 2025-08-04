@@ -205,20 +205,20 @@ class FreqDetailChart extends LitElement {
       .range([height, 0])
       .nice();
 
-    // Створюємо сітку
+    // Створюємо сітку (тільки лінії, без осей)
     g.append('g')
       .attr('class', 'grid')
       .attr('transform', `translate(0,${height})`)
       .call(d3.axisBottom(xScale)
         .tickSize(-height)
-        .tickFormat(null)
+        .tickFormat(() => '')  // Прибираємо мітки з сітки
       );
 
     g.append('g')
       .attr('class', 'grid')
       .call(d3.axisLeft(yScale)
         .tickSize(-width)
-        .tickFormat(null)
+        .tickFormat(() => '')  // Прибираємо мітки з сітки
       );
 
     // Створюємо лінію з валідованими даними
@@ -269,48 +269,12 @@ class FreqDetailChart extends LitElement {
         return `Дата: ${dateStr}\nКількість: ${d.count}`;
       });
 
-    // Розраховуємо оптимальний інтервал між мітками
-    const totalDays = (dateExtent[1].getTime() - dateExtent[0].getTime()) / (1000 * 60 * 60 * 24);
-    
-    // Вручну створюємо мітки щоб уникнути дублікатів
-    const maxTicks = 6;
-    const tickStep = Math.max(1, Math.ceil(totalDays / maxTicks));
-    const customTicks: Date[] = [];
-    
-    // Створюємо мітки кожні tickStep днів починаючи з першої дати
-    const startDate = new Date(dateExtent[0]);
-    startDate.setHours(0, 0, 0, 0); // Обнуляємо час
-    
-    // Додаємо першу дату
-    customTicks.push(new Date(startDate));
-    
-    // Додаємо проміжні дати
-    for (let i = 1; i < maxTicks; i++) {
-      const tickDate = new Date(startDate);
-      tickDate.setDate(startDate.getDate() + (i * tickStep));
-      
-      if (tickDate < dateExtent[1]) {
-        customTicks.push(tickDate);
-      } else {
-        break; // Зупиняємось якщо перевищили кінцеву дату
-      }
-    }
-    
-    // Завжди додаємо останню дату якщо вона не дуже близько до попередньої
-    const lastTick = customTicks[customTicks.length - 1];
-    const daysDifference = (dateExtent[1].getTime() - lastTick.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysDifference >= 1) { // Тільки якщо різниця більше дня
-      customTicks.push(new Date(dateExtent[1]));
-    }
-
-
-
-    // Додаємо осі з фіксованими мітками
+    // Додаємо осі з кастомним форматуванням дат
     g.append('g')
       .attr('class', 'axis')
       .attr('transform', `translate(0,${height})`)
       .call(d3.axisBottom(xScale)
-        .tickValues(customTicks)
+        .ticks(d3.timeWeek.every(2))  // Показуємо мітки кожні 3 тижні
         .tickFormat(d => {
           if (d instanceof Date && !isNaN(d.getTime())) {
             const day = d.getDate().toString().padStart(2, '0');
