@@ -334,6 +334,7 @@ enum Cmd {
     OneoffRestoreVaultSecretsFromBitwarden,
     OneoffImportDataSource(OneoffImportDataSourcePs),
     OneoffExportDataSource(OneoffExportDataSourcePs),
+    OneoffFixGroupDataSources,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -602,6 +603,9 @@ fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffExportDataSource(ps) => {
             crate::datasource::importer::oneoff_export_datasource(mode, ps)
+        }
+        Cmd::OneoffFixGroupDataSources => {
+            crate::messenger::group::oneoff_fix_group_datasources(mode)
         }
     }
 }

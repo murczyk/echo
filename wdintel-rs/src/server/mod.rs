@@ -392,7 +392,7 @@ pub async fn main_server(
             .service(crate::tags::inbox_message_tags_rm)
             .service(crate::log_api::log_error)
             .service(crate::event_stream::long_poll)
-            .service(crate::messenger::list_linked_accounts)
+            .service(crate::messenger::list_messengers)
             .service(crate::messenger::get_qr)
             .service(crate::messenger::is_linked)
             .service(crate::messenger::edit)

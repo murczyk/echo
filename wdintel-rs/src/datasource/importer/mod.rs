@@ -200,10 +200,11 @@ async fn import_data(
     println!("imported {count} signal profiles");
 
     let count = imported_data.signal_groups.len();
+    let (_, target_datasource_id) = datasource_id_mapping;
     bl::upsert_signal_groups(
         &db,
         imported_data.signal_groups,
-        datasource_id_mapping,
+        target_datasource_id,
     )
     .await
     .context(h!())?;

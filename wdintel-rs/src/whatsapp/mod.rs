@@ -186,17 +186,18 @@ pub async fn sync_groups(
                 }
             }
             None => {
-                let signal_group = signal_group::ActiveModel {
+                let group = signal_group::ActiveModel {
                     master_key: Set(wg.jid.clone()),
                     name: Set(Some(wg.name.clone())),
                     created_at: NotSet,
                     is_secret: Set(false),
                     datasource_id: Set(Some(datasource.id)),
                     ignore_operativny: Default::default(),
-                }
-                .insert(dbx)
-                .await
-                .context(h!())?;
+                };
+                let signal_group =
+                    crate::messenger::group::add_group(group, dbx)
+                        .await
+                        .context(h!())?;
                 println!(
                     "> whatsapp::sync_groups: created signal_group master_key={}, name={}",
                     signal_group.master_key, wg.name

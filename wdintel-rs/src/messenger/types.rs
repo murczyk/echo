@@ -7,15 +7,33 @@ use std::fmt::Debug;
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct EchoAccountF1 {
     pub id: i64,
+    pub area_of_responsibility: Option<AreaOfResponsibility>,
     pub status: String,
     pub created_at: i64,
-    pub client_id: i32,
+    pub client_id: Option<i32>,
     pub display_name: String,
-    pub system_service_name: String,
+    pub system_service_name: Option<String>,
     pub description: Option<String>,
     pub messenger: String,
     pub phone_number: String,
     pub is_linked: bool,
+    pub is_imported: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct EchoAreaOfResponsibilityF1 {
+    pub id: i64,
+    pub aor_id: Option<i64>,
+    pub status: String,
+    pub created_at: i64,
+    pub client_id: Option<i32>,
+    pub display_name: String,
+    pub system_service_name: Option<String>,
+    pub description: Option<String>,
+    pub messenger: String,
+    pub phone_number: String,
+    pub is_linked: bool,
+    pub is_imported: bool,
 }
 
 #[derive(
@@ -59,7 +77,10 @@ pub struct IsAccountLinkedRsp {
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct AccountStatusReq {
     pub account_id: i64,
+    pub aor_id: Option<i64>,
     pub is_active: bool,
+    pub display_name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -74,6 +95,7 @@ pub struct LinkAccountReq {
     pub display_name: String,
     pub system_service_name: String,
     pub description: Option<String>,
+    pub aor_id: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]

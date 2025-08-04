@@ -13,11 +13,12 @@ use regex::Regex;
 use sea_orm::*;
 
 pub mod bl;
+pub mod group;
 pub mod types;
 pub mod worker;
 
 #[post("/api/messenger/list")]
-pub async fn list_linked_accounts(
+pub async fn list_messengers(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<AccountsRsp>, AppError> {
@@ -25,7 +26,7 @@ pub async fn list_linked_accounts(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
-    let accounts = bl::list_linked_accounts(&txn).await.context(h!())?;
+    let accounts = bl::list_accounts(&txn).await.context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(AccountsRsp { accounts }))
 }
@@ -74,9 +75,16 @@ pub async fn edit(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    bl::edit_account(req.account_id, req.is_active, &txn)
-        .await
-        .context(h!())?;
+    bl::edit_account(
+        req.account_id,
+        req.aor_id,
+        req.is_active,
+        req.display_name.to_string(),
+        req.description.clone(),
+        &txn,
+    )
+    .await
+    .context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(()))
 }
@@ -188,6 +196,7 @@ pub async fn link(
         req.system_service_name.as_str(),
         req.messenger.as_str(),
         req.description.clone(),
+        req.aor_id,
         &txn,
     )
     .await

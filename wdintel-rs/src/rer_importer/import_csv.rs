@@ -606,16 +606,17 @@ pub async fn ensure_import_group_exists(
         Some(group) => group.master_key,
         None => {
             log::warn!("No signal_group found -- creating a default one!");
-            signal_group::ActiveModel {
-                master_key: Set(uuid::Uuid::new_v4().to_string()),
+            let group = signal_group::ActiveModel {
+                master_key: Set(Uuid::new_v4().to_string()),
                 name: Set(Some(group_name)),
                 datasource_id: Set(Some(datasource_id)),
                 ..Default::default()
-            }
-            .insert(dbx)
-            .await
-            .context(h!())?
-            .master_key
+            };
+
+            crate::messenger::group::add_group(group, dbx)
+                .await
+                .context(h!())?
+                .master_key
         }
     };
 
@@ -672,17 +673,17 @@ pub async fn ensure_import_group_exists(
         Some(group) => group.master_key,
         None => {
             log::warn!("No signal_group found for direction finding imports -- creating a default one!");
-            signal_group::ActiveModel {
+            let group = signal_group::ActiveModel {
                 master_key: Set(IMPORT_DIRECTION_FINDING_UUID.to_string()),
                 name: Set(Some("Імпорт Пеленгів".to_string())),
                 datasource_id: Set(Some(datasource_id)),
                 ignore_operativny: Set(true),
                 ..Default::default()
-            }
-            .insert(dbx)
-            .await
-            .context(h!())?
-            .master_key
+            };
+            crate::messenger::group::add_group(group, dbx)
+                .await
+                .context(h!())?
+                .master_key
         }
     };
 

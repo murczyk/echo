@@ -40,6 +40,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::datasource::Entity")]
+    Datasource,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::UpdatedBy",
@@ -54,6 +56,12 @@ pub enum Relation {
     SigintZoneAor,
     #[sea_orm(has_many = "super::signal_group_aor::Entity")]
     SignalGroupAor,
+}
+
+impl Related<super::datasource::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Datasource.def()
+    }
 }
 
 impl Related<super::login::Entity> for Entity {

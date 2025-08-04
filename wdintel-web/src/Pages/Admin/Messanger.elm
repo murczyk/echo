@@ -63,6 +63,11 @@ type alias Model =
     , deleteConfirmDialog : Maybe Int
     , deleteLoading : Bool
     , messengerTypeSelect : Le.Block.Select.SelectTypeSingle String
+    , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
+    , aorSelect : Le.Block.Select.SelectTypeSingle Int
+    , editForm : Maybe EditForm
+    , showEditSidebar : Bool
+    , editLoading : Bool
     }
 
 
@@ -78,6 +83,15 @@ type alias LinkForm =
     , phoneNumber : String
     , name : String
     , description : String
+    , aorId : Maybe Int
+    }
+
+
+type alias EditForm =
+    { id : Int
+    , displayName : String
+    , description : String
+    , aorId : Maybe Int
     }
 
 
@@ -87,7 +101,7 @@ init () =
       , sidebarOpen = False
       , formErrors = Dict.empty
       , tableState = Table.initialSort "Створено"
-      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" }
+      , linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing }
       , deleteConfirmDialog = Nothing
       , deleteLoading = False
       , messengerTypeSelect =
@@ -95,8 +109,20 @@ init () =
             , items = messengerTypeMenuItems
             , selected = Just "signal"
             }
+      , aorList = RD.NotAsked
+      , aorSelect =
+            { state = Select.initState (Select.selectIdentifier "aor-select")
+            , items = []
+            , selected = Nothing
+            }
+      , editForm = Nothing
+      , showEditSidebar = False
+      , editLoading = False
       }
-    , E.sendCmd (Api.messenger_list_accounts GotAccounts)
+    , E.batch
+        [ E.sendCmd (Api.messenger_list_accounts GotAccounts)
+        , E.sendCmd (Api.aor_list GotAorList { sortBy = Nothing })
+        ]
     )
 
 
@@ -156,17 +182,19 @@ getStatusColorClass account =
 
 
 -- Helper function to normalize display name to system service name
+
+
 normalizeToSystemName : String -> String
 normalizeToSystemName displayName =
     let
         -- Convert to lowercase and replace spaces with hyphens
-        step1 = 
+        step1 =
             displayName
                 |> String.toLower
                 |> String.replace " " "-"
                 |> String.replace "  " "-"
                 |> String.replace "   " "-"
-        
+
         -- Replace Ukrainian characters with Latin equivalents
         step2 =
             step1
@@ -203,56 +231,233 @@ normalizeToSystemName displayName =
                 |> String.replace "ь" ""
                 |> String.replace "ю" "yu"
                 |> String.replace "я" "ya"
-        
+
         -- Filter only allowed characters
         step3 =
             step2
                 |> String.filter (\c -> Char.isAlphaNum c || c == '-' || c == '_')
-        
+
         -- Remove multiple consecutive hyphens
         step4 =
             step3
                 |> String.replace "--" "-"
                 |> String.replace "---" "-"
                 |> String.replace "----" "-"
-        
+
         -- Remove leading/trailing hyphens
         step5 =
             if String.startsWith "-" step4 then
                 String.dropLeft 1 step4
+
             else
                 step4
-        
+
         step6 =
             if String.endsWith "-" step5 then
                 String.dropRight 1 step5
+
             else
                 step5
-        
+
         -- Limit length and ensure minimum length
         final =
             if String.length step6 < 4 then
                 if String.length step6 == 0 then
                     "account"
+
                 else
                     step6 ++ "-" ++ String.fromInt (modBy 1000 (String.length step6 + 1))
+
             else if String.length step6 > 50 then
                 String.left 50 step6
+
             else
                 step6
     in
     final
 
 
+
 -- Helper function to validate display name
+
+
 validateDisplayName : String -> Result String String
 validateDisplayName name =
     if String.length name < 2 then
         Err "Назва акаунту має бути мінімум 2 символи"
+
     else if String.length name > 50 then
         Err "Назва акаунту має бути максимум 50 символів"
+
     else
         Ok name
+
+
+
+-- Helper function to validate AOR ID
+
+
+validateAorId : Maybe Int -> Result String Int
+validateAorId maybeAorId =
+    case maybeAorId of
+        Just aorId ->
+            Ok aorId
+
+        Nothing ->
+            Err "Потрібно вибрати смугу відповідальності"
+
+
+-- Helper function to validate edit form
+
+
+validateEditForm : EditForm -> Result (Dict String String) EditForm
+validateEditForm editForm =
+    let
+        errors = Dict.empty
+            |> validateDisplayNameField editForm.displayName
+            |> validateAorIdField editForm.aorId
+    in
+    if Dict.isEmpty errors then
+        Ok editForm
+    else
+        Err errors
+
+
+validateDisplayNameField : String -> Dict String String -> Dict String String
+validateDisplayNameField name errors =
+    case validateDisplayName name of
+        Ok _ -> errors
+        Err error -> Dict.insert "displayName" error errors
+
+
+validateAorIdField : Maybe Int -> Dict String String -> Dict String String
+validateAorIdField maybeAorId errors =
+    case validateAorId maybeAorId of
+        Ok _ -> errors
+        Err error -> Dict.insert "aorId" error errors
+
+
+-- Helper function to find account by ID
+
+
+findAccountById : Int -> List B.EchoAccountF1 -> Maybe B.EchoAccountF1
+findAccountById accountId accounts =
+    List.filter (\account -> account.id == accountId) accounts |> List.head
+
+
+-- Helper function to build edit request
+
+
+buildEditRequest : EditForm -> B.EchoAccountF1 -> { accountId : Int, aorId : Maybe Int, isActive : Bool, displayName : String, description : Maybe String }
+buildEditRequest editForm account =
+    let
+        currentIsActive =
+            account.status == "active"
+    in
+    { accountId = editForm.id
+    , aorId = editForm.aorId
+    , isActive = currentIsActive
+    , displayName = editForm.displayName
+    , description =
+        if String.isEmpty editForm.description then
+            Nothing
+        else
+            Just editForm.description
+    }
+
+
+-- Helper function to submit edit form
+
+
+submitEditForm : Model -> EditForm -> ( Model, Effect Msg )
+submitEditForm model editForm =
+    case model.accounts of
+        RD.Success accounts ->
+            case findAccountById editForm.id accounts of
+                Just account ->
+                    let
+                        request = buildEditRequest editForm account
+                    in
+                    ( { model | editLoading = True }
+                    , E.sendCmd (Api.messenger_edit_account (\result -> EditAccountResponse result editForm.id) request)
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        _ ->
+            ( model, E.none )
+
+
+-- Helper function to normalize description
+
+
+normalizeDescription : String -> Maybe String
+normalizeDescription description =
+    if String.isEmpty description then
+        Nothing
+    else
+        Just description
+
+
+-- Helper function to find AOR by ID
+
+
+findAorById : Maybe Int -> RemoteData ApiError (List B.AreaOfResponsibility) -> Maybe B.AreaOfResponsibility
+findAorById maybeAorId aorList =
+    case maybeAorId of
+        Just aorId ->
+            case aorList of
+                RD.Success aors ->
+                    List.filter (\aor -> aor.id == aorId) aors |> List.head
+                _ ->
+                    Nothing
+        Nothing ->
+            Nothing
+
+
+-- Helper function to update account in list
+
+
+updateAccountInList : Int -> EditForm -> RemoteData ApiError (List B.AreaOfResponsibility) -> B.EchoAccountF1 -> B.EchoAccountF1
+updateAccountInList accountId editForm aorList account =
+    if account.id == accountId then
+        { account
+            | displayName = editForm.displayName
+            , description = normalizeDescription editForm.description
+            , areaOfResponsibility = findAorById editForm.aorId aorList
+        }
+    else
+        account
+
+
+-- Helper function to update accounts list
+
+
+updateAccountsList : Int -> EditForm -> Model -> RemoteData ApiError (List B.EchoAccountF1)
+updateAccountsList accountId editForm model =
+    case model.accounts of
+        RD.Success accounts ->
+            let
+                updatedAccounts = List.map (updateAccountInList accountId editForm model.aorList) accounts
+            in
+            RD.Success updatedAccounts
+        _ ->
+            model.accounts
+
+
+-- Helper function to clear edit form
+
+
+clearEditForm : Model -> Model
+clearEditForm model =
+    { model
+        | showEditSidebar = False
+        , editForm = Nothing
+        , editLoading = False
+        , formErrors = Dict.empty
+    }
+
 
 
 -- Helper function to get messenger type label
@@ -286,14 +491,20 @@ type Msg
     = NoOp
     | LoadAccounts
     | GotAccounts (Result ApiError B.AccountsRsp)
+    | GotAorList (Result ApiError (List B.AreaOfResponsibility))
     | OpenLinkSidebar
     | CloseLinkSidebar
+    | ShowEditSidebar Int
+    | CloseEditSidebar
     | SetTableState Table.State
     | SetLinkMessengerType String
     | SetLinkPhoneNumber String
     | SetLinkName String
     | SetLinkDescription String
+    | UpdateEditDisplayName String
+    | UpdateEditDescription String
     | SubmitLinkForm
+    | SubmitEditForm
     | GotLinkResult (Result ApiError B.LinkAccountRsp)
     | GotQrCode (Result ApiError B.QrCodeRsp)
     | CheckIsLinked
@@ -307,7 +518,10 @@ type Msg
     | GotDeleteResult (Result ApiError ()) Int
     | ToggleAccountStatus Int
     | GotToggleStatusResult (Result ApiError ()) Int
+    | EditAccountResponse (Result ApiError ()) Int
+    | EditAorSelectMsg (Select.Msg Int)
     | MessengerTypeSelectMsg (Select.Msg String)
+    | AorSelectMsg (Select.Msg Int)
     | RefreshQrCode
 
 
@@ -334,13 +548,36 @@ update msg model =
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження акаунтів месенджерів" error
             )
 
+        GotAorList (Ok aorList) ->
+            let
+                aorItems =
+                    List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name }) aorList
+
+                currentAorSelect =
+                    model.aorSelect
+
+                updatedAorSelect =
+                    { currentAorSelect | items = aorItems }
+            in
+            ( { model
+                | aorList = RD.Success aorList
+                , aorSelect = updatedAorSelect
+              }
+            , E.none
+            )
+
+        GotAorList (Err error) ->
+            ( { model | aorList = RD.Failure error }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" error
+            )
+
         OpenLinkSidebar ->
             ( { model | sidebarOpen = True }
             , E.none
             )
 
         CloseLinkSidebar ->
-            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" } }
+            ( { model | sidebarOpen = False, linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing } }
             , E.none
             )
 
@@ -384,7 +621,7 @@ update msg model =
                         updatedForm =
                             { linkForm | name = value }
                     in
-                    ( { model 
+                    ( { model
                         | linkFlow = LinkFormState updatedForm
                         , formErrors = Dict.remove "displayName" model.formErrors
                       }
@@ -408,27 +645,40 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-
-
         SubmitLinkForm ->
             case model.linkFlow of
                 LinkFormState linkForm ->
                     case validateDisplayName linkForm.name of
                         Ok _ ->
-                            let
-                                systemServiceName = normalizeToSystemName linkForm.name
-                                request =
-                                    { messenger = linkForm.messengerType
-                                    , phone = linkForm.phoneNumber
-                                    , displayName = linkForm.name
-                                    , systemServiceName = systemServiceName
-                                    , description = if String.isEmpty linkForm.description then Nothing else Just linkForm.description
-                                    }
-                            in
-                            ( model
-                            , E.sendCmd (Api.messenger_link_account GotLinkResult request)
-                            )
-                        
+                            case validateAorId linkForm.aorId of
+                                Ok validatedAorId ->
+                                    let
+                                        systemServiceName =
+                                            normalizeToSystemName linkForm.name
+
+                                        request =
+                                            { messenger = linkForm.messengerType
+                                            , phone = linkForm.phoneNumber
+                                            , displayName = linkForm.name
+                                            , systemServiceName = systemServiceName
+                                            , description =
+                                                if String.isEmpty linkForm.description then
+                                                    Nothing
+
+                                                else
+                                                    Just linkForm.description
+                                            , aorId = validatedAorId
+                                            }
+                                    in
+                                    ( model
+                                    , E.sendCmd (Api.messenger_link_account GotLinkResult request)
+                                    )
+
+                                Err error ->
+                                    ( { model | formErrors = Dict.insert "aorId" error model.formErrors }
+                                    , E.none
+                                    )
+
                         Err error ->
                             ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
                             , E.none
@@ -459,7 +709,7 @@ update msg model =
             )
 
         GotLinkResult (Err error) ->
-            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "" } }
+            ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing } }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
@@ -616,7 +866,15 @@ update msg model =
                                     account.status /= "active"
                             in
                             ( model
-                            , E.sendCmd (Api.messenger_edit_account (\result -> GotToggleStatusResult result accountId) { accountId = accountId, isActive = newIsActive })
+                            , E.sendCmd
+                                (Api.messenger_edit_account (\result -> GotToggleStatusResult result accountId)
+                                    { accountId = accountId
+                                    , aorId = Maybe.map .id account.areaOfResponsibility
+                                    , isActive = newIsActive
+                                    , displayName = account.displayName
+                                    , description = account.description
+                                    }
+                                )
                             )
 
                         Nothing ->
@@ -693,6 +951,37 @@ update msg model =
             , E.sendCmd <| Cmd.map MessengerTypeSelectMsg selectCmd
             )
 
+        AorSelectMsg selectMsg ->
+            let
+                ( mAction, newState, selectCmd ) =
+                    Select.update selectMsg model.aorSelect.state
+
+                updatedAorId =
+                    Le.Block.Select.singleUpd mAction model.aorSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.aorSelect.items
+                    , selected = updatedAorId
+                    }
+
+                -- Update the link form with the new AOR ID
+                updatedLinkFlow =
+                    case model.linkFlow of
+                        LinkFormState linkForm ->
+                            LinkFormState { linkForm | aorId = updatedAorId }
+
+                        _ ->
+                            model.linkFlow
+            in
+            ( { model
+                | aorSelect = newSelect
+                , linkFlow = updatedLinkFlow
+                , formErrors = Dict.remove "aorId" model.formErrors
+              }
+            , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
+            )
+
         RefreshQrCode ->
             case model.linkFlow of
                 LinkQrCode qrData ->
@@ -701,6 +990,129 @@ update msg model =
                     )
 
                 _ ->
+                    ( model, E.none )
+
+        ShowEditSidebar accountId ->
+            case model.accounts of
+                RD.Success accounts ->
+                    case List.filter (\account -> account.id == accountId) accounts |> List.head of
+                        Just account ->
+                            let
+                                editForm =
+                                    { id = account.id
+                                    , displayName = account.displayName
+                                    , description = Maybe.withDefault "" account.description
+                                    , aorId = Maybe.map .id account.areaOfResponsibility
+                                    }
+                            in
+                            ( { model
+                                | showEditSidebar = True
+                                , editForm = Just editForm
+                                , formErrors = Dict.empty
+                              }
+                            , E.none
+                            )
+
+                        Nothing ->
+                            ( model, E.none )
+
+                _ ->
+                    ( model, E.none )
+
+        CloseEditSidebar ->
+            ( { model
+                | showEditSidebar = False
+                , editForm = Nothing
+                , formErrors = Dict.empty
+              }
+            , E.none
+            )
+
+        UpdateEditDisplayName value ->
+            case model.editForm of
+                Just editForm ->
+                    ( { model
+                        | editForm = Just { editForm | displayName = value }
+                        , formErrors = Dict.remove "displayName" model.formErrors
+                      }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        UpdateEditDescription value ->
+            case model.editForm of
+                Just editForm ->
+                    ( { model | editForm = Just { editForm | description = value } }
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        SubmitEditForm ->
+            case model.editForm of
+                Just editForm ->
+                    case validateEditForm editForm of
+                        Ok validForm ->
+                            submitEditForm model validForm
+
+                        Err errors ->
+                            ( { model | formErrors = errors }
+                            , E.none
+                            )
+
+                Nothing ->
+                    ( model, E.none )
+
+        EditAccountResponse (Ok _) accountId ->
+            case model.editForm of
+                Just editForm ->
+                    let
+                        updatedAccounts = updateAccountsList accountId editForm model
+                    in
+                    ( { model | accounts = updatedAccounts }
+                        |> clearEditForm
+                    , E.none
+                    )
+
+                Nothing ->
+                    ( clearEditForm model, E.none )
+
+        EditAccountResponse (Err error) accountId ->
+            ( { model | editLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка редагування акаунту" error
+            )
+
+        EditAorSelectMsg selectMsg ->
+            case model.editForm of
+                Just editForm ->
+                    let
+                        ( mAction, newState, selectCmd ) =
+                            Select.update selectMsg model.aorSelect.state
+
+                        updatedAorId =
+                            Le.Block.Select.singleUpd mAction model.aorSelect.selected
+
+                        newSelect =
+                            { state = newState
+                            , items = model.aorSelect.items
+                            , selected = updatedAorId
+                            }
+
+                        updatedEditForm =
+                            { editForm | aorId = updatedAorId }
+                    in
+                    ( { model
+                        | aorSelect = newSelect
+                        , editForm = Just updatedEditForm
+                        , formErrors = Dict.remove "aorId" model.formErrors
+                      }
+                    , E.sendCmd <| Cmd.map EditAorSelectMsg selectCmd
+                    )
+
+                Nothing ->
                     ( model, E.none )
 
 
@@ -732,14 +1144,18 @@ view dark shared user model =
 body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
     let
-        sidebarContent =
+        linkSidebarContent =
             linkAccountSidebarContent dark shared model
+
+        editSidebarContent =
+            editAccountSidebarContent dark shared model
     in
     [ div
-        [ classList [ ( "overflow-hidden", model.sidebarOpen ) ]
+        [ classList [ ( "overflow-hidden", model.sidebarOpen || model.showEditSidebar ) ]
         , class "w-5/6 mx-auto"
         ]
-        [ Sidebar.view model.sidebarOpen CloseLinkSidebar sidebarContent
+        [ Sidebar.view model.sidebarOpen CloseLinkSidebar linkSidebarContent
+        , Sidebar.view model.showEditSidebar CloseEditSidebar editSidebarContent
         , div [] (mainBlock dark model)
         ]
     ]
@@ -771,7 +1187,7 @@ mainBlock isDark model =
             RD.Success accounts ->
                 div [ class "table-responsive-modern" ]
                     [ Table.view
-                        (messengerAccountsTableConfig model.deleteLoading)
+                        (messengerAccountsTableConfig model.deleteLoading model.aorList)
                         model.tableState
                         accounts
                     ]
@@ -852,7 +1268,31 @@ linkAccountSidebarContent isDark shared model =
                             , case Dict.get "displayName" model.formErrors of
                                 Just error ->
                                     p [ class "text-xs text-red-600" ] [ text error ]
-                                
+
+                                Nothing ->
+                                    text ""
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуга відповідальності" ]
+                            , Html.map AorSelectMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        (Maybe.andThen
+                                            (\aorId ->
+                                                List.filter (\aor -> aor.id == aorId) (RD.withDefault [] model.aorList)
+                                                    |> List.head
+                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                            )
+                                            linkForm.aorId
+                                        )
+                                        model.aorSelect.state
+                                        model.aorSelect.items
+                                        "Оберіть смугу відповідальності"
+                                        (Le.Block.Select.defaultOptions isDark)
+                            , case Dict.get "aorId" model.formErrors of
+                                Just error ->
+                                    p [ class "text-xs text-red-600" ] [ text error ]
+
                                 Nothing ->
                                     text ""
                             ]
@@ -867,7 +1307,6 @@ linkAccountSidebarContent isDark shared model =
                                 ]
                                 []
                             ]
-
                         ]
                     ]
                 , div [ class "p-6 border-t border-border" ]
@@ -973,8 +1412,90 @@ linkAccountSidebarContent isDark shared model =
             ]
 
 
-messengerAccountsTableConfig : Bool -> Table.Config B.EchoAccountF1 Msg
-messengerAccountsTableConfig isLoading =
+editAccountSidebarContent : Bool -> Shared.Model -> Model -> List (Html Msg)
+editAccountSidebarContent isDark shared model =
+    case model.editForm of
+        Just editForm ->
+            [ div [ class "flex flex-col h-full" ]
+                [ div [ class "p-6 border-b border-border" ]
+                    [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати акаунт" ]
+                    , p [ class "text-sm text-muted-foreground" ] [ text "Змініть дані акаунту месенджера" ]
+                    ]
+                , div [ class "flex-1 overflow-y-auto p-6" ]
+                    [ div [ class "space-y-6" ]
+                        [ div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва акаунту" ]
+                            , input
+                                [ type_ "text"
+                                , class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                                , placeholder "Введіть назву акаунту"
+                                , value editForm.displayName
+                                , onInput UpdateEditDisplayName
+                                ]
+                                []
+                            , case Dict.get "displayName" model.formErrors of
+                                Just error ->
+                                    p [ class "text-xs text-red-600" ] [ text error ]
+
+                                Nothing ->
+                                    text ""
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Опис" ]
+                            , textarea
+                                [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                                , rows 3
+                                , placeholder "Введіть опис (необов'язково)"
+                                , value editForm.description
+                                , onInput UpdateEditDescription
+                                ]
+                                []
+                            ]
+                        , div [ class "space-y-2" ]
+                            [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуга відповідальності" ]
+                            , Html.map EditAorSelectMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        (Maybe.andThen
+                                            (\aorId ->
+                                                List.filter (\aor -> aor.id == aorId) (RD.withDefault [] model.aorList)
+                                                    |> List.head
+                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                            )
+                                            editForm.aorId
+                                        )
+                                        model.aorSelect.state
+                                        model.aorSelect.items
+                                        "Оберіть смугу відповідальності"
+                                        (Le.Block.Select.defaultOptions isDark)
+                            , case Dict.get "aorId" model.formErrors of
+                                Just error ->
+                                    p [ class "text-xs text-red-600" ] [ text error ]
+
+                                Nothing ->
+                                    text ""
+                            ]
+                        ]
+                    ]
+                , div [ class "p-6 border-t border-border" ]
+                    [ div [ class "flex gap-3" ]
+                        [ Button.new { label = "Скасувати", onClick = CloseEditSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
+                        , Button.new { label = "Зберегти", onClick = SubmitEditForm }
+                            |> Button.withDisabled model.editLoading
+                            |> Button.view
+                        ]
+                    ]
+                ]
+            ]
+
+        Nothing ->
+            []
+
+
+messengerAccountsTableConfig : Bool -> RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.EchoAccountF1 Msg
+messengerAccountsTableConfig isLoading aorList =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1035,10 +1556,51 @@ messengerAccountsTableConfig isLoading =
         { toId = \account -> String.fromInt account.id
         , toMsg = SetTableState
         , columns =
-            [ Table.stringColumn "Назва акаунту" .displayName |> Table.withColumnWidth "18%"
-             ,Table.stringColumn "Системний сервіс" .systemServiceName |> Table.withColumnWidth "15%"
-            , Table.stringColumn "Номер" .phoneNumber |> Table.withColumnWidth "15%"
-            , Table.stringColumn "Месенджер" .messenger |> Table.withColumnWidth "10%"
+            [ Table.veryCustomColumn
+                { name = "Назва акаунту"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ text account.displayName ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Системний сервіс"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ text (Maybe.withDefault "—" account.systemServiceName) ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.veryCustomColumn
+                { name = "Номер"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ text account.phoneNumber ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.veryCustomColumn
+                { name = "Месенджер"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails [ class "col-narrow" ]
+                            [ case account.messenger of
+                                "signal" ->
+                                    i [ class "bi bi-signal text-blue-500", title "Signal" ] []
+
+                                "whatsapp" ->
+                                    i [ class "bi bi-whatsapp text-green-500", title "WhatsApp" ] []
+
+                                _ ->
+                                    i [ class "bi bi-chat-fill text-gray-500", title account.messenger ] []
+                            ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Опис"
                 , viewData =
@@ -1048,15 +1610,25 @@ messengerAccountsTableConfig isLoading =
                                 Just desc ->
                                     if String.length desc > 50 then
                                         span [ title desc ] [ text (String.left 50 desc ++ "...") ]
+
                                     else
                                         span [] [ text desc ]
-                                
+
                                 Nothing ->
                                     span [ class "text-muted-foreground" ] [ text "—" ]
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "20%"
+                |> Table.withColumnWidth "17%"
+            , Table.veryCustomColumn
+                { name = "Смуга відповідальності"
+                , viewData =
+                    \account ->
+                        TableColumn.HtmlDetails []
+                            [ text (Maybe.map .name account.areaOfResponsibility |> Maybe.withDefault "—") ]
+                , sorter = Table.unsortable
+                }
+                |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
                 { name = "Статус"
                 , viewData =
@@ -1066,7 +1638,7 @@ messengerAccountsTableConfig isLoading =
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = ""
                 , viewData =
@@ -1077,7 +1649,14 @@ messengerAccountsTableConfig isLoading =
 
                               else if account.isLinked then
                                 div [ class "flex gap-1" ]
-                                    [ if account.status == "active" then
+                                    [ button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
+                                        , title "Редагувати"
+                                        , onClick <| ShowEditSidebar account.id
+                                        ]
+                                        [ i [ class "bi bi-pencil" ] [] ]
+                                    , if account.status == "active" then
                                         button
                                             [ class "table-action-btn"
                                             , type_ "button"
@@ -1108,6 +1687,13 @@ messengerAccountsTableConfig isLoading =
                                     [ button
                                         [ class "table-action-btn"
                                         , type_ "button"
+                                        , title "Редагувати"
+                                        , onClick <| ShowEditSidebar account.id
+                                        ]
+                                        [ i [ class "bi bi-pencil" ] [] ]
+                                    , button
+                                        [ class "table-action-btn"
+                                        , type_ "button"
                                         , title "Підключити"
                                         , onClick <| ConnectExistingAccount account.id
                                         ]
@@ -1123,7 +1709,7 @@ messengerAccountsTableConfig isLoading =
                             ]
                 , sorter = Table.unsortable
                 }
-                |> Table.withColumnWidth "8%"
+                |> Table.withColumnWidth "10%"
             ]
         , customizations = customizations
         }
