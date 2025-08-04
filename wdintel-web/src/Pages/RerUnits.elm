@@ -251,12 +251,7 @@ update msg model =
         AddUnitDone (Ok _) ->
             ( { model
                 | inpCompany = ""
-                , inpBattalion = ""
-                , inpRegiment = ""
-                , inpDivision = ""
-                , inpArmy = ""
                 , inpComment = ""
-                , inpActive = True
               }
             , loadUnits
             )

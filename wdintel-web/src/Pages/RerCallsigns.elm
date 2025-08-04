@@ -715,7 +715,6 @@ update req shared msg model =
             ( { model
                 | callsigns = newCallsign :: model.callsigns
                 , addState = EL.fromList [ initAddState Nothing ]
-                , inpUnit = Nothing
                 , loading = False
               }
             , E.none
