@@ -78,6 +78,7 @@ pub enum SigintNetworkFreq {
     ActiveFrom,
     ActiveTo,
     ModulationId,
+    Kind,
 }
 
 #[derive(Iden)]
@@ -226,8 +227,20 @@ pub async fn load_freqs(
             Alias::new("active_to"),
         )
         .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ModulationId,
+            )),
+            Alias::new("modulation_id"),
+        )
+        .expr_as(
             Expr::col((Modulation::Table, Modulation::Name)),
             Alias::new("modulation_name"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Kind))
+                .cast_as(Alias::new("text")),
+            Alias::new("kind"),
         )
         .expr_as(
             Expr::col((Alias::new("agg"), Alias::new("message_count"))),
@@ -317,6 +330,7 @@ pub async fn load_freqs(
                     .try_get("", "network_freq_id")
                     .unwrap_or_default(),
                 freq: row.try_get("", "freq").unwrap_or_default(),
+                modulation_id: row.try_get("", "modulation_id").ok(),
                 modulation: row.try_get("", "modulation_name").ok(),
                 message_count: row.try_get("", "message_count").unwrap_or(0),
                 callsigns: row_callsigns,
@@ -329,6 +343,7 @@ pub async fn load_freqs(
                 is_active: active_to.is_none(),
                 active_from,
                 active_to,
+                kind: row.try_get("", "kind").ok(),
             })
         })
         .collect();
