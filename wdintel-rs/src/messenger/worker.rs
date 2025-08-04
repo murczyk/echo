@@ -303,6 +303,8 @@ async fn sync_inbox(
             .context(h!())?;
     txn.commit().await.context(h!())?;
 
+    sync_senders(db, &inbox_messages).await.context(h!())?;
+
     for (i, m) in inbox_messages.iter().enumerate() {
         {
             debug!(
@@ -448,4 +450,40 @@ where
         .await
         .context(h!())?
         .context(h!())
+}
+
+async fn sync_senders(
+    db: &DatabaseConnection,
+    inbox_messages: &Vec<MessageF1>,
+) -> anyhow::Result<()> {
+    let mut senders = inbox_messages
+        .iter()
+        .flat_map(|m| m.sender.clone())
+        .map(|s| (s.uuid.clone(), s))
+        .collect::<BTreeMap<_, _>>();
+    let sender_ids =
+        senders.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+    let existing_senders = signal_profile::Entity::find()
+        .filter(signal_profile::Column::Uuid.is_in(sender_ids))
+        .select_only()
+        .column(signal_profile::Column::Uuid)
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .context(h!())?;
+    for s in existing_senders {
+        senders.remove(&s);
+    }
+    for (uuid, s) in senders {
+        signal_profile::ActiveModel {
+            uuid: Set(uuid),
+            given_name: Set(s.name.clone()),
+            family_name: NotSet,
+            created_at: NotSet,
+        }
+        .insert(db)
+        .await
+        .context(h!())?;
+    }
+    Ok(())
 }
