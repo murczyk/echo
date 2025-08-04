@@ -206,6 +206,7 @@ type alias Model =
     , freqsTableState : Table.State
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
+    , modulations : RemoteData ApiError (List B.ModulationRec)
     }
 
 
@@ -267,13 +268,17 @@ init route shared () =
       , freqsTableState = Table.initialSort "Частота"
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
+      , modulations = NotAsked
       }
     , case String.toInt route.params.id of
         Just id ->
-            E.getSingleNetwork NetworkReturnedByApi id
+            E.batch
+                [ E.getSingleNetwork NetworkReturnedByApi id
+                , E.getModulations ModulationsReturnedByApi
+                ]
 
         Nothing ->
-            E.none
+            E.getModulations ModulationsReturnedByApi
     )
 
 
@@ -345,6 +350,7 @@ type Msg
     | SaveFreqEditSidebar
     | OpenFreqDetailPopup String
     | CloseFreqDetailPopup
+    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -891,8 +897,8 @@ update shared msg model =
                                     ( f.freq
                                     , { networkId = network.id
                                       , freq = f.freq
-                                      , kind = "VHF" -- Default value since NetworkFreqsRes doesn't have kind
-                                      , modulationId = Nothing -- NetworkFreqsRes doesn't have modulationId
+                                      , kind = Maybe.withDefault "VHF" f.kind
+                                      , modulationId = f.modulationId
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
@@ -1159,6 +1165,14 @@ update shared msg model =
         CloseFreqDetailPopup ->
             ( { model | freqDetailPopup = Nothing }, E.none )
 
+        ModulationsReturnedByApi (Err e) ->
+            ( { model | modulations = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            )
+
+        ModulationsReturnedByApi (Ok res) ->
+            ( { model | modulations = Success res }, E.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -1399,8 +1413,8 @@ freqsTableConfig shared model user =
                                                         OpenFreqEditSidebar freq.freq
                                                             { networkId = network.id
                                                             , freq = freq.freq
-                                                            , kind = "VHF"
-                                                            , modulationId = Nothing
+                                                            , kind = Maybe.withDefault "VHF" freq.kind
+                                                            , modulationId = freq.modulationId
                                                             , activeFrom = freq.activeFrom
                                                             , activeTo = freq.activeTo
                                                             }
