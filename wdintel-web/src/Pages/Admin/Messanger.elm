@@ -150,7 +150,10 @@ getStatusText account =
     else
         case account.status of
             "ready" ->
-                "Очікує підключення"
+                if account.isImported then
+                    "Імпортовано"
+                else
+                    "Очікує підключення"
 
             _ ->
                 "Не підключено"
@@ -177,7 +180,14 @@ getStatusColorClass account =
                 "text-gray-600"
 
     else
-        "text-orange-600"
+        case account.status of
+            "ready" ->
+                if account.isImported then
+                    "text-purple-600"
+                else
+                    "text-orange-600"
+            _ ->
+                "text-orange-600"
 
 
 
