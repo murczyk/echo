@@ -39,7 +39,6 @@ pub use super::freq_location::Entity as FreqLocation;
 pub use super::group_admin_data::Entity as GroupAdminData;
 pub use super::log_users_report_generation::Entity as LogUsersReportGeneration;
 pub use super::login::Entity as Login;
-pub use super::messenger_account::Entity as MessengerAccount;
 pub use super::modulation::Entity as Modulation;
 pub use super::network_callsign::Entity as NetworkCallsign;
 pub use super::nominatimres::Entity as Nominatimres;

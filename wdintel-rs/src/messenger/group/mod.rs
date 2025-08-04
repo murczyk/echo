@@ -21,30 +21,25 @@ where
     Ok(new_group)
 }
 
-#[tokio::main]
-pub async fn oneoff_fix_group_datasources(mode: Mode) -> Result<(), AppError> {
-    info!("starting oneoff_fix_group_datasources...");
-    let config = crate::config::read_config(mode).context(h!())?;
-    let db = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
+pub async fn fix_group_areas_of_responsibility(
+    db: &DatabaseConnection,
+) -> Result<(), AppError> {
     let groups = signal_group::Entity::find()
         .join(
             JoinType::LeftJoin,
             signal_group::Relation::SignalGroupAor.def(),
         )
         .filter(signal_group_aor::Column::Id.is_null())
-        .all(&db)
+        .all(db)
         .await
         .context(h!())?;
     for g in groups {
-        if let Err(e) = insert_group_aor(&db, &g).await {
+        if let Err(e) = insert_group_aor(db, &g).await {
             error!("failed to insert group's area of responsibility: {e:?}")
         } else {
             info!("added  ")
         }
     }
-    info!("done oneoff_fix_group_datasources");
     Ok(())
 }
 

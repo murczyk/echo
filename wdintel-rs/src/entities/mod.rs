@@ -41,7 +41,6 @@ pub mod freq_location;
 pub mod group_admin_data;
 pub mod log_users_report_generation;
 pub mod login;
-pub mod messenger_account;
 pub mod modulation;
 pub mod network_callsign;
 pub mod nominatimres;

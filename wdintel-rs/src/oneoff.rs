@@ -1,5 +1,8 @@
 use crate::error::AppError;
+use crate::h;
 use crate::types::Mode;
+use anyhow::Context;
+use log::info;
 use milgeo_rs::coordinates::usk2000::usk2000_to_wgs84;
 use milgeo_rs::coordinates::Usk2000;
 
@@ -38,5 +41,24 @@ pub fn oneoff_batch_usk_to_wgs(
     }
     wtr.flush()?;
     println!("> written to {}", output);
+    Ok(())
+}
+
+#[tokio::main]
+pub async fn oneoff_fix_areas_of_responsibility(
+    mode: Mode,
+) -> Result<(), AppError> {
+    info!("starting oneoff_fix_areas_of_responsibility...");
+    let config = crate::config::read_config(mode).context(h!())?;
+    let db = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    crate::messenger::group::fix_group_areas_of_responsibility(&db)
+        .await
+        .context(h!())?;
+    crate::sigint::network::fix_network_areas_of_responsibility(&db)
+        .await
+        .context(h!())?;
+    info!("done oneoff_fix_areas_of_responsibility");
     Ok(())
 }

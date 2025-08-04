@@ -92,6 +92,28 @@ pub async fn delete_aor(
     aor_model.update(&env.dbx).await.context(h!())?;
     Ok(Json(()))
 }
+pub async fn load_default_aor<'a, 'async_trait, C>(
+    txn: &'a C,
+) -> anyhow::Result<area_of_responsibility::Model>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let all_areas = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .context(h!())?;
+    let mut max_area_size = -1.0;
+    let mut result = None;
+    for area in all_areas {
+        let area_span = (area.left_bound - area.right_bound).abs();
+        if max_area_size < area_span {
+            max_area_size = area_span;
+            result = Some(area);
+        }
+    }
+    result.context(h!())
+}
 
 /// Get aor id from db by aor name
 pub async fn get_aor_id<'a, 'async_trait, C>(

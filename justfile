@@ -245,7 +245,7 @@ copy-db-to-target:
     ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
     scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/tmp/
     rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
-    ssh -t {{ server }} '(cd /tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
+    ssh -t {{ target }} '(cd /tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
     ssh -t {{ target }} "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'"
     ssh -t {{ target }} "sudo -u postgres psql -c 'create database {{ pgdb }}'"
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /tmp/wd-{{ dt1 }}.pgrestore"
@@ -799,6 +799,8 @@ unlink-mothership:
 
 export-datasource-to-target:
     ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }} --till-epoch-ms {{ till_ts }} '
-    scp {{ server }}:/tmp/ds_export_{{ dt1 }}.json {{ target }}:/tmp/ds_import_{{ dt1 }}.json
+    ssh -t {{ server }} 'gzip -c /tmp/ds_export_{{ dt1 }}.json > /tmp/ds_export_{{ dt1 }}.json.gz'
+    scp {{ server }}:/tmp/ds_export_{{ dt1 }}.json.gz {{ target }}:/tmp/ds_export_{{ dt1 }}.json.gz
+    ssh -t {{ target }} '(cd /tmp && gunzip ds_export_{{ dt1 }}.json.gz)'
     ssh {{ target }} -t 'sudo mkdir -p /var/log/echo_ds_export/ && sudo touch /var/log/echo_ds_export/{{ server }}-{{ dt1 }}.log && sudo chmod 777 /var/log/echo_ds_export/{{ server }}-{{ dt1 }}.log'
     ssh {{ target }} 'sudo nohup {{ echo_bin }} --mode=live oneoff-import-data-source --source-path /tmp/ds_import_{{ dt1 }}.json >> /var/log/echo_ds_export/{{ server }}-{{ dt1 }}.log 2>&1 &'

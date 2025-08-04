@@ -36,8 +36,6 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     EchoClient,
-    #[sea_orm(has_many = "super::messenger_account::Entity")]
-    MessengerAccount,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -55,12 +53,6 @@ impl Related<super::echo_account::Entity> for Entity {
 impl Related<super::echo_client::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoClient.def()
-    }
-}
-
-impl Related<super::messenger_account::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::MessengerAccount.def()
     }
 }
 

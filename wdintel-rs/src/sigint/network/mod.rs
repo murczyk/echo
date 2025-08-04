@@ -16,7 +16,7 @@ use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use self::types::*;
-use crate::entities::sigint_network::Model;
+use crate::sigint;
 use actix_web::post;
 use actix_web::web::Json;
 use log::*;
@@ -249,7 +249,7 @@ pub async fn restore_network(
 
 async fn bl_restore_network(
     txn: &DatabaseTransaction,
-    network: Model,
+    network: sigint_network::Model,
 ) -> Result<sigint_network::Model, AppError> {
     if let Some(active_to) = network.active_to.clone() {
         sigint_network_activity_history::ActiveModel {
@@ -3275,4 +3275,54 @@ fn compute_network_activity_range(
     };
 
     (network_active_from, network_active_to)
+}
+
+pub async fn fix_network_areas_of_responsibility(
+    db: &DatabaseConnection,
+) -> Result<(), AppError> {
+    let networks = sigint_network::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            sigint_network::Relation::SigintNetworkAor.def(),
+        )
+        .filter(signal_group_aor::Column::Id.is_null())
+        .all(db)
+        .await
+        .context(h!())?;
+    for n in networks {
+        if let Err(e) = insert_network_aor(db, &n, None).await {
+            error!("failed to insert group's area of responsibility: {e:?}")
+        } else {
+            info!("added default aor to network {}", n.id)
+        }
+    }
+    Ok(())
+}
+
+async fn insert_network_aor<'a, 'async_trait, C>(
+    dbx: &'a C,
+    network: &sigint_network::Model,
+    aor_id: Option<i64>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let aor = match aor_id {
+        Some(id) => area_of_responsibility::Entity::find_by_id(id)
+            .one(dbx)
+            .await
+            .context(h!())?
+            .context(h!())?,
+        None => sigint::area_of_responsibility::load_default_aor(dbx)
+            .await
+            .context(h!())?,
+    };
+    let model = sigint_network_aor::ActiveModel {
+        aor_id: Set(aor.id),
+        created_at: NotSet,
+        id: NotSet,
+        network_id: Set(network.id),
+    };
+    model.insert(dbx).await.context(h!())?;
+    Ok(())
 }
