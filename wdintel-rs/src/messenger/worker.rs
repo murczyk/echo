@@ -353,7 +353,7 @@ async fn list_clients(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<EchoAccountF1>> {
     let txn = dbx.begin().await.context(h!())?;
-    let live_clients = list_accounts(&txn).await.context(h!())?;
+    let live_clients = list_accounts(None, &txn).await.context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(live_clients)
 }

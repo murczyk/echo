@@ -23,7 +23,7 @@ pub async fn load_echo_account<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let account = list_accounts(txn)
+    let account = list_accounts(Some(id), txn)
         .await
         .context(h!())?
         .into_iter()
@@ -40,7 +40,7 @@ pub async fn edit_account(
     display_name: String,
     description: Option<String>,
     txn: &DatabaseTransaction,
-) -> Result<(), AppError> {
+) -> Result<EchoAccountF1, AppError> {
     let account = load_echo_account(id, txn).await.context(h!())?;
     let status =
         AccountStatus::try_from_value(&account.status).context(h!())?;
@@ -48,7 +48,7 @@ pub async fn edit_account(
     info!("account={id}, set_active={set_active}");
     if set_active == is_active {
         warn!("nothing to do, skipping");
-        return Ok(());
+        return Ok(account);
     }
     let new_status = if set_active {
         AccountStatus::Active
@@ -65,8 +65,14 @@ pub async fn edit_account(
     account.display_name = Set(display_name);
     account.description = Set(description);
     account.status = Set(new_status);
-    account.update(txn).await.context(h!())?;
-    Ok(())
+    let result = account.update(txn).await.context(h!())?;
+    let account = list_accounts(Some(result.id), txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .next()
+        .context(h!())?;
+    Ok(account)
 }
 
 pub async fn deactivate_account(
@@ -126,7 +132,7 @@ pub async fn link_account(
         }
     };
     let unit_name = format!("{src_name}@{display_name}");
-    let accounts = list_accounts(txn).await.context(h!())?;
+    let accounts = list_accounts(None, txn).await.context(h!())?;
     let existing_account = accounts
         .into_iter()
         .filter(|a| {
@@ -230,7 +236,7 @@ pub async fn get_qr_code(
     account_id: i64,
     txn: &DatabaseTransaction,
 ) -> Result<String, AppError> {
-    let account = list_accounts(txn)
+    let account = list_accounts(Some(account_id), txn)
         .await
         .context(h!())?
         .into_iter()
@@ -248,6 +254,7 @@ pub async fn get_qr_code(
 }
 
 pub async fn list_accounts<'a, 'async_trait, C>(
+    m_id: Option<i64>,
     txn: &'a C,
 ) -> Result<Vec<EchoAccountF1>, AppError>
 where
@@ -271,7 +278,11 @@ where
         pub is_client_deleted: Option<bool>,
     }
 
-    let datasource_recs = datasource::Entity::find()
+    let mut q = datasource::Entity::find();
+    if let Some(id) = m_id {
+        q = q.filter(datasource::Column::Id.eq(id));
+    }
+    let datasource_recs = q
         .join(
             JoinType::LeftJoin,
             datasource::Relation::EchoClientLock.def(),

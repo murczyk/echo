@@ -26,7 +26,7 @@ pub async fn list_messengers(
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
-    let accounts = bl::list_accounts(&txn).await.context(h!())?;
+    let accounts = bl::list_accounts(None, &txn).await.context(h!())?;
     txn.commit().await.context(h!())?;
     Ok(Json(AccountsRsp { accounts }))
 }
