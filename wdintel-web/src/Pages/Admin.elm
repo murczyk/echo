@@ -3366,73 +3366,41 @@ groupDatasourcesByType zoneId model =
                 )
                 zoneSources
 
-        -- Group by kind
-        groupedByKind : Dict String (List ( Int, B.Datasource ))
-        groupedByKind =
-            List.foldl
-                (\( sourceId, datasource ) acc ->
-                    Dict.update datasource.kind
-                        (\maybeList ->
-                            case maybeList of
-                                Just list ->
-                                    Just (( sourceId, datasource ) :: list)
-
-                                Nothing ->
-                                    Just [ ( sourceId, datasource ) ]
-                        )
-                        acc
-                )
-                Dict.empty
-                zoneDatasources
-
-        -- Convert to DatasourceType list
+        -- Convert each datasource to its own DatasourceType (no grouping)
         datasourceTypes : List DatasourceType
         datasourceTypes =
-            Dict.toList groupedByKind
-                |> List.indexedMap
-                    (\index ( kind, datasources ) ->
-                        let
-                            -- Get displayName from the first datasource in the group
-                            -- All datasources in a group should have the same displayName
-                            displayName : String
-                            displayName =
-                                List.head datasources
-                                    |> Maybe.map (\( _, ds ) -> ds.displayName)
-                                    |> Maybe.withDefault "Unknown"
+            List.indexedMap
+                (\index ( sourceId, datasource ) ->
+                    let
+                        -- Get icon for datasource type
+                        iconClass : String
+                        iconClass =
+                            case String.toLower datasource.kind of
+                                "signal" ->
+                                    "bi-signal"
 
-                            -- Get icon for datasource type (same as in orphan groups table)
-                            iconClass : String
-                            iconClass =
-                                case String.toLower kind of
-                                    "signal" ->
-                                        "bi-signal"
+                                "whatsapp" ->
+                                    "bi-whatsapp"
 
-                                    "whatsapp" ->
-                                        "bi-whatsapp"
+                                _ ->
+                                    "bi-question-circle"
 
-                                    _ ->
-                                        "bi-question-circle"
-
-                            -- Calculate total groups for this datasource type
-                            totalGroups : Int
-                            totalGroups =
-                                List.foldl
-                                    (\( sourceId, _ ) acc ->
-                                        let
-                                            groups : List B.ZoneDatasourceGroup
-                                            groups =
-                                                Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
-                                        in
-                                        acc + List.length groups
-                                    )
-                                    0
-                                    datasources
-                        in
-                        { id = index + 1
-                        , name = iconClass ++ " " ++ displayName ++ " (" ++ String.fromInt totalGroups ++ " груп)"
-                        , datasources = List.reverse datasources -- Keep original order
-                        }
-                    )
+                        -- Calculate total groups for this datasource
+                        totalGroups : Int
+                        totalGroups =
+                            let
+                                groups : List B.ZoneDatasourceGroup
+                                groups =
+                                    Dict.get ( zoneId, sourceId ) model.zoneSourceGroups |> def []
+                            in
+                            List.length groups
+                    in
+                    { id = sourceId -- Use sourceId as the tab ID instead of index
+                    , name = iconClass ++ " " ++ datasource.displayName ++ " (" ++ String.fromInt totalGroups ++ " груп)"
+                    , datasources = [ ( sourceId, datasource ) ] -- Single datasource per tab
+                    }
+                )
+                zoneDatasources
     in
     datasourceTypes
 
