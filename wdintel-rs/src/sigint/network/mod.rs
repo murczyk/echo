@@ -3285,7 +3285,7 @@ pub async fn fix_network_areas_of_responsibility(
             JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkAor.def(),
         )
-        .filter(signal_group_aor::Column::Id.is_null())
+        .filter(sigint_network_aor::Column::Id.is_null())
         .all(db)
         .await
         .context(h!())?;
