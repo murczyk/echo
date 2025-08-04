@@ -2930,9 +2930,6 @@ renderOrphanGroupsTable model groups =
         updatedPager =
             { pager | totalItems = totalItems }
 
-        paginatedGroups =
-            Pager.getPageData updatedPager groups
-
         tableConfig : Table.Config B.OrphanSignalGroupEntry Msg
         tableConfig =
             Table.customConfig
@@ -2949,7 +2946,7 @@ renderOrphanGroupsTable model groups =
                                     [ text <| formatCreatedAt o
                                     ]
                                 }
-                        , sorter = Table.decreasingBy .createdAt
+                        , sorter = Table.decreasingOrIncreasingBy .createdAt
                         }
                         |> Table.withColumnWidth "10%"
                     , Table.veryCustomColumn
@@ -2964,16 +2961,17 @@ renderOrphanGroupsTable model groups =
                         , sorter = Table.unsortable
                         }
                         |> Table.withColumnWidth "14%"
+                    -- Колонки з двостороннім сортуванням: за замовчуванням спадаюче (найновіші/найбільш активні спочатку)
                     , Table.veryCustomColumn
                         { name = "День"
                         , viewData = renderDayActivityColumn
-                        , sorter = Table.decreasingBy (.groupStats >> .activityLastDay)
+                        , sorter = Table.decreasingOrIncreasingBy (.groupStats >> .activityLastDay)
                         }
                         |> Table.withColumnWidth "6%"
                     , Table.veryCustomColumn
                         { name = "Тиждень"
                         , viewData = renderWeekActivityColumn
-                        , sorter = Table.decreasingBy (.groupStats >> .activityLastWeek)
+                        , sorter = Table.decreasingOrIncreasingBy (.groupStats >> .activityLastWeek)
                         }
                         |> Table.withColumnWidth "6%"
                     , Table.veryCustomColumn
@@ -3328,6 +3326,13 @@ renderOrphanGroupsTable model groups =
                         ]
                 ]
             }
+
+        -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
+        sortedGroups =
+            Table.getSortedData tableConfig model.orphanGroupsTableState groups
+
+        paginatedGroups =
+            Pager.getPageData updatedPager sortedGroups
     in
     div []
         [ Table.view tableConfig model.orphanGroupsTableState paginatedGroups
