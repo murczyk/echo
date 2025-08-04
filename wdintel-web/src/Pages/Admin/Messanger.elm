@@ -307,6 +307,158 @@ validateAorId maybeAorId =
             Err "Потрібно вибрати смугу відповідальності"
 
 
+-- Helper function to validate edit form
+
+
+validateEditForm : EditForm -> Result (Dict String String) EditForm
+validateEditForm editForm =
+    let
+        errors = Dict.empty
+            |> validateDisplayNameField editForm.displayName
+            |> validateAorIdField editForm.aorId
+    in
+    if Dict.isEmpty errors then
+        Ok editForm
+    else
+        Err errors
+
+
+validateDisplayNameField : String -> Dict String String -> Dict String String
+validateDisplayNameField name errors =
+    case validateDisplayName name of
+        Ok _ -> errors
+        Err error -> Dict.insert "displayName" error errors
+
+
+validateAorIdField : Maybe Int -> Dict String String -> Dict String String
+validateAorIdField maybeAorId errors =
+    case validateAorId maybeAorId of
+        Ok _ -> errors
+        Err error -> Dict.insert "aorId" error errors
+
+
+-- Helper function to find account by ID
+
+
+findAccountById : Int -> List B.EchoAccountF1 -> Maybe B.EchoAccountF1
+findAccountById accountId accounts =
+    List.filter (\account -> account.id == accountId) accounts |> List.head
+
+
+-- Helper function to build edit request
+
+
+buildEditRequest : EditForm -> B.EchoAccountF1 -> { accountId : Int, aorId : Maybe Int, isActive : Bool, displayName : String, description : Maybe String }
+buildEditRequest editForm account =
+    let
+        currentIsActive =
+            account.status == "active"
+    in
+    { accountId = editForm.id
+    , aorId = editForm.aorId
+    , isActive = currentIsActive
+    , displayName = editForm.displayName
+    , description =
+        if String.isEmpty editForm.description then
+            Nothing
+        else
+            Just editForm.description
+    }
+
+
+-- Helper function to submit edit form
+
+
+submitEditForm : Model -> EditForm -> ( Model, Effect Msg )
+submitEditForm model editForm =
+    case model.accounts of
+        RD.Success accounts ->
+            case findAccountById editForm.id accounts of
+                Just account ->
+                    let
+                        request = buildEditRequest editForm account
+                    in
+                    ( { model | editLoading = True }
+                    , E.sendCmd (Api.messenger_edit_account (\result -> EditAccountResponse result editForm.id) request)
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        _ ->
+            ( model, E.none )
+
+
+-- Helper function to normalize description
+
+
+normalizeDescription : String -> Maybe String
+normalizeDescription description =
+    if String.isEmpty description then
+        Nothing
+    else
+        Just description
+
+
+-- Helper function to find AOR by ID
+
+
+findAorById : Maybe Int -> RemoteData ApiError (List B.AreaOfResponsibility) -> Maybe B.AreaOfResponsibility
+findAorById maybeAorId aorList =
+    case maybeAorId of
+        Just aorId ->
+            case aorList of
+                RD.Success aors ->
+                    List.filter (\aor -> aor.id == aorId) aors |> List.head
+                _ ->
+                    Nothing
+        Nothing ->
+            Nothing
+
+
+-- Helper function to update account in list
+
+
+updateAccountInList : Int -> EditForm -> RemoteData ApiError (List B.AreaOfResponsibility) -> B.EchoAccountF1 -> B.EchoAccountF1
+updateAccountInList accountId editForm aorList account =
+    if account.id == accountId then
+        { account
+            | displayName = editForm.displayName
+            , description = normalizeDescription editForm.description
+            , areaOfResponsibility = findAorById editForm.aorId aorList
+        }
+    else
+        account
+
+
+-- Helper function to update accounts list
+
+
+updateAccountsList : Int -> EditForm -> Model -> RemoteData ApiError (List B.EchoAccountF1)
+updateAccountsList accountId editForm model =
+    case model.accounts of
+        RD.Success accounts ->
+            let
+                updatedAccounts = List.map (updateAccountInList accountId editForm model.aorList) accounts
+            in
+            RD.Success updatedAccounts
+        _ ->
+            model.accounts
+
+
+-- Helper function to clear edit form
+
+
+clearEditForm : Model -> Model
+clearEditForm model =
+    { model
+        | showEditSidebar = False
+        , editForm = Nothing
+        , editLoading = False
+        , formErrors = Dict.empty
+    }
+
+
 
 -- Helper function to get messenger type label
 
@@ -902,49 +1054,12 @@ update msg model =
         SubmitEditForm ->
             case model.editForm of
                 Just editForm ->
-                    case validateDisplayName editForm.displayName of
-                        Ok _ ->
-                            case validateAorId editForm.aorId of
-                                Ok _ ->
-                                    case model.accounts of
-                                        RD.Success accounts ->
-                                            case List.filter (\account -> account.id == editForm.id) accounts |> List.head of
-                                                Just account ->
-                                                    let
-                                                        -- Keep the current status (active/paused)
-                                                        currentIsActive =
-                                                            account.status == "active"
+                    case validateEditForm editForm of
+                        Ok validForm ->
+                            submitEditForm model validForm
 
-                                                        request =
-                                                            { accountId = editForm.id
-                                                            , aorId = editForm.aorId
-                                                            , isActive = currentIsActive
-                                                            , displayName = editForm.displayName
-                                                            , description =
-                                                                if String.isEmpty editForm.description then
-                                                                    Nothing
-
-                                                                else
-                                                                    Just editForm.description
-                                                            }
-                                                    in
-                                                    ( { model | editLoading = True }
-                                                    , E.sendCmd (Api.messenger_edit_account (\result -> EditAccountResponse result editForm.id) request)
-                                                    )
-
-                                                Nothing ->
-                                                    ( model, E.none )
-
-                                        _ ->
-                                            ( model, E.none )
-
-                                Err error ->
-                                    ( { model | formErrors = Dict.insert "aorId" error model.formErrors }
-                                    , E.none
-                                    )
-
-                        Err error ->
-                            ( { model | formErrors = Dict.insert "displayName" error model.formErrors }
+                        Err errors ->
+                            ( { model | formErrors = errors }
                             , E.none
                             )
 
@@ -952,69 +1067,18 @@ update msg model =
                     ( model, E.none )
 
         EditAccountResponse (Ok _) accountId ->
-            case model.accounts of
-                RD.Success accounts ->
+            case model.editForm of
+                Just editForm ->
                     let
-                        updatedAccounts =
-                            RD.Success
-                                (List.map
-                                    (\account ->
-                                        if account.id == accountId then
-                                            case model.editForm of
-                                                Just editForm ->
-                                                    let
-                                                        updatedAreaOfResponsibility =
-                                                            case editForm.aorId of
-                                                                Just aorId ->
-                                                                    case model.aorList of
-                                                                        RD.Success aors ->
-                                                                            List.filter (\aor -> aor.id == aorId) aors |> List.head
-
-                                                                        _ ->
-                                                                            Nothing
-
-                                                                Nothing ->
-                                                                    Nothing
-                                                    in
-                                                    { account
-                                                        | displayName = editForm.displayName
-                                                        , description =
-                                                            if String.isEmpty editForm.description then
-                                                                Nothing
-
-                                                            else
-                                                                Just editForm.description
-                                                        , areaOfResponsibility = updatedAreaOfResponsibility
-                                                    }
-
-                                                Nothing ->
-                                                    account
-
-                                        else
-                                            account
-                                    )
-                                    accounts
-                                )
+                        updatedAccounts = updateAccountsList accountId editForm model
                     in
-                    ( { model
-                        | accounts = updatedAccounts
-                        , showEditSidebar = False
-                        , editForm = Nothing
-                        , editLoading = False
-                        , formErrors = Dict.empty
-                      }
+                    ( { model | accounts = updatedAccounts }
+                        |> clearEditForm
                     , E.none
                     )
 
-                _ ->
-                    ( { model
-                        | showEditSidebar = False
-                        , editForm = Nothing
-                        , editLoading = False
-                        , formErrors = Dict.empty
-                      }
-                    , E.none
-                    )
+                Nothing ->
+                    ( clearEditForm model, E.none )
 
         EditAccountResponse (Err error) accountId ->
             ( { model | editLoading = False }
