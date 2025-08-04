@@ -16,10 +16,13 @@ use sea_orm::prelude::DateTime;
 use sea_orm::*;
 use std::net::TcpListener;
 
-pub async fn load_echo_account(
+pub async fn load_echo_account<'a, 'async_trait, C>(
     id: i64,
-    txn: &DatabaseTransaction,
-) -> Result<EchoAccountF1, AppError> {
+    txn: &'a C,
+) -> Result<EchoAccountF1, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let account = list_accounts(txn)
         .await
         .context(h!())?
@@ -244,9 +247,12 @@ pub async fn get_qr_code(
     Ok(code)
 }
 
-pub async fn list_accounts(
-    txn: &DatabaseTransaction,
-) -> anyhow::Result<Vec<EchoAccountF1>> {
+pub async fn list_accounts<'a, 'async_trait, C>(
+    txn: &'a C,
+) -> Result<Vec<EchoAccountF1>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     #[derive(FromQueryResult)]
     struct LinkedAccountRow {
         pub id: i64,
@@ -311,7 +317,11 @@ pub async fn list_accounts(
             )
         } else {
             let Some(phone) = a.datasource_phone_number else {
-                warn!("no phone number for datasource {}, skipping, at {}", a.id, h!());
+                warn!(
+                    "no phone number for datasource {}, skipping, at {}",
+                    a.id,
+                    h!()
+                );
                 continue;
             };
             (phone, true, a.kind)

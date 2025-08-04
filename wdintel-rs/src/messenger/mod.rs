@@ -70,13 +70,14 @@ pub async fn edit(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<AccountStatusReq>,
-) -> Result<Json<()>, AppError> {
+) -> Result<Json<EchoAccountF1>, AppError> {
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
+    let id = req.account_id;
     bl::edit_account(
-        req.account_id,
+        id,
         req.aor_id,
         req.is_active,
         req.display_name.to_string(),
@@ -86,7 +87,8 @@ pub async fn edit(
     .await
     .context(h!())?;
     txn.commit().await.context(h!())?;
-    Ok(Json(()))
+    let result = bl::load_echo_account(id, &env.dbx).await.context(h!())?;
+    Ok(Json(result))
 }
 
 #[post("/api/messenger/edit-group")]
