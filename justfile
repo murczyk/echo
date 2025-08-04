@@ -18,7 +18,6 @@ vault_server := "localhost"
 is_dev := "true"
 app := "echo"
 interactive_setup := "true"
-mothership := "echo-mothership"
 origin := ""
 echo_bin := "wdintel-rs"
 since_ts := "1645664400000"
@@ -779,23 +778,6 @@ oneoff-reprocess-units-search-index:
     ssh echo-siversk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-lyman -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-luhansk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
-
-import-etalon-to-mothership:
-    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
-    scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ mothership }}:/tmp/et_import_{{ dt1 }}.json
-    ssh -t {{ mothership }} '{{ echo_bin }} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{ origin }} --mothership-ids-destination-path /tmp/et_export_ids_{{ dt1 }}.json'
-    scp {{ mothership }}:/tmp/et_export_ids_{{ dt1 }}.json {{ server }}:/tmp/et_import_ids_{{ dt1 }}.json
-    ssh -t {{ server }} '{{ echo_bin }} --mode=live oneoff-import-mothership-ids --path /tmp/et_import_ids_{{ dt1 }}.json'
-
-unlink-mothership:
-    ssh echo-volyn2 -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-zaporizhzha2 -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-kherson2 -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-donetsk2 -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-kharkiv2 -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-siversk -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-lyman -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
-    ssh echo-luhansk -t 'wdintel-rs --mode=live oneoff-clear-mothership-ids' || echo 'skipping...'
 
 export-datasource-to-target:
     ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }} --till-epoch-ms {{ till_ts }} '

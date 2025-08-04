@@ -1,3 +1,10 @@
+> TODO на видалення:
+>- https://echo-mothership.pitta-becrux.ts.net/api/delta-redirect
+>- https://mothership.echoua.info/api/delta-redirect
+>- https://echo-mothership.pitta-becrux.ts.net/login
+>- https://mothership.echoua.info/login
+
+
 Цими даними ми поділились із Дельтою для інтеграції.
 
 ## 1. Redirect URL
@@ -18,7 +25,6 @@
 - https://echo-starobilsk.bilby-ruffe.ts.net/api/delta-redirect
 - https://echo-volyn2.siren-gecko.ts.net/api/delta-redirect
 - https://echo-kyiv.mulley-neon.ts.net/api/delta-redirect
-- https://echo-mothership.pitta-becrux.ts.net/api/delta-redirect
 - https://echo-pivden.spotted-pierce.ts.net/api/delta-redirect
 - https://echo-pivnich.hyakutake-chromatic.ts.net/api/delta-redirect
 - https://echo-skhid.serengeti-porbeagle.ts.net/api/delta-redirect
@@ -32,7 +38,6 @@
 - https://starobilsk.echoua.info/api/delta-redirect
 - https://volyn.echoua.info/api/delta-redirect
 - https://kyiv.echoua.info/api/delta-redirect
-- https://mothership.echoua.info/api/delta-redirect
 - https://pivden.echoua.info/api/delta-redirect
 - https://pivnich.echoua.info/api/delta-redirect
 - https://skhid.echoua.info/api/delta-redirect
@@ -57,7 +62,6 @@
 - https://echo-starobilsk.bilby-ruffe.ts.net/login
 - https://echo-volyn2.siren-gecko.ts.net/login
 - https://echo-kyiv.mulley-neon.ts.net/login
-- https://echo-mothership.pitta-becrux.ts.net/login
 - https://echo-pivden.spotted-pierce.ts.net/login
 - https://echo-pivnich.hyakutake-chromatic.ts.net/login
 - https://echo-skhid.serengeti-porbeagle.ts.net/login
@@ -71,7 +75,6 @@
 - https://starobilsk.echoua.info/login
 - https://volyn.echoua.info/login
 - https://kyiv.echoua.info/login
-- https://mothership.echoua.info/login
 - https://pivden.echoua.info/login
 - https://pivnich.echoua.info/login
 - https://skhid.echoua.info/login
