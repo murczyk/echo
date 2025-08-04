@@ -11,6 +11,8 @@ import "bootstrap/dist/css/bootstrap.css"
 import { inverse, forward } from "mgrs"
 import { td_usk2000_to_wgs84, td_wgs84_to_usk2000 } from "./ts/utils"
 import "./ts/web-components/bar-chart"
+import "./ts/web-components/freq-activity-chart"
+import "./ts/web-components/freq-detail-chart"
 import "./style.css"
 import { setupMap, addPointsToLayer } from './ts/maps/maps'
 import { MapPoint, MapPointDetailed, MapPointShort } from './ts/maps/types'
