@@ -781,8 +781,8 @@ oneoff-reprocess-units-search-index:
 
 export-datasource-to-target:
     ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }} --till-epoch-ms {{ till_ts }} '
-    ssh -t {{ server }} 'gzip -c /tmp/ds_export_{{ dt1 }}.json > /tmp/ds_export_{{ dt1 }}.json.gz'
-    scp {{ server }}:/tmp/ds_export_{{ dt1 }}.json.gz {{ target }}:/tmp/ds_export_{{ dt1 }}.json.gz
-    ssh -t {{ target }} '(cd /tmp && gunzip ds_export_{{ dt1 }}.json.gz)'
-    ssh {{ target }} -t 'sudo mkdir -p /var/log/echo_ds_export/ && sudo touch /var/log/echo_ds_export/{{ server }}-{{ dt1 }}.log && sudo chmod 777 /var/log/echo_ds_export/{{ server }}-{{ dt1 }}.log'
-    ssh {{ target }} 'sudo nohup {{ echo_bin }} --mode=live oneoff-import-data-source --source-path /tmp/ds_import_{{ dt1 }}.json >> /var/log/echo_ds_export/{{ server }}-{{ dt1 }}.log 2>&1 &'
+    ssh -t {{ server }} 'mv /tmp/ds_export_{{ dt1 }}.json /tmp/ds_import_{{ dt1 }}.json && gzip -c /tmp/ds_import_{{ dt1 }}.json > /tmp/ds_import_{{ dt1 }}.json.gz'
+    scp {{ server }}:/tmp/ds_import_{{ dt1 }}.json.gz {{ target }}:/tmp/ds_import_{{ dt1 }}.json.gz
+    ssh -t {{ target }} '(cd /tmp && gunzip ds_import_{{ dt1 }}.json.gz)'
+    ssh {{ target }} -t 'sudo mkdir -p /var/log/echo_ds_import/ && sudo touch /var/log/echo_ds_import/{{ server }}-{{ dt1 }}.log && sudo chmod 777 /var/log/echo_ds_import/{{ server }}-{{ dt1 }}.log'
+    ssh {{ target }} 'sudo nohup {{ echo_bin }} --mode=live oneoff-import-data-source --source-path /tmp/ds_import_{{ dt1 }}.json >> /var/log/echo_ds_import/{{ server }}-{{ dt1 }}.log 2>&1 &'
