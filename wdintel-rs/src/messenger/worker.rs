@@ -235,7 +235,7 @@ async fn sync_groups(
             Some(group_model) => {
                 let datasource_id = group_model.datasource_id;
                 let name = Some(g.name.clone());
-                if group_model.name != name {
+                if group_model.name != name || group_model.datasource_id != datasource_id {
                     if let Some(ref model) = group_model.model_a {
                         let mut model = model.clone().into_active_model();
                         model.name = Set(name);
