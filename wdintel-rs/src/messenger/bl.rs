@@ -122,7 +122,7 @@ pub async fn link_account(
             (echo_im::types::MessageSource::Whatsapp, WHATSAPP_UNIT_NAME)
         }
     };
-    let unit_name = format!("{src_name}@{display_name}");
+    let unit_name = format!("{src_name}@{system_service_name}");
     let accounts = list_accounts(None, txn).await.context(h!())?;
     let existing_account = accounts
         .into_iter()
