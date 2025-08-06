@@ -346,6 +346,7 @@ pub async fn main_server(
             .service(crate::sigint::network::network_info_batch_freq)
             .service(crate::sigint::network::update_freq_networks)
             .service(crate::sigint::network::create_network)
+            .service(crate::sigint::network::delete_network)
             .service(crate::sigint::network::delete_network_freq)
             .service(crate::sigint::network::update_network_freq)
             .service(crate::sigint::network::add_network_freq)
