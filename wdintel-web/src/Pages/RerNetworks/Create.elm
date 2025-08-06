@@ -1030,11 +1030,11 @@ viewFrequencyRow shared model index freq =
                 , case ( freq.activeFrom, freq.activeTo ) of
                     ( Just from, Just to ) ->
                         div [ class "text-sm text-muted-foreground mt-1" ]
-                            [ text ("Активна: " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix from) ++ " - " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix to)) ]
+                            [ text ("Активна: " ++ Le.Time.renderDateF5FromMillis from (Just shared.timeZone) ++ " - " ++ Le.Time.renderDateF5FromMillis to (Just shared.timeZone)) ]
 
                     ( Just from, Nothing ) ->
                         div [ class "text-sm text-muted-foreground mt-1" ]
-                            [ text ("Активна з: " ++ Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix from)) ]
+                            [ text ("Активна з: " ++ Le.Time.renderDateF5FromMillis from (Just shared.timeZone)) ]
 
                     _ ->
                         text ""
