@@ -206,6 +206,10 @@ type alias Model =
     , freqsTableState : Table.State
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
+    , modulations : RemoteData ApiError (List B.ModulationRec)
+    , freqEditKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
+    , freqEditModulationSelect : Le.Block.Select.SelectTypeSingle Int
+    , freqEditSaving : Bool
     }
 
 
@@ -267,13 +271,36 @@ init route shared () =
       , freqsTableState = Table.initialSort "Частота"
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
+      , modulations = NotAsked
+      , freqEditKindSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
+            , items =
+                NetworksUtils.networkKinds
+                    |> List.map
+                        (\kind ->
+                            Select.basicMenuItem
+                                { item = kind
+                                , label = NetworksUtils.networkKindToLabel kind
+                                }
+                        )
+            , selected = NetworksUtils.VHF
+            }
+      , freqEditModulationSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-modulation-state")
+            , items = []
+            , selected = Nothing
+            }
+      , freqEditSaving = False
       }
     , case String.toInt route.params.id of
         Just id ->
-            E.getSingleNetwork NetworkReturnedByApi id
+            E.batch
+                [ E.getSingleNetwork NetworkReturnedByApi id
+                , E.getModulations ModulationsReturnedByApi
+                ]
 
         Nothing ->
-            E.none
+            E.getModulations ModulationsReturnedByApi
     )
 
 
@@ -345,6 +372,9 @@ type Msg
     | SaveFreqEditSidebar
     | OpenFreqDetailPopup String
     | CloseFreqDetailPopup
+    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
+    | FreqModulationSelectMsg (Select.Msg Int)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -891,8 +921,8 @@ update shared msg model =
                                     ( f.freq
                                     , { networkId = network.id
                                       , freq = f.freq
-                                      , kind = "VHF" -- Default value since NetworkFreqsRes doesn't have kind
-                                      , modulationId = Nothing -- NetworkFreqsRes doesn't have modulationId
+                                      , kind = Maybe.withDefault "VHF" f.kind
+                                      , modulationId = f.modulationId
                                       , activeFrom = f.activeFrom
                                       , activeTo = f.activeTo
                                       }
@@ -983,12 +1013,17 @@ update shared msg model =
             )
 
         FreqUpdatedByApi (Err e) ->
-            ( model
+            ( { model | freqEditSaving = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти" e
             )
 
         FreqUpdatedByApi (Ok network) ->
-            ( { model | network = Success network, freqsEditingState = Readonly }
+            ( { model 
+                | network = Success network
+                , freqsEditingState = Readonly
+                , freqEditSaving = False
+                , freqEditSidebar = Nothing
+              }
             , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
             )
 
@@ -1135,7 +1170,20 @@ update shared msg model =
             ( { model | freqsTableState = newState }, E.none )
 
         OpenFreqEditSidebar freqId updateReq ->
-            ( { model | freqEditSidebar = Just ( freqId, updateReq ) }, E.none )
+            let
+                -- Оновлюємо селекти з даними з частоти
+                kindSelect = model.freqEditKindSelect
+                updatedKindSelect = { kindSelect | selected = NetworksUtils.networkKindFromString updateReq.kind }
+                
+                modulationSelect = model.freqEditModulationSelect
+                updatedModulationSelect = { modulationSelect | selected = updateReq.modulationId }
+            in
+            ( { model 
+                | freqEditSidebar = Just ( freqId, updateReq )
+                , freqEditKindSelect = updatedKindSelect
+                , freqEditModulationSelect = updatedModulationSelect
+              }
+            , E.none )
 
         CloseFreqEditSidebar ->
             ( { model | freqEditSidebar = Nothing }, E.none )
@@ -1146,7 +1194,7 @@ update shared msg model =
         SaveFreqEditSidebar ->
             case model.freqEditSidebar of
                 Just ( _, updateReq ) ->
-                    ( { model | freqEditSidebar = Nothing }
+                    ( { model | freqEditSaving = True }
                     , E.updateNetworkFreq FreqUpdatedByApi updateReq
                     )
 
@@ -1158,6 +1206,95 @@ update shared msg model =
 
         CloseFreqDetailPopup ->
             ( { model | freqDetailPopup = Nothing }, E.none )
+
+        ModulationsReturnedByApi (Err e) ->
+            ( { model | modulations = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            )
+
+        ModulationsReturnedByApi (Ok res) ->
+            let
+                modulationSelect =
+                    model.freqEditModulationSelect
+
+                updatedModulationSelect =
+                    { modulationSelect |
+                    items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
+                    }
+            in
+            ( { model 
+                | modulations = Success res
+                , freqEditModulationSelect = updatedModulationSelect
+              }
+            , E.none )
+
+        FreqKindSelectMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.freqEditKindSelect.state
+
+                updatedNetworkKind =
+                    Le.Block.Select.singleUpdWithDefault mAct model.freqEditKindSelect.selected
+
+                kindSelect =
+                    model.freqEditKindSelect
+
+                kindSelect2 =
+                    { kindSelect
+                        | state = imodel
+                        , selected = updatedNetworkKind
+                    }
+
+                updatedSidebar =
+                    case model.freqEditSidebar of
+                        Just ( freqId, updateReq ) ->
+                            Just ( freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
+                        Nothing ->
+                            model.freqEditSidebar
+            in
+            ( { model 
+                | freqEditKindSelect = kindSelect2
+                , freqEditSidebar = updatedSidebar
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    FreqKindSelectMsg
+                    icmd
+            )
+
+        FreqModulationSelectMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.freqEditModulationSelect.state
+
+                updatedModulationId =
+                    Le.Block.Select.singleUpd mAct model.freqEditModulationSelect.selected
+
+                modulationSelect =
+                    model.freqEditModulationSelect
+
+                modulationSelect2 =
+                    { modulationSelect
+                        | state = imodel
+                        , selected = updatedModulationId
+                    }
+
+                updatedSidebar =
+                    case model.freqEditSidebar of
+                        Just ( freqId, updateReq ) ->
+                            Just ( freqId, { updateReq | modulationId = updatedModulationId } )
+                        Nothing ->
+                            model.freqEditSidebar
+            in
+            ( { model 
+                | freqEditModulationSelect = modulationSelect2
+                , freqEditSidebar = updatedSidebar
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    FreqModulationSelectMsg
+                    icmd
+            )
 
 
 
@@ -1244,14 +1381,23 @@ freqsTableConfig shared model user =
         { toId = .freq
         , toMsg = SetFreqsTableState
         , columns =
-            [ Table.stringColumn "Частота" .freq |> Table.withColumnWidth "10%"
+            [ Table.stringColumn "Частота" .freq |> Table.withColumnWidth "9%"
             , Table.customColumn
                 { name = "Модуляція"
                 , viewData = \freq -> Maybe.withDefault "" freq.modulation
                 , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.modulation)
                 }
                 |> Table.withColumnWidth "10%"
-            , Table.intColumn "Кількість перехоплень" .messageCount |> Table.withColumnWidth "12%"
+            , Table.customColumn
+                { name = "Тип"
+                , viewData = \freq -> 
+                    Maybe.withDefault "" freq.kind
+                        |> NetworksUtils.networkKindFromString
+                        |> NetworksUtils.networkKindToLabel
+                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.kind)
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.intColumn "Кількість перехоплень" .messageCount |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Позивні"
                 , viewData =
@@ -1290,7 +1436,7 @@ freqsTableConfig shared model user =
                                 }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "15%"
+                |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
                 { name = "Останній раз в етері"
                 , viewData =
@@ -1307,7 +1453,7 @@ freqsTableConfig shared model user =
                                 }
                 , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault 0 freq.lastDatetime)
                 }
-                |> Table.withColumnWidth "12%"
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = "Дата прив'язки"
                 , viewData =
@@ -1317,7 +1463,7 @@ freqsTableConfig shared model user =
                         }
                 , sorter = TableSorter.increasingOrDecreasingBy .createdAt
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = "Активність"
                 , viewData =
@@ -1364,7 +1510,7 @@ freqsTableConfig shared model user =
                         }
                 , sorter = TableSorter.increasingOrDecreasingBy .activeFrom
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = "По"
                 , viewData =
@@ -1381,7 +1527,7 @@ freqsTableConfig shared model user =
                                 }
                 , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault 0 freq.activeTo)
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "8%"
             ]
                 ++ (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                         [ Table.veryCustomColumn
@@ -1399,8 +1545,8 @@ freqsTableConfig shared model user =
                                                         OpenFreqEditSidebar freq.freq
                                                             { networkId = network.id
                                                             , freq = freq.freq
-                                                            , kind = "VHF"
-                                                            , modulationId = Nothing
+                                                            , kind = Maybe.withDefault "VHF" freq.kind
+                                                            , modulationId = freq.modulationId
                                                             , activeFrom = freq.activeFrom
                                                             , activeTo = freq.activeTo
                                                             }
@@ -1438,6 +1584,63 @@ freqEditSidebarContent shared model user freqId updateReq =
         , div [ class "flex-1 overflow-y-auto p-6" ]
             [ div [ class "space-y-6" ]
                 [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип" ]
+                    , let
+                        selectedItem =
+                            Just <|
+                                Select.basicMenuItem
+                                    { item = model.freqEditKindSelect.selected
+                                    , label = NetworksUtils.networkKindToLabel model.freqEditKindSelect.selected
+                                    }
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map FreqKindSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.freqEditKindSelect.state
+                                model.freqEditKindSelect.items
+                                "Виберіть тип"
+                                defaultOptions
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Модуляція" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\modulationId ->
+                                    Select.basicMenuItem
+                                        { item = modulationId
+                                        , label =
+                                            case model.modulations of
+                                                Success modulations ->
+                                                    modulations
+                                                        |> List.filter (\mod -> mod.id == modulationId)
+                                                        |> List.head
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault ""
+
+                                                _ ->
+                                                    ""
+                                        }
+                                )
+                                model.freqEditModulationSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map FreqModulationSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.freqEditModulationSelect.state
+                                model.freqEditModulationSelect.items
+                                "Не вибрано"
+                                defaultOptions
+                    ]
+                , div [ class "space-y-2" ]
                     [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
                     , input
                         [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
@@ -1488,8 +1691,13 @@ freqEditSidebarContent shared model user freqId updateReq =
                 [ Button.new { label = "Скасувати", onClick = CloseFreqEditSidebar }
                     |> Button.withStyleSecondary
                     |> Button.view
-                , Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
-                    |> Button.view
+                , if model.freqEditSaving then
+                    Button.new { label = "Збереження...", onClick = SaveFreqEditSidebar }
+                        |> Button.withDisabled True
+                        |> Button.view
+                  else
+                    Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
+                        |> Button.view
                 ]
             ]
         ]

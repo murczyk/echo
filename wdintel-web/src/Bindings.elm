@@ -3785,6 +3785,7 @@ etalonkaNetworkBatchReqEncoder struct =
 type alias NetworkFreqsRes =
     { networkFreqId : Int
     , freq : String
+    , modulationId : Maybe Int
     , modulation : Maybe String
     , messageCount : Int
     , callsigns : Maybe (List String)
@@ -3793,6 +3794,7 @@ type alias NetworkFreqsRes =
     , isActive : Bool
     , activeFrom : Int
     , activeTo : Maybe Int
+    , kind : Maybe String
     }
 
 
@@ -3801,6 +3803,7 @@ networkFreqsResEncoder struct =
     Json.Encode.object
         [ ( "network_freq_id", Json.Encode.int struct.networkFreqId )
         , ( "freq", Json.Encode.string struct.freq )
+        , ( "modulation_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.modulationId )
         , ( "modulation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.modulation )
         , ( "message_count", Json.Encode.int struct.messageCount )
         , ( "callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.callsigns )
@@ -3809,6 +3812,7 @@ networkFreqsResEncoder struct =
         , ( "is_active", Json.Encode.bool struct.isActive )
         , ( "active_from", Json.Encode.int struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
+        , ( "kind", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.kind )
         ]
 
 
@@ -7740,6 +7744,7 @@ networkFreqsResDecoder =
     Json.Decode.succeed NetworkFreqsRes
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modulation" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -7748,6 +7753,7 @@ networkFreqsResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.nullable Json.Decode.string)))
 
 
 callsignResDecoder : Json.Decode.Decoder CallsignRes
