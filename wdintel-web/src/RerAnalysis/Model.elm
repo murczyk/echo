@@ -113,10 +113,6 @@ type alias Model =
     , callsignsInfoSumTable : Dict String (List B.CallsignInfo)
     , messageComments : Dict Int (List B.MessageComment)
     , users : Dict String (Maybe B.User)
-    , networks : Dict Int B.Network
-    , networksSumTable : Dict Int B.Network
-    , freqNetworkIds : Dict String (Set Int)
-    , freqNetworkIdsSumTable : Dict String (Set Int)
     , sendersSelectedNames : List String
     , postsSelected : List String
     , deleteMessageModalId : Maybe Int

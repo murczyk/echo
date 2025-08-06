@@ -16,6 +16,7 @@ type Msg
     | ToggleDarkMode
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
+    | NetworksLoadedByApi (Result ApiError (List B.Network))
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | CallsignsInfoAskedByPage (List String)
     | PostLoadAll B.ListPostsReq

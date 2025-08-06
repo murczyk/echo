@@ -3,6 +3,7 @@ module RerAnalysis.MainBody exposing (filtersAndMainContent)
 import Bindings as B
 import Components.Toggle as Toggle
 import Dict
+import Dict.Extra as DE
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events as Events exposing (..)
@@ -132,9 +133,17 @@ mainBody user model shared route =
                             , user = user
                             , users = model.users
                             , serverInfo = shared.serverInfo
-                            , networks = model.networks
+                            , networks = RD.withDefault Dict.empty shared.networks
                             , masterUnits = masterUnitsDict
-                            , freqNetworkIds = model.freqNetworkIds
+                            , freqNetworkIds = case shared.networks of
+                                Success networks ->
+                                    networks
+                                        |> Dict.values
+                                        |> List.concatMap (\network -> 
+                                            List.map (\freq -> (freq.freq, Set.singleton network.id)) network.freqs
+                                        )
+                                        |> DE.fromListDedupe Set.union
+                                _ -> Dict.empty
                             , currentRoute = Just route
                             }
                         renderPs =

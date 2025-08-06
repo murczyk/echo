@@ -70,7 +70,6 @@ type Msg
     | InboxLoopSleptBeforeLoadNewer
       -- API CALLS
     | GotSignals (Result ApiError B.ListSignalsRsp)
-    | GotNetworks (Result ApiError (List B.Network))
     | GotLatestFrequencies (Result ApiError (List String))
     | GotCallsignsInfo (Result ApiError (List B.CallsignInfoRes))
     | GotGroupKeys (Result ApiError (List String))
@@ -201,7 +200,6 @@ type alias Model =
     , deleteFilterConfirmationId : Maybe Int
     , signals : List B.Signal
     , freqNetworkIds : Dict String (Set Int)
-    , networks : Dict Int B.Network
     , noEarlierMessagesLeft : Bool
     , lastViewedMessageId : LastViewedMessageId
     , loadingStrategy : LoadingStrategy
@@ -302,7 +300,6 @@ init id_ ms =
       , deleteFilterConfirmationId = Nothing
       , signals = []
       , freqNetworkIds = Dict.empty
-      , networks = Dict.empty
       , noEarlierMessagesLeft = False
       , lastViewedMessageId =
             case ms of
@@ -647,12 +644,7 @@ updateFreqsAndCallsigns messages model =
         , freqsDeniedSelect = fd
       }
     , E.batch
-        [ if newFreqs /= [] then
-            E.getNetworksInfoByFreqs GotNetworks newFreqs
-
-          else
-            E.none
-        , if List.length newCallsigns > 0 then
+        [ if List.length newCallsigns > 0 then
             E.getCallsignsInfo GotCallsignsInfo { callsigns = newCallsigns }
 
           else
@@ -1998,11 +1990,7 @@ update shared user msg model =
                 , freqsSelect = LeSelect.updateSelectItems (\_ -> freqsMenu) model.freqsSelect
                 , freqsDeniedSelect = LeSelect.updateSelectItems (\_ -> freqsMenu) model.freqsDeniedSelect
               }
-            , if newFreqs /= [] then
-                E.getNetworksInfoByFreqs GotNetworks newFreqs
-
-              else
-                E.none
+            , E.none
             )
 
         GotLatestFrequencies (Err e) ->
@@ -2058,29 +2046,6 @@ update shared user msg model =
             , E.none
             )
 
-        GotNetworks (Err err) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err )
-
-        GotNetworks (Ok networks) ->
-            let
-                freqNetworkIds2 =
-                    networks
-                        --TODO: переосмислити в майбутньому, зараз зробив щоб з новими типами працювала стара логіка
-                        |> List.concatMap (\x -> List.map (\freq -> ( freq.freq, Set.singleton x.id )) x.freqs)
-                        |> (\v -> v ++ Dict.toList model.freqNetworkIds)
-                        |> DE.fromListDedupe Set.union
-            in
-            ( { model
-                | networks =
-                    networks
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-                        |> (\v -> Dict.union v model.networks)
-                , freqNetworkIds = freqNetworkIds2
-              }
-            , E.none
-            )
-
         MessageMsg id message innerMsg ->
             case model.messages |> Messages.getItem id of
                 Just ( message_, model_ ) ->
@@ -2098,20 +2063,33 @@ update shared user msg model =
                                     Nothing
 
                         vps =
+                            let
+                                networksDict =
+                                    RD.withDefault Dict.empty shared.networks
+                                messageNetworkIds =
+                                    case (message_.freq, networksDict) of
+                                        (Just freq, networks) ->
+                                            networks
+                                                |> Dict.values
+                                                |> List.filter (\network ->
+                                                    List.any (\networkFreq -> networkFreq.freq == freq) network.freqs
+                                                )
+                                                |> List.map .id
+                                        _ ->
+                                            []
+                            in
                             { isDarkMode = shared.isDarkMode
                             , user = user
                             , serverInfo = shared.serverInfo
                             , waterfallId = model.id
                             , datasources = model.datasources
-
-                            --??
-                            , freqNetworkIds = model.freqNetworkIds
+                            , messageNetworkIds = messageNetworkIds
                             , masterUnits = 
                                 case shared.masterUnits of
                                     Success units -> units
                                     _ -> Dict.empty
                             , callsignsInfo = model.callsignsInfo
-                            , networks = model.networks
+                            , networks = networksDict
                             , zone = model.zone
                             , time = model.time
                             , profiles = model.profiles
@@ -2314,8 +2292,9 @@ waterfallDiv :
     -> Maybe B.ServerInfo
     -> Dict Int B.Unit
     -> Model
+    -> Shared.Model
     -> Html Msg
-waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model =
+waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model shared =
     let
         hideGoLatestButton =
             case model.loadingStrategy of
@@ -2331,6 +2310,20 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
 
         unreadMessagesCounter =
             model.notLoadedYetMessagesCounter + unreadLoadedCount
+
+        freqNetworkIdsFromShared =
+            case shared.networks of
+                Success networks ->
+                    networks
+                        |> Dict.values
+                        |> List.concatMap (\network -> 
+                            List.map (\freq -> ( freq.freq, Set.singleton network.id )) network.freqs
+                        )
+                        |> DE.fromListDedupe Set.union
+                        |> (\v -> Dict.union v model.freqNetworkIds)
+                
+                _ ->
+                    model.freqNetworkIds
 
         -- List.filter
         --     (\( id_, _ ) -> not (Set.member id_ duplicates))
@@ -2425,17 +2418,31 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             Le.Waterfall.Message.translator translationDictionary
 
                                         vps =
+                                            let
+                                                networksDict =
+                                                    RD.withDefault Dict.empty shared.networks
+                                                
+                                                messageNetworkIds =
+                                                    case (message.freq, networksDict) of
+                                                        (Just freq, networks) ->
+                                                            networks
+                                                                |> Dict.values
+                                                                |> List.filter (\network ->
+                                                                    List.any (\networkFreq -> networkFreq.freq == freq) network.freqs
+                                                                )
+                                                                |> List.map .id
+                                                        _ ->
+                                                            []
+                                            in
                                             { isDarkMode = isDarkMode
                                             , waterfallId = model.id
                                             , datasources = datasources
                                             , serverInfo = serverInfo
                                             , user = user
-
-                                            --??
-                                            , freqNetworkIds = model.freqNetworkIds
+                                            , messageNetworkIds = messageNetworkIds
                                             , masterUnits = masterUnits
                                             , callsignsInfo = model.callsignsInfo
-                                            , networks = model.networks
+                                            , networks = networksDict
                                             , zone = model.zone
                                             , time = model.time
                                             , profiles = model.profiles
@@ -2500,11 +2507,12 @@ type alias MessageTabPs =
     , user : B.User
     , waterfallsAmount : Int
     , masterUnits : Dict Int B.Unit
+    , networks : Dict Int B.Network
     }
 
 
-messageTab : MessageTabPs -> Model -> Html Msg
-messageTab ps model =
+messageTab : MessageTabPs -> Shared.Model -> Model -> Html Msg
+messageTab ps shared model =
     let
         deleteFilterModal =
             div
@@ -3102,5 +3110,5 @@ messageTab ps model =
                 )
             ]
         , HtmlX.viewIf model.unfoldSettings <| div [ class "h-[48px]" ] []
-        , waterfallDiv ps.user ps.isDarkMode ps.duplicates ps.datasources ps.serverInfo ps.masterUnits model
+        , waterfallDiv ps.user ps.isDarkMode ps.duplicates ps.datasources ps.serverInfo ps.masterUnits model shared
         ]

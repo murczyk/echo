@@ -15,6 +15,7 @@ import Le.Block.MarkedText
 import Le.Block.Unit
 import Le.Callsign
 import Le.Config
+import Le.ErrorHandling
 import Le.RerMessage
 import Le.Time
 import Le.Types exposing (ApiError)
@@ -26,7 +27,6 @@ import Set exposing (Set)
 import Time
 import Time.Extra
 import Url.Builder
-import Le.ErrorHandling
 
 
 type alias Model =
@@ -59,9 +59,6 @@ type alias ViewParams =
     , waterfallId : String
     , datasources : List ( Int, B.Datasource )
     , serverInfo : Maybe B.ServerInfo
-
-    --TODO: do not send all this data, compute on parent, probably
-    , freqNetworkIds : Dict String (Set Int)
     , networks : Dict Int B.Network
     , zone : Maybe Time.Zone
     , time : Maybe Time.Posix
@@ -76,6 +73,7 @@ type alias ViewParams =
     , importants : Set Int
     , isMsgVisible : List Int
     , groupInfos : Dict String B.SignalGroupEntry
+    , messageNetworkIds : List Int
     }
 
 
@@ -777,21 +775,18 @@ rightColumn ( messageId, message ) ps model =
                             Nothing ->
                                 text " "
 
-                            Just freq ->
-                                case Dict.get freq ps.freqNetworkIds of
-                                    Just networkIds ->
-                                        div [] <|
-                                            for_ (Set.toList networkIds) <|
-                                                \networkId ->
-                                                    case Dict.get networkId ps.networks of
-                                                        Just network ->
-                                                            Le.Block.Unit.boldMasterUnit ps.masterUnits network
-
-                                                        _ ->
-                                                            text "Невідома мережа"
-
-                                    Nothing ->
-                                        text <| " " ++ (message.unit |> def "Не встановлений")
+                            Just _ ->
+                                if List.isEmpty ps.messageNetworkIds then
+                                    text <| " " ++ (message.unit |> def "Не встановлений")
+                                else
+                                    div [] <|
+                                        List.map (\networkId ->
+                                            case Dict.get networkId ps.networks of
+                                                Just network ->
+                                                    Le.Block.Unit.boldMasterUnit ps.masterUnits network
+                                                _ ->
+                                                    text "Невідома мережа"
+                                        ) ps.messageNetworkIds
 
                     metaFields =
                         let

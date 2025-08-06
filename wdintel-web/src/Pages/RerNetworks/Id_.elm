@@ -183,7 +183,6 @@ type alias Model =
     , freqsEditingState : Mode (Dict String B.UpdateNetworkFreqReq)
     , callsignsEditingState : Mode (Dict String Bool)
     , callsignsOpenedPopupId : Maybe String
-    , networks : RemoteData ApiError (Dict Int B.Network)
     , mode : Mode B.UpdateNetworkReq
     , missingFieldsMode : Mode B.UpdateNetworkReq
     , missingFieldsEditLoading : Bool
@@ -225,7 +224,6 @@ init route shared () =
       , freqsEditingState = Readonly
       , callsignsEditingState = Readonly
       , callsignsOpenedPopupId = Nothing
-      , networks = NotAsked
       , mode = Readonly
       , missingFieldsMode = Readonly
       , missingFieldsEditLoading = False
@@ -319,7 +317,6 @@ type Msg
     | FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
     | CallsignsPopupOpenedByUser String
     | CallsignsPopupClosedByUser
-    | NetworksReturnedByApi (Result ApiError (List B.Network))
     | NetworkEditStartedByUser
     | NetworkEditingSavedByUser
     | NetworkEditingCanceledByUser
@@ -431,14 +428,6 @@ update shared msg model =
                 , E.getSingleNetworkGroupsActivity GroupsActivityReturnedByApi { networkId = res.id, tillDateNoninclusiveMs = Nothing }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = res.id }
                 , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = res.id }
-                , E.getNetworksList NetworksReturnedByApi
-                    { sinceDateInclusiveMs = Just res.activeFrom
-                    , tillDateNoninclusiveMs = res.activeTo
-                    , filterFreq = Nothing
-                    , filterUnit = Nothing
-                    , sortBy = Nothing
-                    , filterFurtherInvestigation = Nothing
-                    }
 
                 --TODO: do not load if loaded already
                 , E.loadPostsFromShared { sortBy = Nothing }
@@ -494,21 +483,6 @@ update shared msg model =
 
         CallsignsPopupClosedByUser ->
             ( { model | callsignsOpenedPopupId = Nothing }, E.none )
-
-        NetworksReturnedByApi (Err err) ->
-            ( model, E.none )
-
-        NetworksReturnedByApi (Ok networks) ->
-            ( { model
-                | networks =
-                    Success
-                        (networks
-                            |> List.map (\x -> ( x.id, x ))
-                            |> Dict.fromList
-                        )
-              }
-            , E.none
-            )
 
         NetworkEditStartedByUser ->
             case model.network of
@@ -1021,7 +995,7 @@ update shared msg model =
             )
 
         FreqUpdatedByApi (Ok network) ->
-            ( { model 
+            ( { model
                 | network = Success network
                 , freqsEditingState = Readonly
                 , freqEditSaving = False
@@ -1175,22 +1149,30 @@ update shared msg model =
         OpenFreqEditSidebar freqId updateReq ->
             let
                 -- Оновлюємо селекти з даними з частоти
-                kindSelect = model.freqEditKindSelect
-                updatedKindSelect = { kindSelect | selected = NetworksUtils.networkKindFromString updateReq.kind }
-                
-                modulationSelect = model.freqEditModulationSelect
-                updatedModulationSelect = { modulationSelect | selected = updateReq.modulationId }
-                
+                kindSelect =
+                    model.freqEditKindSelect
+
+                updatedKindSelect =
+                    { kindSelect | selected = NetworksUtils.networkKindFromString updateReq.kind }
+
+                modulationSelect =
+                    model.freqEditModulationSelect
+
+                updatedModulationSelect =
+                    { modulationSelect | selected = updateReq.modulationId }
+
                 -- Встановлюємо freqEditShowActiveTo на основі того, чи є activeTo
-                showActiveTo = updateReq.activeTo /= Nothing
+                showActiveTo =
+                    updateReq.activeTo /= Nothing
             in
-            ( { model 
+            ( { model
                 | freqEditSidebar = Just ( freqId, updateReq )
                 , freqEditKindSelect = updatedKindSelect
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqEditShowActiveTo = showActiveTo
               }
-            , E.none )
+            , E.none
+            )
 
         CloseFreqEditSidebar ->
             ( { model | freqEditSidebar = Nothing, freqEditShowActiveTo = False }, E.none )
@@ -1225,15 +1207,16 @@ update shared msg model =
                     model.freqEditModulationSelect
 
                 updatedModulationSelect =
-                    { modulationSelect |
-                    items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
+                    { modulationSelect
+                        | items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
                     }
             in
-            ( { model 
+            ( { model
                 | modulations = Success res
                 , freqEditModulationSelect = updatedModulationSelect
               }
-            , E.none )
+            , E.none
+            )
 
         FreqKindSelectMsg imsg ->
             let
@@ -1256,10 +1239,11 @@ update shared msg model =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
                             Just ( freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
+
                         Nothing ->
                             model.freqEditSidebar
             in
-            ( { model 
+            ( { model
                 | freqEditKindSelect = kindSelect2
                 , freqEditSidebar = updatedSidebar
               }
@@ -1290,10 +1274,11 @@ update shared msg model =
                     case model.freqEditSidebar of
                         Just ( freqId, updateReq ) ->
                             Just ( freqId, { updateReq | modulationId = updatedModulationId } )
+
                         Nothing ->
                             model.freqEditSidebar
             in
-            ( { model 
+            ( { model
                 | freqEditModulationSelect = modulationSelect2
                 , freqEditSidebar = updatedSidebar
               }
@@ -1305,18 +1290,23 @@ update shared msg model =
 
         ToggleFreqEditShowActiveTo ->
             let
-                newShowActiveTo = not model.freqEditShowActiveTo
-                updatedModel = 
+                newShowActiveTo =
+                    not model.freqEditShowActiveTo
+
+                updatedModel =
                     if not newShowActiveTo then
                         -- очистити activeTo при знятті чекбокса
                         case model.freqEditSidebar of
-                            Just (freqId, updateReq) ->
+                            Just ( freqId, updateReq ) ->
                                 let
-                                    newUpdateReq = { updateReq | activeTo = Nothing }
+                                    newUpdateReq =
+                                        { updateReq | activeTo = Nothing }
                                 in
-                                { model | freqEditSidebar = Just (freqId, newUpdateReq) }
+                                { model | freqEditSidebar = Just ( freqId, newUpdateReq ) }
+
                             Nothing ->
                                 model
+
                     else
                         model
             in
@@ -1418,10 +1408,11 @@ freqsTableConfig shared model user =
                 |> Table.withColumnWidth "10%"
             , Table.customColumn
                 { name = "Тип"
-                , viewData = \freq -> 
-                    Maybe.withDefault "" freq.kind
-                        |> NetworksUtils.networkKindFromString
-                        |> NetworksUtils.networkKindToLabel
+                , viewData =
+                    \freq ->
+                        Maybe.withDefault "" freq.kind
+                            |> NetworksUtils.networkKindFromString
+                            |> NetworksUtils.networkKindToLabel
                 , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.kind)
                 }
                 |> Table.withColumnWidth "8%"
@@ -1453,7 +1444,7 @@ freqsTableConfig shared model user =
                                         }
                                         (FreqsPage
                                             freq.freq
-                                            (RD.withDefault Dict.empty model.networks)
+                                            (RD.withDefault Dict.empty shared.networks)
                                         )
                                     ]
                                 }
@@ -1694,8 +1685,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                         []
                     ]
                 , div [ class "space-y-2" ]
-                    [ 
-                     Checkbox.new { isChecked = model.freqEditShowActiveTo, onToggle = \_ -> ToggleFreqEditShowActiveTo }
+                    [ Checkbox.new { isChecked = model.freqEditShowActiveTo, onToggle = \_ -> ToggleFreqEditShowActiveTo }
                         |> Checkbox.withContent [ text "Частота вже не активна" ]
                         |> Checkbox.view
                     ]
@@ -1719,6 +1709,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                             ]
                             []
                         ]
+
                   else
                     text ""
                 ]
@@ -1732,6 +1723,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                     Button.new { label = "Збереження...", onClick = SaveFreqEditSidebar }
                         |> Button.withDisabled True
                         |> Button.view
+
                   else
                     Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
                         |> Button.view
@@ -2115,7 +2107,7 @@ freqsTable freq model shared =
                         }
                         (FreqsPage
                             freq.freq
-                            (RD.withDefault Dict.empty model.networks)
+                            (RD.withDefault Dict.empty shared.networks)
                         )
 
                 _ ->
@@ -2212,7 +2204,7 @@ freqsTableEditing updateFreqReq freq model shared =
                     }
                     (FreqsPage
                         freq.freq
-                        (RD.withDefault Dict.empty model.networks)
+                        (RD.withDefault Dict.empty shared.networks)
                     )
 
             _ ->
