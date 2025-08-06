@@ -721,8 +721,7 @@ contentBlock shared model =
                                                     [ i [ class "bi bi-plus-lg", style "margin-top" "2px" ] []
                                                     , span [] [ text "виправити дублікати" ]
                                                     ]
-                                                , if hasAdminRole then
-                                                    div
+                                                , div
                                                         [ class "d-flex align-items-center gap-2 py-2 pointer popup-action"
                                                         , attribute "data-bs-toggle" "modal"
                                                         , attribute "data-bs-target" "#deleteConfirmationModal"
@@ -732,8 +731,6 @@ contentBlock shared model =
                                                         , span [] [ text "видалити" ]
                                                         ]
 
-                                                  else
-                                                    text ""
                                                 ]
                                     in
                                     [ Le.Block.Popup.new
