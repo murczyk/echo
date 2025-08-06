@@ -1449,7 +1449,7 @@ callsignsTableConfig shared model user =
                     \callsign ->
                         { attributes = [ class "relative" ]
                         , children =
-                            [ text callsign.comment
+                            [ div [ style "white-space" "pre-line" ] [ text callsign.comment ]
                             , Watermark.new user.name
                                 |> Watermark.withPositioning ( 5, 5 )
                                 |> Watermark.withRotate -10
@@ -2262,7 +2262,7 @@ contentBlock shared model user =
                                             [ td [] [ text (String.toUpper callsign.callsign) ]
                                             , td [] [ text callsign.position ]
                                             , td [] [ text unitName ]
-                                            , td [] [ text callsign.comment ]
+                                            , td [] [ div [ style "white-space" "pre-line" ] [ text callsign.comment ] ]
                                             ]
                                     )
                                     duplicates
