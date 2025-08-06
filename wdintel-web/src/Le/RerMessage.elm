@@ -49,7 +49,6 @@ type alias ViewParams =
     , serverInfo : Maybe B.ServerInfo
     , networks : Dict Int B.Network
     , masterUnits : Dict Int B.Unit
-    , freqNetworkIds : Dict String (Set Int)
     , currentRoute : Maybe (Route ())
     }
 

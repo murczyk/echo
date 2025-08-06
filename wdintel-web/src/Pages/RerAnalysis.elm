@@ -1083,19 +1083,6 @@ update user shared route msg model =
                             _ ->
                                 Dict.empty
                     , masterUnits = masterUnitsDict
-                    , freqNetworkIds =
-                        case shared.networks of
-                            Success networks ->
-                                networks
-                                    |> Dict.values
-                                    |> List.concatMap
-                                        (\network ->
-                                            List.map (\freq -> ( freq.freq, Set.singleton network.id )) network.freqs
-                                        )
-                                    |> DE.fromListDedupe Set.union
-
-                            _ ->
-                                Dict.empty
                     , currentRoute = Just route
                     }
 
