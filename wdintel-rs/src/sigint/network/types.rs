@@ -43,6 +43,7 @@ pub struct Network {
     pub active_to: Option<i64>,
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<NetworkDescription>,
+    pub deleted: bool,
 }
 
 #[derive(
@@ -68,6 +69,13 @@ pub struct CreateNetworkReq {
     pub operation_period: Option<String>,
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<AddNetworkDescription>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteNetworkReq {
+    pub network_id: i64,
 }
 
 #[derive(

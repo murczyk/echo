@@ -75,20 +75,6 @@ pub async fn network_list(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
-        .select_only()
-        .column(sigint_network::Column::Id)
-        .column(sigint_network::Column::Name)
-        .column(sigint_network::Column::Location)
-        .column(sigint_network::Column::RadioStation)
-        .column(sigint_network::Column::CreatedAt)
-        .column(sigint_network::Column::Purpose)
-        .column(sigint_network::Column::OperationMode)
-        .column(sigint_network::Column::OperationType)
-        .column(sigint_network::Column::OperationPeriod)
-        .column(sigint_network::Column::UpdatedAt)
-        .column(sigint_network::Column::UpdatedBy)
-        .column(sigint_network::Column::ActiveFrom)
-        .column(sigint_network::Column::ActiveTo)
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if let Some(filter_unit) = &req.filter_unit {
@@ -170,50 +156,11 @@ pub async fn network_list(
     //     networks.clone().build(DbBackend::Postgres).to_string()
     // );
 
-    let networks = networks
-        .into_model::<NetworkDetails>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
-    let mut networks_res = vec![];
-    for network in networks {
-        let freqs = get_network_freqs(&env.dbx, network.id)
-            .await
-            .context(h!())?;
-        let unit_ids = get_network_units(&env.dbx, network.id)
-            .await
-            .context(h!())?;
+    let networks = networks.all(&env.dbx).await.context(h!())?;
 
-        let post_ids = get_network_posts(&env.dbx, network.id)
-            .await
-            .context(h!())?;
-        let descriptions = get_network_descriptions(&env.dbx, network.id)
-            .await
-            .context(h!())?;
+    let res = render_networks(networks, &env.dbx).await.context(h!())?;
 
-        networks_res.push(Network {
-            id: network.id,
-            freqs,
-            unit_ids,
-            name: network.name,
-            location: network.location,
-            radio_station: network.radio_station,
-            created_at: network.created_at.and_utc().timestamp_millis(),
-            purpose: network.purpose,
-            operation_mode: network.operation_mode,
-            operation_type: network.operation_type,
-            operation_period: network.operation_period,
-            last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-            last_updated_by: network.updated_by,
-            active_from: network.active_from.and_utc().timestamp_millis(),
-            active_to: network
-                .active_to
-                .map(|d| d.and_utc().timestamp_millis()),
-            post_ids,
-            descriptions,
-        });
-    }
-    Ok(Json(networks_res))
+    Ok(Json(res))
 }
 
 #[post("/api/sigint/restore-network")]
@@ -228,11 +175,7 @@ pub async fn restore_network(
         .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let network_id = req.into_inner().network_id;
-    let network = sigint_network::Entity::find_by_id(network_id)
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or_else(|| AppError::NotFound)?;
+    let network = find_network(&txn, network_id).await.context(h!())?;
     if network.deleted && network.active_to.is_some() {
         bl_restore_network(&txn, network).await.context(h!())?;
     } else {
@@ -322,10 +265,13 @@ pub async fn network_info_one(
     Ok(Json(res.into_iter().next().context(h!())?))
 }
 
-async fn render_networks(
+async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
-    txn: &DatabaseTransaction,
-) -> Result<Vec<Network>, AppError> {
+    txn: &'a C,
+) -> Result<Vec<Network>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut networks_res = vec![];
     for network in networks {
         let freqs = get_network_freqs(txn, network.id).await.context(h!())?;
@@ -359,6 +305,7 @@ async fn render_networks(
                 .map(|d| d.and_utc().timestamp_millis()),
             post_ids,
             descriptions,
+            deleted: network.deleted,
         });
     }
     Ok(networks_res)
@@ -597,35 +544,19 @@ pub async fn create_network(
             .context(h!())?;
     }
 
-    let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
-    let descriptions = get_network_descriptions(&txn, network.id)
-        .await
-        .context(h!())?;
-
     txn.commit().await.context(h!())?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    Ok(Json(Network {
-        id: network.id,
-        freqs,
-        unit_ids: req.unit_ids.clone(),
-        name: network.name,
-        location: network.location,
-        radio_station: network.radio_station,
-        created_at: network.created_at.and_utc().timestamp_millis(),
-        purpose: network.purpose,
-        operation_mode: network.operation_mode,
-        operation_type: network.operation_type,
-        operation_period: network.operation_period,
-        last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-        last_updated_by: network.updated_by,
-        active_from: network.active_from.and_utc().timestamp_millis(),
-        active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
-        post_ids: req.post_ids.clone(),
-        descriptions,
-    }))
+    let res = render_networks(vec![network], &env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .next()
+        .context(h!())?;
+
+    Ok(Json(res))
 }
 
 #[post("/api/sigint/update-network")]
@@ -702,34 +633,87 @@ pub async fn update_network(
         }
     }
 
-    let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
-    let unit_ids = get_network_units(&txn, network.id).await.context(h!())?;
-    let post_ids = get_network_posts(&txn, network.id).await.context(h!())?;
-    let descriptions = get_network_descriptions(&txn, network.id)
-        .await
-        .context(h!())?;
-
     txn.commit().await.context(h!())?;
 
-    Ok(Json(Network {
-        id: network.id,
-        freqs,
-        unit_ids,
-        name: network.name,
-        location: network.location,
-        radio_station: network.radio_station,
-        created_at: network.created_at.and_utc().timestamp_millis(),
-        purpose: network.purpose,
-        operation_mode: network.operation_mode,
-        operation_type: network.operation_type,
-        operation_period: network.operation_period,
-        last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-        last_updated_by: network.updated_by,
-        active_from: network.active_from.and_utc().timestamp_millis(),
-        active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
-        post_ids,
-        descriptions,
-    }))
+    let res = render_networks(vec![network], &env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .next()
+        .context(h!())?;
+
+    Ok(Json(res))
+}
+
+///  Видалення мережі
+///
+/// # API URL
+/// - POST: /api/sigint/delete-network
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<DeleteNetworkReq>`] - де [`DeleteNetworkReq`] Тіло запиту, що містить id мережі для видалення.
+///
+/// # Повертає
+///
+/// [`Json<Network>`], де [`Network`] - це структура, що представляє одну мережу.
+///
+#[post("/api/sigint/delete-network")]
+pub async fn delete_network(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<DeleteNetworkReq>,
+) -> Result<Json<Network>, AppError> {
+    let user_login = user.id()?.to_string();
+    crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_login.as_str(), "UnitsEditor")
+        .await?;
+    let req: DeleteNetworkReq = req.into_inner();
+    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
+    let network_json_old = sigint_network::Entity::find_by_id(network.id)
+        .into_json()
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+    let mut network = network.into_active_model();
+    network.deleted = Set(true);
+    let network = network.update(&env.dbx).await.context(h!())?;
+    let network_json_new = sigint_network::Entity::find_by_id(network.id)
+        .into_json()
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+    let _changelog = sigint_network_changelog::ActiveModel {
+        id: NotSet,
+        sigint_network_id: Set(network.id),
+        login: Set(user_login),
+        action: Set(ChangelogActionEnum::Delete),
+        created_at: NotSet,
+        new_value: Set(Some(network_json_new)),
+        old_value: Set(Some(network_json_old)),
+        req: Set(None),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(&env.dbx)
+    .await
+    .context(h!())?;
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    let res = render_networks(vec![network], &env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .next()
+        .context(h!())?;
+
+    Ok(Json(res))
 }
 
 pub async fn get_modulation_name_by_id(
@@ -1390,12 +1374,7 @@ pub async fn add_network_freq(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // Check if frequency link already exists
     let existing_freq = sigint_network_freq::Entity::find()
@@ -1568,12 +1547,7 @@ pub async fn update_network_freq(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // Find the frequency for this network
     let network_freq_model = sigint_network_freq::Entity::find()
@@ -1653,12 +1627,7 @@ pub async fn delete_network_freq(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // Find the frequency connections for this network
     let freq_records = sigint_network_freq::Entity::find()
@@ -2044,20 +2013,6 @@ pub async fn merge_network(
     .await
     .context(h!())?;
 
-    let network = sigint_network::Entity::find_by_id(req.network_id_to)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
-
-    let freqs = get_network_freqs(&txn, network.id).await.context(h!())?;
-    let unit_ids = get_network_units(&txn, network.id).await.context(h!())?;
-    let post_ids = get_network_posts(&txn, network.id).await.context(h!())?;
-    let descriptions = get_network_descriptions(&txn, network.id)
-        .await
-        .context(h!())?;
-
     txn.commit().await.context(h!())?;
 
     debug!(
@@ -2065,25 +2020,17 @@ pub async fn merge_network(
         req.network_id_from, req.network_id_to
     );
 
-    Ok(Json(Network {
-        id: network.id,
-        freqs,
-        unit_ids,
-        name: network.name,
-        location: network.location,
-        radio_station: network.radio_station,
-        created_at: network.created_at.and_utc().timestamp_millis(),
-        purpose: network.purpose,
-        operation_mode: network.operation_mode,
-        operation_type: network.operation_type,
-        operation_period: network.operation_period,
-        last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-        last_updated_by: network.updated_by,
-        active_from: network.active_from.and_utc().timestamp_millis(),
-        active_to: network.active_to.map(|d| d.and_utc().timestamp_millis()),
-        post_ids,
-        descriptions,
-    }))
+    let network = find_network(&env.dbx, req.network_id_to)
+        .await
+        .context(h!())?;
+    let res = render_networks(vec![network], &env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .next()
+        .context(h!())?;
+
+    Ok(Json(res))
 }
 
 #[post("/api/sigint/network-callsigns-list")]
@@ -2096,12 +2043,7 @@ pub async fn network_callsigns_list(
         .await
         .context(h!())?;
 
-    let network = sigint_network::Entity::find_by_id(req.network_id.clone())
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
 
     let filter = EtalonkaFilter {
         since_date_inclusive_ms: Some(
@@ -2181,12 +2123,7 @@ pub async fn network_freqs_list(
         .await
         .context(h!())?;
 
-    let network = sigint_network::Entity::find_by_id(req.network_id.clone())
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
 
     let filter = EtalonkaFilter {
         since_date_inclusive_ms: Some(
@@ -2291,12 +2228,7 @@ pub async fn update_network_posts(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // 2. Fetch current non-deleted post_ids for the network
     let existing_posts = sigint_network_post::Entity::find()
@@ -2410,12 +2342,7 @@ pub async fn update_network_units(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // 1. Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // 2. Fetch current non-deleted unit_ids for the network
     let existing_units = sigint_network_unit::Entity::find()
@@ -2599,12 +2526,7 @@ pub async fn update_network_description(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // Find the description for this network
     let descr_model =
@@ -2675,12 +2597,7 @@ pub async fn delete_network_description(
     let txn = env.dbx.begin().await?;
 
     // Check if network exists
-    let network = sigint_network::Entity::find_by_id(req.network_id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
 
     // Find the description for this network
     let descr_model =
@@ -2861,17 +2778,10 @@ pub async fn merge_two_networks(
     network_id_to: i64,
 ) -> anyhow::Result<(), AppError> {
     // Fetch both networks
-    let network_from = sigint_network::Entity::find_by_id(network_id_from)
-        .one(txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network_from =
+        find_network(txn, network_id_from).await.context(h!())?;
 
-    let network_to = sigint_network::Entity::find_by_id(network_id_to)
-        .one(txn)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
+    let network_to = find_network(txn, network_id_to).await.context(h!())?;
 
     // Fetch units for both networks
     let unit_from = sigint_network_unit::Entity::find()
@@ -3367,4 +3277,19 @@ async fn save_network_aors(
         .context(h!())?;
     }
     Ok(())
+}
+
+pub async fn find_network<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<sigint_network::Model, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let network = sigint_network::Entity::find_by_id(network_id)
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or_else(|| AppError::NotFound)?;
+    Ok(network)
 }
