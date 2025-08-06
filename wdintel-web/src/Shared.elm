@@ -382,6 +382,18 @@ update req msg model =
                         }
                     )
 
+                B.EtNetworkChanged ->
+                    ( { model | pendingEvents = event :: model.pendingEvents }
+                    , E.getNetworksList NetworksLoadedByApi
+                        { sortBy = Nothing
+                        , sinceDateInclusiveMs = Nothing
+                        , tillDateNoninclusiveMs = Nothing
+                        , filterFreq = Nothing
+                        , filterUnit = Nothing
+                        , filterFurtherInvestigation = Nothing
+                        }
+                    )
+
                 _ ->
                     -- Add event to pending events for distribution
                     ( { model | pendingEvents = event :: model.pendingEvents }
