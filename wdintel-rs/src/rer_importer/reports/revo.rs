@@ -148,6 +148,7 @@ pub async fn report_docx_kind_revo(
 
 fn render_network_row(row: NetworkRow) -> TableRow {
     let network_cell = mk_bold_text_cell(&row.name)
+        .add_paragraph(mk_paragraph(""))
         .add_paragraph(mk_paragraph(&format!("\n{} МГц", row.freq)));
     let activity = format!(
         "{}\n- {}",
@@ -220,9 +221,7 @@ fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
     let mut bordered_property = ParagraphProperty::new();
     bordered_property
         .set_border(ParagraphBorder::new(ParagraphBorderPosition::Bottom));
-    let mut cell = TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center);
+    let mut cell = TableCell::new().width(WIDTH_UNIT * 2, WidthType::Dxa);
     for text in lines {
         let mut paragraph = Paragraph::new()
             .add_run(Run::new().add_text(text))
@@ -286,8 +285,8 @@ async fn collect_report(
     };
     let report = Report {
         summary: NetworkSummary {
-            identified_qty: 0,
-            unidentified_qty: 0,
+            identified_qty: 2,
+            unidentified_qty: 3,
         },
         hostile_networks: vec![NetworkRow{
             name: "УКХ 1".to_string(),
