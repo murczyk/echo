@@ -221,7 +221,9 @@ fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
     let mut bordered_property = ParagraphProperty::new();
     bordered_property
         .set_border(ParagraphBorder::new(ParagraphBorderPosition::Bottom));
-    let mut cell = TableCell::new().width(WIDTH_UNIT * 2, WidthType::Dxa);
+    let mut cell = TableCell::new()
+        .width(WIDTH_UNIT * 2, WidthType::Dxa)
+        .vertical_align(VAlignType::Center);
     let mut remaining_count: i32 = lines.len() as i32;
     for text in lines {
         remaining_count -= 1;
