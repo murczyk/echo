@@ -2446,7 +2446,7 @@ contentBlock user shared network model =
                                                     []
 
                                             Nothing ->
-                                                text description.description
+                                                div [ style "white-space" "pre-line" ] [ text description.description ]
                                         ]
                                     ]
                             )
@@ -2486,7 +2486,7 @@ contentBlock user shared network model =
                                             , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
                                             ]
                                         ]
-                                    , div []
+                                    , div [ style "white-space" "pre-line" ]
                                         [ text description.description
                                         ]
                                     ]

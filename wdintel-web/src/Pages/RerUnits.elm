@@ -668,7 +668,7 @@ contentBlock shared model =
                                 Le.Time.renderDateTimeF1 zone
                                     (Time.millisToPosix unit.createdAt)
                     ]
-                , td [] [ text <| unit.comment ]
+                , td [] [ div [ style "white-space" "pre-line" ] [ text unit.comment ] ]
                 , td [ class "text-center align-middle" ]
                     [ if unit.active then
                         div [ class "flex flex-col items-center" ]
