@@ -112,6 +112,7 @@ type alias Model =
 
 type ShowAllPopupFor
     = ShowAllUnits
+    | ShowAllComment
 
 
 type SortingOrder
@@ -1449,7 +1450,49 @@ callsignsTableConfig shared model user =
                     \callsign ->
                         { attributes = [ class "relative" ]
                         , children =
-                            [ div [ style "white-space" "pre-line" ] [ text callsign.comment ]
+                            [ div [ class "flex flex-col gap-2" ]
+                                [ div 
+                                    [ class "comment-preview"
+                                    , style "max-height" "4.5rem"  -- ~3 рядки
+                                    , style "overflow" "hidden"
+                                    , style "white-space" "pre-line"
+                                    ] 
+                                    [ text callsign.comment ]
+                                , if String.length callsign.comment > 100 then
+                                    let
+                                        isOpen = 
+                                            case model.rowShowAllPopupStatus of
+                                                Just ( callsignId, ShowAllComment ) ->
+                                                    callsignId == callsign.id
+                                                _ ->
+                                                    False
+                                    in
+                                    FloatingPopup.new
+                                        { anchorContent = 
+                                            span 
+                                                [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                                ] 
+                                                [ text "Показати повний коментар"
+                                                , i [ class "bi bi-chevron-down text-xs" ] []
+                                                ]
+                                        , popupContent = 
+                                            div [ class "comment-popup-content p-4" ]
+                                                [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                    [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                        [ text "Повний коментар" ]
+                                                    ]
+                                                , div [ class "whitespace-pre-line text-sm" ]
+                                                    [ text callsign.comment ]
+                                                ]
+                                        , isOpen = isOpen
+                                        , onClose = RowShowAllPopupChanged Nothing
+                                        , onOpen = RowShowAllPopupChanged <| Just ( callsign.id, ShowAllComment )
+                                        }
+                                        |> FloatingPopup.withPlacement FloatingPopup.Top
+                                        |> FloatingPopup.view
+                                  else
+                                    text ""
+                                ]
                             , Watermark.new user.name
                                 |> Watermark.withPositioning ( 5, 5 )
                                 |> Watermark.withRotate -10
