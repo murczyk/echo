@@ -430,6 +430,7 @@ pub async fn create_network(
 
     let txn = env.dbx.begin().await.context(h!())?;
 
+    let areas_of_responsibility_ids: Vec<i64> = vec![]; // todo get from req
     if req.freqs.is_empty() {
         return Err(AppError::Form(BTreeMap::from_iter([(
             "freqs".to_string(),
@@ -477,6 +478,10 @@ pub async fn create_network(
     .insert(&txn)
     .await
     .context(h!())?;
+
+    save_network_aors(&txn, areas_of_responsibility_ids, network.id)
+        .await
+        .context(h!())?;
 
     let network_json = sigint_network::Entity::find_by_id(network.id)
         .into_json()
@@ -1264,7 +1269,7 @@ pub async fn update_freq_networks(
             }
             network_id
         } else {
-            let network = sigint_network::ActiveModel {
+            let new_network_id = sigint_network::ActiveModel {
                 name: Set(req_network.name.clone()),
                 location: Set(req_network.location.clone()),
                 radio_station: Set(req_network.radio_station.clone()),
@@ -1273,14 +1278,23 @@ pub async fn update_freq_networks(
                 deleted: Set(false),
                 created_at: NotSet,
                 ..Default::default()
-            };
-            let new_network_id = sigint_network::Entity::insert(network)
-                .exec(&txn)
-                .await
-                .context(h!())?
-                .last_insert_id;
+            }
+            .insert(&txn)
+            .await
+            .context(h!())?
+            .id;
+
+            let areas_of_responsibility_ids = vec![]; // todo read from req
+
+            save_network_aors(
+                &txn,
+                areas_of_responsibility_ids,
+                new_network_id,
+            )
+            .await
+            .context(h!())?;
+
             info!("inserted new network with id {}", new_network_id);
-            let network_id = new_network_id.clone();
 
             for unit_id in &req_network.unit_ids {
                 let network_unit = sigint_network_unit::ActiveModel {
@@ -1294,7 +1308,7 @@ pub async fn update_freq_networks(
                 let _updated_entry =
                     network_unit.save(&txn).await.context(h!())?;
             }
-            network_id
+            new_network_id
         };
 
         if let Some(req) = req_network.description.clone() {
@@ -3324,5 +3338,33 @@ where
         network_id: Set(network.id),
     };
     model.insert(dbx).await.context(h!())?;
+    Ok(())
+}
+
+async fn save_network_aors(
+    txn: &DatabaseTransaction,
+    areas_of_responsibility_ids: Vec<i64>,
+    network_id: i64,
+) -> Result<(), AppError> {
+    let mut ids = areas_of_responsibility_ids;
+    if ids.is_empty() {
+        let default_area =
+            sigint::area_of_responsibility::load_default_aor(txn)
+                .await
+                .context(h!())?;
+        ids.push(default_area.id);
+    }
+
+    for aor_id in ids {
+        sigint_network_aor::ActiveModel {
+            id: NotSet,
+            network_id: Set(network_id),
+            aor_id: Set(aor_id),
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .context(h!())?;
+    }
     Ok(())
 }
