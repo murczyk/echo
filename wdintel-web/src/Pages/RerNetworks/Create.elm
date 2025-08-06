@@ -974,7 +974,7 @@ viewFrequenciesSection shared model =
 
               else
                 div [ class "space-y-2" ]
-                    (List.indexedMap (viewFrequencyRow shared) model.createNetworkState.freqs
+                    (List.indexedMap (viewFrequencyRow shared model) model.createNetworkState.freqs
                         ++ [ div [ class "flex justify-center mt-3" ]
                                 [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
                                     |> Button.withStyleSecondary
@@ -987,18 +987,37 @@ viewFrequenciesSection shared model =
         ]
 
 
-viewFrequencyRow : Shared.Model -> Int -> B.AddNetworkFreq -> Html Msg
-viewFrequencyRow shared index freq =
+viewFrequencyRow : Shared.Model -> Model -> Int -> B.AddNetworkFreq -> Html Msg
+viewFrequencyRow shared model index freq =
+    let
+        -- Get modulation name if available
+        modulationName =
+            case freq.modulationId of
+                Just modId ->
+                    case model.modulations of
+                        RD.Success modulations ->
+                            modulations
+                                |> List.filter (\mod -> mod.id == modId)
+                                |> List.head
+                                |> Maybe.map .name
+                                |> Maybe.withDefault "Невідома модуляція"
+                        
+                        _ ->
+                            "Завантаження..."
+                
+                Nothing ->
+                    "Не встановлено"
+    in
     div [ class "border border-border rounded p-3 bg-card" ]
         [ div [ class "flex justify-between items-start" ]
             [ div [ class "flex-1" ]
                 [ div [ class "flex gap-4 mb-2" ]
                     [ div [ class "font-semibold" ] [ text freq.freq ]
-                    , div [ class "text-sm text-muted-foreground" ] [ text freq.kind ]
+                    , div [ class "text-sm text-muted-foreground" ] [ text (NetworksUtils.networkStringToLabel freq.kind) ]
                     ]
                 , case freq.modulationId of
                     Just _ ->
-                        div [ class "text-sm text-muted-foreground" ] [ text "Модуляція: Так" ]
+                        div [ class "text-sm text-muted-foreground" ] [ text ("Модуляція: " ++ modulationName) ]
 
                     Nothing ->
                         text ""
