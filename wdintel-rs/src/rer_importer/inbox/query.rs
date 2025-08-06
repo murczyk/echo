@@ -80,6 +80,7 @@ pub(crate) async fn build_inbox_query(
         login,
         true,
     )?;
+    let q = filter_selected_aors(q, &req.selected_aors)?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let mut q = filter_selected_locations(
@@ -87,7 +88,6 @@ pub(crate) async fn build_inbox_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
-    // let q = filter_selected_aors(q, &req.selected_aors)?;
 
     if req.nolimit != Some(true) {
         q = q.limit(20);

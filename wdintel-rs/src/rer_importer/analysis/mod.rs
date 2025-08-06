@@ -457,6 +457,97 @@ where
     Ok(q)
 }
 
+pub fn filter_selected_aors<Q>(
+    q: Q,
+    selected_aors: &Option<Vec<i64>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    // #[derive(Iden)]
+    // pub enum AreaOfResponsibility {
+    //     Table,
+    //     Id,
+    //     LeftBound,
+    //     RightBound,
+    // }
+
+    if let Some(aor_ids) = selected_aors {
+        if !aor_ids.is_empty() {
+            let aor_linked = Alias::new("aor_linked");
+            let aor_frontend = Alias::new("aor_frontend");
+
+            let inner_exists = area_of_responsibility::Entity::find()
+                .select_only()
+                .column(area_of_responsibility::Column::Id)
+                .filter(
+                    Condition::all()
+                        .add(area_of_responsibility::Column::Id.is_in(aor_ids))
+                        .add(
+Condition::any()
+    .add(
+        Expr::col((aor_linked.clone(), area_of_responsibility::Column::LeftBound))
+            .gte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::LeftBound)))
+    )
+    .add(
+        Expr::col((aor_linked.clone(), area_of_responsibility::Column::RightBound))
+            .lte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::RightBound)))
+    )
+                        )
+                )
+                .into_query();
+
+            let inner_exists = area_of_responsibility::Entity::find()
+                .alias(aor_frontend.clone())
+                .select_only()
+                .column(Expr::val(1))
+                .filter(
+                    Condition::all()
+                        .add(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::Id))
+                            .is_in(aor_ids.clone()))
+                        .add(
+                            Condition::any()
+                                .add(Expr::col((aor_linked.clone(), area_of_responsibility::Column::LeftBound))
+                                    .gte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::LeftBound))))
+                                .add(Expr::col((aor_linked.clone(), area_of_responsibility::Column::RightBound))
+                                    .lte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::RightBound))))
+                        )
+                )
+                .into_query();
+
+            let outer_exists = signal_group_aor::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_group_aor::Relation::AreaOfResponsibility.def(),
+                    signal_group_aor::Column::AorId
+                        .equals(area_of_responsibility::Column::Id),
+                )
+                .select_only()
+                .column(Expr::val(1))
+                .filter(
+                    Condition::all()
+                        .add(
+                            Expr::col((
+                                signal_group_aor::Entity,
+                                signal_group_aor::Column::MasterKey,
+                            ))
+                            .equals(Expr::col((
+                                "signal_message",
+                                "group_master_key",
+                            ))),
+                        )
+                        .add(Expr::expr(Expr::exists(inner_exists))),
+                )
+                .into_query();
+
+            // Final condition: WHERE EXISTS (outer_exists)
+            Ok(q.filter(Condition::exists(outer_exists)))
+        }
+    }
+
+    Ok(q)
+}
+
 pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
