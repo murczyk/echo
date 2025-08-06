@@ -250,14 +250,21 @@ copy-db-to-target:
     ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /tmp/wd-{{ dt1 }}.pgrestore"
 
 copy-db-local:
-    #!/bin/bash
-    set -euxo pipefail
-    if [[ "{{ server }}" == "" ]]; then
-        just _print-servers; exit 1;
-    fi
-    ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-    scp {{ server }}:~/Downloads/wd-{{ dt1 }}.pgrestore ~/Downloads/
-    ssh -t {{ server }} 'rm ~/Downloads/wd-{{ dt1 }}.pgrestore'
+   #!/bin/bash
+      set -euxo pipefail
+      if [[ "{{ server }}" == "" ]]; then
+          just _print-servers; exit 1;
+      fi
+      ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+      ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
+      scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
+      ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+      scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /tmp/
+      rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
+      (cd /tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)
+      sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'
+      sudo -u postgres psql -c 'create database {{ pgdb }}'
+      sudo -u postgres pg_restore -d {{ pgdb }} /tmp/wd-{{ dt1 }}.pgrestore
 
 setup-b2:
     ssh {{ server }} 'sudo pip3 install -U b2'
