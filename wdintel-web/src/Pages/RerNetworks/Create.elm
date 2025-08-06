@@ -4,6 +4,7 @@ import Api exposing (check_if_freq_exist)
 import Auth
 import Bindings as B
 import Components.Button as Button
+import Components.Checkbox as Checkbox
 import Components.Sidebar as Sidebar
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -156,6 +157,7 @@ type alias Model =
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , freqDescriptionInp : String
     , freqFormatError : Maybe String
+    , freqShowActiveTo : Bool
     }
 
 
@@ -247,6 +249,7 @@ init route shared () =
       , modulations = NotAsked
       , freqDescriptionInp = ""
       , freqFormatError = Nothing
+      , freqShowActiveTo = False
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -288,6 +291,7 @@ type Msg
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | FreqDescriptionInputChangedByUser String
+    | ToggleFreqShowActiveTo
     | AddFreqToNetwork
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
 
@@ -517,7 +521,7 @@ update shared msg model =
             ( { model | freqSidebarOpen = True }, E.none )
 
         CloseFreqSidebar ->
-            ( { model | freqSidebarOpen = False, freqDescriptionInp = "", freqFormatError = Nothing }, E.none )
+            ( { model | freqSidebarOpen = False, freqDescriptionInp = "", freqFormatError = Nothing, freqShowActiveTo = False }, E.none )
 
         UpdateFreqField updateFunc ->
             let
@@ -590,6 +594,26 @@ update shared msg model =
         FreqDescriptionInputChangedByUser inp ->
             ( { model | freqDescriptionInp = inp }, E.none )
 
+        ToggleFreqShowActiveTo ->
+            let
+                newShowActiveTo = not model.freqShowActiveTo
+                newFreqState = 
+                    if not newShowActiveTo then
+                        -- очистити activeTo при знятті чекбокса
+                        let
+                            freqState = model.freqCreateState
+                        in
+                        { freqState | activeTo = Nothing }
+                    else
+                        model.freqCreateState
+            in
+            ( { model 
+                | freqShowActiveTo = newShowActiveTo
+                , freqCreateState = newFreqState
+              }
+            , E.none
+            )
+
         AddFreqToNetwork ->
             let
                 oldNetworkState =
@@ -636,6 +660,7 @@ update shared msg model =
                 , freqSidebarOpen = False
                 , freqDescriptionInp = ""
                 , freqFormatError = Nothing
+                , freqShowActiveTo = False
               }
             , E.none
             )
@@ -1117,37 +1142,43 @@ viewFreqSidebar shared model =
                     ]
                     []
                 ]
-            , div [ class "grid grid-cols-2 gap-4" ]
-                [ div []
-                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна з:" ]
-                    , input
-                        [ type_ "date"
-                        , class "w-full p-2 border border-border rounded"
-                        , case model.freqCreateState.activeFrom of
-                            Just millis ->
-                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна з:" ]
+                , input
+                    [ type_ "date"
+                    , class "w-full p-2 border border-border rounded"
+                    , case model.freqCreateState.activeFrom of
+                        Just millis ->
+                            value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
 
-                            Nothing ->
-                                value ""
-                        , onInput <|
-                            UpdateFreqField
-                                << (\v state ->
-                                        { state
-                                            | activeFrom =
-                                                case Le.Time.parseDateParts v of
-                                                    Err _ ->
-                                                        state.activeFrom
+                        Nothing ->
+                            value ""
+                    , onInput <|
+                        UpdateFreqField
+                            << (\v state ->
+                                    { state
+                                        | activeFrom =
+                                            case Le.Time.parseDateParts v of
+                                                Err _ ->
+                                                    state.activeFrom
 
-                                                    Ok parts ->
-                                                        Time.Extra.partsToPosix shared.timeZone parts
-                                                            |> Time.posixToMillis
-                                                            |> Just
-                                        }
-                                   )
-                        ]
-                        []
+                                                Ok parts ->
+                                                    Time.Extra.partsToPosix shared.timeZone parts
+                                                        |> Time.posixToMillis
+                                                        |> Just
+                                    }
+                               )
                     ]
-                , div []
+                    []
+                ]
+            , div []
+                [ 
+                 Checkbox.new { isChecked = model.freqShowActiveTo, onToggle = \_ -> ToggleFreqShowActiveTo }
+                    |> Checkbox.withContent [ text "Частота вже не активна" ]
+                    |> Checkbox.view
+                ]
+            , if model.freqShowActiveTo then
+                div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна по:" ]
                     , input
                         [ type_ "date"
@@ -1176,7 +1207,8 @@ viewFreqSidebar shared model =
                         ]
                         []
                     ]
-                ]
+              else
+                text ""
             ]
         , div [ class "p-6 border-t border-border bg-muted/30" ]
             [ div [ class "flex justify-end gap-3" ]
