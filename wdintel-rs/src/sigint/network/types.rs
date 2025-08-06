@@ -211,6 +211,8 @@ pub struct ListNetworksReq {
     pub filter_unit: Option<String>,
     /// filter_further_investigation - to filter networks that does not have any unit assigned to them yet
     pub filter_further_investigation: Option<bool>,
+    pub show_inactive: Option<bool>,
+    pub show_deleted: Option<bool>,
     pub sort_by: Option<Vec<ListNetworksSortBy>>,
 }
 

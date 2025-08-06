@@ -1,4 +1,6 @@
 ## NEXT
+- [#1189](https://github.com/echoua/echo/issues/1186) Мережа: архів (фільтрація видалених мереж)
+- [#1187](https://github.com/echoua/echo/issues/1186) Мережа: фільтрація не активних мереж
 - [#1186](https://github.com/echoua/echo/issues/1186) Мережа: видалення мережі користувачем з роллю UnitsEditor
 - [#1153](https://github.com/echoua/echo/issues/1153) Позивні: обмежувати довжину коментаря
 - [#1191](https://github.com/echoua/echo/issues/1191) Підроздіни: Редатктор підрозділів може їх видаляти
