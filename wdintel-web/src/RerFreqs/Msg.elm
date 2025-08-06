@@ -39,7 +39,6 @@ type Msg
     | NetworkAddUnitSelMsg (Select.Msg Int)
     | NetworkAddExistingKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkAddExistingModulationSelMsg (Select.Msg Int)
-    | NetworksReturnedByApi (Result ApiError (List B.Network))
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
     | UnitStatsReturnedByApi (Result ApiError B.FreqUnitStatsRsp)

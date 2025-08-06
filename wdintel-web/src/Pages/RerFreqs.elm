@@ -82,7 +82,6 @@ init _ =
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
 
-            , networks = Dict.empty
             , filterState =
                 { freq = ""
                 , unit = ""
@@ -540,8 +539,7 @@ update shared msg model =
                 , noMoreToLoad = not rsp.showLoadMore
               }
             , E.batch
-                (E.getNetworksInfoByIds NetworksReturnedByApi networkIds
-                    :: (case ( model.from.datePosix, model.to.datePosix ) of
+                (case ( model.from.datePosix, model.to.datePosix ) of
                             ( Just dtFromPosix, Just dtToPosix ) ->
                                 let
                                     freqsAsString =
@@ -578,7 +576,6 @@ update shared msg model =
                                 []
                        )
                 )
-            )
 
         GroupsMessageCountByDayReturnedByApi (Ok r) ->
             ( { model | groupsMessageCountByDay = Dict.union model.groupsMessageCountByDay r }, E.none )
@@ -594,17 +591,13 @@ update shared msg model =
             )
 
         GotFreqNetworks freqS (Ok networks) ->
-            let
-                newNetworkIds =
-                    networks |> List.map .id
-            in
             ( { model
                 | freqs =
                     model.freqs
                         |> ListX.updateIf (\f -> f.freq == freqS)
                             (\f -> { f | networkIds = networks |> List.map .id })
               }
-            , E.getNetworksInfoByIds NetworksReturnedByApi newNetworkIds
+            , E.none
             )
 
         DateTimeFromMsg imsg ->
@@ -694,9 +687,9 @@ update shared msg model =
                         Just (Select.Select i) ->
                             let
                                 a =
-                                    case shared.masterUnits of
-                                        Success units ->
-                                            Utils.findConnectedNetworks (Just i) model.networks units
+                                    case ( shared.masterUnits, shared.networks ) of
+                                        ( Success units, Success networks ) ->
+                                            Utils.findConnectedNetworks (Just i) networks units
                                         _ ->
                                             []
 
@@ -895,21 +888,7 @@ update shared msg model =
                     icmd
             )
 
-        NetworksReturnedByApi (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
-            )
 
-        NetworksReturnedByApi (Ok networks) ->
-            ( { model
-                | networks =
-                    networks
-                        |> List.map (\x -> ( x.id, x ))
-                        |> Dict.fromList
-                        |> (\v -> Dict.union v model.networks)
-              }
-            , E.none
-            )
 
         FilterStateMsg filterState ->
             let
@@ -1203,14 +1182,9 @@ update shared msg model =
             )
 
         NetworkConfirmationAdded (Ok network) ->
-            let
-                m1 =
-                    { model
-                        | addConfirmationInp = Nothing
-                        , networks = Dict.insert network.id network model.networks
-                    }
-            in
-            ( m1, E.none )
+            ( { model | addConfirmationInp = Nothing }
+            , E.none
+            )
 
         NetworkAddToggleExistingId id ->
             ( { model
@@ -1233,8 +1207,8 @@ update shared msg model =
             )
 
         FreqAddToExistingNetwork freq id ->
-            case Dict.get id model.networks of
-                Just network ->
+            case ( shared.networks, Dict.get id (RD.withDefault Dict.empty shared.networks) ) of
+                ( Success _, Just network ) ->
                     ( { model | networkAddLoading = True }
                     , E.addFreqToNetwork (FreqAddedToNetwork freq)
                         { networkId = network.id
@@ -1291,8 +1265,7 @@ update shared msg model =
                             model.freqs
             in
             ( { model
-                | networks = Dict.insert network.id network model.networks
-                , freqs = freqs2
+                | freqs = freqs2
                 , networkWorkflowStatus = SelectingNetwork freq Nothing
                 , networkDialogUnitSelect = aus2
                 , networkAddLoading = False
@@ -1331,8 +1304,7 @@ update shared msg model =
                             model.freqs
             in
             ( { model
-                | networks = Dict.insert network.id network model.networks
-                , freqs = freqs2
+                | freqs = freqs2
                 , networkWorkflowStatus = SelectingNetwork freq Nothing
                 , networkAddLoading = False
               }
@@ -1346,8 +1318,7 @@ update shared msg model =
 
         NetworkUpdated freq (Ok network) ->
             ( { model
-                | networks = Dict.insert network.id network model.networks
-                , networkWorkflowStatus = SelectingNetwork freq Nothing
+                | networkWorkflowStatus = SelectingNetwork freq Nothing
               }
             , E.none
             )
@@ -1785,7 +1756,7 @@ freqsTableConfig shared model user =
                                         }
                                         (FreqsPage
                                             freq.freq
-                                            model.networks
+                                            (RD.withDefault Dict.empty shared.networks)
                                         )
                                 _ ->
                                     div [] [ text "Завантаження..." ]
@@ -2048,7 +2019,7 @@ viewFreqBlock mUser shared model freq =
             [ div [] <|
                 for_ freq.networkIds <|
                     \networkId ->
-                        case Dict.get networkId model.networks of
+                        case Dict.get networkId (RD.withDefault Dict.empty shared.networks) of
                             Just network ->
                                 span [ class "inline-flex items-center gap-1" ]
                                     [ case shared.masterUnits of

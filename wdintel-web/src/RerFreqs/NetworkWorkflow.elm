@@ -64,7 +64,7 @@ renderNetworkSidebar model shared =
                 , div [ class "border-b border-gray-200" ]
                     [ nav [ class "-mb-px flex space-x-8" ]
                         [ tabButton RerFreqs.Model.Search "Пошук та прив'язка"
-                        , tabButton RerFreqs.Model.Manage ("Уже прив'язані (" ++ String.fromInt (List.length (getLinkedNetworks freq model)) ++ ")")
+                        , tabButton RerFreqs.Model.Manage ("Уже прив'язані (" ++ String.fromInt (List.length (getLinkedNetworks freq model shared)) ++ ")")
                         ]
                     ]
                 ]
@@ -82,11 +82,11 @@ renderNetworkSidebar model shared =
     ]
 
 
-getLinkedNetworks : String -> Model -> List B.Network
-getLinkedNetworks freq model =
+getLinkedNetworks : String -> Model -> Shared.Model -> List B.Network
+getLinkedNetworks freq model shared =
     ListX.find (\f -> f.freq == freq) model.freqs
         |> Maybe.map .networkIds
-        |> Maybe.map (List.filterMap (\id -> Dict.get id model.networks))
+        |> Maybe.map (List.filterMap (\id -> Dict.get id (RD.withDefault Dict.empty shared.networks)))
         |> Maybe.withDefault []
 
 
@@ -94,7 +94,7 @@ viewManagingLinks : String -> Model -> Shared.Model -> List (Html Msg)
 viewManagingLinks freq model shared =
     let
         linkedNetworks =
-            getLinkedNetworks freq model
+            getLinkedNetworks freq model shared
     in
     [ div [ class "py-4" ]
         [ p [ class "text-sm text-gray-600 mb-4" ] [ text "Ця частота прив'язана до наступних мереж. Натисніть на олівець, щоб перейти до редагування мережі." ]
@@ -143,22 +143,27 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                 List.filter (\n -> not (List.member n.id alreadyConnectedNetworkIds)) networks
 
             networksToShow =
-                if model.showNetworksWithoutUnit then
-                    -- Show ONLY networks without units when checkbox is checked
-                    Dict.values model.networks
-                        |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
-                        |> filterOutAlreadyConnected
-
-                else
-                    -- Show only networks with selected unit when checkbox is unchecked
-                    case model.networkDialogUnitSelect.selected of
-                        Just unitId ->
-                            Dict.values model.networks
-                                |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
+                case shared.networks of
+                    Success networks ->
+                        if model.showNetworksWithoutUnit then
+                            -- Show ONLY networks without units when checkbox is checked
+                            Dict.values networks
+                                |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
                                 |> filterOutAlreadyConnected
 
-                        Nothing ->
-                            []
+                        else
+                            -- Show only networks with selected unit when checkbox is unchecked
+                            case model.networkDialogUnitSelect.selected of
+                                Just unitId ->
+                                    Dict.values networks
+                                        |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
+                                        |> filterOutAlreadyConnected
+
+                                Nothing ->
+                                    []
+                    
+                    _ ->
+                        []
           in
           div [ class "min-h-[200px] flex flex-col" ]
             [ let

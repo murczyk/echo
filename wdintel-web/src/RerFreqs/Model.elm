@@ -34,7 +34,6 @@ type alias Model =
     , from : Le.Block.DateTime.Model
     , to : Le.Block.DateTime.Model
 
-    , networks : Dict Int B.Network
     , filterState : FilterState
     , filterStateDebounce : Debounce FilterState
     , loadingUnitStats : Bool
