@@ -74,8 +74,20 @@ pub async fn network_list(
             JoinType::LeftJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
-        )
-        .filter(sigint_network::Column::Deleted.eq(false));
+        );
+
+    if let Some(show_delete) = req.show_deleted {
+        networks =
+            networks.filter(sigint_network::Column::Deleted.eq(show_delete));
+    }
+
+    if let Some(show_inactive) = req.show_inactive {
+        networks = networks.filter(if show_inactive {
+            sigint_network::Column::ActiveTo.is_not_null()
+        } else {
+            sigint_network::Column::ActiveTo.is_null()
+        });
+    }
 
     if let Some(filter_unit) = &req.filter_unit {
         networks = networks.filter(Expr::cust_with_values(
