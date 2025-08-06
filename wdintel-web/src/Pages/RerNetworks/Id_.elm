@@ -210,6 +210,7 @@ type alias Model =
     , freqEditKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , freqEditModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , freqEditSaving : Bool
+    , freqEditShowActiveTo : Bool
     }
 
 
@@ -291,6 +292,7 @@ init route shared () =
             , selected = Nothing
             }
       , freqEditSaving = False
+      , freqEditShowActiveTo = False
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -375,6 +377,7 @@ type Msg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
+    | ToggleFreqEditShowActiveTo
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1177,16 +1180,20 @@ update shared msg model =
                 
                 modulationSelect = model.freqEditModulationSelect
                 updatedModulationSelect = { modulationSelect | selected = updateReq.modulationId }
+                
+                -- Встановлюємо freqEditShowActiveTo на основі того, чи є activeTo
+                showActiveTo = updateReq.activeTo /= Nothing
             in
             ( { model 
                 | freqEditSidebar = Just ( freqId, updateReq )
                 , freqEditKindSelect = updatedKindSelect
                 , freqEditModulationSelect = updatedModulationSelect
+                , freqEditShowActiveTo = showActiveTo
               }
             , E.none )
 
         CloseFreqEditSidebar ->
-            ( { model | freqEditSidebar = Nothing }, E.none )
+            ( { model | freqEditSidebar = Nothing, freqEditShowActiveTo = False }, E.none )
 
         UpdateFreqEditSidebar updateReq ->
             ( { model | freqEditSidebar = Maybe.map (\( freqId, _ ) -> ( freqId, updateReq )) model.freqEditSidebar }, E.none )
@@ -1294,6 +1301,27 @@ update shared msg model =
                 Cmd.map
                     FreqModulationSelectMsg
                     icmd
+            )
+
+        ToggleFreqEditShowActiveTo ->
+            let
+                newShowActiveTo = not model.freqEditShowActiveTo
+                updatedModel = 
+                    if not newShowActiveTo then
+                        -- очистити activeTo при знятті чекбокса
+                        case model.freqEditSidebar of
+                            Just (freqId, updateReq) ->
+                                let
+                                    newUpdateReq = { updateReq | activeTo = Nothing }
+                                in
+                                { model | freqEditSidebar = Just (freqId, newUpdateReq) }
+                            Nothing ->
+                                model
+                    else
+                        model
+            in
+            ( { updatedModel | freqEditShowActiveTo = newShowActiveTo }
+            , E.none
             )
 
 
@@ -1666,24 +1694,33 @@ freqEditSidebarContent shared model user freqId updateReq =
                         []
                     ]
                 , div [ class "space-y-2" ]
-                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна по" ]
-                    , input
-                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
-                        , type_ "date"
-                        , Maybe.map Time.millisToPosix updateReq.activeTo
-                            |> Maybe.map (Le.Time.renderDateF4 shared.timeZone)
-                            |> Maybe.withDefault ""
-                            |> value
-                        , onInput <|
-                            UpdateFreqEditSidebar
-                                << (\v ->
-                                        { updateReq
-                                            | activeTo = updateActiveToFromInput v shared.timeZone updateReq.activeTo
-                                        }
-                                   )
-                        ]
-                        []
+                    [ 
+                     Checkbox.new { isChecked = model.freqEditShowActiveTo, onToggle = \_ -> ToggleFreqEditShowActiveTo }
+                        |> Checkbox.withContent [ text "Частота вже не активна" ]
+                        |> Checkbox.view
                     ]
+                , if model.freqEditShowActiveTo then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна по" ]
+                        , input
+                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                            , type_ "date"
+                            , Maybe.map Time.millisToPosix updateReq.activeTo
+                                |> Maybe.map (Le.Time.renderDateF4 shared.timeZone)
+                                |> Maybe.withDefault ""
+                                |> value
+                            , onInput <|
+                                UpdateFreqEditSidebar
+                                    << (\v ->
+                                            { updateReq
+                                                | activeTo = updateActiveToFromInput v shared.timeZone updateReq.activeTo
+                                            }
+                                       )
+                            ]
+                            []
+                        ]
+                  else
+                    text ""
                 ]
             ]
         , div [ class "p-6 border-t border-border" ]
