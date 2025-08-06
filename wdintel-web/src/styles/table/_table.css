@@ -198,3 +198,67 @@ html[data-bs-theme="dark"] .table-row-editing {
     background-color: rgba(159, 101, 22, 0.15);
     border-left: 3px solid var(--ochre-normal);
 }
+
+/* Comment cell styles */
+.comment-preview {
+    line-height: 1.4;
+    word-wrap: break-word;
+    hyphens: auto;
+    position: relative;
+}
+
+/* Gradient fade effect for truncated comments */
+.comment-preview::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 30px;
+    height: 1.5rem;
+    background: linear-gradient(to left, var(--bs-body-bg) 0%, transparent 100%);
+    pointer-events: none;
+}
+
+html[data-bs-theme="dark"] .comment-preview::after {
+    background: linear-gradient(to left, var(--bs-body-bg) 0%, transparent 100%);
+}
+
+/* Comment popup button styles */
+.comment-preview+div span {
+    font-size: 0.75rem;
+    line-height: 1;
+    transition: all 0.2s ease;
+}
+
+/* Ensure comment cells have proper spacing */
+.base-table td .flex.flex-col.gap-2 {
+    padding: 0.25rem 0;
+}
+
+/* Comment show more button hover effects */
+.comment-preview+div span:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+html[data-bs-theme="dark"] .comment-preview+div span:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Comment popup content styling */
+.comment-popup-content {
+    max-width: 500px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.comment-popup-content h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.comment-popup-content div {
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
