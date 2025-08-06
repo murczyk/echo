@@ -285,7 +285,8 @@ pub async fn delete_unit(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor").await?;
     let unit = find_unit(&env.dbx, req.into_inner()).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
