@@ -218,9 +218,7 @@ fn mk_text_cell(text: &str) -> TableCell {
 }
 
 fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
-    let mut bordered_property = ParagraphProperty::new();
-    bordered_property
-        .set_border(ParagraphBorder::new(ParagraphBorderPosition::Bottom));
+    println!("lines: {:?}", lines);
     let mut cell = TableCell::new()
         .width(WIDTH_UNIT * 2, WidthType::Dxa)
         .vertical_align(VAlignType::Center);
