@@ -145,9 +145,6 @@ pub async fn update_organism(
     organism.enabled = Set(req.enabled);
 
     let organism = organism.update(&env.dbx).await?;
-    let groups = load_organism_group_ids(&env.dbx, organism.id)
-        .await
-        .context(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
@@ -157,13 +154,11 @@ pub async fn update_organism(
         roles: serde_json::from_value(organism.roles).unwrap_or(vec![]),
         group_auto_link: req.group_auto_link.unwrap_or(false),
         enabled: req.enabled,
-        selected_groups: groups.selected_keys,
-        available_groups: groups.available_keys,
     }))
 }
 
-#[post("/api/organism/group-list")]
-pub async fn organism_group_list(
+#[post("/api/organism/all-groups")]
+pub async fn group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
@@ -178,6 +173,26 @@ pub async fn organism_group_list(
                 master_key: g.master_key,
                 name: g.name.unwrap_or("".to_string()),
                 datasource_id: g.datasource_id.unwrap_or(0),
+            })
+            .collect(),
+    ))
+}
+
+#[post("/api/organism/group-list")]
+pub async fn organism_group_list(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<Vec<OrganismGroup>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+
+    Ok(Json(
+        organism_group::Entity::find()
+            .all(&env.dbx)
+            .await?
+            .into_iter()
+            .map(|g| OrganismGroup {
+                master_key: g.signal_group_master_key,
+                organism_id: g.organism_id,
             })
             .collect(),
     ))
@@ -248,10 +263,6 @@ pub async fn create_organism(
     .insert(&env.dbx)
     .await?;
 
-    let groups = load_organism_group_ids(&env.dbx, organism.id)
-        .await
-        .context(h!())?;
-
     Ok(Json(Organism {
         id: organism.id,
         parent_id: organism.parent_id,
@@ -260,8 +271,6 @@ pub async fn create_organism(
         roles: serde_json::from_value(organism.roles).unwrap_or(vec![]),
         group_auto_link: req.group_auto_link.unwrap_or(false),
         enabled: organism.enabled,
-        selected_groups: groups.selected_keys,
-        available_groups: groups.available_keys,
     }))
 }
 
@@ -298,9 +307,6 @@ pub async fn list_organisms(
 
     let mut list = vec![];
     for o in organisms {
-        let groups = load_organism_group_ids(&env.dbx, o.id)
-            .await
-            .context(h!())?;
         let org = Organism {
             id: o.id,
             parent_id: o.parent_id,
@@ -308,9 +314,7 @@ pub async fn list_organisms(
             enabled: o.enabled,
             created_at: o.created_at.and_utc().timestamp_millis(),
             roles: serde_json::from_value(o.roles).unwrap_or(vec![]),
-            selected_groups: groups.selected_keys,
             group_auto_link: o.group_auto_link.unwrap_or(false),
-            available_groups: groups.available_keys,
         };
         list.push(org);
     }

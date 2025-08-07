@@ -2800,8 +2800,6 @@ type alias Organism =
     , createdAt : Int
     , groupAutoLink : Bool
     , roles : List String
-    , selectedGroups : List String
-    , availableGroups : List String
     , enabled : Bool
     }
 
@@ -2815,8 +2813,6 @@ organismEncoder struct =
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "group_auto_link", Json.Encode.bool struct.groupAutoLink )
         , ( "roles", Json.Encode.list Json.Encode.string struct.roles )
-        , ( "selected_groups", Json.Encode.list Json.Encode.string struct.selectedGroups )
-        , ( "available_groups", Json.Encode.list Json.Encode.string struct.availableGroups )
         , ( "enabled", Json.Encode.bool struct.enabled )
         ]
 
@@ -7132,8 +7128,6 @@ organismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_auto_link" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_groups" (Json.Decode.list Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "available_groups" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
 
 
