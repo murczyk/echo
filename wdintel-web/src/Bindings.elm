@@ -4297,6 +4297,7 @@ type alias Network =
     , activeTo : Maybe Int
     , postIds : List Int
     , descriptions : List NetworkDescription
+    , deleted : Bool
     }
 
 
@@ -4320,6 +4321,7 @@ networkEncoder struct =
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         , ( "descriptions", Json.Encode.list networkDescriptionEncoder struct.descriptions )
+        , ( "deleted", Json.Encode.bool struct.deleted )
         ]
 
 
@@ -4366,6 +4368,18 @@ createNetworkReqEncoder struct =
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         , ( "descriptions", Json.Encode.list addNetworkDescriptionEncoder struct.descriptions )
+        ]
+
+
+type alias DeleteNetworkReq =
+    { networkId : Int
+    }
+
+
+deleteNetworkReqEncoder : DeleteNetworkReq -> Json.Encode.Value
+deleteNetworkReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
         ]
 
 
@@ -8042,6 +8056,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list networkDescriptionDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" Json.Decode.bool))
 
 
 updateFreqNetworksReqDecoder : Json.Decode.Decoder UpdateFreqNetworksReq
@@ -8065,6 +8080,12 @@ createNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list addNetworkDescriptionDecoder)))
+
+
+deleteNetworkReqDecoder : Json.Decode.Decoder DeleteNetworkReq
+deleteNetworkReqDecoder =
+    Json.Decode.succeed DeleteNetworkReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
 
 
 updateNetworkReqDecoder : Json.Decode.Decoder UpdateNetworkReq

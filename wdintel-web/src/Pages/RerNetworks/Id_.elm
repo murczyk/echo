@@ -210,6 +210,8 @@ type alias Model =
     , freqEditModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , freqEditSaving : Bool
     , freqEditShowActiveTo : Bool
+    , deleteNetworkConfirmation : Maybe Int
+    , deleteNetworkLoading : Bool
     }
 
 
@@ -291,6 +293,8 @@ init route shared () =
             }
       , freqEditSaving = False
       , freqEditShowActiveTo = False
+      , deleteNetworkConfirmation = Nothing
+      , deleteNetworkLoading = False
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -375,6 +379,10 @@ type Msg
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | ToggleFreqEditShowActiveTo
+    | DeleteNetworkClickedByUser
+    | DeleteNetworkConfirmedByUser
+    | DeleteNetworkCanceledByUser
+    | DeleteNetworkReturnedByApi (Result ApiError B.Network)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1312,6 +1320,41 @@ update shared msg model =
             in
             ( { updatedModel | freqEditShowActiveTo = newShowActiveTo }
             , E.none
+            )
+
+        DeleteNetworkClickedByUser ->
+            case model.network of
+                Success network ->
+                    ( { model | deleteNetworkConfirmation = Just network.id }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        DeleteNetworkConfirmedByUser ->
+            case model.deleteNetworkConfirmation of
+                Just networkId ->
+                    ( { model | deleteNetworkLoading = True, deleteNetworkConfirmation = Nothing }
+                    , E.deleteNetwork DeleteNetworkReturnedByApi { networkId = networkId }
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        DeleteNetworkCanceledByUser ->
+            ( { model | deleteNetworkConfirmation = Nothing }
+            , E.none
+            )
+
+        DeleteNetworkReturnedByApi (Err e) ->
+            ( { model | deleteNetworkLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" e
+            )
+
+        DeleteNetworkReturnedByApi (Ok _) ->
+            ( { model | deleteNetworkLoading = False }
+            , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
             )
 
 
@@ -2298,7 +2341,16 @@ contentBlock user shared network model =
         [ h2 []
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
-        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+        , div [ class "flex gap-[8px]" ]
+            [ 
+             Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
+                    |> Button.withStyleDanger
+                    |> Button.view
+              else
+                text ""
+            ]
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
         [ div [ class "col-span-7 flex flex-col gap-[16px]" ]
@@ -2910,6 +2962,31 @@ view user shared model =
                         ]
                   in
                   ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+                , let
+                    deleteDialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-12" ]
+                                [ h2 [] [ text "Видалити мережу" ]
+                                , p [] [ text "Ви впевнені, що хочете видалити цю мережу?" ]
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Скасувати", onClick = DeleteNetworkCanceledByUser } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Видалити", onClick = DeleteNetworkConfirmedByUser }
+                                    |> Button.withStyleDanger
+                                    |> (if model.deleteNetworkLoading then
+                                            Button.withIcon
+                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                ]
+
+                                        else
+                                            identity
+                                       )
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+                  in
+                  ModalDialog.modalDialog (model.deleteNetworkConfirmation /= Nothing) DeleteNetworkCanceledByUser [] deleteDialogContent
                 ]
             ]
         ]
