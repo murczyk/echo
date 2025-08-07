@@ -72,6 +72,31 @@ getOrganismGroups organismId organismGroups =
         |> List.map .masterKey
 
 
+getParentGroups : Int -> List B.OrganismGroup -> List String
+getParentGroups parentId organismGroups =
+    getOrganismGroups parentId organismGroups
+
+
+getAvailableGroupsForOrganism : Maybe Int -> List B.OrganismGroup -> List B.SignalGroupFull -> List B.SignalGroupFull
+getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
+    case maybeParentId of
+        Nothing ->
+            -- Немає батька, всі групи доступні
+            allGroups
+
+        Just parentId ->
+            let
+                parentGroups = getParentGroups parentId organismGroups
+            in
+            if List.isEmpty parentGroups then
+                -- У батька немає груп, всі групи доступні
+                allGroups
+            else
+                -- Тільки групи батька доступні
+                allGroups
+                    |> List.filter (\group -> List.member group.masterKey parentGroups)
+
+
 type alias Model =
     { formErrors : Dict String String
     , timeZone : Maybe Time.Zone
@@ -291,7 +316,7 @@ update msg model =
                         Just (Select.Select _) ->
                             let
                                 groups =
-                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                    validateGroupsForParent model.organismGroups model.groups inpGroups2.selectedItems selectedParentId
                             in
                             if List.isEmpty groups then
                                 Nothing
@@ -302,7 +327,7 @@ update msg model =
                         Just (Select.Deselect _) ->
                             let
                                 groups =
-                                    validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                    validateGroupsForParent model.organismGroups model.groups inpGroups2.selectedItems selectedParentId
                             in
                             if List.isEmpty groups then
                                 Nothing
@@ -346,7 +371,7 @@ update msg model =
                                 Just (Select.Select _) ->
                                     let
                                         groups =
-                                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                            validateGroupsForParent model.organismGroups model.groups inpGroups2.selectedItems selectedParentId
                                     in
                                     if List.isEmpty groups then
                                         Nothing
@@ -357,7 +382,7 @@ update msg model =
                                 Just (Select.Deselect _) ->
                                     let
                                         groups =
-                                            validateGroupsForParent model.organisms model.groups inpGroups2.selectedItems selectedParentId
+                                            validateGroupsForParent model.organismGroups model.groups inpGroups2.selectedItems selectedParentId
                                     in
                                     if List.isEmpty groups then
                                         Nothing
@@ -404,7 +429,7 @@ update msg model =
                         Just (Select.Select _) ->
                             let
                                 groups =
-                                    validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                                    validateGroupsForParent model.organismGroups model.groups model.inpGroups.selectedItems selectedParentId
                             in
                             if List.isEmpty groups then
                                 Nothing
@@ -415,7 +440,7 @@ update msg model =
                         Just (Select.Deselect _) ->
                             let
                                 groups =
-                                    validateGroupsForParent model.organisms model.groups model.inpGroups.selectedItems selectedParentId
+                                    validateGroupsForParent model.organismGroups model.groups model.inpGroups.selectedItems selectedParentId
                             in
                             if List.isEmpty groups then
                                 Nothing
@@ -459,7 +484,7 @@ update msg model =
                                 Just (Select.Select _) ->
                                     let
                                         groups =
-                                            validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                            validateGroupsForParent model.organismGroups model.groups editOrganism.inpGroups.selectedItems selectedParentId
                                     in
                                     if List.isEmpty groups then
                                         Nothing
@@ -470,7 +495,7 @@ update msg model =
                                 Just (Select.Deselect _) ->
                                     let
                                         groups =
-                                            validateGroupsForParent model.organisms model.groups editOrganism.inpGroups.selectedItems selectedParentId
+                                            validateGroupsForParent model.organismGroups model.groups editOrganism.inpGroups.selectedItems selectedParentId
                                     in
                                     if List.isEmpty groups then
                                         Nothing
@@ -551,9 +576,9 @@ update msg model =
                                     model.organisms |> ListX.find (\o -> o.id == pId)
 
                                 parentGroups =
-                                    parentOrganism
-                                        |> Maybe.map .groups
-                                        |> Maybe.withDefault []
+                                    case parentOrganism of
+                                        Nothing -> []
+                                        Just p -> getOrganismGroups p.id model.organismGroups
 
                                 -- If parent has empty groups list, it means access to all groups
                                 -- Only filter if parent has specific groups defined
@@ -587,10 +612,11 @@ update msg model =
         AddGroupToOrganismDone organismId groupId edited (Ok _) ->
             if edited then
                 let
-                    organisms =
-                        model.organisms |> ListX.updateIf (\x -> x.id == organismId) (\y -> { y | groups = groupId :: y.groups })
+                    -- Додаємо новий зв'язок організм-група до organismGroups
+                    newOrganismGroup = { organismId = organismId, masterKey = groupId }
+                    organismGroups = newOrganismGroup :: model.organismGroups
                 in
-                ( { model | organisms = organisms }, E.none )
+                ( { model | organismGroups = organismGroups }, E.none )
 
             else
                 let
@@ -600,20 +626,23 @@ update msg model =
                     inpGroups2 =
                         { inpGroups | selectedItems = inpGroups.selectedItems |> ListX.remove groupId }
 
-                    organisms =
-                        model.organisms |> ListX.updateIf (\x -> x.id == organismId) (\y -> { y | groups = groupId :: y.groups })
+                    -- Додаємо новий зв'язок організм-група до organismGroups
+                    newOrganismGroup = { organismId = organismId, masterKey = groupId }
+                    organismGroups = newOrganismGroup :: model.organismGroups
                 in
-                ( { model | inpGroups = inpGroups2, organisms = organisms }, E.none )
+                ( { model | inpGroups = inpGroups2, organismGroups = organismGroups }, E.none )
 
         AddGroupToOrganismDone _ _ _ (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання групи до організму" e )
 
         RemoveGroupFromOrganismDone organismId groupId (Ok _) ->
             let
-                organisms =
-                    model.organisms |> ListX.updateIf (\x -> x.id == organismId) (\y -> { y | groups = ListX.remove groupId y.groups })
+                -- Видаляємо зв'язок організм-група з organismGroups
+                organismGroups =
+                    model.organismGroups 
+                        |> List.filter (\og -> not (og.organismId == organismId && og.masterKey == groupId))
             in
-            ( { model | organisms = organisms }, E.none )
+            ( { model | organismGroups = organismGroups }, E.none )
 
         RemoveGroupFromOrganismDone _ _ (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
@@ -664,7 +693,7 @@ update msg model =
                                   , inpGroups =
                                         { selectState = Select.initState (Select.selectIdentifier "sel-groups-edit")
                                         , items = model.groups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
-                                        , selectedItems = o.groups
+                                        , selectedItems = getOrganismGroups o.id model.organismGroups
                                         }
                                   , inpParentOrganism =
                                         { selectState = Select.initState (Select.selectIdentifier "sel-parent-edit")
@@ -736,10 +765,7 @@ update msg model =
                                     { editOrganism | fieldsErrors = [] }
 
                                 originalSet =
-                                    model.organisms
-                                        |> ListX.find (\o -> o.id == id)
-                                        |> Maybe.map .groups
-                                        |> Maybe.withDefault []
+                                    getOrganismGroups id model.organismGroups
                                         |> Set.fromList
 
                                 selectedParentId =
@@ -757,9 +783,9 @@ update msg model =
                                                     model.organisms |> ListX.find (\o -> o.id == pId)
 
                                                 parentGroups =
-                                                    parentOrganism
-                                                        |> Maybe.map .groups
-                                                        |> Maybe.withDefault []
+                                                    case parentOrganism of
+                                                        Nothing -> []
+                                                        Just p -> getOrganismGroups p.id model.organismGroups
 
                                                 -- If parent has empty groups list, it means access to all groups
                                                 -- Only filter if parent has specific groups defined
@@ -841,22 +867,15 @@ validator =
         ]
 
 
-validateGroupsForParent : List B.Organism -> List B.SignalGroupFull -> List String -> Maybe Int -> List String
-validateGroupsForParent allOrganisms allGroups selectedGroups parentId =
+validateGroupsForParent : List B.OrganismGroup -> List B.SignalGroupFull -> List String -> Maybe Int -> List String
+validateGroupsForParent organismGroups allGroups selectedGroups parentId =
     case parentId of
         Nothing ->
             []
 
         Just pId ->
             let
-                parentOrganism =
-                    allOrganisms
-                        |> ListX.find (\o -> o.id == pId)
-
-                parentGroups =
-                    parentOrganism
-                        |> Maybe.map .groups
-                        |> Maybe.withDefault []
+                parentGroups = getParentGroups pId organismGroups
 
                 -- If parent has empty groups list, it means access to all groups
                 -- Only validate if parent has specific groups defined
@@ -910,8 +929,8 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> Table.Config B.Organism Msg
-organismsTableConfig groups allOrganisms timeZone editingOrganismId =
+organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> Table.Config B.Organism Msg
+organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1012,7 +1031,7 @@ organismsTableConfig groups allOrganisms timeZone editingOrganismId =
                         { attributes = [ class "col-wide" ]
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
-                                (o.groups
+                                (getOrganismGroups o.id organismGroups
                                     |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
                                     |> List.sortBy (\group -> String.toLower (groupName group))
                                     |> List.map
@@ -1029,7 +1048,7 @@ organismsTableConfig groups allOrganisms timeZone editingOrganismId =
                 , sorter =
                     Table.increasingOrDecreasingBy
                         (\o ->
-                            o.groups
+                            getOrganismGroups o.id organismGroups
                                 |> List.filterMap (\groupId -> ListX.find (\x -> x.masterKey == groupId) groups)
                                 |> List.map groupName
                                 |> String.join ", "
@@ -1428,7 +1447,7 @@ mainBlock isDark model =
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism))
+                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism))
                 model.tableState
                 model.organisms
             ]
