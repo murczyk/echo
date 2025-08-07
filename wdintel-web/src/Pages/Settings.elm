@@ -172,9 +172,9 @@ view shared user model =
     in
     { title = "налаштування"
     , body =
-        [ div [ class "container-xxl bd-gutter pt-md-1 main-container" ]
-            [ div [ class "row" ]
-                [ div [ class "col-12" ]
+        [ div [ class "w-4/5 mx-auto px-4 pt-4" ]
+            [ div [ class "flex" ]
+                [ div [ class "w-full" ]
                     [ -- Header section
                       div [ class "mb-4" ]
                         [ div [ class "flex items-center justify-between mb-4" ]
@@ -195,7 +195,7 @@ view shared user model =
                                     ]
                                     [ i [ class "bi bi-box-arrow-right" ] []
                                     , text "вийти"
-                                    , span [ class "text-muted" ] [ text ("(" ++ user.name ++ ")") ]
+                                    , span [ class "text-gray-500" ] [ text ("(" ++ user.name ++ ")") ]
                                     ]
                                 ]
                             ]
@@ -216,7 +216,7 @@ view shared user model =
                                 [ label 
                                     [ class "block text-sm font-medium text-[var(--text-color)] mb-2" ]
                                     [ text "РЕР-напрямок" ]
-                                , p [ class "text-sm text-muted mb-3" ]
+                                , p [ class "text-sm text-gray-500 mb-3" ]
                                     [ text "Оберіть зону РЕР-напрямку для вашого облікового запису" ]
                                 , div [ class "w-2/5" ]
                                     [ Html.map ZoneSelectMsg <|
@@ -232,7 +232,7 @@ view shared user model =
                             
                             -- Save button section
                             , div [ class "flex items-center justify-between pt-4 border-t border-[var(--border-color)]" ]
-                                [ div [ class "text-sm text-muted" ]
+                                [ div [ class "text-sm text-gray-500" ]
                                     [ text ("Версія: " ++ versionText) ]
                                 , div [ class "flex gap-3" ]
                                     [ if model.saveInProgress then

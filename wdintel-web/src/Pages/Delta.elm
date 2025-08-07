@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Components.Button as Button
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -117,27 +118,23 @@ pageBlock model =
     let
         contentBlockKmz2Geojson =
             div []
-                [ button
-                    [ class "btn btn-sm btn-outline-secondary me-2"
-                    , type_ "button"
-                    , onClick <| UploadKmzToGeojson
-                    ]
-                    [ if not model.convertKmzInProgress then
-                        i [ class "bi bi-file-zip" ] []
-
-                      else
-                        div
-                            [ class "spinner-border spinner-border-sm"
-                            , attribute "role" "status"
-                            ]
-                            [ span [ class "visually-hidden" ] [ text "Loading..." ] ]
-                    , text " додати kmz"
-                    ]
+                [ Button.new { label = " додати kmz", onClick = UploadKmzToGeojson }
+                    |> Button.withIcon 
+                        [ if not model.convertKmzInProgress then
+                            i [ class "bi bi-file-zip" ] []
+                          else
+                            div
+                                [ class "inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"
+                                , attribute "role" "status"
+                                ]
+                                [ span [ class "sr-only" ] [ text "Loading..." ] ]
+                        ]
+                    |> Button.view
                 ]
     in
     div [ class "page-delta" ] <|
-        [ div [ class "row" ]
-            [ div [ class "col-sm-12" ]
+        [ div [ class "flex" ]
+            [ div [ class "w-full" ]
                 [ contentBlockKmz2Geojson ]
             ]
         ]
@@ -147,9 +144,9 @@ view : Bool -> Shared.Model -> B.User -> Model -> View Msg
 view dark shared user model =
     { title = "дельта"
     , body =
-        [ div [ class "w-4/5 mx-auto bd-gutter" ]
-            [ div [ class "row" ]
-                [ div [ class "col-12" ]
+        [ div [ class "w-4/5 mx-auto px-4" ]
+            [ div [ class "flex" ]
+                [ div [ class "w-full" ]
                     [ h1 [ class "py-4" ] [ text "kmz в geojson" ]
                     , pageBlock model
                     ]
