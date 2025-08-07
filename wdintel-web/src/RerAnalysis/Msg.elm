@@ -100,6 +100,7 @@ type Msg
     | GotTags (Result ApiError (List ( Int, B.Tag )))
     | ReportTemplateSelect ReportTemplate
     | ToggleReportConstructor
+    | CloseReportConstructor
     | ReportDownloadDocx
     | ReportDownloadDocxDone (Result ApiError Bytes)
     | ScrollMessagesToTop

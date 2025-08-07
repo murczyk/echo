@@ -370,14 +370,14 @@ filtersAndMainContent user model shared route =
         reportConstructorBlock =
             modalDialog
                 model.showReportConstructor
-                ToggleReportConstructor
+                CloseReportConstructor
                 [ class "max-w-6xl mx-auto bg-card rounded-lg shadow-lg" ]
                 [ div [ class "p-6" ]
                     [ h3 [ class "text-xl font-semibold mb-6" ]
                         [ text "конструктор звітів" ]
                     , div [ class "mb-6" ] reportConstructorBlockBody
                     , div [ class "flex justify-end" ]
-                        [ Button.new { label = "закрити", onClick = ToggleReportConstructor }
+                        [ Button.new { label = "закрити", onClick = CloseReportConstructor }
                             |> Button.withSecondary
                             |> Button.view
                         ]
@@ -388,26 +388,75 @@ filtersAndMainContent user model shared route =
             let
                 templateCard active toMsg title description =
                     div
-                        [ class "card pointer me-4 flex-1"
+                        [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between relative"
                         , classList
-                            [ ( "bg-grad-mm14-dark", active && shared.isDarkMode )
-                            , ( "bg-grad-mm14-light", active && not shared.isDarkMode )
+                            [ ( "bg-white border-gray-200 hover:border-gray-300", not active && not shared.isDarkMode )
+                            , ( "bg-gray-800 border-gray-700 hover:border-gray-600", not active && shared.isDarkMode )
+                            , ( "bg-secondary-light border-secondary shadow-lg ring-2 ring-secondary-light-active", active && not shared.isDarkMode )
+                            , ( "bg-secondary-dark border-secondary shadow-lg ring-2 ring-secondary-light-active", active && shared.isDarkMode )
                             ]
-                        , classList [ ( "shadow", active ) ]
                         , onClick <| toMsg
                         ]
-                        [ div [ class "p-4" ]
+                        [ div []
                             [ h5
-                                [ class "text-lg font-semibold mb-2"
+                                [ class "text-lg font-semibold mb-3"
+                                , classList
+                                    [ ( "text-gray-900", not shared.isDarkMode )
+                                    , ( "text-gray-100", shared.isDarkMode )
+                                    ]
                                 ]
                                 [ text title ]
-                            , p [ class "text-gray-600" ]
+                            , p
+                                [ class "text-sm leading-relaxed"
+                                , classList
+                                    [ ( "text-gray-600", not shared.isDarkMode )
+                                    , ( "text-gray-400", shared.isDarkMode )
+                                    ]
+                                ]
                                 [ text description ]
+                            ]
+                        , div [ class "mt-4 flex justify-between items-center" ]
+                            [ viewIf active <|
+                                div
+                                    [ class "px-2 py-1 rounded-full text-xs font-medium"
+                                    , classList
+                                        [ ( "bg-secondary-light text-secondary-dark", not shared.isDarkMode )
+                                        , ( "bg-secondary-light-active text-secondary-dark", shared.isDarkMode )
+                                        ]
+                                    ]
+                                    [ text "Обрано" ]
+                            , div
+                                [ class "w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-200"
+                                , classList
+                                    [ ( "bg-gray-100", not active && not shared.isDarkMode )
+                                    , ( "bg-gray-700", not active && shared.isDarkMode )
+                                    , ( "bg-secondary", active && not shared.isDarkMode )
+                                    , ( "bg-secondary", active && shared.isDarkMode )
+                                    ]
+                                ]
+                                [ i
+                                    [ class "text-xs"
+                                    , classList
+                                        [ ( "text-gray-400", not active && not shared.isDarkMode )
+                                        , ( "text-gray-500", not active && shared.isDarkMode )
+                                        , ( "text-white", active )
+                                        ]
+                                    , class "bi bi-check"
+                                    ]
+                                    []
+                                ]
                             ]
                         ]
             in
-            [ h4 [] [ text "шаблон" ]
-            , div [ class "flex justify-center mb-4" ]
+            [ h4
+                [ class "text-lg font-semibold mb-6"
+                , classList
+                    [ ( "text-gray-900", not shared.isDarkMode )
+                    , ( "text-gray-100", shared.isDarkMode )
+                    ]
+                ]
+                [ text "шаблон" ]
+            , div [ class "grid grid-cols-3 gap-4 mb-6" ]
                 [ templateCard
                     (model.reportTemplate == RTTags)
                     (ReportTemplateSelect RTTags)
@@ -427,60 +476,57 @@ filtersAndMainContent user model shared route =
                     (model.reportTemplate == RTInterception)
                     (ReportTemplateSelect RTInterception)
                     "Перехоплення"
-                    ""
+                    "Звіт по перехопленнях"
                 , templateCard
                     (model.reportTemplate == RTSenders Senders || model.reportTemplate == RTSenders Posts)
                     (ReportTemplateSelect (RTSenders Senders))
                     "Відправники"
-                    ""
+                    "Аналіз відправників"
                 , a
-                    [ class "card pointer me-4 flex-1"
+                    [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between no-underline"
+                    , classList
+                        [ ( "bg-white border-gray-200 hover:border-gray-300", not shared.isDarkMode )
+                        , ( "bg-gray-800 border-gray-700 hover:border-gray-600", shared.isDarkMode )
+                        ]
                     , Route.href { path = Route.Path.RerFreqs, hash = Nothing, query = Dict.empty }
                     , target "_blank"
                     ]
-                    [ div [ class "p-4" ]
+                    [ div []
                         [ h5
-                            [ class "text-lg font-semibold mb-2"
+                            [ class "text-lg font-semibold mb-3"
+                            , classList
+                                [ ( "text-gray-900", not shared.isDarkMode )
+                                , ( "text-gray-100", shared.isDarkMode )
+                                ]
                             ]
                             [ text "Еталонний опис р/м" ]
-                        ]
-                    ]
-                ]
-            , div [ class "flex justify-start" ]
-                [ div
-                    [ class "card pointer me-4 basis-[200px]"
-                    , classList
-                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTMouse && shared.isDarkMode )
-                        , ( "bg-grad-mm14-light", model.reportTemplate == RTMouse && not shared.isDarkMode )
-                        ]
-                    , classList [ ( "shadow", model.reportTemplate == RTMouse ) ]
-                    , onClick <| ReportTemplateSelect RTMouse
-                    ]
-                    [ div [ class "p-4" ]
-                        [ h5
-                            [ class "text-lg font-semibold mb-2"
+                        , p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not shared.isDarkMode )
+                                , ( "text-gray-400", shared.isDarkMode )
+                                ]
                             ]
-                            [ text "мишка" ]
-                        , p [ class "text-gray-600" ]
-                            [ text "Детальний почастотний звіт по привʼязках" ]
+                            [ text "Еталонний опис радіомереж" ]
                         ]
-                    ]
-                , div
-                    [ class "card pointer me-4 basis-[200px]"
-                    , classList
-                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTNaUshnom && shared.isDarkMode )
-                        , ( "bg-grad-mm14-light", model.reportTemplate == RTNaUshnom && not shared.isDarkMode )
-                        ]
-                    , classList [ ( "shadow", model.reportTemplate == RTNaUshnom ) ]
-                    , onClick <| ReportTemplateSelect RTNaUshnom
-                    ]
-                    [ div [ class "p-4" ]
-                        [ h5
-                            [ class "text-lg font-semibold mb-2"
+                    , div [ class "mt-4 flex justify-end" ]
+                        [ div
+                            [ class "w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-200"
+                            , classList
+                                [ ( "bg-gray-100", not shared.isDarkMode )
+                                , ( "bg-gray-700", shared.isDarkMode )
+                                ]
                             ]
-                            [ text "NaUshnom" ]
-                        , p [ class "text-gray-600" ]
-                            [ text "" ]
+                            [ i
+                                [ class "text-xs"
+                                , classList
+                                    [ ( "text-gray-400", not shared.isDarkMode )
+                                    , ( "text-gray-500", shared.isDarkMode )
+                                    ]
+                                , class "bi bi-box-arrow-up-right"
+                                ]
+                                []
+                            ]
                         ]
                     ]
                 , div
@@ -711,8 +757,12 @@ filtersAndMainContent user model shared route =
                     , class "bg-body"
                     , style "z-index" "50"
                     ]
-                    [ Views.headerAndContentLabeled "аналіз" lbl ToastMsg model.toasts <|
-                        div [] []
+                    [ div [ class "flex items-center justify-between p-4" ]
+                        [ div [ class "flex items-center" ]
+                            [ h1 [ class "text-xl font-semibold me-4" ] [ text "аналіз" ]
+                            , div [ class "flex items-center" ] lbl
+                            ]
+                        ]
                     ]
                 , div [ class "flex-grow max-xl:mx-2 mx-4" ]
                     (mapBlock

@@ -2409,6 +2409,11 @@ update user shared route msg model =
             , E.none
             )
 
+        CloseReportConstructor ->
+            ( { model | showReportConstructor = False }
+            , E.none
+            )
+
         ReportTagsOnlyThisUnitToggle ->
             ( { model | reportTagsOnlyThisUnit = not model.reportTagsOnlyThisUnit }
             , E.none
