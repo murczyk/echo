@@ -539,16 +539,25 @@ update msg model =
                                 parentOrganism =
                                     model.organisms |> ListX.find (\o -> o.id == pId)
 
-                                parentGroupsSet =
+                                parentGroups =
                                     parentOrganism
                                         |> Maybe.map .groups
                                         |> Maybe.withDefault []
-                                        |> Set.fromList
 
-                                selectedGroupsSet =
-                                    Set.fromList model.inpGroups.selectedItems
+                                -- If parent has empty groups list, it means access to all groups
+                                -- Only filter if parent has specific groups defined
                             in
-                            Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+                            if List.isEmpty parentGroups then
+                                model.inpGroups.selectedItems
+                            else
+                                let
+                                    parentGroupsSet =
+                                        Set.fromList parentGroups
+
+                                    selectedGroupsSet =
+                                        Set.fromList model.inpGroups.selectedItems
+                                in
+                                Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
             in
             ( m2
             , E.sendCmd <|
@@ -730,16 +739,25 @@ update msg model =
                                                 parentOrganism =
                                                     model.organisms |> ListX.find (\o -> o.id == pId)
 
-                                                parentGroupsSet =
+                                                parentGroups =
                                                     parentOrganism
                                                         |> Maybe.map .groups
                                                         |> Maybe.withDefault []
-                                                        |> Set.fromList
 
-                                                selectedGroupsSet =
-                                                    Set.fromList editOrganism.inpGroups.selectedItems
+                                                -- If parent has empty groups list, it means access to all groups
+                                                -- Only filter if parent has specific groups defined
                                             in
-                                            Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
+                                            if List.isEmpty parentGroups then
+                                                editOrganism.inpGroups.selectedItems
+                                            else
+                                                let
+                                                    parentGroupsSet =
+                                                        Set.fromList parentGroups
+
+                                                    selectedGroupsSet =
+                                                        Set.fromList editOrganism.inpGroups.selectedItems
+                                                in
+                                                Set.toList (Set.intersect selectedGroupsSet parentGroupsSet)
 
                                 editedSet =
                                     Set.fromList availableGroups
@@ -822,30 +840,38 @@ validateGroupsForParent allOrganisms allGroups selectedGroups parentId =
                     parentOrganism
                         |> Maybe.map .groups
                         |> Maybe.withDefault []
-                        |> Set.fromList
 
-                selectedGroupsSet =
-                    Set.fromList selectedGroups
-
-                unavailableGroupIds =
-                    Set.diff selectedGroupsSet parentGroups
-
+                -- If parent has empty groups list, it means access to all groups
+                -- Only validate if parent has specific groups defined
                 unavailableGroupNames =
-                    unavailableGroupIds
-                        |> Set.toList
-                        |> List.filterMap
-                            (\groupId ->
-                                allGroups
-                                    |> ListX.find (\g -> g.masterKey == groupId)
-                                    |> Maybe.map
-                                        (\g ->
-                                            if String.isEmpty g.name then
-                                                "Без назви (id=" ++ String.left 6 g.masterKey ++ "...)"
+                    if List.isEmpty parentGroups then
+                        []
+                    else
+                        let
+                            parentGroupsSet =
+                                Set.fromList parentGroups
 
-                                            else
-                                                g.name
-                                        )
-                            )
+                            selectedGroupsSet =
+                                Set.fromList selectedGroups
+
+                            unavailableGroupIds =
+                                Set.diff selectedGroupsSet parentGroupsSet
+                        in
+                        unavailableGroupIds
+                            |> Set.toList
+                            |> List.filterMap
+                                (\groupId ->
+                                    allGroups
+                                        |> ListX.find (\g -> g.masterKey == groupId)
+                                        |> Maybe.map
+                                            (\g ->
+                                                if String.isEmpty g.name then
+                                                    "Без назви (id=" ++ String.left 6 g.masterKey ++ "...)"
+
+                                                else
+                                                    g.name
+                                            )
+                                )
             in
             unavailableGroupNames
 
