@@ -84,21 +84,21 @@ variantClasses variant state =
     case (variant, state) of
         -- Primary
         (Primary, Active) ->
-            "bg-[#2c6c91] text-white hover:bg-[#245a7a] focus:bg-[#245a7a] focus:outline-none focus:ring-2 focus:ring-[#2c6c91] focus:ring-offset-2 active:bg-[#1e4c66]"
+            "bg-[var(--color-primary)] text-[var(--color-button-text)] hover:bg-[var(--color-primary-hover)] focus:bg-[var(--color-primary-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2 active:bg-[var(--color-primary-active)]"
         
         (Primary, Disabled) ->
             "bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"
         
         -- Secondary
         (Secondary, Active) ->
-            "bg-white text-[#2c6c91] border border-[#2c6c91] hover:bg-[#f8fafc] focus:bg-[#f8fafc] focus:outline-none focus:ring-2 focus:ring-[#2c6c91] focus:ring-offset-2 active:bg-[#f1f5f9]"
+            "bg-[var(--color-card)] text-[var(--color-action)] border border-[var(--color-action)] hover:bg-[var(--color-bg-muted)] focus:bg-[var(--color-bg-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-action)] focus:ring-offset-2 active:bg-[var(--color-bg-muted)]"
         
         (Secondary, Disabled) ->
-            "bg-gray-50 text-gray-400 border border-gray-300 cursor-not-allowed opacity-60"
+            "bg-[var(--color-bg-muted)] text-[var(--color-text-muted)] border border-[var(--color-border-muted)] cursor-not-allowed opacity-60"
         
         -- Danger
         (Danger, Active) ->
-            "bg-red-700 text-white hover:bg-red-800 focus:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2 active:bg-red-900"
+            "bg-[var(--color-error)] text-white hover:bg-[var(--color-error-hover)] focus:bg-[var(--color-error-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--color-error)] focus:ring-offset-2 active:bg-[var(--color-error-active)]"
         
         (Danger, Disabled) ->
             "bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"

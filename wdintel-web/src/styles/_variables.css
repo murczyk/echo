@@ -302,4 +302,21 @@ html[data-bs-theme="dark"] {
     --toggle-selected-color: var(--ochre-normal);
     --color-bg-inactive: #2C2C2E;
     /* Neutral dark gray for inactive rows */
+
+    /* Override semantic colors for dark theme */
+    --color-text-muted: var(--color-neutral);
+    --color-bg-muted: var(--color-neutral-dark);
+    --color-border-muted: var(--color-neutral-dark-active);
+
+    /* Override primary colors for dark theme to use baby-blue */
+    --color-primary-light: var(--baby-blue-light);
+    --color-primary-light-hover: var(--baby-blue-light-hover);
+    --color-primary-light-active: var(--baby-blue-light-active);
+    --color-primary: var(--baby-blue-normal);
+    --color-primary-hover: var(--baby-blue-normal-hover);
+    --color-primary-active: var(--baby-blue-normal-active);
+    --color-primary-dark: var(--baby-blue-dark);
+    --color-primary-dark-hover: var(--baby-blue-dark-hover);
+    --color-primary-dark-active: var(--baby-blue-dark-active);
+    --color-primary-darker: var(--baby-blue-darker);
 }
