@@ -65,6 +65,13 @@ groupName group =
         group.name
 
 
+getOrganismGroups : Int -> List B.OrganismGroup -> List String
+getOrganismGroups organismId organismGroups =
+    organismGroups
+        |> List.filter (\og -> og.organismId == organismId)
+        |> List.map .masterKey
+
+
 type alias Model =
     { formErrors : Dict String String
     , timeZone : Maybe Time.Zone
@@ -89,6 +96,7 @@ type alias Model =
         }
     , fieldsErrors : List FieldError
     , groups : List B.SignalGroupFull
+    , organismGroups : List B.OrganismGroup
     , editOrganism : Maybe ( Int, OrganismEdit )
     , groupsValidation : Maybe (List String)
     }
@@ -156,6 +164,7 @@ init _ =
       , fieldsErrors = []
       , timeZone = Nothing
       , groups = []
+      , organismGroups = []
       , editOrganism = Nothing
       , groupsValidation = Nothing
       , tableState = Table.initialSort "Назва"
@@ -163,7 +172,8 @@ init _ =
     , E.sendCmd <|
         Cmd.batch
             [ Api.list_organisms GotOrganisms { sortBy = Nothing }
-            , Api.organism_group_list GotGroupsList
+            , Api.organism_all_groups GotAllGroups
+            , Api.organism_group_list GotOrganismGroups
             , Task.attempt GotTimeZone Le.Time.getZone
             ]
     )
@@ -188,7 +198,8 @@ type Msg
     | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetName String
     | SetEditName String
-    | GotGroupsList (Result ApiError (List B.SignalGroupFull))
+    | GotAllGroups (Result ApiError (List B.SignalGroupFull))
+    | GotOrganismGroups (Result ApiError (List B.OrganismGroup))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
     | EditOrganismSave
@@ -693,10 +704,10 @@ update msg model =
                 Nothing ->
                     ( model, E.none )
 
-        GotGroupsList (Err e) ->
+        GotAllGroups (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e )
 
-        GotGroupsList (Ok res) ->
+        GotAllGroups (Ok res) ->
             let
                 groupsMenuItems =
                     res |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
@@ -708,6 +719,12 @@ update msg model =
                     { inpGroups | items = groupsMenuItems }
             in
             ( { model | groups = res, inpGroups = inpGroups2 }, E.none )
+
+        GotOrganismGroups (Err e) ->
+            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зв'язків організм-група" e )
+
+        GotOrganismGroups (Ok res) ->
+            ( { model | organismGroups = res }, E.none )
 
         EditOrganismSave ->
             case model.editOrganism of

@@ -2936,6 +2936,20 @@ signalGroupFullEncoder struct =
         ]
 
 
+type alias OrganismGroup =
+    { masterKey : String
+    , organismId : Int
+    }
+
+
+organismGroupEncoder : OrganismGroup -> Json.Encode.Value
+organismGroupEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", Json.Encode.string struct.masterKey )
+        , ( "organism_id", Json.Encode.int struct.organismId )
+        ]
+
+
 type alias Datasource =
     { kind : String
     , displayName : String
@@ -7223,6 +7237,13 @@ signalGroupFullDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" Json.Decode.int))
+
+
+organismGroupDecoder : Json.Decode.Decoder OrganismGroup
+organismGroupDecoder =
+    Json.Decode.succeed OrganismGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" Json.Decode.int))
 
 
 datasourceDecoder : Json.Decode.Decoder Datasource
