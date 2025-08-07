@@ -323,6 +323,7 @@ pub async fn get_inbox_messages_report_network(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q = q.order_by_desc(sigint_inbox_item::Column::Datetime);
 
     #[derive(FromQueryResult)]

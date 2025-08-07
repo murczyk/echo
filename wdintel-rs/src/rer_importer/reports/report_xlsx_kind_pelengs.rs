@@ -143,6 +143,7 @@ pub async fn get_inbox_messages_report(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
 
     // dbg!(&q.build(DbBackend::Postgres).to_string());
 

@@ -17,10 +17,11 @@
 Позивний/Посада/Підрозділ
 - [#1428](https://github.com/echoua/echo/issues/1428) ✅ Виправлено помилку обрахунку інформації про активність для позивних мережі, покращено співставлення каталожних позивних та позивних мережі.
 - [#1394](https://github.com/echoua/echo/issues/1394) 👷 Додано datasource group id до повідомлень. треба прогнати oneoff_populate_signal_message_group_ids
+- [#1109](https://github.com/echoua/echo/issues/1109) ✅ Аналіз: фільтр топ-смуг
 - [#1425](https://github.com/echoua/echo/issues/1425) ✅ Виправлено масову привязку позивних
 - [#1344](https://github.com/echoua/echo/issues/1344) ✅ Мережа: Додана можливість працювати з позивними на сторінці створення. Також оновлена таблиця частот, щоб
 показувати ту ж інфу, що і на детальній сторінці
-- [#1394](https://github.com/echoua/echo/issues/1394) Додано докування змін позивних мережі sigint_network_callsigns
+- [#1394](https://github.com/echoua/echo/issues/1394) Додано логування змін позивних мережі sigint_network_callsigns
 - [#1210](https://github.com/echoua/echo/issues/1210) ✅ Парсер умовних частот розширено від 100.0000 до 999.9999
 - d90fb5e5bdab5d333347b8ae9da572dea6616568 Виправлено баг та додано обемежено по перформансу для позивних мережі
 - [#1204](https://github.com/echoua/echo/issues/1204) ✅ Мережа, звіт Еталонка: додано можливість окремо позначити головну радіостанцію мережі

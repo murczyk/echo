@@ -25,7 +25,7 @@ pub async fn aor_list(
     .await
     .c(h!())?;
 
-    let mut aors = area_of_responsibility::Entity::find()
+    let aors = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .order_by(
             area_of_responsibility::Column::Name,
@@ -38,9 +38,6 @@ pub async fn aor_list(
                 Order::Desc
             },
         );
-    if let Some(is_top_level) = req.is_top_level {
-        aors = aors.filter(area_of_responsibility::Column::IsTopLevel.eq(is_top_level));
-    }
     let res = aors
         .all(&env.dbx)
         .await

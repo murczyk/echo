@@ -67,6 +67,8 @@ pub async fn rer_analysis_download_kmz(
         &user.id()?,
         false,
     )?;
+    let items =
+        filter_selected_aors(items, &req.selected_aors).context(h!())?;
     let items = filter_search(items, &req.search)?;
     let items = items.group_by(Expr::cust("1, 2, 3"));
     // println!(

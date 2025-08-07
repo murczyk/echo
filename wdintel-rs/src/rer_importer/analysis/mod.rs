@@ -464,87 +464,109 @@ pub fn filter_selected_aors<Q>(
 where
     Q: QueryFilter,
 {
-    // #[derive(Iden)]
-    // pub enum AreaOfResponsibility {
-    //     Table,
-    //     Id,
-    //     LeftBound,
-    //     RightBound,
-    // }
+    #[derive(Iden)]
+    pub enum AreaOfResponsibility {
+        Table,
+        Id,
+        LeftBound,
+        RightBound,
+    }
+
+    #[derive(Iden)]
+    pub enum SignalGroupAor {
+        Table,
+        MasterKey,
+        AorId,
+    }
+
+    #[derive(Iden)]
+    pub enum SignalMessage {
+        Table,
+        GroupMasterKey,
+    }
 
     if let Some(aor_ids) = selected_aors {
         if !aor_ids.is_empty() {
             let aor_linked = Alias::new("aor_linked");
             let aor_frontend = Alias::new("aor_frontend");
 
-            let inner_exists = area_of_responsibility::Entity::find()
-                .select_only()
-                .column(area_of_responsibility::Column::Id)
-                .filter(
-                    Condition::all()
-                        .add(area_of_responsibility::Column::Id.is_in(aor_ids))
-                        .add(
-Condition::any()
-    .add(
-        Expr::col((aor_linked.clone(), area_of_responsibility::Column::LeftBound))
-            .gte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::LeftBound)))
-    )
-    .add(
-        Expr::col((aor_linked.clone(), area_of_responsibility::Column::RightBound))
-            .lte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::RightBound)))
-    )
-                        )
-                )
-                .into_query();
-
-            let inner_exists = area_of_responsibility::Entity::find()
-                .alias(aor_frontend.clone())
-                .select_only()
-                .column(Expr::val(1))
-                .filter(
-                    Condition::all()
-                        .add(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::Id))
-                            .is_in(aor_ids.clone()))
-                        .add(
-                            Condition::any()
-                                .add(Expr::col((aor_linked.clone(), area_of_responsibility::Column::LeftBound))
-                                    .gte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::LeftBound))))
-                                .add(Expr::col((aor_linked.clone(), area_of_responsibility::Column::RightBound))
-                                    .lte(Expr::col((aor_frontend.clone(), area_of_responsibility::Column::RightBound))))
-                        )
-                )
-                .into_query();
-
-            let outer_exists = signal_group_aor::Entity::find()
-                .join(
-                    JoinType::InnerJoin,
-                    signal_group_aor::Relation::AreaOfResponsibility.def(),
-                    signal_group_aor::Column::AorId
-                        .equals(area_of_responsibility::Column::Id),
-                )
-                .select_only()
-                .column(Expr::val(1))
-                .filter(
-                    Condition::all()
+            let inner_exists = Query::select()
+                .expr(Expr::val(1))
+                .from_as(AreaOfResponsibility::Table, aor_frontend.clone())
+                .cond_where(
+                    Cond::all()
                         .add(
                             Expr::col((
-                                signal_group_aor::Entity,
-                                signal_group_aor::Column::MasterKey,
+                                aor_frontend.clone(),
+                                AreaOfResponsibility::Id,
                             ))
-                            .equals(Expr::col((
-                                "signal_message",
-                                "group_master_key",
-                            ))),
+                            .is_in(aor_ids.clone()),
                         )
-                        .add(Expr::expr(Expr::exists(inner_exists))),
+                        .add(
+                            Cond::any()
+                                .add(
+                                    Expr::col((
+                                        aor_linked.clone(),
+                                        AreaOfResponsibility::LeftBound,
+                                    ))
+                                    .between(
+                                        Expr::col((
+                                            aor_frontend.clone(),
+                                            AreaOfResponsibility::LeftBound,
+                                        )),
+                                        Expr::col((
+                                            aor_frontend.clone(),
+                                            AreaOfResponsibility::RightBound,
+                                        )),
+                                    ),
+                                )
+                                .add(
+                                    Expr::col((
+                                        aor_linked.clone(),
+                                        AreaOfResponsibility::RightBound,
+                                    ))
+                                    .between(
+                                        Expr::col((
+                                            aor_frontend.clone(),
+                                            AreaOfResponsibility::LeftBound,
+                                        )),
+                                        Expr::col((
+                                            aor_frontend.clone(),
+                                            AreaOfResponsibility::RightBound,
+                                        )),
+                                    ),
+                                ),
+                        ),
                 )
-                .into_query();
+                .to_owned();
+
+            let outer_exists = Query::select()
+                .expr(Expr::val(1))
+                .from(SignalGroupAor::Table)
+                .join_as(
+                    JoinType::InnerJoin,
+                    AreaOfResponsibility::Table,
+                    aor_linked.clone(),
+                    Expr::col((SignalGroupAor::Table, SignalGroupAor::AorId))
+                        .equals((aor_linked.clone(), AreaOfResponsibility::Id)),
+                )
+                .and_where(
+                    Expr::col((
+                        SignalGroupAor::Table,
+                        SignalGroupAor::MasterKey,
+                    ))
+                    .eq(Expr::col((
+                        SignalMessage::Table,
+                        SignalMessage::GroupMasterKey,
+                    ))),
+                )
+                .and_where(Expr::exists(inner_exists))
+                .to_owned();
 
             // Final condition: WHERE EXISTS (outer_exists)
-            Ok(q.filter(Condition::exists(outer_exists)))
+            return Ok(q.filter(Expr::exists(outer_exists).into_condition()));
         }
     }
-
     Ok(q)
 }
 
@@ -705,6 +727,8 @@ pub async fn summary_table_freq_1(
         &user.id()?,
         false,
     )?;
+    let rows_res =
+        filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
     let rows_res = filter_search(rows_res, &req.search)?;
     // println!(
     //     "> summary table rows_res sql: {}",
@@ -1555,6 +1579,8 @@ pub async fn bi_new_callsigns(
         user_id,
         true,
     )?;
+    let rows_res =
+        filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
     let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
 
     let mut callsigns_in_period = BTreeSet::new();
@@ -1914,6 +1940,46 @@ async fn location_stats(
     Ok(Json(LocationStatsRsp { locations }))
 }
 
+
+/// Отримання доступних значень для фільтра смуг відповідальності (AORs) зі статистикою. 
+///
+/// # API URL
+/// - POST: /api/sigint/network-list
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<AnalysisStatsReq>`] - де [`AnalysisStatsReq`] Тіло запиту, що містить параметри для фільтрації для доступних смуг відповідальності
+///
+/// # Повертає
+///
+/// [`Json<Vec<AreaOfResponsibilityStatsRsp>>`], де [`AreaOfResponsibilityStatsRsp`] - це структура, що представляє доступні смуги та статистику повідомлень по ним
+///
+#[post("/api/rer/analysis/stats/aors")]
+async fn aor_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<AreaOfResponsibilityStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let aors = stats::fetch_aors(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    let aor_names = collect_aor_names(&aors, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(AreaOfResponsibilityStatsRsp {
+        aors,
+        aor_names,
+    }))
+}
+
 async fn fetch_locations(
     user: &Identity,
     env: &actix_web::web::Data<Env>,
@@ -1986,6 +2052,9 @@ async fn count_stats(
     let tags_count = stats::count_tags(&req, &env, master_keys.clone())
         .await
         .context(h!())?;
+    let aors_count = stats::count_aors(&req, &user, &env, master_keys.clone())
+        .await
+        .context(h!())?;
     let (count_overall, count_selected) =
         stats::fetch_counts(&req, &user, &env, master_keys.clone())
             .await
@@ -2002,6 +2071,7 @@ async fn count_stats(
         units_count,
         locations_count,
         tags_count,
+        aors_count,
     }))
 }
 
@@ -2143,6 +2213,38 @@ async fn location_stats_count(
             .await
             .context(h!())?;
     Ok(Json(locations_count))
+}
+
+/// Отримання загальної кількості повідомлень по фільтру смуг відповідальності (AORs). 
+///
+/// # API URL
+/// - POST: /api/sigint/network-list
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<AnalysisStatsReq>`] - де [`AnalysisStatsReq`] Тіло запиту, що містить параметри для фільтрації для доступних смуг відповідальності
+///
+/// # Повертає
+///
+/// [`Json<Vec<i64>>`],  загальна кількість повідомлень по значенням фільтру смуг відповідальності (AORs)
+#[post("/api/rer/analysis/stats/aors/count")]
+async fn aor_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let aors_count = stats::count_aors(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(aors_count))
 }
 
 /// Deprecated.
@@ -2329,4 +2431,33 @@ async fn collect_group_names(
         });
     }
     Ok(result)
+}
+
+async fn collect_aor_names(
+    aors: &[AnalysisStatsAor],
+    txn: &DatabaseConnection,
+) -> Result<Vec<AreaOfResponsibilityEntry>, AppError> {
+    let aor_ids: Vec<i64> = aors
+        .iter()
+        .map(|x| x.aor_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let area_of_responsibilities = area_of_responsibility::Entity::find()
+        .select_only()
+        .columns([
+            area_of_responsibility::Column::Id,
+            area_of_responsibility::Column::Name,
+        ])
+        .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
+        .into_tuple::<(i64, String)>() 
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    Ok(area_of_responsibilities
+        .into_iter()
+        .map(|(aor_id, name)| AreaOfResponsibilityEntry { id: aor_id, name })
+        .collect())
 }

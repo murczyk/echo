@@ -361,6 +361,73 @@
 			]
 		},
 		{
+			"name": "rer/analysis/stats/aors",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"since_date_inclusive_ms\":1752958800000,\n    \"till_date_noninclusive_ms\":1754600400000,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"selected_freqs\":[\"154.2500\"],\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n    \"selected_units\":null,\n    \"selected_locations\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":[3],\n    \"or_with_extended_form\":false,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"search\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"filter_tags_option\":null\n    }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/rer/analysis/stats/aors",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"rer",
+						"analysis",
+						"stats",
+						"aors"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "rer/analysis/stats/aors/count",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"since_date_inclusive_ms\":1752958800000,\n    \"till_date_noninclusive_ms\":1754600400000,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"selected_freqs\":[\"154.2500\"],\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n    \"selected_units\":null,\n    \"selected_locations\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":[1],\n    \"or_with_extended_form\":false,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"search\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"filter_tags_option\":\"OneOfTags\"\n    }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/rer/analysis/stats/aors/count",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"rer",
+						"analysis",
+						"stats",
+						"aors",
+						"count"
+					]
+				}
+			},
+			"response": []
+		},
+		{
 			"name": "tags",
 			"item": [
 				{
@@ -1190,6 +1257,15 @@
 				},
 				"method": "POST",
 				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n\"since_date_inclusive_ms\":1750063071917,\n\"freq\":\"155.1250\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
 				"url": {
 					"raw": "{{base_url}}/api/datasources/list",
 					"host": [
