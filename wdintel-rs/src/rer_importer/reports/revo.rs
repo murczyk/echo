@@ -2,16 +2,10 @@ use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
-use crate::utils::*;
 use actix_identity::Identity;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
-use calamine::ExcelDateTimeType::TimeDelta;
 use chrono::prelude::*;
-use chrono::Duration;
-use docx_rs::Paragraph;
-use docx_rs::Run;
-use docx_rs::Shading;
 use docx_rs::Table;
 use docx_rs::TableCell;
 use docx_rs::TableRow;
@@ -19,20 +13,16 @@ use docx_rs::VAlignType;
 use docx_rs::VMergeType;
 use docx_rs::WidthType;
 use docx_rs::{
-    AlignmentType, BorderType, TableBorder, TableBorderPosition, TableBorders,
+    AlignmentType, BorderType, LineSpacing, ParagraphBorder,
+    ParagraphBorderPosition, Run, TableBorder, TableBorderPosition,
 };
-use docx_rs::{
-    LineSpacing, ParagraphBorder, ParagraphBorderPosition, ParagraphProperty,
-};
-use futures_util::task::noop_waker;
-use geoconvert::{LatLon, Mgrs};
+use docx_rs::{Paragraph, ParagraphBorders};
 use sea_orm::*;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 const WIDTH_UNIT: usize = 1870;
 const DTM_FORMAT: &'static str = "%Y.%m.%d %H:%M:%S";
+const FUNCTIONALITY_DESC_DEFAULT: &'static str = "Склад кореспондентів - звичайний, інтенсивність роботи - звичайна, час роботи - звичайний, район роботи - старий/без змін.";
 
 pub struct Report {
     pub summary: NetworkSummary,
@@ -101,17 +91,17 @@ pub async fn report_docx_kind_revo(
         mk_header_cell("Особливості функціонування радіомереж"),
         mk_header_cell("Що було виявлено"),
     ]));
-    rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
-        "Російська Федерація",
-        true,
-    )]));
+    // rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
+    //     "Російська Федерація",
+    //     true,
+    // )]));
     for e in report.hostile_networks {
         rows_amrp.push(render_network_row(e));
     }
-    rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
-        "Невизначені",
-        false,
-    )]));
+    // rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
+    //     "Невизначені",
+    //     false,
+    // )]));
     for e in report.undefined_networks {
         rows_amrp.push(render_network_row(e));
     }
@@ -122,7 +112,7 @@ pub async fn report_docx_kind_revo(
         .width(WIDTH_UNIT * 12, WidthType::Dxa)
         .set_border(thin_border);
 
-    let mut docx = docx_rs::Docx::new()
+    let docx = docx_rs::Docx::new()
         .page_orient(
             docx_rs::page_orientation_type::PageOrientationType::Landscape,
         )
@@ -218,22 +208,18 @@ fn mk_text_cell(text: &str) -> TableCell {
 }
 
 fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
-    println!("lines: {:?}", lines);
     let mut cell = TableCell::new()
         .width(WIDTH_UNIT * 2, WidthType::Dxa)
         .vertical_align(VAlignType::Center);
     let mut remaining_count: i32 = lines.len() as i32;
-    let mut is_first_line = true;
     for text in lines {
         remaining_count -= 1;
         let mut paragraph = Paragraph::new().add_run(Run::new().add_text(text));
         if remaining_count > 0 {
-            let border = ParagraphBorder::new(ParagraphBorderPosition::Bottom);
-            paragraph.property = paragraph.property.set_border(border);
-        }
-        if is_first_line {
-            paragraph = paragraph.line_spacing(LineSpacing::new().before(0));
-            is_first_line = false;
+            let mut border = ParagraphBorders::with_empty();
+            border = border
+                .set(ParagraphBorder::new(ParagraphBorderPosition::Bottom));
+            paragraph.property = paragraph.property.set_borders(border);
         }
         cell = cell.add_paragraph(paragraph);
     }
@@ -253,7 +239,7 @@ fn mk_paragraph(text: &str) -> Paragraph {
         .line_spacing(LineSpacing::new().before(80).after(80))
 }
 
-fn mk_merged_text_cell(text: &str, is_red: bool) -> TableCell {
+fn _mk_merged_text_cell(text: &str, is_red: bool) -> TableCell {
     let mut text = Run::new().add_text(text).bold();
     if is_red {
         text = text.color("FF0000");
@@ -273,93 +259,137 @@ fn mk_merged_text_cell(text: &str, is_red: bool) -> TableCell {
 
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
-    logins: Vec<String>,
+    _logins: Vec<String>,
     env: &Env,
 ) -> anyhow::Result<Report> {
-    let now = Utc::now().naive_utc();
-    let c1 = NetworkCorrespondent {
-        name: "Вьішка".to_string(),
-        unit_name: None,
-    };
-    let c2 = NetworkCorrespondent {
-        name: "Граница".to_string(),
-        unit_name: None,
-    };
-    let c3 = NetworkCorrespondent {
-        name: "Рошан".to_string(),
-        unit_name: Some("ОЧ 1 ср 30 зсб 57".to_string()),
-    };
+    let groups = messages
+        .iter()
+        .flat_map(|(_, m)| m.group_master_key.clone())
+        .unique()
+        .collect::<Vec<_>>();
+    let freqs = messages
+        .iter()
+        .flat_map(|(_, m)| m.freq.clone())
+        .unique()
+        .collect::<Vec<_>>();
+    let networks = sigint_network::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            sigint_network::Relation::SigintNetworkFreq.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_network::Relation::SigintNetworkAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_network_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            area_of_responsibility::Relation::SignalGroupAor.def(),
+        )
+        .filter(sigint_network_freq::Column::Freq.is_in(freqs))
+        .filter(signal_group_aor::Column::MasterKey.is_in(groups))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Name.is_not_null())
+        .filter(sigint_network_freq::Column::Freq.is_not_null())
+        .select_only()
+        .column(sigint_network::Column::Name)
+        .column(sigint_network_freq::Column::Freq)
+        .column(signal_group_aor::Column::MasterKey)
+        .into_tuple::<(String, Option<String>, String)>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|(name, freq, group_master_key)| ((freq, group_master_key), name))
+        .collect::<HashMap<_, _>>();
+
+    let mut callsigns_map = HashMap::new();
+    let mut seanses_map = HashMap::new();
+    for (_id, message) in messages {
+        let (Some(master_key), Some(freq)) =
+            (message.group_master_key, message.freq)
+        else {
+            continue;
+        };
+        let Some(name) = networks
+            .get(&(Some(master_key), freq.clone()))
+            .or(networks.get(&(None, freq.clone())))
+        else {
+            continue;
+        };
+        let network = (name.clone(), freq);
+
+        if let Some(ts) = message.timestamp {
+            let mut data = seanses_map.remove(&network).unwrap_or(vec![]);
+            let utc_datetime = DateTime::from_timestamp_millis(ts)
+                .context(h!())?
+                .with_timezone(&crate::config::get_tz())
+                .naive_local();
+            data.push(utc_datetime);
+            seanses_map.insert(network.clone(), data);
+        }
+
+        let mut data = callsigns_map.remove(&network).unwrap_or(HashSet::new());
+        for c in message.callsigns {
+            data.insert(c);
+        }
+        for c in message.callsigns_alg2 {
+            data.insert(c);
+        }
+        callsigns_map.insert(network, data);
+    }
+
+    let mut identified_qty = 0;
+    let unidentified_qty = 0;
+    let mut hostile_networks = vec![];
+    for (network, seances) in seanses_map {
+        let callsigns = callsigns_map
+            .get(&network)
+            .unwrap_or(&HashSet::new())
+            .clone();
+        let (name, freq) = network.clone();
+        identified_qty += 1;
+        if seances.is_empty() {
+            continue;
+        }
+        let since = seances.iter().min().context(h!())?.clone();
+        let till = seances.iter().max().context(h!())?.clone();
+        let seances_qty = seances.len() as u64;
+        let mut correspondents = vec![];
+        for c in callsigns {
+            correspondents.push(NetworkCorrespondent {
+                name: c,
+                unit_name: None, // fixme
+            })
+        }
+        correspondents.sort_by_key(|a| a.name.clone());
+        let activity = NetworkActivity {
+            since,
+            till,
+            seances_qty,
+        };
+        let row = NetworkRow {
+            name,
+            freq,
+            activity,
+            correspondents,
+            communication_kind: None,
+            functionality_details: FUNCTIONALITY_DESC_DEFAULT.to_string(),
+            identified_details: None,
+        };
+        hostile_networks.push(row);
+    }
     let report = Report {
         summary: NetworkSummary {
-            identified_qty: 2,
-            unidentified_qty: 3,
+            identified_qty,
+            unidentified_qty,
         },
-        hostile_networks: vec![NetworkRow{
-            name: "УКХ 1".to_string(),
-            freq: "324.78".to_string(),
-            activity: NetworkActivity {
-                since: now - Duration::hours(56),
-                till: now,
-                seances_qty: 10,
-            },
-            correspondents: vec![c1, c2, c3],
-            communication_kind: None,
-            functionality_details: "Склад кореспондентів - звичайний, інтенсивність роботи - звичайна, час роботи - звичайний, район роботи - старий/без змін.".to_string(),
-            identified_details: None,
-        }],
+        hostile_networks,
         undefined_networks: vec![],
     };
     Ok(report)
-}
-
-fn message_full_text(
-    message: &signal_message::Model,
-    inbox: &sigint_inbox_item::Model,
-    datasource: &datasource::Model,
-    m_comment: &Option<sigint_comment::Model>,
-) -> Result<String, AppError> {
-    if datasource.kind == "signal" || datasource.kind == "whatsapp" {
-        let extended_form = m_comment.clone().map(|x| x.comment);
-        return Ok(format!(
-            "{}\n\n{}",
-            message.body.clone().unwrap_or("".to_string()),
-            extended_form.clone().unwrap_or("".to_string())
-        ));
-    } else if datasource.kind == "api" {
-        let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {
-            (Some(date), Some(time)) => format!("{} ", date + " " + &time),
-            (Some(date), None) => format!("{} ", date),
-            (None, Some(time)) => format!("{} ", time),
-            (None, None) => "".to_string(),
-        };
-        let freq_part = match inbox.freq.clone() {
-            Some(freq) => format!("{} ", freq),
-            None => "".to_string(),
-        };
-        let unit_part = match inbox.freq {
-            Some(_) => {
-                format!("{} ", inbox.unit.clone().unwrap_or("НВ".to_string()))
-            }
-            None => "".to_string(),
-        };
-        let location_part = match inbox.freq {
-            Some(_) => {
-                format!("{} ", inbox.location.clone().unwrap_or("".to_string()))
-            }
-            None => "".to_string(),
-        };
-        let extended_form = m_comment.clone().map(|x| x.comment);
-        let comment_part = match extended_form {
-            Some(comment) => format!("\n\nКоментар: {}", comment),
-            None => "".to_string(),
-        };
-        return Ok(format!(
-            "{datetime_part}{freq_part}\n{unit_part}{location_part}\n{}{comment_part}",
-            message.body.clone().unwrap_or("".to_string()),
-        ));
-    } else {
-        return Err(
-            format!("Unknown datasource kind: {:?}", datasource.kind).into()
-        );
-    }
 }
