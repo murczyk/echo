@@ -1,4 +1,4 @@
-module Components.Button exposing (new, view, withDisabled, withIcon, withPrimary, withSecondary, withStyleSecondary)
+module Components.Button exposing (new, view, withDisabled, withIcon, withPrimary, withSecondary, withStyleSecondary, withStyleDanger)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -10,6 +10,7 @@ import Html.Events exposing (onClick)
 type Variant
     = Primary
     | Secondary
+    | Danger
 
 
 type State
@@ -71,6 +72,11 @@ withStyleSecondary (Settings settings) =
     Settings { settings | variant = Secondary }
 
 
+withStyleDanger : Button msg -> Button msg
+withStyleDanger (Settings settings) =
+    Settings { settings | variant = Danger }
+
+
 -- STYLING
 
 variantClasses : Variant -> State -> String
@@ -89,6 +95,13 @@ variantClasses variant state =
         
         (Secondary, Disabled) ->
             "bg-gray-50 text-gray-400 border border-gray-300 cursor-not-allowed opacity-60"
+        
+        -- Danger
+        (Danger, Active) ->
+            "bg-red-700 text-white hover:bg-red-800 focus:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2 active:bg-red-900"
+        
+        (Danger, Disabled) ->
+            "bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"
 
 
 baseClasses : String
