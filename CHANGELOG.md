@@ -1,4 +1,5 @@
 ## NEXT
+- [#1214](https://github.com/echoua/echo/issues/1214) Звіт РЕО
 - [#1189](https://github.com/echoua/echo/issues/1186) Мережа: архів (фільтрація видалених мереж)
 - [#1187](https://github.com/echoua/echo/issues/1186) Мережа: фільтрація не активних мереж
 - [#1186](https://github.com/echoua/echo/issues/1186) Мережа: видалення мережі користувачем з роллю UnitsEditor
