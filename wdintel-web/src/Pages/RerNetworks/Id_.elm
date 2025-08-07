@@ -2341,7 +2341,16 @@ contentBlock user shared network model =
         [ h2 []
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
-        , Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+        , div [ class "flex gap-[8px]" ]
+            [ 
+             Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                Button.new { label = "Видалити мережу", onClick = DeleteNetworkClickedByUser }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+              else
+                text ""
+            ]
         ]
     , div [ class "grid grid-cols-12 gap-[30px]" ]
         [ div [ class "col-span-7 flex flex-col gap-[16px]" ]
@@ -2953,6 +2962,30 @@ view user shared model =
                         ]
                   in
                   ModalDialog.modalDialog model.reportModalOpened ReportModalClosedByUser [] dialogContent
+                , let
+                    deleteDialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-12" ]
+                                [ h2 [] [ text "Видалити мережу" ]
+                                , p [] [ text "Ви впевнені, що хочете видалити цю мережу?" ]
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Скасувати", onClick = DeleteNetworkCanceledByUser } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Видалити", onClick = DeleteNetworkConfirmedByUser }
+                                    |> (if model.deleteNetworkLoading then
+                                            Button.withIcon
+                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                ]
+
+                                        else
+                                            identity
+                                       )
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+                  in
+                  ModalDialog.modalDialog (model.deleteNetworkConfirmation /= Nothing) DeleteNetworkCanceledByUser [] deleteDialogContent
                 ]
             ]
         ]
