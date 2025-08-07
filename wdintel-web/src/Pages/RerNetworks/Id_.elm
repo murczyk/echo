@@ -2345,9 +2345,12 @@ contentBlock user shared network model =
             [ 
              Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
              , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                Button.new { label = "Видалити мережу", onClick = DeleteNetworkClickedByUser }
-                    |> Button.withStyleSecondary
-                    |> Button.view
+                button
+                    [ title "Видалити мережу"
+                    , class "icon-btn icon-btn-danger"
+                    , onClick DeleteNetworkClickedByUser
+                    ]
+                    [ i [ class "bi bi-trash" ] [] ]
               else
                 text ""
             ]
