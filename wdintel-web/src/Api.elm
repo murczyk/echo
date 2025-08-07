@@ -1253,12 +1253,21 @@ list_organisms toMsg req =
         }
 
 
-organism_group_list : (Result ApiError (List SignalGroupFull) -> msg) -> Cmd msg
+organism_all_groups : (Result ApiError (List SignalGroupFull) -> msg) -> Cmd msg
+organism_all_groups toMsg =
+    Http.post
+        { url = "/api/organism/all-groups"
+        , body = Http.jsonBody Encode.null
+        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
+        }
+
+
+organism_group_list : (Result ApiError (List OrganismGroup) -> msg) -> Cmd msg
 organism_group_list toMsg =
     Http.post
         { url = "/api/organism/group-list"
         , body = Http.jsonBody Encode.null
-        , expect = leExpectJson toMsg (Decode.list signalGroupFullDecoder)
+        , expect = leExpectJson toMsg (Decode.list organismGroupDecoder)
         }
 
 

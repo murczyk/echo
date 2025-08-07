@@ -2800,7 +2800,6 @@ type alias Organism =
     , createdAt : Int
     , groupAutoLink : Bool
     , roles : List String
-    , groups : List String
     , enabled : Bool
     }
 
@@ -2814,7 +2813,6 @@ organismEncoder struct =
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "group_auto_link", Json.Encode.bool struct.groupAutoLink )
         , ( "roles", Json.Encode.list Json.Encode.string struct.roles )
-        , ( "groups", Json.Encode.list Json.Encode.string struct.groups )
         , ( "enabled", Json.Encode.bool struct.enabled )
         ]
 
@@ -2935,6 +2933,20 @@ signalGroupFullEncoder struct =
         [ ( "name", Json.Encode.string struct.name )
         , ( "master_key", Json.Encode.string struct.masterKey )
         , ( "datasource_id", Json.Encode.int struct.datasourceId )
+        ]
+
+
+type alias OrganismGroup =
+    { masterKey : String
+    , organismId : Int
+    }
+
+
+organismGroupEncoder : OrganismGroup -> Json.Encode.Value
+organismGroupEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", Json.Encode.string struct.masterKey )
+        , ( "organism_id", Json.Encode.int struct.organismId )
         ]
 
 
@@ -7130,7 +7142,6 @@ organismDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_auto_link" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" Json.Decode.bool))
 
 
@@ -7226,6 +7237,13 @@ signalGroupFullDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" Json.Decode.int))
+
+
+organismGroupDecoder : Json.Decode.Decoder OrganismGroup
+organismGroupDecoder =
+    Json.Decode.succeed OrganismGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" Json.Decode.int))
 
 
 datasourceDecoder : Json.Decode.Decoder Datasource
