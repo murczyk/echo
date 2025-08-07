@@ -225,15 +225,17 @@ fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
         .width(WIDTH_UNIT * 2, WidthType::Dxa)
         .vertical_align(VAlignType::Center);
     let mut remaining_count: i32 = lines.len() as i32;
+    let mut is_first_line = true;
     for text in lines {
         remaining_count -= 1;
-        let mut paragraph = Paragraph::new()
-            .add_run(Run::new().add_text(text))
-            // .line_spacing(LineSpacing::new().before(80).after(80))
-            ;
+        let mut paragraph = Paragraph::new().add_run(Run::new().add_text(text));
         if remaining_count > 0 {
             let border = ParagraphBorder::new(ParagraphBorderPosition::Bottom);
             paragraph.property = paragraph.property.set_border(border);
+        }
+        if is_first_line {
+            paragraph = paragraph.line_spacing(LineSpacing::new().before(0));
+            is_first_line = false;
         }
         cell = cell.add_paragraph(paragraph);
     }
