@@ -210,6 +210,8 @@ type alias Model =
     , freqEditModulationSelect : Le.Block.Select.SelectTypeSingle Int
     , freqEditSaving : Bool
     , freqEditShowActiveTo : Bool
+    , deleteNetworkConfirmation : Maybe Int
+    , deleteNetworkLoading : Bool
     }
 
 
@@ -291,6 +293,8 @@ init route shared () =
             }
       , freqEditSaving = False
       , freqEditShowActiveTo = False
+      , deleteNetworkConfirmation = Nothing
+      , deleteNetworkLoading = False
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -375,6 +379,10 @@ type Msg
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | ToggleFreqEditShowActiveTo
+    | DeleteNetworkClickedByUser
+    | DeleteNetworkConfirmedByUser
+    | DeleteNetworkCanceledByUser
+    | DeleteNetworkReturnedByApi (Result ApiError B.Network)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1312,6 +1320,41 @@ update shared msg model =
             in
             ( { updatedModel | freqEditShowActiveTo = newShowActiveTo }
             , E.none
+            )
+
+        DeleteNetworkClickedByUser ->
+            case model.network of
+                Success network ->
+                    ( { model | deleteNetworkConfirmation = Just network.id }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        DeleteNetworkConfirmedByUser ->
+            case model.deleteNetworkConfirmation of
+                Just networkId ->
+                    ( { model | deleteNetworkLoading = True, deleteNetworkConfirmation = Nothing }
+                    , E.deleteNetwork DeleteNetworkReturnedByApi { networkId = networkId }
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        DeleteNetworkCanceledByUser ->
+            ( { model | deleteNetworkConfirmation = Nothing }
+            , E.none
+            )
+
+        DeleteNetworkReturnedByApi (Err e) ->
+            ( { model | deleteNetworkLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" e
+            )
+
+        DeleteNetworkReturnedByApi (Ok _) ->
+            ( { model | deleteNetworkLoading = False }
+            , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
             )
 
 
