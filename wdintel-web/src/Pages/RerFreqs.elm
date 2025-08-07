@@ -81,7 +81,6 @@ init _ =
             , freqs = []
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
-
             , filterState =
                 { freq = ""
                 , unit = ""
@@ -204,9 +203,6 @@ init _ =
         , E.loadPostsFromShared { sortBy = Nothing }
         ]
     )
-
-
-
 
 
 filterStateDebounceConfig : Debounce.Config Msg
@@ -540,42 +536,42 @@ update shared msg model =
               }
             , E.batch
                 (case ( model.from.datePosix, model.to.datePosix ) of
-                            ( Just dtFromPosix, Just dtToPosix ) ->
-                                let
-                                    freqsAsString =
-                                        rsp.freqs |> List.map .freq
+                    ( Just dtFromPosix, Just dtToPosix ) ->
+                        let
+                            freqsAsString =
+                                rsp.freqs |> List.map .freq
 
-                                    timeFrom =
-                                        Time.posixToMillis dtFromPosix
+                            timeFrom =
+                                Time.posixToMillis dtFromPosix
 
-                                    timeTo =
-                                        Time.posixToMillis dtToPosix
-                                in
-                                [ E.getGroupsActivityStats GroupsMessageCountByDayReturnedByApi
-                                    { freqs = freqsAsString
-                                    , sinceDateInclusiveMs = timeFrom
-                                    , tillDateNoninclusiveMs = timeTo
-                                    }
-                                , E.sendCmd <|
-                                    Api.list_callsigns_by_freq CallsignsByFreqsReturnedByApi
-                                        { freqs = freqsAsString
-                                        , sinceDateInclusiveMs = timeFrom
-                                        , tillDateNoninclusiveMs = timeTo
-                                        }
-                                , E.sendCmd <|
-                                    Api.list_alt_units_by_freqs AltUnitsByFreqReturnedByApi
-                                        { freqs = freqsAsString
-                                        , sinceDateInclusiveMs = timeFrom
-                                        , tillDateNoninclusiveMs = timeTo
-                                        , filterGroupMasterKeys = Nothing
-                                        , filterSenderProfileIds = Nothing
-                                        }
-                                ]
+                            timeTo =
+                                Time.posixToMillis dtToPosix
+                        in
+                        [ E.getGroupsActivityStats GroupsMessageCountByDayReturnedByApi
+                            { freqs = freqsAsString
+                            , sinceDateInclusiveMs = timeFrom
+                            , tillDateNoninclusiveMs = timeTo
+                            }
+                        , E.sendCmd <|
+                            Api.list_callsigns_by_freq CallsignsByFreqsReturnedByApi
+                                { freqs = freqsAsString
+                                , sinceDateInclusiveMs = timeFrom
+                                , tillDateNoninclusiveMs = timeTo
+                                }
+                        , E.sendCmd <|
+                            Api.list_alt_units_by_freqs AltUnitsByFreqReturnedByApi
+                                { freqs = freqsAsString
+                                , sinceDateInclusiveMs = timeFrom
+                                , tillDateNoninclusiveMs = timeTo
+                                , filterGroupMasterKeys = Nothing
+                                , filterSenderProfileIds = Nothing
+                                }
+                        ]
 
-                            _ ->
-                                []
-                       )
+                    _ ->
+                        []
                 )
+            )
 
         GroupsMessageCountByDayReturnedByApi (Ok r) ->
             ( { model | groupsMessageCountByDay = Dict.union model.groupsMessageCountByDay r }, E.none )
@@ -650,8 +646,6 @@ update shared msg model =
             in
             ( m2, initLoad m2 )
 
-
-
         NetworkAddUnitSelMsg imsg ->
             let
                 ( mAct, imodel, icmd ) =
@@ -690,6 +684,7 @@ update shared msg model =
                                     case ( shared.masterUnits, shared.networks ) of
                                         ( Success units, Success networks ) ->
                                             Utils.findConnectedNetworks (Just i) networks units
+
                                         _ ->
                                             []
 
@@ -887,8 +882,6 @@ update shared msg model =
                     NetworkAddExistingKindSelMsg
                     icmd
             )
-
-
 
         FilterStateMsg filterState ->
             let
@@ -1408,8 +1401,6 @@ update shared msg model =
         Confirmation2InputChangedByUser val ->
             ( { model | addConfirmationInp = Just val }, E.none )
 
-
-
         NetworkAddExistingActiveFromChanged x ->
             ( { model
                 | addExistingActiveFrom =
@@ -1758,6 +1749,7 @@ freqsTableConfig shared model user =
                                             freq.freq
                                             (RD.withDefault Dict.empty shared.networks)
                                         )
+
                                 _ ->
                                     div [] [ text "Завантаження..." ]
                             ]
@@ -1784,7 +1776,7 @@ freqsTableConfig shared model user =
                                     _ ->
                                         p [ class "flex gap-[4px] flex-col" ]
                                             (if List.isEmpty freq.locations then
-                                                [ span [] [ text "Текстова локація" ] ]
+                                                [ span [] [ text "" ] ]
 
                                              else
                                                 (List.map (\location -> span [ class "cursor-pointer underline ", onClick <| SwitchFromTextToMap freq.freq ] [ text location ]) freq.locations
@@ -2025,6 +2017,7 @@ viewFreqBlock mUser shared model freq =
                                     [ case shared.masterUnits of
                                         Success units ->
                                             NetworksUtils.renderNetwork network units
+
                                         _ ->
                                             text "Завантаження..."
                                     , case network.unitIds of
@@ -2172,6 +2165,7 @@ unitsBlock shared model =
                 [ case shared.masterUnits of
                     Success units ->
                         UnitHierarchy.view config (Dict.toList units |> List.map Tuple.second) model.unitStats
+
                     _ ->
                         div [] [ text "Завантаження підрозділів..." ]
                 ]
