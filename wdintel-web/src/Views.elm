@@ -36,7 +36,11 @@ h1SupLbl txt =
         , style "transform" "translateY(-5px)"
         , style "min-width" "60px"
         ]
-        [ span [ class "inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full" ]
+        [ span [ class "inline-block px-3 py-1.5 text-xs font-medium rounded-full border transition-colors duration-200"
+            , classList
+                [ ( "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]", True )
+                ]
+            ]
             [ text txt ]
         ]
 

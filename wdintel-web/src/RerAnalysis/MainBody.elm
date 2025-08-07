@@ -326,46 +326,42 @@ filtersAndMainContent user model shared route =
                 Nothing ->
                     False
 
-        mLblStr =
-            case model.counts of
-                NotAsked ->
-                    Just ""
-
-                Success data ->
-                    Just (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall)
-
-                _ ->
-                    Nothing
-
-        lbl =
-            (case mLblStr of
-                Nothing ->
-                    [ div
-                        [ class "me-1 inline-block"
-                        , style "min-width" "60px"
-                        ]
-                        []
-                    ]
-
-                Just lblS ->
-                    [ span [ class "me-1" ] [ Views.h1SupLbl lblS ] ]
-            )
-                ++ [ Button.new { label = "", onClick = Refresh }
-                        |> Button.withIcon
-                            [ if isLoadingStats model then
-                                Le.Block.Spinner.loadingSpinner2Sm
-
-                              else
-                                i [ class "bi bi-arrow-repeat" ] []
+        headerControls =
+            div [ class "flex items-center gap-2" ]
+                [ case model.counts of
+                    Success data ->
+                        span
+                            [ class "me-1 inline-block px-3 py-1.5 text-xs font-medium rounded-full border transition-colors duration-200"
+                            , classList
+                                [ ( "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]", True )
+                                ]
                             ]
-                        |> Button.withSecondary
-                        |> Button.view
-                   , Button.new { label = "", onClick = ClearAllFilters }
-                        |> Button.withIcon [ i [ class "bi bi-x-octagon" ] [] ]
-                        |> Button.withSecondary
-                        |> Button.view
-                   , RerAnalysis.Date.dateAndPanelsBlock shared.isDarkMode model mapFeatureFlag
-                   ]
+                            [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
+
+                    _ ->
+                        div [ class "me-3 inline-block", style "min-width" "60px" ] []
+                , div [ class "flex items-center gap-1" ]
+                    [ button
+                        [ onClick Refresh
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , title "Оновити"
+                        ]
+                        [ if isLoadingStats model then
+                            Le.Block.Spinner.loadingSpinner2Sm
+
+                          else
+                            i [ class "bi bi-arrow-clockwise" ] []
+                        ]
+                    , button
+                        [ onClick ClearAllFilters
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , title "Скинути фільтри"
+                        ]
+                        [ i [ class "bi bi-x-octagon" ] []
+                        ]
+                    ]
+                , RerAnalysis.Date.dateAndPanelsBlock shared.isDarkMode model mapFeatureFlag
+                ]
 
         reportConstructorBlock =
             modalDialog
@@ -723,7 +719,7 @@ filtersAndMainContent user model shared route =
                 ]
                 [ RerAnalysis.Filters.leftColumn shared.isDarkMode model ]
             , div
-                [ class "border-l self-stretch flex-grow mt-4"
+                [ class "border-l border-border self-stretch flex-grow mt-4"
                 , id "messages-div"
                 , style "max-width" "100"
                 , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
@@ -759,8 +755,8 @@ filtersAndMainContent user model shared route =
                     ]
                     [ div [ class "flex items-center justify-between p-4" ]
                         [ div [ class "flex items-center" ]
-                            [ h1 [ class "text-xl font-semibold me-4" ] [ text "аналіз" ]
-                            , div [ class "flex items-center" ] lbl
+                            [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
+                            , headerControls
                             ]
                         ]
                     ]
