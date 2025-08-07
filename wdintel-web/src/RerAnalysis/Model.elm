@@ -158,6 +158,7 @@ type ReportTemplate
     | RTInterception
     | RTNaUshnom
     | RTSenders SendersType
+    | RTReo
 
 
 type FilterName

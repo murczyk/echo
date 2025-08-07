@@ -569,9 +569,6 @@ extractMetaInfo inboxRsp model =
     }
 
 
-
-
-
 update : B.User -> Shared.Model -> Route () -> Msg -> Model -> ( Model, Effect Msg )
 update user shared route msg model =
     case msg of
@@ -1060,7 +1057,7 @@ update user shared route msg model =
                     case shared.masterUnits of
                         Success units ->
                             units
-                        
+
                         _ ->
                             Dict.empty
 
@@ -1078,19 +1075,27 @@ update user shared route msg model =
                     , user = user
                     , users = model.users
                     , serverInfo = shared.serverInfo
-                    , networks = case shared.networks of
-                        Success networks -> networks
-                        _ -> Dict.empty
+                    , networks =
+                        case shared.networks of
+                            Success networks ->
+                                networks
+
+                            _ ->
+                                Dict.empty
                     , masterUnits = masterUnitsDict
-                    , freqNetworkIds = case shared.networks of
-                        Success networks ->
-                            networks
-                                |> Dict.values
-                                |> List.concatMap (\network -> 
-                                    List.map (\freq -> (freq.freq, Set.singleton network.id)) network.freqs
-                                )
-                                |> DE.fromListDedupe Set.union
-                        _ -> Dict.empty
+                    , freqNetworkIds =
+                        case shared.networks of
+                            Success networks ->
+                                networks
+                                    |> Dict.values
+                                    |> List.concatMap
+                                        (\network ->
+                                            List.map (\freq -> ( freq.freq, Set.singleton network.id )) network.freqs
+                                        )
+                                    |> DE.fromListDedupe Set.union
+
+                            _ ->
+                                Dict.empty
                     , currentRoute = Just route
                     }
 
@@ -2458,6 +2463,9 @@ update user shared route msg model =
                         RTNaUshnom ->
                             "docx"
 
+                        RTReo ->
+                            "docx"
+
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
                     case model.zone of
@@ -2609,8 +2617,6 @@ update user shared route msg model =
 
                 _ ->
                     ( model, E.none )
-
-
 
         DeleteMessageConfirm ->
             case model.deleteMessageModalId of
