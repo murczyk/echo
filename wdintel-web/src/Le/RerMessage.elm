@@ -820,7 +820,7 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
         senderNameBlockNoInput _ =
             let
                 emptyName =
-                    "<ввести імʼя>"
+                    "(невідомо)"
 
                 profile =
                     message.sender
