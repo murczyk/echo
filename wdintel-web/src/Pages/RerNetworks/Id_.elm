@@ -2345,12 +2345,9 @@ contentBlock user shared network model =
             [ 
              Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
              , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                button
-                    [ title "Видалити мережу"
-                    , class "icon-btn icon-btn-danger"
-                    , onClick DeleteNetworkClickedByUser
-                    ]
-                    [ i [ class "bi bi-trash" ] [] ]
+                Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
+                    |> Button.withStyleDanger
+                    |> Button.view
               else
                 text ""
             ]
@@ -2975,6 +2972,7 @@ view user shared model =
                             , div [ class "flex justify-between" ]
                                 [ Button.new { label = "Скасувати", onClick = DeleteNetworkCanceledByUser } |> Button.withStyleSecondary |> Button.view
                                 , Button.new { label = "Видалити", onClick = DeleteNetworkConfirmedByUser }
+                                    |> Button.withStyleDanger
                                     |> (if model.deleteNetworkLoading then
                                             Button.withIcon
                                                 [ Le.Block.Spinner.loadingSpinner2Sm
