@@ -272,7 +272,28 @@ async fn collect_report(
         .flat_map(|(_, m)| m.freq.clone())
         .unique()
         .collect::<Vec<_>>();
-    let networks = sigint_network::Entity::find()
+
+    let all_networks = sigint_network::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkFreq.def(),
+        )
+        .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Name.is_not_null())
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .column(sigint_network::Column::Name)
+        .column(sigint_network_freq::Column::Freq)
+        .into_tuple::<(i64, String, String)>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|(id, name, freq)| ((freq, None), (name, id)))
+        .collect::<HashMap<_, _>>();
+
+    let mut networks = sigint_network::Entity::find()
         .join(
             JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkFreq.def(),
@@ -290,25 +311,46 @@ async fn collect_report(
             area_of_responsibility::Relation::SignalGroupAor.def(),
         )
         .filter(sigint_network_freq::Column::Freq.is_in(freqs))
-        .filter(signal_group_aor::Column::MasterKey.is_in(groups))
+        .filter(
+            signal_group_aor::Column::Id
+                .is_null()
+                .or(signal_group_aor::Column::MasterKey.is_in(groups)),
+        )
         .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(
+            area_of_responsibility::Column::Id
+                .is_null()
+                .or(area_of_responsibility::Column::Deleted.eq(false)),
+        )
         .filter(sigint_network::Column::Name.is_not_null())
         .filter(sigint_network_freq::Column::Freq.is_not_null())
         .select_only()
+        .column(sigint_network::Column::Id)
         .column(sigint_network::Column::Name)
         .column(sigint_network_freq::Column::Freq)
         .column(signal_group_aor::Column::MasterKey)
-        .into_tuple::<(String, Option<String>, String)>()
+        .into_tuple::<(i64, String, String, Option<String>)>()
         .all(&env.dbx)
         .await
         .context(h!())?
         .into_iter()
-        .map(|(name, freq, group_master_key)| ((freq, group_master_key), name))
+        .map(|(id, name, freq, group_master_key)| {
+            ((freq, group_master_key), (name, id))
+        })
         .collect::<HashMap<_, _>>();
+
+    for (k, v) in all_networks {
+        networks.insert(k, v);
+    }
+
+    let mut network_ids = HashSet::new();
+    for (_, (_, id)) in &networks {
+        network_ids.insert(*id);
+    }
 
     let mut callsigns_map = HashMap::new();
     let mut seanses_map = HashMap::new();
+    let mut callsigns_set = HashSet::new();
     for (_id, message) in messages {
         let (Some(master_key), Some(freq)) =
             (message.group_master_key, message.freq)
@@ -316,8 +358,8 @@ async fn collect_report(
             continue;
         };
         let Some(name) = networks
-            .get(&(Some(master_key), freq.clone()))
-            .or(networks.get(&(None, freq.clone())))
+            .get(&(freq.clone(), Some(master_key)))
+            .or(networks.get(&(freq.clone(), None)))
         else {
             continue;
         };
@@ -335,10 +377,12 @@ async fn collect_report(
 
         let mut data = callsigns_map.remove(&network).unwrap_or(HashSet::new());
         for c in message.callsigns {
-            data.insert(c);
+            data.insert(c.clone());
+            callsigns_set.insert(c);
         }
         for c in message.callsigns_alg2 {
-            data.insert(c);
+            data.insert(c.clone());
+            callsigns_set.insert(c);
         }
         callsigns_map.insert(network, data);
     }
@@ -351,7 +395,7 @@ async fn collect_report(
             .get(&network)
             .unwrap_or(&HashSet::new())
             .clone();
-        let (name, freq) = network.clone();
+        let ((name, _id), freq) = network.clone();
         identified_qty += 1;
         if seances.is_empty() {
             continue;
