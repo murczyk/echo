@@ -94,6 +94,7 @@ type alias Model =
     , expandedRegiments : Set.Set String
     , expandedBattalions : Set.Set String
     , showOnlyInvestigating : Bool
+    , showOnlyActive : Bool
 
     , loadingUnitStats : Bool
     , tableState : Table.State
@@ -147,12 +148,13 @@ init _ =
             , reportIncludePelengsMap = True
             , reportIncludeSigintSigns = True
             , reportIncludeConfirmation = True
-            , showSidebar = True
+            , showSidebar = False
             , expandedArmies = Set.empty
             , expandedDivisions = Set.empty
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
+            , showOnlyActive = False
 
             , loadingUnitStats = True
             , tableState = Table.initialSort "Мережа"
@@ -190,6 +192,8 @@ loadNetworks model shared =
 
                     else
                         Nothing
+                , showInactive = Just (not model.showOnlyActive)
+                , showOnlyDeleted = Nothing
                 }
             )
 
@@ -214,31 +218,15 @@ loadNetworksWithTracker model shared tracker =
 
                     else
                         Nothing
+                , showInactive = Just (not model.showOnlyActive)
+                , showOnlyDeleted = Nothing
                 }
 
         _ ->
             Cmd.none
 
 
-loadNetworksFixLater model shared =
-    case ( model.from.datePosix, model.to.datePosix ) of
-        ( Just dtFromPosix, Just dtToPosix ) ->
-            Api.get_networks_list NetworksReturnedByApi
-                { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
-                , filterFreq = emptySToNothing model.filterState.freq
-                , filterUnit = emptySToNothing model.filterState.unit
-                , sortBy = Nothing
-                , filterFurtherInvestigation =
-                    if model.showOnlyInvestigating then
-                        Just True
 
-                    else
-                        Nothing
-                }
-
-        _ ->
-            Cmd.none
 
 
 type Msg
@@ -284,6 +272,7 @@ type Msg
     | ClearAllFilters
     | CreateNewNetworkClicked
     | SetTableState Table.State
+    | ToggleShowOnlyActive Bool
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -745,6 +734,16 @@ update shared msg model =
             in
             ( m3, eff )
 
+        ToggleShowOnlyActive val ->
+            let
+                m2 =
+                    { model | showOnlyActive = val }
+
+                ( m3, eff ) =
+                    loadNetworks m2 shared
+            in
+            ( m3, eff )
+
         NetworksMergeStart ->
             ( { model
                 | networksMergeStatus =
@@ -937,6 +936,7 @@ update shared msg model =
                     { model
                         | filterState = clearedFilterState
                         , showOnlyInvestigating = False
+                        , showOnlyActive = False
                     }
 
                 ( m3, eff ) =
@@ -1019,18 +1019,37 @@ networksTableConfig shared model =
                     \network ->
                         { attributes = []
                         , children =
-                            [ a
-                                [ class "cursor-pointer"
-                                , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
-                                , target "_blank"
+                            [ div [ class "flex items-center gap-2" ]
+                                [ -- Status circle
+                                  div 
+                                    [ class "w-2 h-2 rounded-full flex-shrink-0 self-center"
+                                    , style "background-color" 
+                                        (if isNetworkActive network then
+                                            "#10b981"  -- green for active
+                                        else
+                                            "#6b7280"  -- gray for inactive
+                                        )
+                                    , attribute "title" 
+                                        (if isNetworkActive network then
+                                            "Активна мережа"
+                                        else
+                                            "Неактивна мережа"
+                                        )
+                                    ] 
+                                    []
+                                , a
+                                    [ class "cursor-pointer"
+                                    , Route.href { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                                    , target "_blank"
+                                    ]
+                                    (case shared.masterUnits of
+                                        Success units ->
+                                            [ EUtils.renderNetworkNameWithoutType network units ]
+                                        
+                                        _ ->
+                                            [ text "Завантаження..." ]
+                                    )
                                 ]
-                                (case shared.masterUnits of
-                                    Success units ->
-                                        [ EUtils.renderNetworkNameWithoutType network units ]
-                                    
-                                    _ ->
-                                        [ text "Loading..." ]
-                                )
                             ]
                         }
                 , sorter = Table.increasingOrDecreasingBy (\network -> network.location)
@@ -1246,6 +1265,17 @@ findSuggestedToMergeNetworks networks_ =
     findPairs [] networks_
 
 
+-- Helper function to determine if a network is active
+isNetworkActive : B.Network -> Bool
+isNetworkActive network =
+    case network.activeTo of
+        Nothing ->
+            True  -- activeTo is empty, so network is active
+
+        Just _ ->
+            False  -- activeTo has a value, so network is inactive
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -1278,6 +1308,7 @@ filterPanel shared model =
                 || (filterState.unit /= "")
                 || not (List.isEmpty filterState.callsigns)
                 || model.showOnlyInvestigating
+                || model.showOnlyActive
 
         -- Count active filters
         activeFilterCount =
@@ -1285,6 +1316,7 @@ filterPanel shared model =
             , filterState.unit /= ""
             , not (List.isEmpty filterState.callsigns)
             , model.showOnlyInvestigating
+            , model.showOnlyActive
             ]
                 |> List.filter identity
                 |> List.length
@@ -1358,6 +1390,12 @@ filterPanel shared model =
                 ]
                 [ text "Підрозділи" ]
             , span [ class "grow-1" ] []
+            ]
+        , -- Network status filters row
+          div [ class "flex gap-4 justify-start items-center" ]
+            [ Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+                |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
+                |> Checkbox.view
             ]
         , let
             dialogContent =

@@ -130,6 +130,7 @@ update req msg model =
             , E.batch
                 [ if req.path == Route.Path.Login then
                     E.replaceRoutePath Route.Path.Home_
+
                   else
                     E.none
                 , E.getNetworksList NetworksLoadedByApi
@@ -139,6 +140,8 @@ update req msg model =
                     , filterFreq = Nothing
                     , filterUnit = Nothing
                     , filterFurtherInvestigation = Nothing
+                    , showInactive = Nothing
+                    , showOnlyDeleted = Nothing
                     }
                 ]
             )
@@ -391,6 +394,8 @@ update req msg model =
                         , filterFreq = Nothing
                         , filterUnit = Nothing
                         , filterFurtherInvestigation = Nothing
+                        , showInactive = Nothing
+                        , showOnlyDeleted = Nothing
                         }
                     )
 

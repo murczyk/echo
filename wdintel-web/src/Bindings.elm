@@ -4611,6 +4611,8 @@ type alias ListNetworksReq =
     , filterFreq : Maybe String
     , filterUnit : Maybe String
     , filterFurtherInvestigation : Maybe Bool
+    , showInactive : Maybe Bool
+    , showOnlyDeleted : Maybe Bool
     , sortBy : Maybe (List ListNetworksSortBy)
     }
 
@@ -4623,6 +4625,8 @@ listNetworksReqEncoder struct =
         , ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
         , ( "filter_further_investigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterFurtherInvestigation )
+        , ( "show_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showInactive )
+        , ( "show_only_deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showOnlyDeleted )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listNetworksSortByEncoder)) struct.sortBy )
         ]
 
@@ -8179,6 +8183,8 @@ listNetworksReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_further_investigation" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_inactive" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_only_deleted" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listNetworksSortByDecoder))))
 
 
