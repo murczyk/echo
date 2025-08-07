@@ -1174,9 +1174,19 @@ editOrganismSidebarContent isDark model organismId editState =
         organism =
             model.organisms |> ListX.find (\o -> o.id == organismId)
 
+        -- Отримуємо ID вибраного батьківського організму для редагування
+        selectedParentId =
+            editState.inpParentOrganism.selectedItems 
+                |> List.head 
+                |> Maybe.andThen String.toInt
+
+        -- Визначаємо доступні групи з урахуванням батька для редагування
+        availableGroups =
+            getAvailableGroupsForOrganism selectedParentId model.organismGroups model.groups
+
         groupsSelectedItems =
             editState.inpGroups.selectedItems
-                |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) model.groups)
+                |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) availableGroups)
                 |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
     in
     [ div [ class "flex flex-col h-full" ]
@@ -1233,7 +1243,7 @@ editOrganismSidebarContent isDark model organismId editState =
                                 Le.Block.Select.renderSelect
                                     groupsSelectedItems
                                     editState.inpGroups.selectState
-                                    editState.inpGroups.items
+                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
                                     "групи"
                                     (Le.Block.Select.defaultOptions isDark)
                         ]
@@ -1340,9 +1350,19 @@ mainBlock isDark model =
         addOrganismPanel : Model -> Html Msg
         addOrganismPanel m =
             let
+                -- Отримуємо ID вибраного батьківського організму
+                selectedParentId =
+                    m.inpParentOrganism.selectedItems 
+                        |> List.head 
+                        |> Maybe.andThen String.toInt
+
+                -- Визначаємо доступні групи з урахуванням батька
+                availableGroups =
+                    getAvailableGroupsForOrganism selectedParentId m.organismGroups m.groups
+
                 groupsSelectedItems =
                     m.inpGroups.selectedItems
-                        |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) model.groups)
+                        |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) availableGroups)
                         |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
             in
             div
@@ -1394,7 +1414,7 @@ mainBlock isDark model =
                                     Le.Block.Select.renderSelect
                                         groupsSelectedItems
                                         m.inpGroups.selectState
-                                        m.inpGroups.items
+                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
                                         "групи"
                                         (Le.Block.Select.defaultOptions isDark)
                             ]
