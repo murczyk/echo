@@ -11,7 +11,8 @@ pub struct Organism {
     pub created_at: i64,
     pub group_auto_link: bool,
     pub roles: Vec<String>,
-    pub groups: Vec<String>,
+    pub selected_groups: Vec<String>,
+    pub available_groups: Vec<String>,
     pub enabled: bool,
 }
 
@@ -77,4 +78,9 @@ pub struct SignalGroupFull {
     pub name: String,
     pub master_key: String,
     pub datasource_id: i64,
+}
+
+pub struct OrganismGroups {
+    pub available_keys: Vec<String>,
+    pub selected_keys: Vec<String>,
 }

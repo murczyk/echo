@@ -1,12 +1,13 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::organism::types::OrganismGroups;
 use crate::types::*;
 use sea_orm::*;
 
 pub async fn load_organism_group_ids<'a, 'async_trait, C>(
     txn: &'a C,
     organism_id: i64,
-) -> Result<Vec<String>, AppError>
+) -> Result<OrganismGroups, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -17,28 +18,37 @@ where
     let mut organism_ids =
         parents.into_iter().map(|x| x.id).collect::<Vec<_>>();
     organism_ids.push(organism_id);
-    let mut groups = organism_group::Entity::find()
+    let mut group_ids = signal_group::Entity::find()
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .into_tuple::<String>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let organism_groups = organism_group::Entity::find()
         .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
         .all(txn)
         .await
         .context(h!())?;
-    let mut group_ids = vec![];
+    let mut selected_keys = vec![];
     for organism_id in organism_ids {
-        let new_group_ids = groups
+        selected_keys = organism_groups
             .iter()
             .filter(|x| x.organism_id == organism_id)
             .map(|x| x.signal_group_master_key.clone())
-            .filter(|x| group_ids.is_empty() || group_ids.contains(x))
             .collect_vec();
-        if !new_group_ids.is_empty() {
-            group_ids = new_group_ids;
-            groups = groups
-                .into_iter()
-                .filter(|g| group_ids.contains(&g.signal_group_master_key))
-                .collect_vec();
+        if !selected_keys.is_empty() {
+            group_ids = group_ids
+                .iter()
+                .filter(|id| selected_keys.contains(id))
+                .cloned()
+                .collect();
         }
     }
-    Ok(group_ids)
+    Ok(OrganismGroups {
+        available_keys: group_ids,
+        selected_keys,
+    })
 }
 
 pub(crate) async fn load_organism_with_children(

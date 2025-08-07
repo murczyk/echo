@@ -6,7 +6,7 @@ use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
 // use crate::utils::*;
-use crate::organism::bl::load_organism_group_ids;
+use crate::organism::bl::*;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
 use actix_identity::Identity;
@@ -783,7 +783,8 @@ where
             crate::sigint::zone::filter_out_ineligible_secret_chats(
                 signal_group::Entity::find()
                     .filter(
-                        signal_group::Column::MasterKey.is_in(organism_groups),
+                        signal_group::Column::MasterKey
+                            .is_in(organism_groups.available_keys),
                     )
                     .join(
                         JoinType::InnerJoin,

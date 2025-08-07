@@ -1,9 +1,7 @@
 use self::types::*;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::organism::bl::{
-    load_organism_group_ids, load_organism_with_children,
-};
+use crate::organism::bl::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
@@ -41,7 +39,7 @@ pub async fn add_group_to_organism(
         .ok_or(AppError::NotFound)?;
 
     let skip_adding = if let Some(parent_filter) = parent_filter {
-        !parent_filter.contains(&group.master_key)
+        !parent_filter.selected_keys.contains(&group.master_key)
     } else {
         false
     };
@@ -147,6 +145,9 @@ pub async fn update_organism(
     organism.enabled = Set(req.enabled);
 
     let organism = organism.update(&env.dbx).await?;
+    let groups = load_organism_group_ids(&env.dbx, organism.id)
+        .await
+        .context(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
@@ -155,8 +156,9 @@ pub async fn update_organism(
         created_at: organism.created_at.and_utc().timestamp_millis(),
         roles: serde_json::from_value(organism.roles).unwrap_or(vec![]),
         group_auto_link: req.group_auto_link.unwrap_or(false),
-        groups: vec![],
         enabled: req.enabled,
+        selected_groups: groups.selected_keys,
+        available_groups: groups.available_keys,
     }))
 }
 
@@ -194,7 +196,7 @@ pub async fn organism_available_groups(
         .context(h!())?;
 
     let groups_list = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_in(groups))
+        .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
         .all(&env.dbx)
         .await
         .context(h!())?;
@@ -246,6 +248,10 @@ pub async fn create_organism(
     .insert(&env.dbx)
     .await?;
 
+    let groups = load_organism_group_ids(&env.dbx, organism.id)
+        .await
+        .context(h!())?;
+
     Ok(Json(Organism {
         id: organism.id,
         parent_id: organism.parent_id,
@@ -253,8 +259,9 @@ pub async fn create_organism(
         created_at: organism.created_at.and_utc().timestamp_millis(),
         roles: serde_json::from_value(organism.roles).unwrap_or(vec![]),
         group_auto_link: req.group_auto_link.unwrap_or(false),
-        groups: vec![],
         enabled: organism.enabled,
+        selected_groups: groups.selected_keys,
+        available_groups: groups.available_keys,
     }))
 }
 
@@ -288,30 +295,26 @@ pub async fn list_organisms(
         .all(&env.dbx)
         .await
         .context(h!())?;
-    let organism_ids = organisms.iter().map(|x| x.id).collect::<Vec<i64>>();
-    let organism_groups = organism_group::Entity::find()
-        .filter(organism_group::Column::OrganismId.is_in(organism_ids))
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
 
-    let mut list = organisms
-        .into_iter()
-        .map(|o| Organism {
+    let mut list = vec![];
+    for o in organisms {
+        let groups = load_organism_group_ids(&env.dbx, o.id)
+            .await
+            .context(h!())?;
+        let org = Organism {
             id: o.id,
             parent_id: o.parent_id,
             name: o.name,
             enabled: o.enabled,
             created_at: o.created_at.and_utc().timestamp_millis(),
             roles: serde_json::from_value(o.roles).unwrap_or(vec![]),
+            selected_groups: groups.selected_keys,
             group_auto_link: o.group_auto_link.unwrap_or(false),
-            groups: organism_groups
-                .iter()
-                .filter(|x| x.organism_id.eq(&o.id))
-                .map(|og| og.signal_group_master_key.clone())
-                .collect(),
-        })
-        .collect_vec();
+            available_groups: groups.available_keys,
+        };
+        list.push(org);
+    }
+
     if default_sorting {
         list.sort_by_key(|e| e.parent_id.map(|id| id * 0).unwrap_or(-1)); // first goes root elements, then the others
     }
