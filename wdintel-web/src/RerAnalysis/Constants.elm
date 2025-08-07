@@ -42,3 +42,6 @@ reportTemplateToString x =
 
         RTNaUshnom ->
             "naushnom"
+
+        RTReo ->
+            "reo"

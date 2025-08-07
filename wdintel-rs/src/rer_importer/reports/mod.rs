@@ -23,6 +23,7 @@ pub mod interception;
 pub mod mouse;
 mod naushnom;
 mod report_xlsx_kind_pelengs;
+mod revo;
 mod senders;
 pub mod tag;
 
@@ -162,6 +163,8 @@ pub async fn report_docx(
     } else if req.kind == "naushnom" {
         self::naushnom::report_docx_kind_naushnom(user, &env, &req, &outpath)
             .await?;
+    } else if req.kind == "reo" {
+        self::revo::report_docx_kind_revo(user, &env, &req, &outpath).await?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }

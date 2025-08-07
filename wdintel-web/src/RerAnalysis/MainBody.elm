@@ -41,12 +41,18 @@ mainBody user model shared route =
     let
         masterUnitsDict =
             case shared.masterUnits of
-                Success units -> units
-                _ -> Dict.empty
+                Success units ->
+                    units
+
+                _ ->
+                    Dict.empty
+
         messagesShown =
             List.length model.messages
+
         messagesCountOverall =
             extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
+
         deleteConfirmationModal =
             div
                 [ class "modal fade"
@@ -95,6 +101,7 @@ mainBody user model shared route =
                         ]
                     ]
                 ]
+
         messagesBlock =
             case model.counts |> RD.toMaybe |> mmap (\r -> r.countOverall) of
                 Just 0 ->
@@ -120,6 +127,7 @@ mainBody user model shared route =
                                         , text "завантажити ще"
                                         ]
                                     ]
+
                         vps =
                             { profiles = model.profiles
                             , groupInfos = model.groupInfos
@@ -135,17 +143,22 @@ mainBody user model shared route =
                             , serverInfo = shared.serverInfo
                             , networks = RD.withDefault Dict.empty shared.networks
                             , masterUnits = masterUnitsDict
-                            , freqNetworkIds = case shared.networks of
-                                Success networks ->
-                                    networks
-                                        |> Dict.values
-                                        |> List.concatMap (\network -> 
-                                            List.map (\freq -> (freq.freq, Set.singleton network.id)) network.freqs
-                                        )
-                                        |> DE.fromListDedupe Set.union
-                                _ -> Dict.empty
+                            , freqNetworkIds =
+                                case shared.networks of
+                                    Success networks ->
+                                        networks
+                                            |> Dict.values
+                                            |> List.concatMap
+                                                (\network ->
+                                                    List.map (\freq -> ( freq.freq, Set.singleton network.id )) network.freqs
+                                                )
+                                            |> DE.fromListDedupe Set.union
+
+                                    _ ->
+                                        Dict.empty
                             , currentRoute = Just route
                             }
+
                         renderPs =
                             { hideCheckboxes = False
                             , hideIndividualSave = False
@@ -550,6 +563,24 @@ filtersAndMainContent user model shared route =
                             [ text "" ]
                         ]
                     ]
+                , div
+                    [ class "card pointer me-4 basis-[200px]"
+                    , classList
+                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTReo && shared.isDarkMode )
+                        , ( "bg-grad-mm14-light", model.reportTemplate == RTReo && not shared.isDarkMode )
+                        ]
+                    , classList [ ( "shadow", model.reportTemplate == RTReo ) ]
+                    , onClick <| ReportTemplateSelect RTReo
+                    ]
+                    [ div [ class "card-body" ]
+                        [ h5
+                            [ class "card-title"
+                            ]
+                            [ text "РЕО" ]
+                        , p [ class "card-text" ]
+                            [ text "" ]
+                        ]
+                    ]
                 ]
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
                 div [ class "p-3 bg-light text-dark mb-4" ]
@@ -602,7 +633,7 @@ filtersAndMainContent user model shared route =
 
                 _ ->
                     HtmlX.nothing
-            , div [ class "d-flex justify-content-center align-items-center mb-4" ]
+            , div [ class "d-flex justify-content-center align-items-center my-4" ]
                 [ button
                     [ type_ "button"
                     , class "inline-block btn btn-primary btn-sm me-2"
