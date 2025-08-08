@@ -4427,8 +4427,6 @@ updateNetworkReqEncoder struct =
 
 type alias NetworkCallsignsReq =
     { networkIds : List Int
-    , sinceDateInclusiveMs : Maybe Int
-    , tillDateNoninclusiveMs : Maybe Int
     }
 
 
@@ -4436,8 +4434,6 @@ networkCallsignsReqEncoder : NetworkCallsignsReq -> Json.Encode.Value
 networkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_ids", Json.Encode.list Json.Encode.int struct.networkIds )
-        , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
-        , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateNoninclusiveMs )
         ]
 
 
@@ -4618,9 +4614,7 @@ updFreqNetworkEncoder struct =
 
 
 type alias ListNetworksReq =
-    { sinceDateInclusiveMs : Maybe Int
-    , tillDateNoninclusiveMs : Maybe Int
-    , filterFreq : Maybe String
+    { filterFreq : Maybe String
     , filterUnit : Maybe String
     , filterFurtherInvestigation : Maybe Bool
     , showInactive : Maybe Bool
@@ -4632,9 +4626,7 @@ type alias ListNetworksReq =
 listNetworksReqEncoder : ListNetworksReq -> Json.Encode.Value
 listNetworksReqEncoder struct =
     Json.Encode.object
-        [ ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
-        , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateNoninclusiveMs )
-        , ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
+        [ ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
         , ( "filter_further_investigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterFurtherInvestigation )
         , ( "show_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showInactive )
@@ -8129,8 +8121,6 @@ networkCallsignsReqDecoder : Json.Decode.Decoder NetworkCallsignsReq
 networkCallsignsReqDecoder =
     Json.Decode.succeed NetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable Json.Decode.int)))
 
 
 addNetworkFreqReqDecoder : Json.Decode.Decoder AddNetworkFreqReq
@@ -8196,8 +8186,6 @@ updFreqNetworkDecoder =
 listNetworksReqDecoder : Json.Decode.Decoder ListNetworksReq
 listNetworksReqDecoder =
     Json.Decode.succeed ListNetworksReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_further_investigation" (Json.Decode.nullable Json.Decode.bool)))

@@ -66,7 +66,6 @@ type alias Model =
     , now : Maybe Time.Posix
     , from : Le.Block.DateTime.Model
     , to : Le.Block.DateTime.Model
-
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
     , networks : RemoteData ApiError (List B.Network)
     , currentRequestTracker : Maybe String
@@ -97,7 +96,6 @@ type alias Model =
     , showOnlyActive : Bool
     , showArchiveSidebar : Bool
     , archiveNetworks : RemoteData ApiError (List B.Network)
-
     , loadingUnitStats : Bool
     , tableState : Table.State
     }
@@ -124,7 +122,6 @@ init _ =
             , now = Nothing
             , from = Le.Block.DateTime.init ()
             , to = Le.Block.DateTime.init ()
-
             , networks = NotAsked
             , currentRequestTracker = Nothing
             , requestCounter = 0
@@ -159,7 +156,6 @@ init _ =
             , showOnlyActive = False
             , showArchiveSidebar = False
             , archiveNetworks = NotAsked
-
             , loadingUnitStats = True
             , tableState = Table.initialSort "Мережа"
             }
@@ -179,58 +175,41 @@ filterStateDebounceConfig =
     }
 
 
-loadNetworks : Model -> Shared.Model -> ( Model, Effect Msg )
-loadNetworks model shared =
-    case ( model.from.datePosix, model.to.datePosix ) of
-        ( Just dtFromPosix, Just dtToPosix ) ->
-            ( { model | networks = Loading }
-            , E.getNetworksList NetworksReturnedByApi
-                { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
-                , filterFreq = emptySToNothing model.filterState.freq
-                , filterUnit = emptySToNothing model.filterState.unit
-                , sortBy = Nothing
-                , filterFurtherInvestigation =
-                    if model.showOnlyInvestigating then
-                        Just True
+loadNetworks : Model -> ( Model, Effect Msg )
+loadNetworks model =
+    ( { model | networks = Loading }
+    , E.getNetworksList NetworksReturnedByApi
+        { filterFreq = emptySToNothing model.filterState.freq
+        , filterUnit = emptySToNothing model.filterState.unit
+        , sortBy = Nothing
+        , filterFurtherInvestigation =
+            if model.showOnlyInvestigating then
+                Just True
 
-                    else
-                        Nothing
-                , showInactive = Just (not model.showOnlyActive)
-                , showOnlyDeleted = Nothing
-                }
-            )
-
-        _ ->
-            ( model, E.none )
+            else
+                Nothing
+        , showInactive = Just (not model.showOnlyActive)
+        , showOnlyDeleted = Nothing
+        }
+    )
 
 
-loadNetworksWithTracker : Model -> Shared.Model -> String -> Cmd Msg
-loadNetworksWithTracker model shared tracker =
-    case ( model.from.datePosix, model.to.datePosix ) of
-        ( Just dtFromPosix, Just dtToPosix ) ->
-            Api.get_networks_list_with_tracker NetworksReturnedByApi
-                tracker
-                { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
-                , filterFreq = emptySToNothing model.filterState.freq
-                , filterUnit = emptySToNothing model.filterState.unit
-                , sortBy = Nothing
-                , filterFurtherInvestigation =
-                    if model.showOnlyInvestigating then
-                        Just True
+loadNetworksWithTracker : Model -> String -> Cmd Msg
+loadNetworksWithTracker model tracker =
+    Api.get_networks_list_with_tracker NetworksReturnedByApi
+        tracker
+        { filterFreq = emptySToNothing model.filterState.freq
+        , filterUnit = emptySToNothing model.filterState.unit
+        , sortBy = Nothing
+        , filterFurtherInvestigation =
+            if model.showOnlyInvestigating then
+                Just True
 
-                    else
-                        Nothing
-                , showInactive = Just (not model.showOnlyActive)
-                , showOnlyDeleted = Nothing
-                }
-
-        _ ->
-            Cmd.none
-
-
-
+            else
+                Nothing
+        , showInactive = Just (not model.showOnlyActive)
+        , showOnlyDeleted = Nothing
+        }
 
 
 type Msg
@@ -255,7 +234,6 @@ type Msg
     | FilterStateDebounceMsg Debounce.Msg
     | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)
     | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
-
     | UnitStatsReturnedByApi (Result ApiError B.NetworkUnitStatsRsp)
     | ReportModalOpenedByUser
     | ReportModalClosedByUser
@@ -409,7 +387,7 @@ update shared msg model =
                         , now = Just now_
                     }
             in
-            loadNetworks m2 shared
+            loadNetworks m2
 
         NetworksReturnedByApi (Err err) ->
             ( { model | networks = Failure err, currentRequestTracker = Nothing }
@@ -432,16 +410,12 @@ update shared msg model =
                             }
                         , E.getNetworksCallsigns CallsignsByNetworkReturnedByApi
                             { networkIds = networks |> List.map .id
-                            , sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                            , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
                             }
                         ]
 
                 _ ->
                     E.none
             )
-
-
 
         NetworksGroupsActivityReturnedByApi (Err err) ->
             ( { model | networksGroupsActivity = Failure err }
@@ -572,7 +546,7 @@ update shared msg model =
                 ( debounce, debounceCmd ) =
                     Debounce.update
                         filterStateDebounceConfig
-                        (Debounce.takeLast (\_ -> loadNetworksWithTracker model shared tracker))
+                        (Debounce.takeLast (\_ -> loadNetworksWithTracker model tracker))
                         imsg
                         model.filterStateDebounce
 
@@ -603,7 +577,7 @@ update shared msg model =
                         }
 
                 ( m3, eff3 ) =
-                    loadNetworks m2 shared
+                    loadNetworks m2
             in
             ( m3
             , E.batch
@@ -624,7 +598,7 @@ update shared msg model =
                         }
 
                 ( m3, eff3 ) =
-                    loadNetworks m2 shared
+                    loadNetworks m2
             in
             ( m3
             , E.batch
@@ -736,7 +710,7 @@ update shared msg model =
                     { model | showOnlyInvestigating = val, filterState = newFilterState }
 
                 ( m3, eff ) =
-                    loadNetworks m2 shared
+                    loadNetworks m2
             in
             ( m3, eff )
 
@@ -746,7 +720,7 @@ update shared msg model =
                     { model | showOnlyActive = val }
 
                 ( m3, eff ) =
-                    loadNetworks m2 shared
+                    loadNetworks m2
             in
             ( m3, eff )
 
@@ -923,7 +897,7 @@ update shared msg model =
                     { model | filterState = newFilterState, showOnlyInvestigating = False }
 
                 ( m3, eff ) =
-                    loadNetworks m2 shared
+                    loadNetworks m2
             in
             ( m3, eff )
 
@@ -946,7 +920,7 @@ update shared msg model =
                     }
 
                 ( m3, eff ) =
-                    loadNetworks m2 shared
+                    loadNetworks m2
             in
             ( m3, eff )
 
@@ -964,9 +938,7 @@ update shared msg model =
             if newModel.showArchiveSidebar && model.archiveNetworks == NotAsked then
                 ( { newModel | archiveNetworks = Loading }
                 , E.getNetworksList ArchiveNetworksReturnedByApi
-                    { sinceDateInclusiveMs = Nothing
-                    , tillDateNoninclusiveMs = Nothing
-                    , filterFreq = Nothing
+                    { filterFreq = Nothing
                     , filterUnit = Nothing
                     , sortBy = Nothing
                     , filterFurtherInvestigation = Nothing
@@ -974,6 +946,7 @@ update shared msg model =
                     , showOnlyDeleted = Just True
                     }
                 )
+
             else
                 ( newModel, E.none )
 
@@ -1056,21 +1029,25 @@ networksTableConfig shared model =
                         , children =
                             [ div [ class "flex items-center gap-2" ]
                                 [ -- Status circle
-                                  div 
+                                  div
                                     [ class "w-2 h-2 rounded-full flex-shrink-0 self-center"
-                                    , style "background-color" 
+                                    , style "background-color"
                                         (if isNetworkActive network then
-                                            "#10b981"  -- green for active
-                                        else
-                                            "#6b7280"  -- gray for inactive
+                                            "#10b981"
+                                            -- green for active
+
+                                         else
+                                            "#6b7280"
+                                         -- gray for inactive
                                         )
-                                    , attribute "title" 
+                                    , attribute "title"
                                         (if isNetworkActive network then
                                             "Активна мережа"
-                                        else
+
+                                         else
                                             "Неактивна мережа"
                                         )
-                                    ] 
+                                    ]
                                     []
                                 , a
                                     [ class "cursor-pointer"
@@ -1080,7 +1057,7 @@ networksTableConfig shared model =
                                     (case shared.masterUnits of
                                         Success units ->
                                             [ EUtils.renderNetworkNameWithoutType network units ]
-                                        
+
                                         _ ->
                                             [ text "Завантаження..." ]
                                     )
@@ -1186,7 +1163,7 @@ networksTableConfig shared model =
                                                 (NetworksPage
                                                     network
                                                 )
-                                        
+
                                         _ ->
                                             Le.Block.Spinner.loadingSpinnerSm
 
@@ -1300,15 +1277,23 @@ findSuggestedToMergeNetworks networks_ =
     findPairs [] networks_
 
 
+
 -- Helper function to determine if a network is active
+
+
 isNetworkActive : B.Network -> Bool
 isNetworkActive network =
     case network.activeTo of
         Nothing ->
-            True  -- activeTo is empty, so network is active
+            True
 
+        -- activeTo is empty, so network is active
         Just _ ->
-            False  -- activeTo has a value, so network is inactive
+            False
+
+
+
+-- activeTo has a value, so network is inactive
 
 
 subscriptions : Model -> Sub Msg
@@ -1326,9 +1311,6 @@ mainContent networks shared model =
                 networks
             ]
         ]
-
-
-
 
 
 filterPanel : Shared.Model -> Model -> Html Msg
@@ -1428,7 +1410,7 @@ filterPanel shared model =
             ]
         , -- Network status filters row
           div [ class "flex gap-4 justify-start items-center" ]
-            [ div [ class "me-2" ] [ text "" ]  -- Spacer to align with first row
+            [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
             , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
                 |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
                 |> Checkbox.view
@@ -1502,34 +1484,6 @@ contentBlock shared model =
             _ ->
                 div [ class "flex items-center justify-center w-full h-full" ] [ Le.Block.Spinner.loadingSpinner ]
         ]
-
-
-dateAndPanelsBlock : Bool -> Model -> Html Msg
-dateAndPanelsBlock _ model =
-    div
-        [ class "flex justify-start items-center ms-2"
-        ]
-        (List.concat
-            [ [ div
-                    [ class "me-2", style "font-size" "1rem" ]
-                    [ text "з" ]
-              ]
-            , Le.Block.DateTime.new
-                { model = model.from
-                , toMsg = DateTimeFromMsg
-                }
-                |> Le.Block.DateTime.view
-            , [ div
-                    [ class "me-2", style "font-size" "1rem" ]
-                    [ text "по" ]
-              ]
-            , Le.Block.DateTime.new
-                { model = model.to
-                , toMsg = DateTimeToMsg
-                }
-                |> Le.Block.DateTime.view
-            ]
-        )
 
 
 leftPanel : Shared.Model -> Model -> Html Msg
@@ -1608,7 +1562,7 @@ unitsBlock shared model =
                 (case shared.masterUnits of
                     Success units ->
                         [ UnitHierarchy.view config (Dict.values units) (RD.withDefault [] model.unitStats) ]
-                    
+
                     _ ->
                         [ Le.Block.Spinner.loadingSpinner ]
                 )
@@ -1630,7 +1584,6 @@ view dark shared user model =
                     [ div [ class "flex gap-[16px]" ]
                         [ h1 []
                             [ text "мережі" ]
-                        , dateAndPanelsBlock dark model
                         ]
                     , let
                         reportButton =
@@ -1728,7 +1681,7 @@ networksMergeSidebarContent shared model =
                                 (case shared.masterUnits of
                                     Success units ->
                                         [ EUtils.renderNetworkNameWithoutType networkA units ]
-                                    
+
                                     _ ->
                                         [ text "Loading..." ]
                                 )
@@ -1740,7 +1693,7 @@ networksMergeSidebarContent shared model =
                                 (case shared.masterUnits of
                                     Success units ->
                                         [ EUtils.renderNetworkNameWithoutType networkB units ]
-                                    
+
                                     _ ->
                                         [ text "Loading..." ]
                                 )
@@ -1756,7 +1709,7 @@ networksMergeSidebarContent shared model =
                                 (case shared.masterUnits of
                                     Success units ->
                                         [ EUtils.renderNetworkNameWithoutType preview units ]
-                                    
+
                                     _ ->
                                         [ text "Loading..." ]
                                 )
@@ -1827,35 +1780,38 @@ archiveSidebarContent shared model =
                 if List.isEmpty networks then
                     div [ class "text-gray-500 text-center" ]
                         [ text "Архів порожній" ]
+
                 else
                     div [ class "max-h-[400px] overflow-y-auto space-y-2" ]
-                        (List.map (\network ->
-                            div [ class "p-3 border border-gray-200 rounded-lg" ]
-                                [ div [ class "font-medium" ]
-                                    (case shared.masterUnits of
-                                        Success units ->
-                                            [ EUtils.renderNetworkNameWithoutType network units ]
-                                        
-                                        _ ->
-                                            [ text "Loading..." ]
-                                    )
-                                , div [ class "text-sm text-gray-600" ]
-                                    [ text network.location ]
-                                , div [ class "text-sm text-gray-500" ]
-                                    [ text ("Частоти: " ++ (network.freqs |> List.map .freq |> String.join ", ")) ]
-                                ]
-                        ) networks)
+                        (List.map
+                            (\network ->
+                                div [ class "p-3 border border-gray-200 rounded-lg" ]
+                                    [ div [ class "font-medium" ]
+                                        (case shared.masterUnits of
+                                            Success units ->
+                                                [ EUtils.renderNetworkNameWithoutType network units ]
+
+                                            _ ->
+                                                [ text "Loading..." ]
+                                        )
+                                    , div [ class "text-sm text-gray-600" ]
+                                        [ text network.location ]
+                                    , div [ class "text-sm text-gray-500" ]
+                                        [ text ("Частоти: " ++ (network.freqs |> List.map .freq |> String.join ", ")) ]
+                                    ]
+                            )
+                            networks
+                        )
 
             NeedsReload _ ->
                 div [ class "text-red-500" ]
                     [ text "Потрібно перезавантажити архів" ]
         , div [ class "flex justify-start" ]
-                    [ Button.new { label = "Закрити", onClick = ToggleArchiveSidebar }
-                        |> Button.withStyleSecondary
-                        |> Button.view
-                    ]
+            [ Button.new { label = "Закрити", onClick = ToggleArchiveSidebar }
+                |> Button.withStyleSecondary
+                |> Button.view
+            ]
         ]
-    
     ]
 
 

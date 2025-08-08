@@ -135,8 +135,6 @@ update req msg model =
                     E.none
                 , E.getNetworksList NetworksLoadedByApi
                     { sortBy = Nothing
-                    , sinceDateInclusiveMs = Nothing
-                    , tillDateNoninclusiveMs = Nothing
                     , filterFreq = Nothing
                     , filterUnit = Nothing
                     , filterFurtherInvestigation = Nothing
@@ -389,8 +387,6 @@ update req msg model =
                     ( { model | pendingEvents = event :: model.pendingEvents }
                     , E.getNetworksList NetworksLoadedByApi
                         { sortBy = Nothing
-                        , sinceDateInclusiveMs = Nothing
-                        , tillDateNoninclusiveMs = Nothing
                         , filterFreq = Nothing
                         , filterUnit = Nothing
                         , filterFurtherInvestigation = Nothing

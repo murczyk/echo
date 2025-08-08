@@ -119,8 +119,6 @@ pub struct MergeNetworkReq {
 )]
 pub struct NetworkCallsignsReq {
     pub network_ids: Vec<i64>,
-    pub since_date_inclusive_ms: Option<i64>,
-    pub till_date_noninclusive_ms: Option<i64>,
 }
 
 #[derive(
@@ -205,8 +203,6 @@ pub struct UpdFreqNetwork {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ListNetworksReq {
-    pub since_date_inclusive_ms: Option<i64>,
-    pub till_date_noninclusive_ms: Option<i64>,
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
     /// filter_further_investigation - to filter networks that does not have any unit assigned to them yet
