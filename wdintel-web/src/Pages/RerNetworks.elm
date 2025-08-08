@@ -8,6 +8,7 @@ import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Components.RadioGroup as RadioGroup
+import Components.SegmentedControl as SegmentedControl
 import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
@@ -942,33 +943,6 @@ update shared msg model =
         SetTableState newState ->
             ( { model | tableState = newState }, E.none )
 
-        ToggleShowArchived val ->
-            let
-                m2 =
-                    { model | showArchived = val }
-
-                ( m3, eff ) =
-                    loadNetworks m2
-            in
-            ( m3, eff )
-
-        NetworksMergeStart ->
-            ( { model
-                | networksMergeStatus =
-                    case model.networksMergeStatus of
-                        CalculatedSuggestions (x :: xs) ->
-                            let
-                                preview =
-                                    generatePreview x
-                            in
-                            Merging x preview xs
-
-                        _ ->
-                            NotCalculatedSuggestionsYet
-              }
-            , E.none
-            )
-
 
 networksTableConfig : Shared.Model -> Model -> Table.Config B.Network Msg
 networksTableConfig shared model =
@@ -1337,6 +1311,7 @@ filterPanel shared model =
                 || not (List.isEmpty filterState.callsigns)
                 || model.showOnlyInvestigating
                 || model.showOnlyActive
+                || model.showArchived
 
         -- Count active filters
         activeFilterCount =
@@ -1345,9 +1320,16 @@ filterPanel shared model =
             , not (List.isEmpty filterState.callsigns)
             , model.showOnlyInvestigating
             , model.showOnlyActive
+            , model.showArchived
             ]
                 |> List.filter identity
                 |> List.length
+
+        -- SegmentedControl options for archive filter
+        archiveOptions =
+            [ { value = False, label = "Не видалені" }
+            , { value = True, label = "Архів" }
+            ]
     in
     div [ class "flex flex-col gap-3" ]
         [ -- Title row with filter count and clear button
@@ -1377,6 +1359,12 @@ filterPanel shared model =
                 [ span [ class "me-1 text-secondary" ] [ text "Очистити" ]
                 , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
                 ]
+            ]
+        , -- Archive filter row
+          div [ class "flex gap-2 justify-start items-center" ]
+            [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
+            , SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
+                |> SegmentedControl.view
             ]
         , -- Filter inputs row
           div [ class "flex gap-2 justify-start items-center" ]
@@ -1419,13 +1407,17 @@ filterPanel shared model =
                 [ text "Підрозділи" ]
             , span [ class "grow-1" ] []
             ]
-        , -- Network status filters row
-          div [ class "flex gap-4 justify-start items-center" ]
-            [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
-            , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
-                |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
-                |> Checkbox.view
-            ]
+        , -- Network status filters row (only show when not in archive mode)
+          if not model.showArchived then
+            div [ class "flex gap-4 justify-start items-center" ]
+                [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
+                , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+                    |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
+                    |> Checkbox.view
+                ]
+
+          else
+            text ""
         , let
             dialogContent =
                 [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
