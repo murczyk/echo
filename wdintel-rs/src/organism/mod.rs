@@ -50,7 +50,10 @@ pub async fn add_group_to_organism(
     );
 
     let skip_adding = if let Some(parent_filter) = parent_filter {
-        debug!("parent_filter.selected_keys: {:?}", parent_filter.selected_keys);
+        debug!(
+            "parent_filter.selected_keys: {:?}",
+            parent_filter.selected_keys
+        );
         !parent_filter.selected_keys.contains(&group.master_key)
     } else {
         false

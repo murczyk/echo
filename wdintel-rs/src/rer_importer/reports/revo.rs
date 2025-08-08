@@ -55,7 +55,9 @@ pub struct NetworkSummary {
     pub master_key: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult)]
+#[derive(
+    Debug, Serialize, Deserialize, PartialEq, Eq, Clone, FromQueryResult, Hash,
+)]
 pub struct CallsignSummary {
     pub network_id: i64,
     pub unit_id: i64,
@@ -510,6 +512,7 @@ async fn collect_report(
             .filter(|(k, _)| keys.contains(k))
             .flat_map(|(_, v)| v.into_iter())
             .cloned()
+            .unique()
             .collect_vec();
         linked_callsigns.sort_by_key(|a| a.callsign.clone());
         let mut unlinked_callsigns = unlinked_callsigns_map
@@ -517,6 +520,7 @@ async fn collect_report(
             .filter(|(k, _)| keys.contains(k))
             .flat_map(|(_, v)| v.into_iter())
             .cloned()
+            .unique()
             .collect_vec();
         unlinked_callsigns.sort();
         let freqs = keys
