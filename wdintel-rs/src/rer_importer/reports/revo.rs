@@ -82,13 +82,12 @@ pub async fn report_docx_kind_revo(
         .await
         .context(h!())?;
     info!("report_docx_kind_revo data collected");
-
     report
         .hostile_networks
-        .sort_by_key(|x| x.activity.seances_qty);
+        .sort_by_key(|x| x.activity.seances_qty as i64 * -1);
     report
         .undefined_networks
-        .sort_by_key(|x| x.activity.seances_qty);
+        .sort_by_key(|x| x.activity.seances_qty as i64 * -1);
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
@@ -540,7 +539,7 @@ async fn collect_report(
         for c in unlinked_callsigns {
             correspondents.push(NetworkCorrespondent {
                 callsign: c,
-                position: None, // fixme
+                position: None,
             })
         }
         let activity = NetworkActivity {
@@ -549,10 +548,16 @@ async fn collect_report(
             seances_qty,
         };
         let network = networks_dictionary.get(&id).context(h!())?;
+        let mut network_name = network.name.clone();
+        if network_name.trim().is_empty() {
+            network_name = "Радіомережа".to_string();
+        }
         let (name, is_defined) = match network.unit_name.clone() {
-            None => (network.name.clone(), false),
+            None => {
+                (format!("{} невизначеного підрозділу", network_name), false)
+            }
             Some(unit_name) => {
-                (format!("{} {}", network.name, unit_name), true)
+                (format!("{} {}", network_name, unit_name), true)
             }
         };
         let row = NetworkRow {
