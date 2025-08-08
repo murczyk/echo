@@ -136,6 +136,9 @@ fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
     for callsign in extract_non_caps_callsigns(body)? {
         res.push(callsign);
     }
+    for callsign in extract_sender_receiver_pair(body)? {
+        res.push(callsign);
+    }
     Ok(res)
 }
 
@@ -665,6 +668,85 @@ fn extract_non_caps_callsigns(
         }
         msg_pos += cline_len(line) + 1;
     }
+    Ok(res)
+}
+
+/// Extracts callsigns in format  Отримувач(і): БАРС /n Відправник: БОРЕЦ
+fn extract_sender_receiver_pair(
+    input: &str,
+) -> Result<Vec<CNCallsign>, AppError> {
+    let lines: Vec<String> = input.lines().map(|x| x.to_string()).collect();
+    let mut msg_pos = 0;
+
+    lazy_static! {
+        static ref RE_CALLSIGN: Regex =
+            Regex::new(r"^ОТРИМУВАЧ(І|\(І\))?: (?P<callsign>.*).*$").unwrap();
+        static ref RE_CALLSIGN_2: Regex =
+            Regex::new(r"^ВІДПРАВНИК(И|\(И\))?: (?P<callsign>.*).*$").unwrap();
+    }
+    let mut res: Vec<CNCallsign> = vec![];
+    // println!("> msg_pos: {msg_pos}");
+
+    for line_raw in lines.iter() {
+        let line = &line_raw.to_uppercase();
+        '_if: {
+            let Some(capts) = RE_CALLSIGN.captures(line) else {
+                break '_if;
+            };
+            let Some(callsign_match) = capts.name("callsign") else {
+                break '_if;
+            };
+            let callsign: String =
+                callsign_match.as_str().to_lowercase().trim().to_string();
+            if callsign == "нв" {
+                break '_if;
+            }
+            res.push(CNCallsign {
+                begin: msg_pos
+                    + crate::utils::string::byte_to_char_index(
+                        line,
+                        callsign_match.start(),
+                    ),
+                end: msg_pos
+                    + crate::utils::string::byte_to_char_index(
+                        line,
+                        callsign_match.end(),
+                    ),
+                etalon: callsign.clone(),
+                text: callsign_match.as_str().to_string(),
+            });
+        }
+        '_if: {
+            let Some(capts) = RE_CALLSIGN_2.captures(line) else {
+                break '_if;
+            };
+            let Some(callsign_match) = capts.name("callsign") else {
+                break '_if;
+            };
+            let callsign: String =
+                callsign_match.as_str().to_lowercase().trim().to_string();
+            if callsign == "нв" {
+                break '_if;
+            }
+            let callsign = callsign.to_lowercase().trim().to_string();
+            res.push(CNCallsign {
+                begin: msg_pos
+                    + crate::utils::string::byte_to_char_index(
+                        line,
+                        callsign_match.start(),
+                    ),
+                end: msg_pos
+                    + crate::utils::string::byte_to_char_index(
+                        line,
+                        callsign_match.end(),
+                    ),
+                etalon: callsign.clone(),
+                text: callsign_match.as_str().to_string(),
+            });
+        }
+        msg_pos += cline_len(line) + 1;
+    }
+
     Ok(res)
 }
 
@@ -2087,6 +2169,52 @@ mod tests {
         let res = extract_non_caps_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["Барс".to_string(), "Борец".to_string()];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_format_hoor1() {
+        let body = r#"352 мсп 1 ТА
+р-н БЕРЕСТОВЕ - СТЕЛЬМАХІВКА
+555.23 МГц
+
+06.08.2025 15:45.23
+
+Отримувач(і): БАРС
+Відправник: БОРЕЦ
+
+1.Барс Борцу.
+2.Барс на связи.
+1.Барс надо выполнять задачу группа Яндекс.
+1.Хоть 400-сотый там они должны быть сегодня это наша задача.
+1.Барс ты меня как принял должны быть в 416 точке сегодня группы сейчас где доложи мне обстановку у меня спрашивают."#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> =
+            vec!["БАРС".to_string(), "БОРЕЦ".to_string()];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_format_hoor2() {
+        let body = r#"352 мсп 1 ТА
+р-н БЕРЕСТОВЕ - СТЕЛЬМАХІВКА
+555.23 МГц
+
+06.08.2025 15:45.23
+
+Отримувач: БАРС
+Відправник: БОРЕЦ
+
+1.Барс Борцу.
+2.Барс на связи.
+1.Барс надо выполнять задачу группа Яндекс.
+1.Хоть 400-сотый там они должны быть сегодня это наша задача.
+1.Барс ты меня как принял должны быть в 416 точке сегодня группы сейчас где доложи мне обстановку у меня спрашивают."#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> =
+            vec!["БАРС".to_string(), "БОРЕЦ".to_string()];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
