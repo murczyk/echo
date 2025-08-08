@@ -88,6 +88,7 @@ pub async fn freq_activity_daily(
                 .to(sigint_zone::Column::Id)
                 .into(),
         )
+        .filter(login::Column::DeletedPermanently.eq(false))
         .filter(Expr::cust("sigint_zone_datasource.group_master_key=signal_message.group_master_key"))
         .filter(login::Column::Login.eq(login))
         .filter(sigint_inbox_item::Column::Freq.eq(freq))

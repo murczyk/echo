@@ -18,6 +18,7 @@ pub struct Model {
     pub group_auto_link: Option<bool>,
     pub enabled: bool,
     pub parent_id: Option<i64>,
+    pub deleted_permanently: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

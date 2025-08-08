@@ -16,6 +16,7 @@ pub async fn oneoff_print_organism_groups(
         .context(h!())?;
     let organism_name = ps.organism_name.clone();
     let organism = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Name.eq(organism_name))
         .one(&db)
         .await

@@ -22,6 +22,7 @@ pub struct Model {
     pub delta_login_id: Option<i32>,
     pub last_active_at: Option<DateTime>,
     pub deactivation_reason: Option<DeactivationReasonEnum>,
+    pub deleted_permanently: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

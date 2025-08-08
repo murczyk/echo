@@ -119,6 +119,7 @@ pub async fn update_login(
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
     let login_obj = login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.login.clone()))
         .one(&env.dbx)
         .await
@@ -143,6 +144,7 @@ pub async fn update_login(
         }
         Some(id) => {
             let login = delta_login::Entity::find()
+                .filter(login::Column::DeletedPermanently.eq(false))
                 .filter(delta_login::Column::Id.eq(id))
                 .one(&env.dbx)
                 .await
@@ -152,6 +154,7 @@ pub async fn update_login(
                 None => {
                     let logins = login::Entity::find()
                         .filter(login::Column::DeltaLoginId.eq(id))
+                        .filter(login::Column::DeletedPermanently.eq(false))
                         .all(&env.dbx)
                         .await
                         .context(h!())?;
@@ -224,6 +227,7 @@ pub async fn update_login(
     }
     let res = login_obj.update(&env.dbx).await.context(h!())?;
     let (organism_name, organism_enabled) = match organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(res.organism_id))
         .one(&env.dbx)
         .await
@@ -266,6 +270,7 @@ pub async fn delete_login(
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
     let login_obj = login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(req.clone()))
         .one(&env.dbx)
         .await
@@ -302,6 +307,7 @@ pub async fn create_login(
         deleted: Set(false),
         last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
+        deleted_permanently: NotSet,
     }
     .insert(&env.dbx)
     .await
@@ -309,6 +315,7 @@ pub async fn create_login(
 
     let res = login::Entity::find()
         .filter(login::Column::Login.eq(login_obj.login))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -316,6 +323,7 @@ pub async fn create_login(
 
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -399,6 +407,8 @@ pub async fn list_logins(
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .select_only()
         .columns([
             login::Column::Login,
@@ -467,6 +477,7 @@ async fn api_user(
     let username = user.id()?;
     let Some(login_obj) = login::Entity::find()
         .filter(login::Column::Login.eq(username.clone()))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -478,6 +489,7 @@ async fn api_user(
         None => None,
         Some(id) => delta_login::Entity::find()
             .filter(delta_login::Column::Id.eq(id))
+            .filter(login::Column::DeletedPermanently.eq(false))
             .one(&env.dbx)
             .await
             .context(h!())?
@@ -504,6 +516,7 @@ async fn api_user_info(
     let username = req.login.clone();
     let Some(login_obj) = login::Entity::find()
         .filter(login::Column::Login.eq(username.clone()))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -628,6 +641,7 @@ pub async fn settings_save(
 ) -> Result<Json<()>, AppError> {
     let login_obj = login::Entity::find()
         .filter(login::Column::Login.eq(user.id()?))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -663,6 +677,7 @@ pub async fn register_user(
         delta_login_id: NotSet,
         last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
+        deleted_permanently: NotSet,
     }
     .insert(&txn)
     .await
@@ -765,6 +780,7 @@ where
 {
     let login_obj = login::Entity::find()
         .filter(login::Column::Login.eq(login))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(txn)
         .await
         .context(h!())?
@@ -890,6 +906,7 @@ where
     let login_s = user.id()?;
     let login = login::Entity::find()
         .filter(login::Column::Login.eq(login_s.to_string()))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(txn)
         .await
         .context(h!())?
@@ -902,6 +919,7 @@ where
     if let Some(organism_id) = login.organism_id {
         let logins = login::Entity::find()
             .filter(login::Column::OrganismId.eq(organism_id))
+            .filter(login::Column::DeletedPermanently.eq(false))
             .all(txn)
             .await
             .context(h!())?;
@@ -921,6 +939,8 @@ pub async fn validate_login(
     let Some((login_obj, organisms)) = login::Entity::find()
         .filter(login::Column::Login.eq(login))
         .find_with_related(organism::Entity)
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .all(dbx)
         .await
         .context(h!())?
@@ -967,6 +987,7 @@ async fn register_delta_user(
     let existing_delta_logins = delta_login::Entity::find()
         .find_with_related(login::Entity)
         .filter(delta_login::Column::Login.eq(login.clone()))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .all(dbx)
         .await
         .context(h!())?
@@ -1004,6 +1025,7 @@ async fn register_delta_user(
         delta_login_id: Set(Some(delta_login.id)),
         last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
+        deleted_permanently: NotSet,
     }
     .insert(dbx)
     .await
@@ -1011,6 +1033,7 @@ async fn register_delta_user(
 
     let res = login::Entity::find()
         .filter(login::Column::Login.eq(login_obj.login))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
         .context(h!())?
@@ -1018,6 +1041,7 @@ async fn register_delta_user(
 
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
         .context(h!())?
@@ -1084,6 +1108,7 @@ async fn inactive_users_worker_1(
     // Find all active users whose last_active_at is older than threshold
     let inactive_users = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .filter(
             login::Column::LastActiveAt
                 .lte(threshold)
@@ -1117,6 +1142,7 @@ pub async fn update_last_active_at(
     user_id: &str,
 ) -> anyhow::Result<()> {
     let mut user: login::ActiveModel = login::Entity::find_by_id(user_id)
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await?
         .ok_or(AppError::NotFound)

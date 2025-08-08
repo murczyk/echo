@@ -24,6 +24,7 @@ pub async fn add_group_to_organism(
     );
 
     let organism = organism::Entity::find_by_id(req.organism_id)
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -133,7 +134,15 @@ pub async fn delete_organism(
 ) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    organism::Entity::delete_by_id(req.0).exec(&env.dbx).await?;
+    if let Some(model) = organism::Entity::find_by_id(req.0)
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+    {
+        let mut rec = model.into_active_model();
+        rec.deleted_permanently = Set(true);
+        rec.update(&env.dbx).await.context(h!())?;
+    }
 
     Ok(Json(()))
 }
@@ -150,6 +159,7 @@ pub async fn update_organism(
         None => None,
         Some(parent_id) => {
             let has_organism = organism::Entity::find_by_id(parent_id)
+                .filter(organism::Column::DeletedPermanently.eq(false))
                 .count(&env.dbx)
                 .await
                 .context(h!())?
@@ -163,6 +173,7 @@ pub async fn update_organism(
     };
 
     let organism_obj = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(req.id))
         .one(&env.dbx)
         .await?
@@ -277,6 +288,7 @@ pub async fn create_organism(
         None => None,
         Some(parent_id) => {
             let has_organism = organism::Entity::find_by_id(parent_id)
+                .filter(organism::Column::DeletedPermanently.eq(false))
                 .count(&env.dbx)
                 .await
                 .context(h!())?
@@ -297,6 +309,7 @@ pub async fn create_organism(
         created_at: NotSet,
         enabled: NotSet,
         parent_id: Set(parent_id),
+        deleted_permanently: NotSet,
     }
     .insert(&env.dbx)
     .await?;
@@ -338,6 +351,7 @@ pub async fn list_organisms(
     };
 
     let organisms = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .order_by(sort_by, order)
         .all(&env.dbx)
         .await

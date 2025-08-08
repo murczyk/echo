@@ -116,6 +116,7 @@ mod m20250802_141246_add_message_external_id;
 mod m20250803_080948_add_datasource_aor;
 mod m20250803_175404_fix_datasource_id_seq;
 mod m20250804_100857_remove_messenger_account;
+mod m20250808_153740_add_deleted_permanently;
 
 pub struct Migrator;
 
@@ -239,6 +240,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250803_080948_add_datasource_aor::Migration),
             Box::new(m20250803_175404_fix_datasource_id_seq::Migration),
             Box::new(m20250804_100857_remove_messenger_account::Migration),
+            Box::new(m20250808_153740_add_deleted_permanently::Migration),
         ]
     }
 }

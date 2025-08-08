@@ -480,6 +480,7 @@ pub async fn get_user_zone_id(
     user_id: &str,
 ) -> Result<Option<i64>, AppError> {
     let user = login::Entity::find()
+        .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Login.eq(user_id))
         .one(dbx)
         .await?;
