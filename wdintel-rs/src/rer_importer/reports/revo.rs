@@ -6,17 +6,7 @@ use actix_identity::Identity;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
 use chrono::prelude::*;
-use docx_rs::Table;
-use docx_rs::TableCell;
-use docx_rs::TableRow;
-use docx_rs::VAlignType;
-use docx_rs::VMergeType;
-use docx_rs::WidthType;
-use docx_rs::{
-    AlignmentType, BorderType, LineSpacing, ParagraphBorder,
-    ParagraphBorderPosition, Run, TableBorder, TableBorderPosition,
-};
-use docx_rs::{Paragraph, ParagraphBorders};
+use docx_rs::*;
 use sea_orm::*;
 use std::path::PathBuf;
 
@@ -61,7 +51,7 @@ pub struct NetworkSummary {
     pub id: i64,
     pub name: String,
     pub freq: String,
-    pub unit_name: String,
+    pub unit_name: Option<String>,
     pub master_key: Option<String>,
 }
 
@@ -88,10 +78,17 @@ pub async fn report_docx_kind_revo(
             &login, &logins, &env, &req.req,
         )
         .await?;
-    let report = collect_report(messages.clone(), logins.clone(), env)
+    let mut report = collect_report(messages.clone(), logins.clone(), env)
         .await
         .context(h!())?;
     info!("report_docx_kind_revo data collected");
+
+    report
+        .hostile_networks
+        .sort_by_key(|x| x.activity.seances_qty);
+    report
+        .undefined_networks
+        .sort_by_key(|x| x.activity.seances_qty);
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
@@ -111,17 +108,17 @@ pub async fn report_docx_kind_revo(
         mk_header_cell("Особливості функціонування радіомереж"),
         mk_header_cell("Що було виявлено"),
     ]));
-    // rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
-    //     "Російська Федерація",
-    //     true,
-    // )]));
+    rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
+        "Російська Федерація",
+        true,
+    )]));
     for e in report.hostile_networks {
         rows_amrp.push(render_network_row(e));
     }
-    // rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
-    //     "Невизначені",
-    //     false,
-    // )]));
+    rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
+        "Невизначені",
+        false,
+    )]));
     for e in report.undefined_networks {
         rows_amrp.push(render_network_row(e));
     }
@@ -146,7 +143,7 @@ pub async fn report_docx_kind_revo(
         )
         .add_paragraph(
             Paragraph::new()
-                .add_run(Run::new().size(32).add_text(network_summary).bold())
+                .add_run(Run::new().size(32).add_text(network_summary))
                 .align(AlignmentType::Center),
         )
         .add_paragraph(Paragraph::new())
@@ -166,22 +163,21 @@ fn render_network_row(row: NetworkRow) -> TableRow {
         network_cell = network_cell
             .add_paragraph(mk_paragraph(&format!("\n{} МГц", freq)));
     }
-    let activity = format!(
-        "{}\n- {}",
-        row.activity.since.format(DTM_FORMAT).to_string(),
-        row.activity.till.format(DTM_FORMAT).to_string(),
-    );
-    let activity_cell = mk_text_cell(&activity)
-        .add_paragraph(mk_paragraph(""))
-        .add_paragraph(mk_paragraph(&format!(
-            "Сеанси: {}",
-            row.activity.seances_qty
-        )));
+    let activity_cell =
+        mk_text_cell(&row.activity.since.format(DTM_FORMAT).to_string())
+            .add_paragraph(mk_paragraph(&format!(
+                "- {}",
+                row.activity.till.format(DTM_FORMAT).to_string(),
+            )))
+            .add_paragraph(mk_paragraph(&format!(
+                "Сеанси: {}",
+                row.activity.seances_qty
+            )));
 
     let mut correspondents = vec![];
     let mut other_correspondents = vec![];
     for c in row.correspondents {
-        let callsign = c.callsign;
+        let callsign = c.callsign.to_uppercase();
         match c.position {
             Some(unit_name) => {
                 correspondents.push(format!("{callsign} - {unit_name}"));
@@ -256,7 +252,7 @@ fn mk_bold_text_cell(text: &str) -> TableCell {
     TableCell::new()
         .width(WIDTH_UNIT * 2, WidthType::Dxa)
         .vertical_align(VAlignType::Center)
-        .add_paragraph(mk_paragraph(text).bold())
+        .add_paragraph(mk_bold_paragraph(text))
 }
 
 fn mk_paragraph(text: &str) -> Paragraph {
@@ -265,7 +261,13 @@ fn mk_paragraph(text: &str) -> Paragraph {
         .line_spacing(LineSpacing::new().before(80).after(80))
 }
 
-fn _mk_merged_text_cell(text: &str, is_red: bool) -> TableCell {
+fn mk_bold_paragraph(text: &str) -> Paragraph {
+    Paragraph::new()
+        .add_run(Run::new().add_text(text).bold())
+        .line_spacing(LineSpacing::new().before(80).after(80))
+}
+
+fn mk_merged_text_cell(text: &str, is_red: bool) -> TableCell {
     let mut text = Run::new().add_text(text).bold();
     if is_red {
         text = text.color("FF0000");
@@ -489,8 +491,9 @@ async fn collect_report(
     }
 
     let mut identified_qty = 0;
-    let unidentified_qty = 0;
+    let mut unidentified_qty = 0;
     let mut hostile_networks = vec![];
+    let mut undefined_networks = vec![];
     for id in network_ids {
         let keys = seances_map
             .iter()
@@ -521,7 +524,6 @@ async fn collect_report(
             .into_iter()
             .map(|(_name, _id, freq)| freq)
             .collect_vec();
-        identified_qty += 1;
         if seances.is_empty() {
             continue;
         }
@@ -547,8 +549,14 @@ async fn collect_report(
             seances_qty,
         };
         let network = networks_dictionary.get(&id).context(h!())?;
+        let (name, is_defined) = match network.unit_name.clone() {
+            None => (network.name.clone(), false),
+            Some(unit_name) => {
+                (format!("{} {}", network.name, unit_name), true)
+            }
+        };
         let row = NetworkRow {
-            name: format!("{} {}", network.name, network.unit_name),
+            name,
             freqs,
             activity,
             correspondents,
@@ -556,7 +564,13 @@ async fn collect_report(
             functionality_details: FUNCTIONALITY_DESC_DEFAULT.to_string(),
             identified_details: None,
         };
-        hostile_networks.push(row);
+        if is_defined {
+            identified_qty += 1;
+            hostile_networks.push(row);
+        } else {
+            unidentified_qty += 1;
+            undefined_networks.push(row);
+        }
     }
     let report = Report {
         summary: ReportSummary {
@@ -564,7 +578,7 @@ async fn collect_report(
             unidentified_qty,
         },
         hostile_networks,
-        undefined_networks: vec![],
+        undefined_networks,
     };
     Ok(report)
 }
