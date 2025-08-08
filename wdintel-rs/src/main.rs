@@ -284,6 +284,12 @@ pub struct RenewTailscaleCertPs {
     pub force: Option<bool>,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffPrintOrganismGroupsPs {
+    #[arg(long, value_enum)]
+    pub organism_name: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -335,6 +341,7 @@ enum Cmd {
     OneoffImportDataSource(OneoffImportDataSourcePs),
     OneoffExportDataSource(OneoffExportDataSourcePs),
     OneoffFixAreasOfResponsibility,
+    OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -606,6 +613,9 @@ fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffFixAreasOfResponsibility => {
             oneoff::oneoff_fix_areas_of_responsibility(mode)
+        }
+        Cmd::OneoffPrintOrganismGroups(ps) => {
+            crate::organism::oneoff::oneoff_print_organism_groups(mode, &ps)
         }
     }
 }

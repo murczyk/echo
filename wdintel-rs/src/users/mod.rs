@@ -1,12 +1,11 @@
-// use sea_orm::{prelude::Expr, *};
 use self::types::*;
 use crate::config::*;
 use crate::entities::login::Model;
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
-// use crate::utils::*;
 use crate::organism::bl::*;
+use crate::organism::types::OrganismGroups;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
 use actix_identity::Identity;
@@ -769,16 +768,18 @@ where
         .one(txn)
         .await
         .context(h!())?
-        .ok_or(AppError::NotFound)?;
-    let zone_id: i64 = login_obj.sigint_zone_id.ok_or(AppError::BL {
-        msg: format!("Zone must be set for user: {}", login),
-    })?;
+        .context(h!())?;
+    let zone_id: i64 = login_obj
+        .sigint_zone_id
+        .context(h!())
+        .context(format!("Zone must be set for user: {}", login))?;
 
     let mut organism_groups_obj = vec![];
     if let Some(organism_id) = login_obj.organism_id {
-        let organism_groups = load_organism_group_ids(txn, organism_id)
-            .await
-            .context(h!())?;
+        let organism_groups: OrganismGroups =
+            load_organism_group_ids(txn, organism_id)
+                .await
+                .context(h!())?;
         organism_groups_obj =
             crate::sigint::zone::filter_out_ineligible_secret_chats(
                 signal_group::Entity::find()

@@ -15,8 +15,8 @@ where
         load_organism_with_parents_chain(organism_id, txn)
             .await
             .context(h!())?;
-    let mut organism_ids =
-        parents.into_iter().map(|x| x.id).collect::<Vec<_>>();
+    let mut organism_ids: Vec<i64> =
+        parents.into_iter().map(|x| x.id).collect();
     organism_ids.push(organism_id);
     let mut group_ids = signal_group::Entity::find()
         .select_only()
@@ -97,15 +97,15 @@ async fn load_organism_with_parents_chain<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let mut all_organisms = organism::Entity::find()
+    let mut all_organisms: BTreeMap<_, _> = organism::Entity::find()
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
         .map(|x| (x.id, x))
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     let parent_ids =
-        find_parent_chain(&all_organisms, organism_id).context(h!())?;
+        find_parent_chain(&all_organisms, organism_id, 10).context(h!())?;
     let child = all_organisms.remove(&organism_id).context(h!())?;
     let mut parents = vec![];
     for parent in parent_ids {
@@ -117,13 +117,19 @@ where
 fn find_parent_chain(
     organisms: &BTreeMap<i64, organism::Model>,
     child_id: i64,
+    fuel: usize,
 ) -> anyhow::Result<Vec<i64>> {
+    if fuel == 0 {
+        return Err(
+            anyhow::anyhow!("Maximum recursion depth reached").context(h!())
+        );
+    }
     let child = organisms.get(&child_id).context(h!())?.clone();
     let Some(parent_id) = child.parent_id else {
         return Ok(vec![]);
     };
     let mut parents_chain =
-        find_parent_chain(organisms, parent_id).context(h!())?;
+        find_parent_chain(organisms, parent_id, fuel - 1).context(h!())?;
     parents_chain.push(parent_id);
     Ok(parents_chain)
 }
@@ -151,7 +157,7 @@ mod tests {
             id: i64,
             organisms: &BTreeMap<i64, organism::Model>,
         ) {
-            let parents = find_parent_chain(&organisms, id).unwrap();
+            let parents = find_parent_chain(&organisms, id, 10).unwrap();
             assert_eq!(expected_parents, parents);
         }
 

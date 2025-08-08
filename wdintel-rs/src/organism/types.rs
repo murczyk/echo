@@ -58,6 +58,7 @@ pub struct UpdateOrganismReq {
 )]
 pub struct AddGroupToOrganismReq {
     pub organism_id: i64,
+    /// Used to be group name, now it's master key
     pub group_name: String,
 }
 
@@ -88,6 +89,7 @@ pub struct OrganismGroup {
 
 #[derive(Debug)]
 pub struct OrganismGroups {
+    /// Group master keys available to the organism
     pub available_keys: Vec<String>,
     pub selected_keys: Vec<String>,
 }

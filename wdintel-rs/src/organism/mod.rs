@@ -8,6 +8,7 @@ use actix_web::web::Json;
 use sea_orm::*;
 
 pub mod bl;
+pub mod oneoff;
 pub mod types;
 
 #[post("/api/organism/add-group")]
@@ -28,48 +29,59 @@ pub async fn add_group_to_organism(
         .context(h!())?
         .context(h!())?;
 
-    let parent_filter = if let Some(parent_id) = organism.parent_id {
-        load_organism_group_ids(&env.dbx, parent_id)
-            .await
-            .context(h!())
-            .ok()
-    } else {
-        None
-    };
-    debug!("Parent filter: {:?}", parent_filter);
-
     let group = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&req.group_name))
         .one(&env.dbx)
         .await
         .context(h!())?
         .context(h!())?;
-    debug!(
-        "Group req: {}; found name={:?}, group_master_key={}",
-        req.group_name, group.name, group.master_key
-    );
 
-    let skip_adding = if let Some(parent_filter) = parent_filter {
-        debug!(
-            "parent_filter.selected_keys: {:?}",
-            parent_filter.selected_keys
-        );
-        !parent_filter.selected_keys.contains(&group.master_key)
-    } else {
-        false
-    };
+    // TODO: checking if adding is allowed here
 
-    if !skip_adding {
-        organism_group::ActiveModel {
-            organism_id: Set(organism.id),
-            signal_group_master_key: Set(group.master_key.clone()),
-        }
-        .insert(&env.dbx)
-        .await
-        .context(h!())?;
-    } else {
-        return Err(AppError::from(anyhow!("Not adding group {} to organism {} because it is not available in parent organism", req.group_name, req.organism_id).context(h!())));
+    organism_group::ActiveModel {
+        organism_id: Set(organism.id),
+        signal_group_master_key: Set(group.master_key.clone()),
     }
+    .insert(&env.dbx)
+    .await
+    .context(h!())?;
+
+    // let parent_filter = if let Some(parent_id) = organism.parent_id {
+    //     load_organism_group_ids(&env.dbx, parent_id)
+    //         .await
+    //         .context(h!())
+    //         .ok()
+    // } else {
+    //     None
+    // };
+    // debug!("Parent filter: {:?}", parent_filter);
+
+    // debug!(
+    //     "Group req: {}; found name={:?}, group_master_key={}",
+    //     req.group_name, group.name, group.master_key
+    // );
+
+    // let skip_adding = if let Some(parent_filter) = parent_filter {
+    //     debug!(
+    //         "parent_filter.selected_keys: {:?}",
+    //         parent_filter.selected_keys
+    //     );
+    //     !parent_filter.selected_keys.contains(&group.master_key)
+    // } else {
+    //     false
+    // };
+
+    // if !skip_adding {
+    //     organism_group::ActiveModel {
+    //         organism_id: Set(organism.id),
+    //         signal_group_master_key: Set(group.master_key.clone()),
+    //     }
+    //     .insert(&env.dbx)
+    //     .await
+    //     .context(h!())?;
+    // } else {
+    //     return Err(AppError::from(anyhow!("Not adding group {} to organism {} because it is not available in parent organism", req.group_name, req.organism_id).context(h!())));
+    // }
 
     Ok(Json(()))
 }
