@@ -780,7 +780,6 @@ where
             load_organism_group_ids(txn, organism_id)
                 .await
                 .context(h!())?;
-        debug!("organism_groups.len: {}", organism_groups.available_keys.len());
         organism_groups_obj =
             crate::sigint::zone::filter_out_ineligible_secret_chats(
                 signal_group::Entity::find()
@@ -808,7 +807,6 @@ where
             .into_iter()
             .map(|og| og.master_key)
             .collect();
-        debug!("organism_groups_obj.len: {}", organism_groups_obj.len());
     }
 
     Ok(organism_groups_obj)
