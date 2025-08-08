@@ -49,7 +49,6 @@ type alias ViewParams =
     , serverInfo : Maybe B.ServerInfo
     , networks : Dict Int B.Network
     , masterUnits : Dict Int B.Unit
-    , freqNetworkIds : Dict String (Set Int)
     , currentRoute : Maybe (Route ())
     }
 
@@ -1106,22 +1105,17 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
         messageColumn =
             let
                 networkBlock =
-                    case message.freq of
-                        Just freq ->
-                            case Dict.get freq vps.freqNetworkIds of
-                                Just networkIds ->
-                                    div [] <|
-                                        for_ (Set.toList networkIds) <|
-                                            \networkId ->
-                                                case Dict.get networkId vps.networks of
-                                                    Just network ->
-                                                        Le.Block.Unit.boldMasterUnit vps.masterUnits network
+                    case message.networkIds of
+                        Just networkIds ->
+                            div [] <|
+                                for_ networkIds <|
+                                    \networkId ->
+                                        case Dict.get networkId vps.networks of
+                                            Just network ->
+                                                Le.Block.Unit.boldMasterUnit vps.masterUnits network
 
-                                                    _ ->
-                                                        text "Невідома мережа"
-
-                                Nothing ->
-                                    text ""
+                                            _ ->
+                                                text "Невідома мережа"
 
                         Nothing ->
                             text ""

@@ -35,10 +35,10 @@ import Le.Block.Tooltip as Tooltip
 import Le.Callsign
 import Le.Config
 import Le.ErrorHandling
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.RerMessage exposing (model0)
 import Le.Time
 import Le.Types exposing (..)
-import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (andThen, def, emptyToNothing, findK, getLabelOrDefault, jumpToBottom, renderZoneError)
 import Le.Waterfall.Filters as Filters exposing (Filter, FilterMsg(..))
 import Le.Waterfall.Message
@@ -199,7 +199,6 @@ type alias Model =
     , saveFilterInp : String
     , deleteFilterConfirmationId : Maybe Int
     , signals : List B.Signal
-    , freqNetworkIds : Dict String (Set Int)
     , noEarlierMessagesLeft : Bool
     , lastViewedMessageId : LastViewedMessageId
     , loadingStrategy : LoadingStrategy
@@ -299,7 +298,6 @@ init id_ ms =
       , saveFilterInp = ""
       , deleteFilterConfirmationId = Nothing
       , signals = []
-      , freqNetworkIds = Dict.empty
       , noEarlierMessagesLeft = False
       , lastViewedMessageId =
             case ms of
@@ -2066,16 +2064,13 @@ update shared user msg model =
                             let
                                 networksDict =
                                     RD.withDefault Dict.empty shared.networks
+
                                 messageNetworkIds =
-                                    case (message_.freq, networksDict) of
-                                        (Just freq, networks) ->
-                                            networks
-                                                |> Dict.values
-                                                |> List.filter (\network ->
-                                                    List.any (\networkFreq -> networkFreq.freq == freq) network.freqs
-                                                )
-                                                |> List.map .id
-                                        _ ->
+                                    case message_.networkIds of
+                                        Just networkIds ->
+                                            networkIds
+
+                                        Nothing ->
                                             []
                             in
                             { isDarkMode = shared.isDarkMode
@@ -2084,10 +2079,13 @@ update shared user msg model =
                             , waterfallId = model.id
                             , datasources = model.datasources
                             , messageNetworkIds = messageNetworkIds
-                            , masterUnits = 
+                            , masterUnits =
                                 case shared.masterUnits of
-                                    Success units -> units
-                                    _ -> Dict.empty
+                                    Success units ->
+                                        units
+
+                                    _ ->
+                                        Dict.empty
                             , callsignsInfo = model.callsignsInfo
                             , networks = networksDict
                             , zone = model.zone
@@ -2310,24 +2308,6 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
 
         unreadMessagesCounter =
             model.notLoadedYetMessagesCounter + unreadLoadedCount
-
-        freqNetworkIdsFromShared =
-            case shared.networks of
-                Success networks ->
-                    networks
-                        |> Dict.values
-                        |> List.concatMap (\network -> 
-                            List.map (\freq -> ( freq.freq, Set.singleton network.id )) network.freqs
-                        )
-                        |> DE.fromListDedupe Set.union
-                        |> (\v -> Dict.union v model.freqNetworkIds)
-                
-                _ ->
-                    model.freqNetworkIds
-
-        -- List.filter
-        --     (\( id_, _ ) -> not (Set.member id_ duplicates))
-        --     model.messages
     in
     div
         [ style "position" "relative"
@@ -2421,17 +2401,13 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             let
                                                 networksDict =
                                                     RD.withDefault Dict.empty shared.networks
-                                                
+
                                                 messageNetworkIds =
-                                                    case (message.freq, networksDict) of
-                                                        (Just freq, networks) ->
-                                                            networks
-                                                                |> Dict.values
-                                                                |> List.filter (\network ->
-                                                                    List.any (\networkFreq -> networkFreq.freq == freq) network.freqs
-                                                                )
-                                                                |> List.map .id
-                                                        _ ->
+                                                    case message.networkIds of
+                                                        Just networkIds ->
+                                                            networkIds
+
+                                                        Nothing ->
                                                             []
                                             in
                                             { isDarkMode = isDarkMode

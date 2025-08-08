@@ -1,6 +1,5 @@
 use crate::location::SettlementDetails;
 use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
-use crate::sigint::network::types::Network;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;
@@ -45,6 +44,7 @@ pub struct InboxMessage {
     pub datasource_id: Option<i64>,
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
+    pub network_ids: Option<Vec<i64>>,
 }
 
 #[derive(
@@ -199,7 +199,6 @@ pub struct InboxMessagesReq {
 )]
 pub struct InboxMessagesRsp {
     pub inbox_items: Vec<(i64, InboxMessage)>,
-    pub networks: Vec<Network>,
     pub callsigns: Vec<CallsignInfoRes>,
     pub signal_profiles: BTreeMap<String, Option<SignalProfileEntry>>,
     pub signal_groups: Vec<SignalGroupEntry>,

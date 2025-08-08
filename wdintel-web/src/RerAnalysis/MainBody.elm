@@ -143,19 +143,6 @@ mainBody user model shared route =
                             , serverInfo = shared.serverInfo
                             , networks = RD.withDefault Dict.empty shared.networks
                             , masterUnits = masterUnitsDict
-                            , freqNetworkIds =
-                                case shared.networks of
-                                    Success networks ->
-                                        networks
-                                            |> Dict.values
-                                            |> List.concatMap
-                                                (\network ->
-                                                    List.map (\freq -> ( freq.freq, Set.singleton network.id )) network.freqs
-                                                )
-                                            |> DE.fromListDedupe Set.union
-
-                                    _ ->
-                                        Dict.empty
                             , currentRoute = Just route
                             }
 
