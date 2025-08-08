@@ -338,8 +338,7 @@ pub async fn load_messages_networks(
         .context(h!())?;
 
     let mut network_ids = HashSet::new();
-    let mut freq_networks_map: HashMap<String, Vec<i64>> =
-        HashMap::new();
+    let mut freq_networks_map: HashMap<String, Vec<i64>> = HashMap::new();
     for (nf, maybe_net) in freq_networks {
         if let Some(net) = maybe_net {
             network_ids.insert(net.id);

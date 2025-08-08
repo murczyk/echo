@@ -90,6 +90,25 @@ pub fn split_keep<'a>(r: &Regex, text: &'a str) -> Vec<&'a str> {
     result
 }
 
+/// Shorten master key to SQL `LIKE`-friendly string like:
+///
+/// - `120363194806689869@g.us` to `1203%69@g.us`
+/// - `group.NWFyOHoraXQwak5wQXN6bVh6V3RBMTNpeTg2VHp3aFhPajFPMmVkQXo4ND0=` to `grou%Xo4ND0=`
+///
+///
+pub fn master_key_shortcut(master_key: &str) -> String {
+    let max_len = 11;
+    if master_key.len() <= max_len {
+        return master_key.to_string();
+    }
+    let half_len = (max_len - 3) / 2;
+    format!(
+        "{}%{}",
+        &master_key[..half_len],
+        &master_key[master_key.len() - half_len..]
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
