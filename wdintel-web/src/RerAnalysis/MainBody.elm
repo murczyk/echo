@@ -94,7 +94,7 @@ mainBody user model shared route =
                                                 Le.Block.Spinner.loadingSpinner2Sm
 
                                               else
-                                                i [ class "bi bi-arrow-down-circle me-2" ] []
+                                                i [ class "bi bi-arrow-down-circle mr-2" ] []
                                             ]
                                         |> Button.withSecondary
                                         |> Button.view
@@ -146,18 +146,18 @@ mainBody user model shared route =
             ]
           <|
             [ if isLoadingStats model then
-                div [ class "me-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+                div [ class "mr-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
 
               else
-                div [ style "width" "16px", class "me-2" ] []
+                div [ style "width" "16px", class "mr-2" ] []
             , if model.loadingInboxMessages then
-                div [ class "me-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+                div [ class "mr-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
 
               else
-                div [ style "width" "16px", class "me-2" ] []
+                div [ style "width" "16px", class "mr-2" ] []
             , Toggle.new { onToggle = ToggleNewestFirst, label = "спочатку нові", id = "toggle-newest-first" } |> Toggle.view model.newestFirst
             , div
-                [ class "me-4 ml-[8px]"
+                [ class "mr-4 ml-[8px]"
                 ]
               <|
                 [ text <|
@@ -165,7 +165,7 @@ mainBody user model shared route =
                         ++ String.fromInt (List.length model.messages)
                 ]
             , viewIf (messagesShown < messagesCountOverall && not model.nolimitShown) <|
-                div [ class "me-4" ]
+                div [ class "mr-4" ]
                     [ span
                         [ class "text-action cursor-pointer"
                         , onClick LoadMessagesNolimit
@@ -176,7 +176,7 @@ mainBody user model shared route =
                                 ++ String.fromInt (extractMRecordField (\r -> r.countSelected) 0 (RD.toMaybe model.counts))
                         ]
                     ]
-            , div [ class "me-4" ]
+            , div [ class "mr-4" ]
                 [ Button.new { label = " конструктор звітів", onClick = ToggleReportConstructor }
                     |> Button.withIcon [ i [ class "bi bi-tools" ] [] ]
                     |> Button.withSecondary
@@ -222,7 +222,7 @@ featuresBlock model shared route =
                                     Le.Block.Spinner.loadingSpinner2Sm
 
                                   else
-                                    i [ class "bi bi-arrow-clockwise me-2" ] []
+                                    i [ class "bi bi-arrow-clockwise mr-2" ] []
                                 ]
                             |> Button.withSecondary
                             |> Button.view
@@ -331,7 +331,7 @@ filtersAndMainContent user model shared route =
                 [ case model.counts of
                     Success data ->
                         span
-                            [ class "me-1 inline-block px-3 py-1.5 text-xs font-medium rounded-full border transition-colors duration-200"
+                            [ class "mr-1 inline-block px-3 py-1.5 text-xs font-medium rounded-full border transition-colors duration-200"
                             , classList
                                 [ ( "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]", True )
                                 ]
@@ -339,7 +339,7 @@ filtersAndMainContent user model shared route =
                             [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
 
                     _ ->
-                        div [ class "me-3 inline-block", style "min-width" "60px" ] []
+                        div [ class "mr-3 inline-block", style "min-width" "60px" ] []
                 , div [ class "flex items-center gap-1" ]
                     [ button
                         [ onClick Refresh
@@ -736,7 +736,7 @@ filtersAndMainContent user model shared route =
                     , style "opacity" ".5"
                     , onClick <| ScrollMessagesToTop
                     ]
-                    [ span [ class "fs-2 pointer" ]
+                    [ span [ class "text-[2rem] cursor-pointer" ]
                         [ i [ class "bi bi-arrow-up-circle" ] [] ]
                     ]
 
