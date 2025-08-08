@@ -1653,6 +1653,7 @@ async fn group_stats(
             .context(h!())?;
     let login_obj = login::Entity::find()
         .filter(login::Column::Login.eq(&login))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
         .context(h!())?

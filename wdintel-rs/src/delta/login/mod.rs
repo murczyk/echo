@@ -88,6 +88,7 @@ async fn perform_login(
 
     let delta_logins = delta_login::Entity::find()
         .find_with_related(login::Entity)
+        .filter(login::Column::DeletedPermanently.eq(false))
         .filter(Expr::cust_with_values(
             "lower(delta_login.login) = $1",
             vec![username.to_lowercase()],

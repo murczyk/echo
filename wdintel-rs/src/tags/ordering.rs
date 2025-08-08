@@ -40,6 +40,7 @@ pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
         collect_enabled_regular_tags(&db).await.context(h!())?;
     let logins = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
+        .filter(login::Column::DeletedPermanently.eq(false))
         .select_only()
         .column(login::Column::Login)
         .into_tuple::<String>()

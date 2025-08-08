@@ -56,6 +56,7 @@ pub(crate) async fn load_organism_with_children(
     db: &DatabaseConnection,
 ) -> anyhow::Result<(organism::Model, Vec<organism::Model>)> {
     let mut all_organisms = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .all(db)
         .await
         .context(h!())?
@@ -98,6 +99,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut all_organisms: BTreeMap<_, _> = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
         .all(txn)
         .await
         .context(h!())?
@@ -183,6 +185,7 @@ mod tests {
             roles: Default::default(),
             group_auto_link: None,
             enabled: true,
+            deleted_permanently: false,
         }
     }
 }
