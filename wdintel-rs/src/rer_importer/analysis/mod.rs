@@ -1642,14 +1642,27 @@ async fn group_stats(
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<GroupStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let is_admin = crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .is_ok();
     let master_keys_noimport =
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
             .context(h!())?;
+    let login_obj = login::Entity::find()
+        .filter(login::Column::Login.eq(&login))
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    debug!(
+        "User: {} has master keys num: {}; organism id: {:?}",
+        &login,
+        master_keys_noimport.len(),
+        login_obj.organism_id
+    );
     let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
         .await
         .context(h!())?;

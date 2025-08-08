@@ -1,7 +1,7 @@
 use crate::entities::*;
-use crate::utils::string::master_key_shortcut;
 use crate::error::AppError;
 use crate::types::*;
+use crate::utils::string::master_key_shortcut;
 use sea_orm::*;
 
 #[tokio::main]

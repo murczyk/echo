@@ -63,9 +63,6 @@ pub async fn count_groups(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-
-    let instant = std::time::Instant::now();
-    trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_groups_query(&req, user, dt_since, dt_till, master_keys)?;
     let count = groups_res.count(&env.dbx).await.context(h!())?;
