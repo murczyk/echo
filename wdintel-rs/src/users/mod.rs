@@ -811,30 +811,7 @@ where
         debug!("organism_groups_obj.len: {}", organism_groups_obj.len());
     }
 
-    debug!("organism_groups_obj.len (2): {}", organism_groups_obj.len());
-    if organism_groups_obj.len() > 0 {
-        Ok(organism_groups_obj)
-    } else {
-        // Apply secret group filtering to the fallback path as well
-        let szds = crate::sigint::zone::filter_out_ineligible_secret_chats(
-            sigint_zone_datasource::Entity::find()
-                .join(
-                    JoinType::InnerJoin,
-                    sigint_zone_datasource::Relation::SignalGroup.def(),
-                )
-                .filter(
-                    sigint_zone_datasource::Column::SigintZoneId.eq(zone_id),
-                ),
-            login,
-        )
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|model| model.group_master_key)
-        .collect();
-        Ok(szds)
-    }
+    Ok(organism_groups_obj)
 }
 
 /// Gets group keys similar to get_identity_sigint_groups but without the import group id
