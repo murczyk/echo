@@ -37,7 +37,7 @@ pub struct ReportSummary {
 
 pub struct NetworkRow {
     pub name: String,
-    pub freq: String,
+    pub freqs: Vec<String>,
     pub activity: NetworkActivity,
     pub correspondents: Vec<NetworkCorrespondent>,
     pub communication_kind: Option<String>,
@@ -80,6 +80,7 @@ pub async fn report_docx_kind_revo(
     req: &super::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
+    info!("report_docx_kind_revo started");
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
     let messages: Vec<(i64, InboxMessage)> =
@@ -90,6 +91,7 @@ pub async fn report_docx_kind_revo(
     let report = collect_report(messages.clone(), logins.clone(), env)
         .await
         .context(h!())?;
+    info!("report_docx_kind_revo data collected");
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
@@ -149,16 +151,21 @@ pub async fn report_docx_kind_revo(
         )
         .add_paragraph(Paragraph::new())
         .add_table(table_amrp);
+    info!("report_docx_kind_revo done, saving to file...");
     let file = std::fs::File::create(outpath.clone())?;
     docx.build().pack(file).context(h!())?;
 
+    info!("report_docx_kind_revo completed");
     Ok(())
 }
 
 fn render_network_row(row: NetworkRow) -> TableRow {
-    let network_cell = mk_bold_text_cell(&row.name)
-        .add_paragraph(mk_paragraph(""))
-        .add_paragraph(mk_paragraph(&format!("\n{} МГц", row.freq)));
+    let mut network_cell =
+        mk_bold_text_cell(&row.name).add_paragraph(mk_paragraph(""));
+    for freq in row.freqs {
+        network_cell = network_cell
+            .add_paragraph(mk_paragraph(&format!("\n{} МГц", freq)));
+    }
     let activity = format!(
         "{}\n- {}",
         row.activity.since.format(DTM_FORMAT).to_string(),
@@ -412,7 +419,9 @@ async fn collect_report(
             sigint_unit::Relation::SigintNetworkUnit.def(),
         )
         .filter(sigint_callsign::Column::Callsign.is_in(callsigns))
-        .filter(sigint_network_unit::Column::NetworkId.is_in(network_ids))
+        .filter(
+            sigint_network_unit::Column::NetworkId.is_in(network_ids.clone()),
+        )
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_callsign::Column::Deleted.eq(false))
         .select_only()
@@ -432,7 +441,7 @@ async fn collect_report(
 
     let mut linked_callsigns_map = HashMap::new();
     let mut unlinked_callsigns_map = HashMap::new();
-    let mut seanses_map = HashMap::new();
+    let mut seances_map = HashMap::new();
     for (_id, message) in messages {
         let (Some(master_key), Some(freq)) =
             (message.group_master_key, message.freq)
@@ -449,13 +458,13 @@ async fn collect_report(
         let network_key = (summary.name.clone(), summary.id, freq);
 
         if let Some(ts) = message.timestamp {
-            let mut data = seanses_map.remove(&network_key).unwrap_or(vec![]);
+            let mut data = seances_map.remove(&network_key).unwrap_or(vec![]);
             let utc_datetime = DateTime::from_timestamp_millis(ts)
                 .context(h!())?
                 .with_timezone(&crate::config::get_tz())
                 .naive_local();
             data.push(utc_datetime);
-            seanses_map.insert(network_key.clone(), data);
+            seances_map.insert(network_key.clone(), data);
         }
 
         let mut data = unlinked_callsigns_map
@@ -482,20 +491,36 @@ async fn collect_report(
     let mut identified_qty = 0;
     let unidentified_qty = 0;
     let mut hostile_networks = vec![];
-    for (network_key, seances) in seanses_map {
+    for id in network_ids {
+        let keys = seances_map
+            .iter()
+            .map(|(k, _)| k.clone())
+            .filter(|(_, id_val, _)| id == *id_val)
+            .collect_vec();
+        let seances = seances_map
+            .iter()
+            .filter(|(k, _)| keys.contains(k))
+            .flat_map(|(_, v)| v.into_iter())
+            .cloned()
+            .collect_vec();
         let mut linked_callsigns = linked_callsigns_map
-            .get(&network_key)
-            .unwrap_or(&vec![])
-            .clone();
+            .iter()
+            .filter(|(k, _)| keys.contains(k))
+            .flat_map(|(_, v)| v.into_iter())
+            .cloned()
+            .collect_vec();
         linked_callsigns.sort_by_key(|a| a.callsign.clone());
         let mut unlinked_callsigns = unlinked_callsigns_map
-            .get(&network_key)
-            .unwrap_or(&HashSet::new())
-            .clone()
-            .into_iter()
+            .iter()
+            .filter(|(k, _)| keys.contains(k))
+            .flat_map(|(_, v)| v.into_iter())
+            .cloned()
             .collect_vec();
         unlinked_callsigns.sort();
-        let (_name, _id, freq) = network_key.clone();
+        let freqs = keys
+            .into_iter()
+            .map(|(_name, _id, freq)| freq)
+            .collect_vec();
         identified_qty += 1;
         if seances.is_empty() {
             continue;
@@ -521,11 +546,10 @@ async fn collect_report(
             till,
             seances_qty,
         };
-        let (_, id, _) = network_key;
         let network = networks_dictionary.get(&id).context(h!())?;
         let row = NetworkRow {
             name: format!("{} {}", network.name, network.unit_name),
-            freq,
+            freqs,
             activity,
             correspondents,
             communication_kind: None,
