@@ -1,6 +1,8 @@
 module RerAnalysis.MainBody exposing (filtersAndMainContent)
 
 import Bindings as B
+import Components.Button as Button
+import Components.ModalDialog exposing (modalDialog)
 import Components.Toggle as Toggle
 import Dict
 import Dict.Extra as DE
@@ -54,50 +56,21 @@ mainBody user model shared route =
             extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
 
         deleteConfirmationModal =
-            div
-                [ class "modal fade"
-                , attribute "tabindex" "-1"
-                , attribute "role" "dialog"
-                , attribute "aria-hidden" "true"
-                , id "deleteMessageModal"
-                ]
-                [ div
-                    [ class "modal-dialog"
-                    , attribute "role" "document"
-                    ]
-                    [ div
-                        [ class "modal-content" ]
-                        [ div
-                            [ class "modal-header" ]
-                            [ h5 [ class "modal-title" ] [ text "Видалення повідомлення" ]
-                            , button
-                                [ class "btn-close"
-                                , type_ "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , attribute "ariaLabel" "Close"
-                                ]
-                                []
-                            ]
-                        , div
-                            [ class "modal-body p-3" ]
-                            [ text "Ви впевнені, що хочете видалити це повідомлення?"
-                            ]
-                        , div
-                            [ class "modal-footer" ]
-                            [ button
-                                [ class "btn btn-secondary"
-                                , type_ "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                ]
-                                [ text "Скасувати" ]
-                            , button
-                                [ class "btn btn-danger"
-                                , type_ "button"
-                                , onClick DeleteMessageConfirm
-                                , attribute "data-bs-dismiss" "modal"
-                                ]
-                                [ text "Видалити" ]
-                            ]
+            modalDialog
+                (model.deleteMessageModalId /= Nothing)
+                DeleteMessageCancel
+                [ class "max-w-md mx-auto bg-card rounded-lg shadow-lg" ]
+                [ div [ class "p-6" ]
+                    [ h3 [ class "text-lg font-semibold mb-4" ]
+                        [ text "Видалення повідомлення" ]
+                    , p [ class "text-gray-600 mb-6" ]
+                        [ text "Ви впевнені, що хочете видалити це повідомлення?" ]
+                    , div [ class "flex gap-3 justify-end" ]
+                        [ Button.new { label = "Скасувати", onClick = DeleteMessageCancel }
+                            |> Button.withSecondary
+                            |> Button.view
+                        , Button.new { label = "Видалити", onClick = DeleteMessageConfirm }
+                            |> Button.view
                         ]
                     ]
                 ]
@@ -114,18 +87,17 @@ mainBody user model shared route =
                     let
                         loadMoreBtn =
                             viewIf (not model.noMoreToLoad) <|
-                                div [ class "d-flex justify-content-center align-items-center mb-4" ]
-                                    [ button
-                                        [ class "btn btn-outline-secondary btn-sm"
-                                        , onClick LoadMoreMessages
-                                        ]
-                                        [ if model.loadingInboxMessages then
-                                            Le.Block.Spinner.loadingSpinner2Sm
+                                div [ class "flex justify-center items-center mb-4" ]
+                                    [ Button.new { label = "завантажити ще", onClick = LoadMoreMessages }
+                                        |> Button.withIcon
+                                            [ if model.loadingInboxMessages then
+                                                Le.Block.Spinner.loadingSpinner2Sm
 
-                                          else
-                                            i [ class "bi bi-arrow-down-circle me-2" ] []
-                                        , text "завантажити ще"
-                                        ]
+                                              else
+                                                i [ class "bi bi-arrow-down-circle mr-2" ] []
+                                            ]
+                                        |> Button.withSecondary
+                                        |> Button.view
                                     ]
 
                         vps =
@@ -169,23 +141,23 @@ mainBody user model shared route =
     in
     [ div [] <|
         [ div
-            [ class "d-flex justify-content-center align-items-center mb-4"
+            [ class "flex justify-center items-center mb-4"
             , style "position" "relative"
             ]
           <|
             [ if isLoadingStats model then
-                div [ class "me-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+                div [ class "mr-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
 
               else
-                div [ style "width" "16px", class "me-2" ] []
+                div [ style "width" "16px", class "mr-2" ] []
             , if model.loadingInboxMessages then
-                div [ class "me-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+                div [ class "mr-2" ] [ Le.Block.Spinner.loadingSpinnerSm ]
 
               else
-                div [ style "width" "16px", class "me-2" ] []
+                div [ style "width" "16px", class "mr-2" ] []
             , Toggle.new { onToggle = ToggleNewestFirst, label = "спочатку нові", id = "toggle-newest-first" } |> Toggle.view model.newestFirst
             , div
-                [ class "me-4 ml-[8px]"
+                [ class "mr-4 ml-[8px]"
                 ]
               <|
                 [ text <|
@@ -193,7 +165,7 @@ mainBody user model shared route =
                         ++ String.fromInt (List.length model.messages)
                 ]
             , viewIf (messagesShown < messagesCountOverall && not model.nolimitShown) <|
-                div [ class "me-4" ]
+                div [ class "mr-4" ]
                     [ span
                         [ class "text-action cursor-pointer"
                         , onClick LoadMessagesNolimit
@@ -204,17 +176,11 @@ mainBody user model shared route =
                                 ++ String.fromInt (extractMRecordField (\r -> r.countSelected) 0 (RD.toMaybe model.counts))
                         ]
                     ]
-            , div [ class "me-4" ]
-                [ span
-                    [ class "text-action cursor-pointer"
-
-                    -- , onClick ToggleReportConstructor
-                    , attribute "data-bs-toggle" "modal"
-                    , attribute "data-bs-target" "#report-constructor"
-                    ]
-                    [ i [ class "bi bi-tools" ] []
-                    , text " конструктор звітів"
-                    ]
+            , div [ class "mr-4" ]
+                [ Button.new { label = " конструктор звітів", onClick = ToggleReportConstructor }
+                    |> Button.withIcon [ i [ class "bi bi-tools" ] [] ]
+                    |> Button.withSecondary
+                    |> Button.view
                 ]
             ]
         , messagesBlock
@@ -229,7 +195,7 @@ featuresBlock model shared route =
         newCallsignsBlock =
             let
                 renderStats stats =
-                    div [ class "d-flex justify-content-between align-items-start" ]
+                    div [ class "flex justify-between items-start" ]
                         [ showTable "Нові відносно 30 днів" stats.notSeen30days
                         , showTable "Нові відносно 7 днів" stats.notSeen7days
                         , showTable "Нові відносно 24 годин" stats.notSeen24h
@@ -250,17 +216,16 @@ featuresBlock model shared route =
                 [ div [ class "fade-in border border-light shadow-sm p-2 mb-2 py-2" ] <|
                     [ div
                         []
-                        [ div
-                            [ class "btn btn-sm btn-outline-secondary mb-2"
-                            , onClick LoadNewCallsignStats
-                            ]
-                            [ if model.newCallsignsLoading then
-                                Le.Block.Spinner.loadingSpinner2Sm
+                        [ Button.new { label = " завантажити", onClick = LoadNewCallsignStats }
+                            |> Button.withIcon
+                                [ if model.newCallsignsLoading then
+                                    Le.Block.Spinner.loadingSpinner2Sm
 
-                              else
-                                i [ class "bi bi-arrow-clockwise me-2" ] []
-                            , text " завантажити"
-                            ]
+                                  else
+                                    i [ class "bi bi-arrow-clockwise mr-2" ] []
+                                ]
+                            |> Button.withSecondary
+                            |> Button.view
                         , div [ class "mb-2" ] [ text "тут показуватимуться позивні, які присутні в обраний період, але не їх було певний час до цього. тобто вони \"нові\" відносно різних періодів часу" ]
                         ]
                     , viewMaybe renderStats model.newCallsignsRsp
@@ -300,7 +265,7 @@ featuresBlock model shared route =
                                             |> Maybe.andThen .overallCount
                                             |> def 0
                                 in
-                                div [ class "mt-2 d-flex justify-content-center align-items-center" ]
+                                div [ class "mt-2 flex justify-center items-center" ]
                                     [ div
                                         [ class "me-2"
                                         , style "margin-bottom" ".125rem"
@@ -361,92 +326,56 @@ filtersAndMainContent user model shared route =
                 Nothing ->
                     False
 
-        mLblStr =
-            case model.counts of
-                NotAsked ->
-                    Just ""
+        headerControls =
+            div [ class "flex items-center gap-2 ml-4" ]
+                [ case model.counts of
+                    Success data ->
+                        span
+                            [ class "mr-1 inline-block px-3 py-1.5 text-xs font-medium rounded-full border transition-colors duration-200"
+                            , classList
+                                [ ( "bg-[var(--color-bg-muted)] text-[var(--color-text)] border-[var(--color-border-muted)]", True )
+                                ]
+                            ]
+                            [ text (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall) ]
 
-                Success data ->
-                    Just (fromInt data.countSelected ++ " з " ++ fromInt data.countOverall)
-
-                _ ->
-                    Nothing
-
-        lbl =
-            (case mLblStr of
-                Nothing ->
-                    [ div
-                        [ class "me-1 d-inline-block"
-                        , style "min-width" "60px"
+                    _ ->
+                        div [ class "mr-3 inline-block", style "min-width" "60px" ] []
+                , div [ class "flex items-center gap-1" ]
+                    [ button
+                        [ onClick Refresh
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , title "Оновити"
                         ]
-                        []
-                    ]
+                        [ if isLoadingStats model then
+                            Le.Block.Spinner.loadingSpinner2Sm
 
-                Just lblS ->
-                    [ span [ class "me-1" ] [ Views.h1SupLbl lblS ] ]
-            )
-                ++ [ button
-                        [ type_ "button"
-                        , class "inline-block btn btn-outline-secondary me-1 py-2"
-                        , style "padding-left" "12px"
-                        , style "padding-right" "12px"
-                        , onClick Refresh
-                        , attribute "data-tooltip" "оновити"
-                        , attribute "data-position" "bottom"
+                          else
+                            i [ class "bi bi-arrow-clockwise" ] []
                         ]
-                     <|
-                        if isLoadingStats model then
-                            [ Le.Block.Spinner.loadingSpinner2Sm ]
-
-                        else
-                            [ i [ class "bi bi-arrow-repeat" ] [] ]
-                   , button
-                        [ type_ "button"
-                        , class "inline-block btn btn-outline-secondary py-2"
-                        , style "padding-left" "12px"
-                        , style "padding-right" "12px"
-                        , onClick ClearAllFilters
-                        , attribute "data-tooltip" "скинути фільтри"
-                        , attribute "data-position" "bottom"
-
-                        -- , attribute "data-bs-toggle" "tooltip"
-                        -- , attribute "data-bs-placement" "bottom"
-                        -- , attribute "data-bs-title" "скинути фільтри"
+                    , button
+                        [ onClick ClearAllFilters
+                        , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                        , title "Скинути фільтри"
                         ]
                         [ i [ class "bi bi-x-octagon" ] []
                         ]
-                   , RerAnalysis.Date.dateAndPanelsBlock shared.isDarkMode model mapFeatureFlag
-                   ]
+                    ]
+                , RerAnalysis.Date.dateAndPanelsBlock shared.isDarkMode model mapFeatureFlag
+                ]
 
         reportConstructorBlock =
-            div
-                [ class "modal modal-xl fade"
-                , attribute "tabindex" "-1"
-                , id "report-constructor"
-                ]
-                [ div [ class "modal-dialog" ]
-                    [ div [ class "modal-content" ]
-                        [ div [ class "modal-header" ]
-                            [ h5 [ class "modal-title" ] [ text "конструктор звітів" ]
-                            , button
-                                [ type_ "button"
-                                , class "btn-close"
-                                , attribute "data-bs-dismiss" "modal"
-                                , attribute "aria-label" "Close"
-                                ]
-                                []
-                            ]
-                        , div [ class "modal-body" ] reportConstructorBlockBody
-                        , div [ class "modal-footer" ]
-                            [ button
-                                [ type_ "button"
-                                , class "btn btn-secondary"
-
-                                -- , onClick ToggleReportConstructor
-                                , attribute "data-bs-dismiss" "modal"
-                                ]
-                                [ text "закрити" ]
-                            ]
+            modalDialog
+                model.showReportConstructor
+                CloseReportConstructor
+                [ class "max-w-6xl mx-auto bg-card rounded-lg shadow-lg" ]
+                [ div [ class "p-6" ]
+                    [ h3 [ class "text-xl font-semibold mb-6" ]
+                        [ text "конструктор звітів" ]
+                    , div [ class "mb-6" ] reportConstructorBlockBody
+                    , div [ class "flex justify-end" ]
+                        [ Button.new { label = "закрити", onClick = CloseReportConstructor }
+                            |> Button.withSecondary
+                            |> Button.view
                         ]
                     ]
                 ]
@@ -455,26 +384,75 @@ filtersAndMainContent user model shared route =
             let
                 templateCard active toMsg title description =
                     div
-                        [ class "card pointer me-4 flex-1"
+                        [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between relative"
                         , classList
-                            [ ( "bg-grad-mm14-dark", active && shared.isDarkMode )
-                            , ( "bg-grad-mm14-light", active && not shared.isDarkMode )
+                            [ ( "bg-white border-gray-200 hover:border-gray-300", not active && not shared.isDarkMode )
+                            , ( "bg-gray-800 border-gray-700 hover:border-gray-600", not active && shared.isDarkMode )
+                            , ( "bg-secondary-light border-secondary shadow-lg ring-2 ring-secondary-light-active", active && not shared.isDarkMode )
+                            , ( "bg-secondary-dark border-secondary shadow-lg ring-2 ring-secondary-light-active", active && shared.isDarkMode )
                             ]
-                        , classList [ ( "shadow", active ) ]
                         , onClick <| toMsg
                         ]
-                        [ div [ class "card-body" ]
+                        [ div []
                             [ h5
-                                [ class "card-title"
+                                [ class "text-lg font-semibold mb-3"
+                                , classList
+                                    [ ( "text-gray-900", not shared.isDarkMode )
+                                    , ( "text-gray-100", shared.isDarkMode )
+                                    ]
                                 ]
                                 [ text title ]
-                            , p [ class "card-text" ]
+                            , p
+                                [ class "text-sm leading-relaxed"
+                                , classList
+                                    [ ( "text-gray-600", not shared.isDarkMode )
+                                    , ( "text-gray-400", shared.isDarkMode )
+                                    ]
+                                ]
                                 [ text description ]
+                            ]
+                        , div [ class "mt-4 flex justify-between items-center" ]
+                            [ viewIf active <|
+                                div
+                                    [ class "px-2 py-1 rounded-full text-xs font-medium"
+                                    , classList
+                                        [ ( "bg-secondary-light text-secondary-dark", not shared.isDarkMode )
+                                        , ( "bg-secondary-light-active text-secondary-dark", shared.isDarkMode )
+                                        ]
+                                    ]
+                                    [ text "Обрано" ]
+                            , div
+                                [ class "w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-200"
+                                , classList
+                                    [ ( "bg-gray-100", not active && not shared.isDarkMode )
+                                    , ( "bg-gray-700", not active && shared.isDarkMode )
+                                    , ( "bg-secondary", active && not shared.isDarkMode )
+                                    , ( "bg-secondary", active && shared.isDarkMode )
+                                    ]
+                                ]
+                                [ i
+                                    [ class "text-xs"
+                                    , classList
+                                        [ ( "text-gray-400", not active && not shared.isDarkMode )
+                                        , ( "text-gray-500", not active && shared.isDarkMode )
+                                        , ( "text-white", active )
+                                        ]
+                                    , class "bi bi-check"
+                                    ]
+                                    []
+                                ]
                             ]
                         ]
             in
-            [ h4 [] [ text "шаблон" ]
-            , div [ class "flex justify-center mb-4" ]
+            [ h4
+                [ class "text-lg font-semibold mb-6"
+                , classList
+                    [ ( "text-gray-900", not shared.isDarkMode )
+                    , ( "text-gray-100", shared.isDarkMode )
+                    ]
+                ]
+                [ text "шаблон" ]
+            , div [ class "grid grid-cols-3 gap-4 mb-6" ]
                 [ templateCard
                     (model.reportTemplate == RTTags)
                     (ReportTemplateSelect RTTags)
@@ -494,83 +472,67 @@ filtersAndMainContent user model shared route =
                     (model.reportTemplate == RTInterception)
                     (ReportTemplateSelect RTInterception)
                     "Перехоплення"
-                    ""
+                    "Звіт по перехопленнях"
                 , templateCard
                     (model.reportTemplate == RTSenders Senders || model.reportTemplate == RTSenders Posts)
                     (ReportTemplateSelect (RTSenders Senders))
                     "Відправники"
-                    ""
+                    "Аналіз відправників"
                 , a
-                    [ class "card pointer me-4 flex-1"
+                    [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between no-underline"
+                    , classList
+                        [ ( "bg-white border-gray-200 hover:border-gray-300", not shared.isDarkMode )
+                        , ( "bg-gray-800 border-gray-700 hover:border-gray-600", shared.isDarkMode )
+                        ]
                     , Route.href { path = Route.Path.RerFreqs, hash = Nothing, query = Dict.empty }
                     , target "_blank"
                     ]
-                    [ div [ class "card-body" ]
+                    [ div []
                         [ h5
-                            [ class "card-title"
+                            [ class "text-lg font-semibold mb-3"
+                            , classList
+                                [ ( "text-gray-900", not shared.isDarkMode )
+                                , ( "text-gray-100", shared.isDarkMode )
+                                ]
                             ]
                             [ text "Еталонний опис р/м" ]
-                        ]
-                    ]
-                ]
-            , div [ class "flex justify-start" ]
-                [ div
-                    [ class "card pointer me-4 basis-[200px]"
-                    , classList
-                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTMouse && shared.isDarkMode )
-                        , ( "bg-grad-mm14-light", model.reportTemplate == RTMouse && not shared.isDarkMode )
-                        ]
-                    , classList [ ( "shadow", model.reportTemplate == RTMouse ) ]
-                    , onClick <| ReportTemplateSelect RTMouse
-                    ]
-                    [ div [ class "card-body" ]
-                        [ h5
-                            [ class "card-title"
+                        , p
+                            [ class "text-sm leading-relaxed"
+                            , classList
+                                [ ( "text-gray-600", not shared.isDarkMode )
+                                , ( "text-gray-400", shared.isDarkMode )
+                                ]
                             ]
-                            [ text "мишка" ]
-                        , p [ class "card-text" ]
-                            [ text "Детальний почастотний звіт по привʼязках" ]
+                            [ text "Еталонний опис радіомереж" ]
                         ]
-                    ]
-                , div
-                    [ class "card pointer me-4 basis-[200px]"
-                    , classList
-                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTNaUshnom && shared.isDarkMode )
-                        , ( "bg-grad-mm14-light", model.reportTemplate == RTNaUshnom && not shared.isDarkMode )
-                        ]
-                    , classList [ ( "shadow", model.reportTemplate == RTNaUshnom ) ]
-                    , onClick <| ReportTemplateSelect RTNaUshnom
-                    ]
-                    [ div [ class "card-body" ]
-                        [ h5
-                            [ class "card-title"
+                    , div [ class "mt-4 flex justify-end" ]
+                        [ div
+                            [ class "w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-200"
+                            , classList
+                                [ ( "bg-gray-100", not shared.isDarkMode )
+                                , ( "bg-gray-700", shared.isDarkMode )
+                                ]
                             ]
-                            [ text "NaUshnom" ]
-                        , p [ class "card-text" ]
-                            [ text "" ]
-                        ]
-                    ]
-                , div
-                    [ class "card pointer me-4 basis-[200px]"
-                    , classList
-                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTReo && shared.isDarkMode )
-                        , ( "bg-grad-mm14-light", model.reportTemplate == RTReo && not shared.isDarkMode )
-                        ]
-                    , classList [ ( "shadow", model.reportTemplate == RTReo ) ]
-                    , onClick <| ReportTemplateSelect RTReo
-                    ]
-                    [ div [ class "card-body" ]
-                        [ h5
-                            [ class "card-title"
+                            [ i
+                                [ class "text-xs"
+                                , classList
+                                    [ ( "text-gray-400", not shared.isDarkMode )
+                                    , ( "text-gray-500", shared.isDarkMode )
+                                    ]
+                                , class "bi bi-box-arrow-up-right"
+                                ]
+                                []
                             ]
-                            [ text "РЕО" ]
-                        , p [ class "card-text" ]
-                            [ text "" ]
                         ]
                     ]
+                , templateCard
+                    (model.reportTemplate == RTReo)
+                    (ReportTemplateSelect RTReo)
+                    "РЕО"
+                    "Звіт по РЕО"
                 ]
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
-                div [ class "p-3 bg-light text-dark mb-4" ]
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]
                         [ input
                             [ class "form-check-input"
@@ -590,7 +552,7 @@ filtersAndMainContent user model shared route =
                     ]
             , case model.reportTemplate of
                 RTSenders x ->
-                    div [ class "p-3 bg-light text-dark mb-4" ]
+                    div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                         [ div [ class "form-check" ]
                             [ input
                                 [ class "form-check-input"
@@ -620,19 +582,16 @@ filtersAndMainContent user model shared route =
 
                 _ ->
                     HtmlX.nothing
-            , div [ class "d-flex justify-content-center align-items-center my-4" ]
-                [ button
-                    [ type_ "button"
-                    , class "inline-block btn btn-primary btn-sm me-2"
-                    , onClick ReportDownloadDocx
-                    ]
-                    [ if model.reportDownloadInProgress then
-                        span [ class "me-1" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
+            , div [ class "flex justify-center items-center mb-4" ]
+                [ Button.new { label = " завантажити docx/xlsx", onClick = ReportDownloadDocx }
+                    |> Button.withIcon
+                        [ if model.reportDownloadInProgress then
+                            span [ class "me-1" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
 
-                      else
-                        i [ class "bi bi-filetype-docx" ] []
-                    , text " завантажити docx/xlsx"
-                    ]
+                          else
+                            i [ class "bi bi-filetype-docx" ] []
+                        ]
+                    |> Button.view
                 ]
             ]
 
@@ -699,7 +658,7 @@ filtersAndMainContent user model shared route =
                                )
                         )
                         (Html.node "analysis-map"
-                            [ class "h-100 d-block position-relative z-1"
+                            [ class "h-full block relative z-10"
                             , attribute "daterange" (Encode.encode 0 encodedDates)
                             , attribute "points" (Encode.encode 0 encodedPoints)
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
@@ -718,10 +677,10 @@ filtersAndMainContent user model shared route =
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then
-                                    [ div [ class "position-absolute z-3 top-0 start-0 end-0 bottom-0 d-flex justify-content-center align-items-center" ]
-                                        [ div [ class "spinner-border position-relative z-2" ] []
+                                    [ div [ class "absolute z-10 top-0 left-0 right-0 bottom-0 flex justify-center items-center" ]
+                                        [ div [ class "animate-spin border-4 border-gray-300 border-t-blue-600 rounded-full w-8 h-8 relative z-20" ] []
                                         ]
-                                    , div [ class "position-absolute z-2 top-0 start-0 end-0 bottom-0 bg-light opacity-25" ] []
+                                    , div [ class "absolute z-20 top-0 left-0 right-0 bottom-0 bg-gray-100 opacity-25" ] []
                                     ]
 
                                 else
@@ -736,7 +695,7 @@ filtersAndMainContent user model shared route =
         [ -- viewIf model.showReportConstructor reportConstructorBlock
           reportConstructorBlock
         , div
-            [ class "d-flex justify-content-start align-items-start"
+            [ class "flex justify-start items-start"
             , class "page-rer-analysis"
             , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
             , style "overflow-y" "hidden"
@@ -747,7 +706,7 @@ filtersAndMainContent user model shared route =
                 ]
                 [ RerAnalysis.Filters.leftColumn shared.isDarkMode model ]
             , div
-                [ class "border-start align-self-stretch flex-grow-1 mt-4"
+                [ class "border-l border-border self-stretch flex-grow mt-4"
                 , id "messages-div"
                 , style "max-width" "100"
                 , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
@@ -764,7 +723,7 @@ filtersAndMainContent user model shared route =
                     , style "opacity" ".5"
                     , onClick <| ScrollMessagesToTop
                     ]
-                    [ span [ class "fs-2 pointer" ]
+                    [ span [ class "text-[2rem] cursor-pointer" ]
                         [ i [ class "bi bi-arrow-up-circle" ] [] ]
                     ]
 
@@ -781,10 +740,14 @@ filtersAndMainContent user model shared route =
                     , class "bg-body"
                     , style "z-index" "50"
                     ]
-                    [ Views.headerAndContentLabeled "аналіз" lbl ToastMsg model.toasts <|
-                        div [] []
+                    [ div [ class "flex items-center justify-between p-4" ]
+                        [ div [ class "flex items-center" ]
+                            [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
+                            , headerControls
+                            ]
+                        ]
                     ]
-                , div [ class "grow-1 max-xl:mx-2 mx-4" ]
+                , div [ class "flex-grow max-xl:mx-2 mx-4" ]
                     (mapBlock
                         :: (if not model.unfoldMapBlock then
                                 [ div []

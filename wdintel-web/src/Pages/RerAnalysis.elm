@@ -143,7 +143,7 @@ init route _ =
             , now = Nothing
             , tags = []
 
-            -- , showReportConstructor = False
+            , showReportConstructor = False
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
 
@@ -2401,6 +2401,16 @@ update user shared route msg model =
 
         ReportTemplateSelect template ->
             ( { model | reportTemplate = template }
+            , E.none
+            )
+
+        ToggleReportConstructor ->
+            ( { model | showReportConstructor = not model.showReportConstructor }
+            , E.none
+            )
+
+        CloseReportConstructor ->
+            ( { model | showReportConstructor = False }
             , E.none
             )
 

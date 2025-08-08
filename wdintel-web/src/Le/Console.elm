@@ -192,10 +192,10 @@ view (Model model) =
                 progFloat =
                     100.0 * toFloat prog.curr / toFloat prog.overall
             in
-            div [ class "row mb-4 mt-4" ]
-                [ div [ class "col-sm-12" ]
-                    [ div [ class "bd-example-snippet bd-code-snippet" ] <|
-                        [ div [ class "bd-example" ]
+            div [ class "flex mb-4 mt-4" ]
+                [ div [ class "w-full" ]
+                    [ div [ class "bg-gray-100 p-4 rounded" ] <|
+                        [ div [ class "bg-white p-4 rounded border" ]
                             [ HtmlX.viewIf (not model.inProgress) <|
                                 div
                                     [ style "font-size" "3rem"
@@ -206,16 +206,16 @@ view (Model model) =
 
                                         -- text-success
                                         , classList
-                                            [ ( "text-success bi-check-circle-fill", not (isError (Model model)) )
-                                            , ( "text-danger bi-exclamation-triangle-fill", isError (Model model) )
+                                            [ ( "text-green-600 bi-check-circle-fill", not (isError (Model model)) )
+                                            , ( "text-red-600 bi-exclamation-triangle-fill", isError (Model model) )
                                             ]
                                         ]
                                         []
                                     ]
-                            , div [ class "progress" ]
+                            , div [ class "w-full bg-gray-200 rounded-full h-2" ]
                                 [ div
-                                    [ class "progress-bar progress-bar-striped"
-                                    , classList [ ( "progress-bar-animated", model.inProgress ) ]
+                                    [ class "bg-blue-600 h-2 rounded-full"
+                                    , classList [ ( "animate-pulse", model.inProgress ) ]
                                     , attribute "role" "progressbar"
                                     , attribute "aria-valuenow" (String.fromInt prog.curr)
                                     , attribute "aria-valuemin" "1"
@@ -225,14 +225,14 @@ view (Model model) =
                                     []
                                 ]
                             ]
-                        , div [ class "highlight" ] <|
-                            pre [ class "text-bg-dark p-3 log-pre-block me-auto" ]
+                        , div [ class "bg-gray-50 p-4 rounded mt-4" ] <|
+                            pre [ class "bg-gray-900 text-white p-3 rounded log-pre-block me-auto" ]
                                 [ text <| String.join "\n" model.overallLogs
                                 ]
                                 :: (case getMError (Model model) of
                                         Just finishedWithError ->
-                                            [ div [ class "highlight" ]
-                                                [ pre [ class "text-danger" ]
+                                            [ div [ class "bg-red-50 p-4 rounded mt-4" ]
+                                                [ pre [ class "text-red-600" ]
                                                     [ text <| finishedWithError
                                                     ]
                                                 ]
