@@ -327,7 +327,7 @@ filtersAndMainContent user model shared route =
                     False
 
         headerControls =
-            div [ class "flex items-center gap-2" ]
+            div [ class "flex items-center gap-2 ml-4" ]
                 [ case model.counts of
                     Success data ->
                         span
@@ -525,24 +525,11 @@ filtersAndMainContent user model shared route =
                             ]
                         ]
                     ]
-                , div
-                    [ class "card pointer me-4 basis-[200px]"
-                    , classList
-                        [ ( "bg-grad-mm14-dark", model.reportTemplate == RTReo && shared.isDarkMode )
-                        , ( "bg-grad-mm14-light", model.reportTemplate == RTReo && not shared.isDarkMode )
-                        ]
-                    , classList [ ( "shadow", model.reportTemplate == RTReo ) ]
-                    , onClick <| ReportTemplateSelect RTReo
-                    ]
-                    [ div [ class "card-body" ]
-                        [ h5
-                            [ class "card-title"
-                            ]
-                            [ text "РЕО" ]
-                        , p [ class "card-text" ]
-                            [ text "" ]
-                        ]
-                    ]
+                , templateCard
+                    (model.reportTemplate == RTReo)
+                    (ReportTemplateSelect RTReo)
+                    "РЕО"
+                    "Звіт по РЕО"
                 ]
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
