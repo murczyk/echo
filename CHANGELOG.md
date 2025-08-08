@@ -1,4 +1,5 @@
 ## NEXT
+- [#1222](https://github.com/echoua/echo/issues/1222) Мережа: Прибрати фільтрацію по датам зі сторінки мереж
 - [#1214](https://github.com/echoua/echo/issues/1214) Звіт РЕО
 - [#1189](https://github.com/echoua/echo/issues/1186) Мережа: архів (фільтрація видалених мереж)
 - [#1187](https://github.com/echoua/echo/issues/1186) Мережа: фільтрація не активних мереж

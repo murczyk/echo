@@ -153,9 +153,6 @@ pub async fn load_freqs(
         Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
     )
     .and_where(
-        Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
-    )
-    .and_where(
         Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(filter.network_id),
     )
     .and_where(
@@ -279,9 +276,6 @@ pub async fn load_freqs(
         .and_where(
             Expr::col((SigintNetwork::Table, SigintUnit::Id))
                 .eq(filter.network_id),
-        )
-        .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
         .order_by_expr(Expr::cust("freq"), Order::Asc)
         .to_owned();
@@ -590,9 +584,6 @@ fn build_callsigns_queries(
                 .equals((SigintNetwork::Table, SigintNetwork::Id)),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
-        )
-        .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Id))
                 .eq(filter.network_id),
         )
@@ -715,9 +706,6 @@ fn build_callsigns_queries(
             callsigns_lateral_sub_query,
             Alias::new("c"),
             Expr::cust("true"),
-        )
-        .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
         .and_where(
             Expr::col((SigintUnit::Table, SigintUnit::Deleted))
@@ -921,7 +909,6 @@ pub async fn load_signals_per_network(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
-        .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Id.eq(network_id))
         .select_only()

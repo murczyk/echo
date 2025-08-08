@@ -56,14 +56,6 @@ pub async fn network_list(
         .await
         .context(h!())?;
 
-    let groups = crate::users::get_identity_sigint_groups_noimport(
-        &env.dbx,
-        &user,
-        &env.config,
-    )
-    .await
-    .context(h!())?;
-
     let mut networks = sigint_network::Entity::find()
         .join_as(
             JoinType::LeftJoin,
@@ -99,48 +91,19 @@ pub async fn network_list(
             networks.filter(sigint_network_unit::Column::Id.is_not_null());
     }
 
-    if req.filter_freq.is_some()
-        || req.since_date_inclusive_ms.is_some()
-        || req.till_date_noninclusive_ms.is_some()
-    {
-        let mut subquery = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SigintNetworkFreq.def(),
-            )
+    if let Some(filter_freq) = &req.filter_freq {
+        let subquery = sigint_network_freq::Entity::find()
             .select_only()
-            .column(signal_message::Column::Id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::GroupMasterKey.is_in(groups))
+            .column(sigint_network_freq::Column::Freq)
             .filter(
                 sigint_network_freq::Column::NetworkId
                     .into_simple_expr()
                     .eq(sigint_network::Column::Id.into_simple_expr()),
             )
-            .filter(sigint_network_freq::Column::ActiveTo.is_null());
-
-        if let Some(filter_freq) = &req.filter_freq {
-            subquery = subquery.filter(Expr::cust_with_values(
+            .filter(Expr::cust_with_values(
                 "sigint_network_freq.freq ilike $1",
                 vec![format!("{}%", filter_freq).as_str()],
             ));
-        }
-        if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
-            subquery = subquery.filter(
-                sigint_inbox_item::Column::Datetime
-                    .gte(dt_from_millis(since_date_inclusive_ms)?),
-            );
-        }
-        if let Some(till_date_inclusive_ms) = req.till_date_noninclusive_ms {
-            subquery = subquery.filter(
-                sigint_inbox_item::Column::Datetime
-                    .lte(dt_from_millis(till_date_inclusive_ms)?),
-            );
-        }
         networks = networks.filter(Expr::exists(subquery.into_query()));
     }
 
@@ -354,7 +317,6 @@ pub async fn bl_network_info_batch(
     txn: &DatabaseTransaction,
 ) -> Result<Vec<Network>, AppError> {
     let networks = sigint_network::Entity::find()
-        .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Id.is_in(network_ids));
     // .order_by_asc(sigint_network::Column::Freq);
 
@@ -784,9 +746,6 @@ pub async fn network_callsigns(
                 .is_in(req.network_ids.clone()),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
-        )
-        .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
                 .is_in(
                     crate::users::get_identity_sigint_groups_noimport(
@@ -800,19 +759,20 @@ pub async fn network_callsigns(
         )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+        )
+        .and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
+                Expr::col((
+                    SigintNetworkFreq::Table,
+                    SigintNetworkFreq::ActiveFrom,
+                )),
+            ),
+        )
+        .and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lt(
+               Expr::cust("COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
+            ),
         );
-    if let Some(since) = req.since_date_inclusive_ms {
-        query.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .gte(dt_from_millis(since).unwrap_or(NaiveDateTime::MIN)),
-        );
-    }
-    if let Some(till) = req.till_date_noninclusive_ms {
-        query.and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .lt(dt_from_millis(till).unwrap_or(NaiveDateTime::MAX)),
-        );
-    }
 
     let rows = env
         .dbx
@@ -1503,7 +1463,6 @@ pub async fn network_unit_stats(
         .select_only()
         .column_as(sigint_network::Column::Id.count(), "count")
         .column_as(sigint_unit::Column::Id, "unit_id")
-        .filter(sigint_network::Column::Deleted.eq(false))
         // .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         // .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .order_by_asc(sigint_unit::Column::Army)
@@ -1867,7 +1826,6 @@ async fn cleanup_networks_worker_1(
         };
         if should_delete {
             let mut network = network.into_active_model();
-            network.deleted = Set(true);
             network.active_to = Set(Some(start_time.naive_utc()));
             network.update(dbx).await.context(h!())?;
         }
@@ -1893,7 +1851,6 @@ pub async fn collect_network_units(
             sigint_network::Relation::SigintNetworkFreq.def(),
         )
         .filter(sigint_network_freq::Column::Freq.is_in(freqs))
-        .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .select_only()
         .column(sigint_network::Column::Id) //
@@ -2447,7 +2404,6 @@ pub async fn add_network_descriptions(
     let (network, network_freqs) =
         sigint_network::Entity::find_by_id(req.network_id)
             .find_with_related(sigint_network_freq::Entity)
-            .filter(sigint_network::Column::Deleted.eq(false))
             .all(&txn)
             .await
             .context(h!())?
@@ -3027,7 +2983,6 @@ where
 {
     Ok(sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .all(txn)
         .await
         .context(h!())?
