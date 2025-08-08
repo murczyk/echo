@@ -808,8 +808,10 @@ where
             .into_iter()
             .map(|og| og.master_key)
             .collect();
+        debug!("organism_groups_obj.len: {}", organism_groups_obj.len());
     }
 
+    debug!("organism_groups_obj.len (2): {}", organism_groups_obj.len());
     if organism_groups_obj.len() > 0 {
         Ok(organism_groups_obj)
     } else {
