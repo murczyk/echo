@@ -17,11 +17,16 @@ pub async fn add_group_to_organism(
     req: Json<AddGroupToOrganismReq>,
 ) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
+    debug!(
+        "Adding group {} to organism {}",
+        req.group_name, req.organism_id
+    );
 
     let organism = organism::Entity::find_by_id(req.organism_id)
         .one(&env.dbx)
-        .await?
-        .ok_or(AppError::NotFound)?;
+        .await
+        .context(h!())?
+        .context(h!())?;
 
     let parent_filter = if let Some(parent_id) = organism.parent_id {
         load_organism_group_ids(&env.dbx, parent_id)
@@ -31,14 +36,21 @@ pub async fn add_group_to_organism(
     } else {
         None
     };
+    debug!("Parent filter: {:?}", parent_filter);
 
     let group = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq(&req.group_name))
         .one(&env.dbx)
-        .await?
-        .ok_or(AppError::NotFound)?;
+        .await
+        .context(h!())?
+        .context(h!())?;
+    debug!(
+        "Group req: {}; found name={:?}, group_master_key={}",
+        req.group_name, group.name, group.master_key
+    );
 
     let skip_adding = if let Some(parent_filter) = parent_filter {
+        debug!("parent_filter.selected_keys: {:?}", parent_filter.selected_keys);
         !parent_filter.selected_keys.contains(&group.master_key)
     } else {
         false
@@ -50,11 +62,10 @@ pub async fn add_group_to_organism(
             signal_group_master_key: Set(group.master_key.clone()),
         }
         .insert(&env.dbx)
-        .await?;
+        .await
+        .context(h!())?;
     } else {
-        return Err(AppError::BL {
-            msg: "won't add, absent in parent".to_string(),
-        });
+        return Err(AppError::from(anyhow!("Not adding group {} to organism {} because it is not available in parent organism", req.group_name, req.organism_id).context(h!())));
     }
 
     Ok(Json(()))

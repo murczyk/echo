@@ -86,6 +86,7 @@ pub struct OrganismGroup {
     pub organism_id: i64,
 }
 
+#[derive(Debug)]
 pub struct OrganismGroups {
     pub available_keys: Vec<String>,
     pub selected_keys: Vec<String>,
