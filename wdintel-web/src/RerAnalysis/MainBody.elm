@@ -47,12 +47,6 @@ mainBody user model shared route =
                 _ ->
                     Dict.empty
 
-                Success units ->
-                    units
-
-                _ ->
-                    Dict.empty
-
         messagesShown =
             List.length model.messages
 
