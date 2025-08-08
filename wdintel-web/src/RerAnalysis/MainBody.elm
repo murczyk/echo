@@ -86,7 +86,7 @@ mainBody user model shared route =
                 _ ->
                     let
                         loadMoreBtn =
-                            viewIf (not model.noMoreToLoad) <|
+                            viewIf (not model.noMoreToLoad && not (List.isEmpty model.messages)) <|
                                 div [ class "flex justify-center items-center mb-4" ]
                                     [ Button.new { label = "завантажити ще", onClick = LoadMoreMessages }
                                         |> Button.withIcon
