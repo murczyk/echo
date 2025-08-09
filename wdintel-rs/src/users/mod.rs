@@ -489,7 +489,6 @@ async fn api_user(
         None => None,
         Some(id) => delta_login::Entity::find()
             .filter(delta_login::Column::Id.eq(id))
-            .filter(login::Column::DeletedPermanently.eq(false))
             .one(&env.dbx)
             .await
             .context(h!())?
