@@ -55,7 +55,6 @@ pub mod secret_group_user;
 pub mod settlement;
 pub mod sigint_bookmark;
 pub mod sigint_callsign;
-pub mod sigint_callsign_bind;
 pub mod sigint_callsign_changelog;
 pub mod sigint_comment;
 pub mod sigint_important;

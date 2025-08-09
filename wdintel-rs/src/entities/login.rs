@@ -49,8 +49,6 @@ pub enum Relation {
     Organism,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
-    #[sea_orm(has_many = "super::sigint_callsign_bind::Entity")]
-    SigintCallsignBind,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
@@ -104,12 +102,6 @@ impl Related<super::organism::Entity> for Entity {
 impl Related<super::secret_group_user::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SecretGroupUser.def()
-    }
-}
-
-impl Related<super::sigint_callsign_bind::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintCallsignBind.def()
     }
 }
 

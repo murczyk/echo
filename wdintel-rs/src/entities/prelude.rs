@@ -52,7 +52,6 @@ pub use super::secret_group_user::Entity as SecretGroupUser;
 pub use super::settlement::Entity as Settlement;
 pub use super::sigint_bookmark::Entity as SigintBookmark;
 pub use super::sigint_callsign::Entity as SigintCallsign;
-pub use super::sigint_callsign_bind::Entity as SigintCallsignBind;
 pub use super::sigint_callsign_changelog::Entity as SigintCallsignChangelog;
 pub use super::sigint_comment::Entity as SigintComment;
 pub use super::sigint_important::Entity as SigintImportant;
