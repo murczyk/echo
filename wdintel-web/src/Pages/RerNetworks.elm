@@ -8,6 +8,7 @@ import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Components.RadioGroup as RadioGroup
+import Components.SegmentedControl as SegmentedControl
 import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
@@ -94,8 +95,7 @@ type alias Model =
     , expandedBattalions : Set.Set String
     , showOnlyInvestigating : Bool
     , showOnlyActive : Bool
-    , showArchiveSidebar : Bool
-    , archiveNetworks : RemoteData ApiError (List B.Network)
+    , showArchived : Bool
     , loadingUnitStats : Bool
     , tableState : Table.State
     }
@@ -110,6 +110,7 @@ type alias FilterState =
     { freq : String
     , unit : String
     , callsigns : List String
+    , showArchived : Bool
     }
 
 
@@ -137,6 +138,7 @@ init _ =
                 { freq = ""
                 , unit = ""
                 , callsigns = []
+                , showArchived = False
                 }
             , filterStateDebounce = Debounce.init
             , unitStats = Loading
@@ -154,8 +156,7 @@ init _ =
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
             , showOnlyActive = False
-            , showArchiveSidebar = False
-            , archiveNetworks = NotAsked
+            , showArchived = False
             , loadingUnitStats = True
             , tableState = Table.initialSort "Мережа"
             }
@@ -189,7 +190,7 @@ loadNetworks model =
             else
                 Nothing
         , showInactive = Just (not model.showOnlyActive)
-        , showOnlyDeleted = Nothing
+        , showOnlyDeleted = Just model.showArchived
         }
     )
 
@@ -208,7 +209,7 @@ loadNetworksWithTracker model tracker =
             else
                 Nothing
         , showInactive = Just (not model.showOnlyActive)
-        , showOnlyDeleted = Nothing
+        , showOnlyDeleted = Just model.showArchived
         }
 
 
@@ -255,8 +256,7 @@ type Msg
     | CreateNewNetworkClicked
     | SetTableState Table.State
     | ToggleShowOnlyActive Bool
-    | ToggleArchiveSidebar
-    | ArchiveNetworksReturnedByApi (Result ApiError (List B.Network))
+    | ToggleShowArchived Bool
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -704,6 +704,7 @@ update shared msg model =
                     { freq = model.filterState.freq
                     , unit = ""
                     , callsigns = model.filterState.callsigns
+                    , showArchived = model.filterState.showArchived
                     }
 
                 m2 =
@@ -718,6 +719,16 @@ update shared msg model =
             let
                 m2 =
                     { model | showOnlyActive = val }
+
+                ( m3, eff ) =
+                    loadNetworks m2
+            in
+            ( m3, eff )
+
+        ToggleShowArchived val ->
+            let
+                m2 =
+                    { model | showArchived = val }
 
                 ( m3, eff ) =
                     loadNetworks m2
@@ -891,6 +902,7 @@ update shared msg model =
                     { freq = model.filterState.freq
                     , unit = newUnitFilter
                     , callsigns = model.filterState.callsigns
+                    , showArchived = model.filterState.showArchived
                     }
 
                 m2 =
@@ -910,6 +922,7 @@ update shared msg model =
                     { freq = ""
                     , unit = ""
                     , callsigns = []
+                    , showArchived = False
                     }
 
                 m2 =
@@ -929,34 +942,6 @@ update shared msg model =
 
         SetTableState newState ->
             ( { model | tableState = newState }, E.none )
-
-        ToggleArchiveSidebar ->
-            let
-                newModel =
-                    { model | showArchiveSidebar = not model.showArchiveSidebar }
-            in
-            if newModel.showArchiveSidebar && model.archiveNetworks == NotAsked then
-                ( { newModel | archiveNetworks = Loading }
-                , E.getNetworksList ArchiveNetworksReturnedByApi
-                    { filterFreq = Nothing
-                    , filterUnit = Nothing
-                    , sortBy = Nothing
-                    , filterFurtherInvestigation = Nothing
-                    , showInactive = Nothing
-                    , showOnlyDeleted = Just True
-                    }
-                )
-
-            else
-                ( newModel, E.none )
-
-        ArchiveNetworksReturnedByApi (Err err) ->
-            ( { model | archiveNetworks = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження архіву мереж" err
-            )
-
-        ArchiveNetworksReturnedByApi (Ok networks) ->
-            ( { model | archiveNetworks = Success networks }, E.none )
 
 
 networksTableConfig : Shared.Model -> Model -> Table.Config B.Network Msg
@@ -1326,6 +1311,7 @@ filterPanel shared model =
                 || not (List.isEmpty filterState.callsigns)
                 || model.showOnlyInvestigating
                 || model.showOnlyActive
+                || model.showArchived
 
         -- Count active filters
         activeFilterCount =
@@ -1334,11 +1320,18 @@ filterPanel shared model =
             , not (List.isEmpty filterState.callsigns)
             , model.showOnlyInvestigating
             , model.showOnlyActive
+            , model.showArchived
             ]
                 |> List.filter identity
                 |> List.length
+
+        -- SegmentedControl options for archive filter
+        archiveOptions =
+            [ { value = False, label = "Доступні" }
+            , { value = True, label = "Архів" }
+            ]
     in
-    div [ class "flex flex-col gap-3" ]
+    div [ class "flex flex-col gap-3 px-1" ]
         [ -- Title row with filter count and clear button
           div [ class "flex justify-content-between align-items-center" ]
             [ div [ class "flex items-center" ]
@@ -1367,16 +1360,25 @@ filterPanel shared model =
                 , i [ class "bi bi-x text-secondary", style "font-size" "1.2rem" ] []
                 ]
             ]
+        , -- Archive filter row
+          div [ class "flex gap-2 justify-start items-center" ]
+            [ SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
+                |> SegmentedControl.view
+            , -- Network status filters row (only show when not in archive mode)
+              if not model.showArchived then
+                div [ class "flex gap-4 justify-start items-center" ]
+                    [ div [] [ text "" ] -- Spacer to align with first row
+                    , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+                        |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
+                        |> Checkbox.view
+                    ]
+
+              else
+                text ""
+            ]
         , -- Filter inputs row
           div [ class "flex gap-2 justify-start items-center" ]
-            [ div [ class "me-2" ]
-                [ if model.networks == Loading then
-                    Le.Block.Spinner.loadingSpinner2Sm
-
-                  else
-                    i [ class "bi bi-filter" ] []
-                ]
-            , input
+            [ input
                 [ class "form-input"
                 , style "width" "200px"
                 , type_ "text"
@@ -1407,13 +1409,6 @@ filterPanel shared model =
                 ]
                 [ text "Підрозділи" ]
             , span [ class "grow-1" ] []
-            ]
-        , -- Network status filters row
-          div [ class "flex gap-4 justify-start items-center" ]
-            [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
-            , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
-                |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
-                |> Checkbox.view
             ]
         , let
             dialogContent =
@@ -1592,13 +1587,11 @@ view dark shared user model =
                         buttons =
                             if Le.Auth.hasRole "UnitsEditor" user then
                                 [ Button.new { label = "Створити", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
-                                , Button.new { label = "Архів", onClick = ToggleArchiveSidebar } |> Button.withStyleSecondary |> Button.view
                                 , reportButton
                                 ]
 
                             else
-                                [ Button.new { label = "Архів", onClick = ToggleArchiveSidebar } |> Button.withStyleSecondary |> Button.view
-                                , reportButton
+                                [ reportButton
                                 ]
                       in
                       div [ class "flex gap-[16px]" ] buttons
@@ -1629,14 +1622,6 @@ view dark shared user model =
                 isOpen
                 NetworksMergeFinish
                 (networksMergeSidebarContent shared model)
-            , let
-                isArchiveOpen =
-                    model.showArchiveSidebar
-              in
-              Sidebar.view
-                isArchiveOpen
-                ToggleArchiveSidebar
-                (archiveSidebarContent shared model)
             ]
         ]
     }
@@ -1751,68 +1736,6 @@ networksMergeSidebarContent shared model =
 
         _ ->
             [ text "" ]
-
-
-archiveSidebarContent : Shared.Model -> Model -> List (Html Msg)
-archiveSidebarContent shared model =
-    [ div [ class "p-[24px] flex flex-col gap-[24px]" ]
-        [ div []
-            [ h3 [] [ text "Архів видалених мереж" ]
-            , span [] [ text "Перегляд мереж, які були видалені з системи." ]
-            ]
-        , case model.archiveNetworks of
-            NotAsked ->
-                div [ class "flex justify-center" ]
-                    [ Button.new { label = "Завантажити архів", onClick = ToggleArchiveSidebar }
-                        |> Button.view
-                    ]
-
-            Loading ->
-                div [ class "flex justify-center" ]
-                    [ Le.Block.Spinner.loadingSpinner
-                    ]
-
-            Failure err ->
-                div [ class "text-red-500" ]
-                    [ text "Помилка завантаження архіву" ]
-
-            Success networks ->
-                if List.isEmpty networks then
-                    div [ class "text-gray-500 text-center" ]
-                        [ text "Архів порожній" ]
-
-                else
-                    div [ class "max-h-[400px] overflow-y-auto space-y-2" ]
-                        (List.map
-                            (\network ->
-                                div [ class "p-3 border border-gray-200 rounded-lg" ]
-                                    [ div [ class "font-medium" ]
-                                        (case shared.masterUnits of
-                                            Success units ->
-                                                [ EUtils.renderNetworkNameWithoutType network units ]
-
-                                            _ ->
-                                                [ text "Loading..." ]
-                                        )
-                                    , div [ class "text-sm text-gray-600" ]
-                                        [ text network.location ]
-                                    , div [ class "text-sm text-gray-500" ]
-                                        [ text ("Частоти: " ++ (network.freqs |> List.map .freq |> String.join ", ")) ]
-                                    ]
-                            )
-                            networks
-                        )
-
-            NeedsReload _ ->
-                div [ class "text-red-500" ]
-                    [ text "Потрібно перезавантажити архів" ]
-        , div [ class "flex justify-start" ]
-            [ Button.new { label = "Закрити", onClick = ToggleArchiveSidebar }
-                |> Button.withStyleSecondary
-                |> Button.view
-            ]
-        ]
-    ]
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
