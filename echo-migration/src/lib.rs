@@ -118,6 +118,7 @@ mod m20250803_175404_fix_datasource_id_seq;
 mod m20250804_100857_remove_messenger_account;
 mod m20250808_153740_add_deleted_permanently;
 mod m20250809_064407_drop_callsing_bind_table;
+mod m20250809_072634_alter_network_callsign_table;
 mod m20250811_140034_add_default_organism;
 mod m20250816_160937_default_big_aor;
 mod m20250817_172424_add_modulation;
@@ -247,6 +248,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250804_100857_remove_messenger_account::Migration),
             Box::new(m20250808_153740_add_deleted_permanently::Migration),
             Box::new(m20250809_064407_drop_callsing_bind_table::Migration),
+            Box::new(m20250809_072634_alter_network_callsign_table::Migration),
             Box::new(m20250811_140034_add_default_organism::Migration),
             Box::new(m20250816_160937_default_big_aor::Migration),
             Box::new(m20250817_172424_add_modulation::Migration),

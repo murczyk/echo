@@ -1407,7 +1407,7 @@ pub async fn get_network_callsings_reporting(
         .await
         .context(h!())?
         .into_iter()
-        .map(|x| (x.sigint_callsign, x.is_reported))
+        .map(|x| (x.sigint_callsign, true))
         .collect::<BTreeMap<_, _>>();
 
     Ok(callsigns_reporting)
