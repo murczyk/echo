@@ -1327,11 +1327,11 @@ filterPanel shared model =
 
         -- SegmentedControl options for archive filter
         archiveOptions =
-            [ { value = False, label = "Не видалені" }
+            [ { value = False, label = "Доступні" }
             , { value = True, label = "Архів" }
             ]
     in
-    div [ class "flex flex-col gap-3" ]
+    div [ class "flex flex-col gap-3 px-1" ]
         [ -- Title row with filter count and clear button
           div [ class "flex justify-content-between align-items-center" ]
             [ div [ class "flex items-center" ]
@@ -1362,20 +1362,23 @@ filterPanel shared model =
             ]
         , -- Archive filter row
           div [ class "flex gap-2 justify-start items-center" ]
-            [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
-            , SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
+            [ SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
                 |> SegmentedControl.view
+            , -- Network status filters row (only show when not in archive mode)
+              if not model.showArchived then
+                div [ class "flex gap-4 justify-start items-center" ]
+                    [ div [] [ text "" ] -- Spacer to align with first row
+                    , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+                        |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
+                        |> Checkbox.view
+                    ]
+
+              else
+                text ""
             ]
         , -- Filter inputs row
           div [ class "flex gap-2 justify-start items-center" ]
-            [ div [ class "me-2" ]
-                [ if model.networks == Loading then
-                    Le.Block.Spinner.loadingSpinner2Sm
-
-                  else
-                    i [ class "bi bi-filter" ] []
-                ]
-            , input
+            [ input
                 [ class "form-input"
                 , style "width" "200px"
                 , type_ "text"
@@ -1407,17 +1410,6 @@ filterPanel shared model =
                 [ text "Підрозділи" ]
             , span [ class "grow-1" ] []
             ]
-        , -- Network status filters row (only show when not in archive mode)
-          if not model.showArchived then
-            div [ class "flex gap-4 justify-start items-center" ]
-                [ div [ class "me-2" ] [ text "" ] -- Spacer to align with first row
-                , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
-                    |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
-                    |> Checkbox.view
-                ]
-
-          else
-            text ""
         , let
             dialogContent =
                 [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
