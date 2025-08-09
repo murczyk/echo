@@ -70,44 +70,6 @@ pub struct CreateCallsignReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct ListCallsignBindsReq {
-    pub callsign_ids: Vec<i64>,
-    pub since_date_inclusive_ms: Option<i64>,
-    pub till_date_inclusive_ms: Option<i64>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CallsignBind {
-    pub id: i64,
-    pub freq: String,
-    pub comment: Option<String>,
-    pub date: Option<String>,
-    pub updated_by: String,
-    pub updated_at: i64,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CallsignBindOneReq {
-    pub freq: String,
-    pub comment: Option<String>,
-    pub date: Option<String>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CreateCallsignsBindReq {
-    pub callsign_id: i64,
-    pub bindings: Vec<CallsignBindOneReq>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
 pub struct CallsignReportingItem {
     pub callsign: String,
     pub is_reported: bool,
