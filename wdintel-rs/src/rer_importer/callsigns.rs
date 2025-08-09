@@ -680,69 +680,47 @@ fn extract_sender_receiver_pair(
 
     lazy_static! {
         static ref RE_CALLSIGN: Regex =
-            Regex::new(r"^ОТРИМУВАЧ(І|\(І\))?: (?P<callsign>.*).*$").unwrap();
+            Regex::new(r"^Отримувач(і|\(і\))?: (?P<callsign>.*).*$").unwrap();
         static ref RE_CALLSIGN_2: Regex =
-            Regex::new(r"^ВІДПРАВНИК(И|\(И\))?: (?P<callsign>.*).*$").unwrap();
+            Regex::new(r"^Відправник(и|\(и\))?: (?P<callsign>.*).*$").unwrap();
     }
     let mut res: Vec<CNCallsign> = vec![];
     // println!("> msg_pos: {msg_pos}");
 
-    for line_raw in lines.iter() {
-        let line = &line_raw.to_uppercase();
-        '_if: {
-            let Some(capts) = RE_CALLSIGN.captures(line) else {
-                break '_if;
-            };
-            let Some(callsign_match) = capts.name("callsign") else {
-                break '_if;
-            };
-            let callsign: String =
-                callsign_match.as_str().to_lowercase().trim().to_string();
-            if callsign == "нв" {
-                break '_if;
-            }
-            res.push(CNCallsign {
-                begin: msg_pos
-                    + crate::utils::string::byte_to_char_index(
-                        line,
-                        callsign_match.start(),
-                    ),
-                end: msg_pos
-                    + crate::utils::string::byte_to_char_index(
-                        line,
-                        callsign_match.end(),
-                    ),
-                etalon: callsign.clone(),
-                text: callsign_match.as_str().to_string(),
-            });
+    fn try_get_callsign(line: &str, regex: &Regex, msg_pos: usize) -> Option<CNCallsign> {
+        let Some(capts) = regex.captures(line) else {
+            return None;
+        };
+        let Some(callsign_match) = capts.name("callsign") else {
+            return None;
+        };
+        let callsign: String =
+            callsign_match.as_str().to_lowercase().trim().to_string();
+        if callsign == "нв" || callsign == "н.в." || callsign == "н/в"{
+            return None;
         }
-        '_if: {
-            let Some(capts) = RE_CALLSIGN_2.captures(line) else {
-                break '_if;
-            };
-            let Some(callsign_match) = capts.name("callsign") else {
-                break '_if;
-            };
-            let callsign: String =
-                callsign_match.as_str().to_lowercase().trim().to_string();
-            if callsign == "нв" {
-                break '_if;
-            }
-            let callsign = callsign.to_lowercase().trim().to_string();
-            res.push(CNCallsign {
-                begin: msg_pos
-                    + crate::utils::string::byte_to_char_index(
-                        line,
-                        callsign_match.start(),
-                    ),
-                end: msg_pos
-                    + crate::utils::string::byte_to_char_index(
-                        line,
-                        callsign_match.end(),
-                    ),
-                etalon: callsign.clone(),
-                text: callsign_match.as_str().to_string(),
-            });
+        Some(CNCallsign {
+            begin: msg_pos
+                + crate::utils::string::byte_to_char_index(
+                line,
+                callsign_match.start(),
+            ),
+            end: msg_pos
+                + crate::utils::string::byte_to_char_index(
+                line,
+                callsign_match.end(),
+            ),
+            etalon: callsign.clone(),
+            text: callsign_match.as_str().to_string(),
+        })
+    }
+
+    for line in lines.iter() {
+        let line = line.trim();
+        let callsign_1 = try_get_callsign(line, &RE_CALLSIGN, msg_pos);
+        let callsign_2 = try_get_callsign(line, &RE_CALLSIGN_2, msg_pos);
+        if let Some(callsign) = callsign_1.or(callsign_2) {
+            res.push(callsign);
         }
         msg_pos += cline_len(line) + 1;
     }
@@ -2218,4 +2196,24 @@ mod tests {
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_format_hoor3() {
+        let body = r#"УКХ р/м зі складу 222 мсп (МВО)
+ ОРЛЯНСЬКЕ
+ 01.01.2025 3:3:03
+ Відправник: Хитмен
+ Отримувач(і): Сибирь
+ Перехоплення:
+ 1. Сибирь Хитмену.
+ 2. Сибирь, сейчас наша коробочка работает по соседней посадке, ей бы правее, ещё метра на 700, там напротив работал миномёт на  Скорого.
+ 3. Не в нашу сторону, а вообще в сторону Сокола, туда работал миномёт.
+ 4. Хитмен Хитмен азимут можешь сказать?   "#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> =
+            vec!["Хитмен".to_string(), "Сибирь".to_string()];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
 }
