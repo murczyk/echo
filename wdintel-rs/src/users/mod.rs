@@ -144,10 +144,12 @@ pub async fn update_login(
         }
         Some(id) => {
             let login = delta_login::Entity::find()
+                .join(JoinType::LeftJoin, delta_login::Relation::Login.def())
                 .filter(login::Column::DeletedPermanently.eq(false))
                 .filter(delta_login::Column::Id.eq(id))
                 .one(&env.dbx)
                 .await
+                .context(format!("delta_id: {}", id))
                 .context(h!())?
                 .context(h!())?;
             match &req.delta_login {
