@@ -529,7 +529,7 @@ filtersAndMainContent user model shared route =
                     (model.reportTemplate == RTReo)
                     (ReportTemplateSelect RTReo)
                     "РЕО"
-                    "Звіт по РЕО"
+                    "Для генерування потрібні права редактора чи адміна"
                 ]
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
@@ -740,7 +740,7 @@ filtersAndMainContent user model shared route =
                     , class "bg-body"
                     , style "z-index" "50"
                     ]
-                    [ div [ class "flex items-center justify-between p-4" ]
+                    [ div [ class "flex items-center justify-between px-4 mb-2" ]
                         [ div [ class "flex items-center" ]
                             [ h1 [ class "text-xl font-semibold" ] [ text "аналіз" ]
                             , headerControls
