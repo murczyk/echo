@@ -687,7 +687,11 @@ fn extract_sender_receiver_pair(
     let mut res: Vec<CNCallsign> = vec![];
     // println!("> msg_pos: {msg_pos}");
 
-    fn try_get_callsign(line: &str, regex: &Regex, msg_pos: usize) -> Option<CNCallsign> {
+    fn try_get_callsign(
+        line: &str,
+        regex: &Regex,
+        msg_pos: usize,
+    ) -> Option<CNCallsign> {
         let Some(capts) = regex.captures(line) else {
             return None;
         };
@@ -696,20 +700,20 @@ fn extract_sender_receiver_pair(
         };
         let callsign: String =
             callsign_match.as_str().to_lowercase().trim().to_string();
-        if callsign == "нв" || callsign == "н.в." || callsign == "н/в"{
+        if callsign == "нв" || callsign == "н.в." || callsign == "н/в" {
             return None;
         }
         Some(CNCallsign {
             begin: msg_pos
                 + crate::utils::string::byte_to_char_index(
-                line,
-                callsign_match.start(),
-            ),
+                    line,
+                    callsign_match.start(),
+                ),
             end: msg_pos
                 + crate::utils::string::byte_to_char_index(
-                line,
-                callsign_match.end(),
-            ),
+                    line,
+                    callsign_match.end(),
+                ),
             etalon: callsign.clone(),
             text: callsign_match.as_str().to_string(),
         })
@@ -2215,5 +2219,4 @@ mod tests {
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
-
 }
