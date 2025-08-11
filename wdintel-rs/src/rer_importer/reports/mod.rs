@@ -164,6 +164,12 @@ pub async fn report_docx(
         self::naushnom::report_docx_kind_naushnom(user, &env, &req, &outpath)
             .await?;
     } else if req.kind == "reo" {
+        crate::users::has_any_role(
+            &env.dbx,
+            &user.id()?,
+            vec!["UnitsEditor", "CallsignsEditor", "Admin"],
+        )
+        .await?;
         self::revo::report_docx_kind_revo(user, &env, &req, &outpath).await?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
