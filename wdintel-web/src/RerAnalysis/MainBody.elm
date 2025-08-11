@@ -478,6 +478,11 @@ filtersAndMainContent user model shared route =
                     (ReportTemplateSelect (RTSenders Senders))
                     "Відправники"
                     "Аналіз відправників"
+                , templateCard
+                    (model.reportTemplate == RTMouse)
+                    (ReportTemplateSelect RTMouse)
+                    "Мишка"
+                    "Детальний почастотний звіт по привʼязках"
                 , a
                     [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between no-underline"
                     , classList
