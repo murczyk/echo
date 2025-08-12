@@ -34,10 +34,35 @@ date_format(ts::TIMESTAMP, '%Y-%m-%d %H:%M:%S.%3f')
 
 ## Logs
 
-Latest:
+**Latest errors**
 
 ```
-select greptime_timestamp, host, "_SYSTEMD_UNIT", message from logs order by timestamp desc limit 10;
+SELECT
+  greptime_timestamp,
+  host,
+  "_SYSTEMD_UNIT",
+  message
+FROM
+  logs
+WHERE
+  greptime_timestamp >= $timestart
+  AND greptime_timestamp <= $timeend
+  AND (
+    host NOT LIKE '%starobilsk%'
+    AND (
+      message LIKE '%ERR%'
+      OR message ILIKE '%err%'
+    )
+    AND message NOT LIKE '%Perro%'
+    AND message NOT LIKE '%AoeRR%'
+    AND message NOT LIKE '%WARN%'
+    AND message NOT LIKE '%INFO%'
+    AND message NOT LIKE '%level=debug%'
+    AND message NOT LIKE '%serverReceived%'
+  )
+ORDER BY
+  greptime_timestamp DESC
+LIMIT 10000;
 ```
 
 Graph per host:
