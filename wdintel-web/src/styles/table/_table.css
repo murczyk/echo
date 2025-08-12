@@ -79,7 +79,6 @@ html[data-bs-theme="dark"] .base-table thead th {
 
 .base-table thead th[onclick]:hover {
     background: var(--bs-gray-100);
-    transform: translateY(-1px);
 }
 
 html[data-bs-theme="dark"] .base-table thead th[onclick]:hover {
@@ -102,7 +101,6 @@ html[data-bs-theme="dark"] .base-table thead th[onclick]:hover {
 
 .base-table tbody tr:hover {
     background-color: var(--bs-gray-50);
-    transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
