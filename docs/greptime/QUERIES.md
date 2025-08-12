@@ -34,7 +34,10 @@ date_format(ts::TIMESTAMP, '%Y-%m-%d %H:%M:%S.%3f')
 
 ## Logs
 
-**Latest errors**
+**Latest errors** for the
+[dashboard](http://echo-greptime.alpines-banded.ts.net:4000/dashboard/#/dashboard/logs-query?editorType=text)
+(also check out
+[metabase](http://echo-greptime.alpines-banded.ts.net:3030/dashboard/2-main#refresh=600))
 
 ```
 SELECT
