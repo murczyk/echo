@@ -804,6 +804,10 @@ where
                         signal_group::Column::MasterKey
                             .is_in(organism_groups.available_keys),
                     )
+                    .filter(
+                         Expr::col((signal_group::Entity, signal_group::Column::MasterKey))
+                            .equals((sigint_zone_datasource::Entity, sigint_zone_datasource::Column::GroupMasterKey))
+                    )
                     .join(
                         JoinType::InnerJoin,
                         signal_group::Relation::Datasource.def(),
