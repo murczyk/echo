@@ -19,8 +19,13 @@ where
         parents.into_iter().map(|x| x.id).collect();
     organism_ids.push(organism_id);
     let mut group_ids = signal_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::SigintZoneDatasource.def(),
+        )
         .select_only()
         .column(signal_group::Column::MasterKey)
+        .distinct()
         .into_tuple::<String>()
         .all(txn)
         .await
