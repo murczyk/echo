@@ -105,6 +105,7 @@ pub struct Config {
     pub greptime_password: Option<String>,
     pub greptime_dbname: Option<String>,
     pub feature_tmp_in_memory: Option<bool>,
+    pub feature_strict_networks: Option<bool>,
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
     pub read_from_legacy_data_sources: Option<bool>,
