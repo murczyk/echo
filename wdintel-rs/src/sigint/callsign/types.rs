@@ -105,3 +105,44 @@ pub struct GetCallsignsWithUnitsFromInboxReq {
 pub struct GetCallsignsWithUnitsFromInboxRsp {
     pub callsigns_with_units: Vec<(String, Vec<String>)>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsign {
+    pub id: i64,
+    pub network_id: i64,
+    pub callsign: String,
+    pub known_callsign_id: Option<i64>,
+    pub known_callsign: Option<Callsign>,
+    pub position: Option<String>,
+    pub comment: Option<String>,
+    pub source_id: Option<i64>,
+    pub created_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum ListNetworkCallsignsSortBy {
+    NetworkCallsignAsc,
+    NetworkCallsignDesc,
+    NetworkCallsignCreatedAtAsc,
+    NetworkCallsignCreatedAtDesc,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListNetworkCallsignsReq {
+    pub network_id: i64,
+    pub sort_by: Option<Vec<ListNetworkCallsignsSortBy>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListNetworkCallsignsRes {
+    pub network_callsigns: Vec<NetworkCallsign>,
+}
+

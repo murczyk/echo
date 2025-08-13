@@ -14,6 +14,7 @@ use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
 use sea_query::{Expr, SimpleExpr};
 
+pub mod network_callsign;
 pub mod types;
 
 #[post("/api/sigint/callsigns")]
