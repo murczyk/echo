@@ -42,13 +42,16 @@ pub async fn add_group_to_organism(
         crate::organism::load_organism_group_ids(&env.dbx, organism.id)
             .await
             .context(h!())?;
-    if !organism_groups.available_keys.contains(&group.master_key) {
+    if organism.parent_id.is_some()
+        && !organism_groups.available_keys.contains(&group.master_key)
+    {
         return Err(AppError::from(
             anyhow!(
                 "Not adding group {} to organism {} because it is not available due to its parent chain rights",
                 req.group_name, req.organism_id
             )
-                .context(h!())));
+                .context(h!()))
+        );
     }
 
     organism_group::ActiveModel {
@@ -58,43 +61,6 @@ pub async fn add_group_to_organism(
     .insert(&env.dbx)
     .await
     .context(h!())?;
-
-    // let parent_filter = if let Some(parent_id) = organism.parent_id {
-    //     load_organism_group_ids(&env.dbx, parent_id)
-    //         .await
-    //         .context(h!())
-    //         .ok()
-    // } else {
-    //     None
-    // };
-    // debug!("Parent filter: {:?}", parent_filter);
-
-    // debug!(
-    //     "Group req: {}; found name={:?}, group_master_key={}",
-    //     req.group_name, group.name, group.master_key
-    // );
-
-    // let skip_adding = if let Some(parent_filter) = parent_filter {
-    //     debug!(
-    //         "parent_filter.selected_keys: {:?}",
-    //         parent_filter.selected_keys
-    //     );
-    //     !parent_filter.selected_keys.contains(&group.master_key)
-    // } else {
-    //     false
-    // };
-
-    // if !skip_adding {
-    //     organism_group::ActiveModel {
-    //         organism_id: Set(organism.id),
-    //         signal_group_master_key: Set(group.master_key.clone()),
-    //     }
-    //     .insert(&env.dbx)
-    //     .await
-    //     .context(h!())?;
-    // } else {
-    //     return Err(AppError::from(anyhow!("Not adding group {} to organism {} because it is not available in parent organism", req.group_name, req.organism_id).context(h!())));
-    // }
 
     Ok(Json(()))
 }
