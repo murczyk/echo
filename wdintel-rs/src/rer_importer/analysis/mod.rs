@@ -183,6 +183,10 @@ where
     Ok(q)
 }
 
+/// Фільтрує запит по підрозділам, які вказані в шапці повідомлення або прив'язані через Еталонні мережі
+/// 
+/// Якщо вказано прапорець `units_exact_match_only`, то фільтрує ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
+/// інакше або по підрозділам, які було вказано в шапці повідомлення або по еталонній прив'язці
 pub fn filter_selected_units<Q>(
     q: Q,
     selected_units: &Option<Vec<String>>,
@@ -218,16 +222,21 @@ where
             m_empty_filter = Some(contains_empty);
         }
         if !selected_units.is_empty() {
-            let mut expr =
-                sigint_inbox_item::Column::UnitV2.is_in(selected_units.clone());
-            if units_exact_match_only.is_none_or(|b| !b) {
-                expr = expr.or(sigint_inbox_item::Column::Freq.in_subquery(
-                    // якщо не виставлено прапорець `units_exact_match_only`, додаємо в фільтр також всі підрозділи на тих самих частотах що і `selected units`
-                    select_sigint_units_by_names(
-                        sigint_unit::Column::Name.is_in(selected_units),
-                    ),
+            let in_subquery_condition = sigint_inbox_item::Column::Freq
+                .in_subquery(select_sigint_units_by_names(
+                    sigint_unit::Column::Name.is_in(selected_units.clone()),
                 ));
-            }
+
+            // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
+            let expr = if units_exact_match_only.unwrap_or(false) {
+                in_subquery_condition
+            } else {
+                // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
+                sigint_inbox_item::Column::UnitV2
+                    .is_in(selected_units)
+                    .or(in_subquery_condition)
+            };
+
             m_filter = Some(expr);
         }
     }

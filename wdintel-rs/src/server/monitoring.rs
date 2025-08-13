@@ -26,6 +26,7 @@ pub struct ServerInfo {
     pub grafana_address: String,
     pub feature_delta: bool,
     pub feature_analysis_map: bool,
+    pub feature_strict_networks: bool,
     pub version: String,
 }
 
@@ -39,6 +40,7 @@ async fn server_info(
         grafana_address: format!("https://{}/grafana", env.config.public_host),
         feature_delta: env.config.feature_delta.unwrap_or(false),
         feature_analysis_map: env.config.feature_analysis_map.unwrap_or(true),
+        feature_strict_networks: env.config.feature_strict_networks.unwrap_or(false),
         version: env.version.clone(),
     }))
 }

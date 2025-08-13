@@ -188,6 +188,8 @@ pub struct InboxMessagesReq {
     pub report_tags_only_this_unit: Option<bool>,
     pub ignore_imported_coords: Option<bool>,
     pub include_peleng_locations: Option<bool>,
+    /// Якщо вказано прапорець `units_exact_match_only`, то фільтрує ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці.
+    /// інакше або по підрозділам, які було вказано в шапці повідомлення або по еталонній прив'язці
     pub units_exact_match_only: Option<bool>,
     pub calculate_freq_pelengs_summary: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,

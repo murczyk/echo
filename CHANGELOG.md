@@ -1,4 +1,5 @@
 ## NEXT
+- [#1244](https://github.com/echoua/echo/issues/1244) Фіча-прапор: строгі привʼязки (feature_strict_networks).
 - [#1232](https://github.com/echoua/echo/issues/1232) окремо підтримувати статус перманентного видалення для організмів та логінів (а-ля архівація).
 - [#1222](https://github.com/echoua/echo/issues/1222) Мережа: Прибрати фільтрацію по датам зі сторінки мереж
 - [#1219](https://github.com/echoua/echo/issues/1219) Підтримка нового формату позивних (`Отримувач`, `Відправник:`) в перехопленнях
