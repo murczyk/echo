@@ -129,13 +129,14 @@ pub async fn oneoff_restore_vault_secrets_from_bitwarden(
     echo_install_utils::secret::restore_vault_secrets_from_bitwarden(
         "echo",
         &list_server(),
+        true,
     )
     .await
     .context(h!())?;
     Ok(())
 }
 
-fn list_server<'a>() -> [&'a str; 8] {
+fn list_server<'a>() -> [&'a str; 14] {
     [
         "echo-luhansk/config",
         "echo-donetsk2/config",
@@ -145,5 +146,11 @@ fn list_server<'a>() -> [&'a str; 8] {
         "echo-kharkiv2/config",
         "echo-siversk/config",
         "echo-lyman/config",
+        "echo-kyiv/config",
+        "echo-pivden/config",
+        "echo-pivnich/config",
+        "echo-skhid/config",
+        "echo-kupiansk/config",
+        "echo-zakhid/config",
     ]
 }
