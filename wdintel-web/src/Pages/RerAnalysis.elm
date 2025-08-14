@@ -185,6 +185,7 @@ init route _ =
             , filterSelectedAdjacentFreqs = []
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
+            , unitsExactMatchOnly = False
             }
 
         m2 =
@@ -256,7 +257,7 @@ getInboxReq model =
     , calculateFreqPelengsSummary = Nothing
     , filterTagsOption = Just model.filterTagsOption
     , pageId = Just "rer-analysis"
-    , unitsExactMatchOnly = Nothing
+    , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     }
 
 
@@ -282,7 +283,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , search = Just model.searchInput
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
-            , unitsExactMatchOnly = Nothing
+            , unitsExactMatchOnly = Just model.unitsExactMatchOnly
             }
 
     else
@@ -604,12 +605,21 @@ update user shared route msg model =
                         , now = now_
                         }
 
+                initialStrictUnits =
+                    case shared.serverInfo of
+                        Just info ->
+                            info.featureStrictNetworks
+
+                        Nothing ->
+                            False
+
                 m2 =
                     { model
                         | from = from
                         , to = to
                         , dateRangePicker = Le.Block.DateRangePicker.initFromData from to
                         , now = Just now_
+                        , unitsExactMatchOnly = if model.unitsExactMatchOnly then True else initialStrictUnits
                     }
 
                 ( m3, cmd3 ) =
@@ -1194,7 +1204,7 @@ update user shared route msg model =
                 , calculateFreqPelengsSummary = Nothing
                 , filterTagsOption = Just model.filterTagsOption
                 , pageId = Just "rer-analysis"
-                , unitsExactMatchOnly = Nothing
+                , unitsExactMatchOnly = Just model.unitsExactMatchOnly
                 }
             )
 
@@ -1396,6 +1406,13 @@ update user shared route msg model =
             ( { model | unfoldUnitsFilter = not model.unfoldUnitsFilter }
             , E.none
             )
+
+        UnitsExactMatchOnlyChanged val ->
+            let
+                m2 =
+                    { model | unitsExactMatchOnly = val }
+            in
+            loadCoreStatsAndPushUrl m2
 
         ToggleUnfoldLocationsFilter ->
             ( { model | unfoldLocationsFilter = not model.unfoldLocationsFilter }

@@ -137,6 +137,7 @@ type alias Model =
     , filterSelectedAdjacentFreqs : List String
     , groupsActivityPeriod : GroupsActivityPeriod
     , filterTagsOption : B.TagFilterOption
+    , unitsExactMatchOnly : Bool
     }
 
 

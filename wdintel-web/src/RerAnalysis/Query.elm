@@ -89,7 +89,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
     , search = Just model.searchInput
     , selectedTags = emptyToNothing model.tagsSelected
     , filterTagsOption = Nothing
-    , unitsExactMatchOnly = Nothing
+    , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     }
 
 
