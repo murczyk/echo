@@ -771,13 +771,22 @@ rightColumn ( messageId, message ) ps model =
                             |> def []
 
                     networkBlock =
+                        let
+                            isStrict =
+                                ps.serverInfo
+                                    |> Maybe.map .featureStrictNetworks
+                                    |> Maybe.withDefault False
+                        in
                         case message.freq of
                             Nothing ->
                                 text " "
 
                             Just _ ->
                                 if List.isEmpty ps.messageNetworkIds then
-                                    text <| " " ++ (message.unit |> def "Не встановлений")
+                                    if isStrict then
+                                        text "Не встановлена"
+                                    else
+                                        text <| " " ++ (message.unit |> def "Не встановлена")
                                 else
                                     div [] <|
                                         List.map (\networkId ->
