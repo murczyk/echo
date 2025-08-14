@@ -679,10 +679,16 @@ fn extract_sender_receiver_pair(
     let mut msg_pos = 0;
 
     lazy_static! {
-        static ref RE_CALLSIGN: Regex =
-            Regex::new(r"^Отримувач(і|\(і\))?: (?P<callsign>.*).*$").unwrap();
-        static ref RE_CALLSIGN_2: Regex =
-            Regex::new(r"^Відправник(и|\(и\))?: (?P<callsign>.*).*$").unwrap();
+        static ref RE_CALLSIGN: Regex = Regex::new(
+            r"^(?:\s*)Отримувач(і|\(і\))?: (?P<callsign>[^,]*).*$(?:,\s*)?"
+        )
+        .unwrap();
+        static ref RE_CALLSIGN_2: Regex = Regex::new(
+            r"^(?:\s*)Відправник(и|\(и\))?: (?P<callsign>[^,]*).*$(?:,\s*)?"
+        )
+        .unwrap();
+        static ref RE_CALLSIGN_3: Regex =
+            Regex::new(r"^(?:\s*)(?P<callsign>[^,]*).*$(?:,\s*)?").unwrap();
     }
     let mut res: Vec<CNCallsign> = vec![];
     // println!("> msg_pos: {msg_pos}");
@@ -719,14 +725,26 @@ fn extract_sender_receiver_pair(
         })
     }
 
-    for line in lines.iter() {
-        let line = line.trim();
+    let mut has_callsign = false;
+    let mut iter = lines.iter();
+    loop {
+        let Some(line) = iter.next() else {
+            break;
+        };
         let callsign_1 = try_get_callsign(line, &RE_CALLSIGN, msg_pos);
         let callsign_2 = try_get_callsign(line, &RE_CALLSIGN_2, msg_pos);
-        if let Some(callsign) = callsign_1.or(callsign_2) {
-            res.push(callsign);
-        }
+        let callsign_3 = if has_callsign {
+            try_get_callsign(line, &RE_CALLSIGN_3, msg_pos)
+        } else {
+            None
+        };
+        let callsign = callsign_1.or(callsign_2).or(callsign_3);
         msg_pos += cline_len(line) + 1;
+        has_callsign = callsign.is_some() && line.trim().ends_with(",");
+        let Some(callsign) = callsign else {
+            continue;
+        };
+        res.push(callsign);
     }
 
     Ok(res)
@@ -2186,7 +2204,7 @@ mod tests {
 
 06.08.2025 15:45.23
 
-Отримувач: БАРС
+Отримувач: БАРС,
 Відправник: БОРЕЦ
 
 1.Барс Борцу.
@@ -2203,9 +2221,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_callsigns_format_hoor3() {
-        let body = r#"УКХ р/м зі складу 222 мсп (МВО)
+        let body = r#" УКХ р/м зі складу 352 мсп (МВО)
  ОРЛЯНСЬКЕ
- 01.01.2025 3:3:03
+ 150.500
+ 11.08.2025 9:56:52
  Відправник: Хитмен
  Отримувач(і): Сибирь
  Перехоплення:
@@ -2213,9 +2232,32 @@ mod tests {
  2. Сибирь, сейчас наша коробочка работает по соседней посадке, ей бы правее, ещё метра на 700, там напротив работал миномёт на  Скорого.
  3. Не в нашу сторону, а вообще в сторону Сокола, туда работал миномёт.
  4. Хитмен Хитмен азимут можешь сказать?   "#;
-        let res = extract_sender_receiver_pair(body).unwrap();
+        let res = extract_callsigns(body).unwrap();
         let expected: Vec<String> =
             vec!["Хитмен".to_string(), "Сибирь".to_string()];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_format_hoor4() {
+        let body = r#"УКХ р/м зі складу 222 мсп (МВО)
+ ОРЛЯНСЬКЕ
+ 01.01.2025 3:3:03
+ Відправник: Бульдог
+ Отримувач(і): Псих,                                             
+  Люстра
+ Перехоплення:
+ 1. Бульдог Люстра.
+ 2. Псих, сейчас наша коробочка работает по соседней посадке, ей бы правее, ещё метра на 700, там напротив работал миномёт на  Скорого.
+ 3. Не в нашу сторону, а вообще в сторону Сокола, туда работал миномёт.
+ 4. Люстра Люстра азимут можешь сказать?   "#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> = vec![
+            "Бульдог".to_string(),
+            "Псих".to_string(),
+            "Люстра".to_string(),
+        ];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
