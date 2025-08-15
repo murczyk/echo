@@ -1,15 +1,18 @@
 use crate::entities::*;
+use crate::event_stream::fanout;
+use crate::event_stream::types::*;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
+use chrono::*;
+use sea_orm::QuerySelect;
 use sea_orm::*;
-use sea_orm::{DbBackend, QuerySelect};
 use sea_query::JoinType;
 
 use crate::sigint::callsign::types::*;
 
 #[post("/api/sigint/network-callsigns")]
-pub async fn network_callsigns(
+pub async fn list_network_callsigns(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkCallsignsReq>,
@@ -93,6 +96,50 @@ pub async fn network_callsigns(
     }))
 }
 
+pub async fn bl_network_callsigns_batch(
+    callsign_ids: Vec<i64>,
+    txn: &DatabaseTransaction,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    let query = sigint_network_callsign::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            sigint_network_callsign::Relation::SigintCallsign.def(),
+        )
+        .join_rev(
+            JoinType::LeftJoin,
+            sigint_unit::Relation::SigintCallsign.def(),
+        )
+        .select_also(sigint_callsign::Entity)
+        .select_also(sigint_unit::Entity)
+        .filter(sigint_network_callsign::Column::Id.is_in(callsign_ids))
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(
+            Condition::any()
+                .add(sigint_callsign::Column::Deleted.eq(false))
+                .add(sigint_callsign::Column::Deleted.is_null()),
+        );
+
+    // println!(
+    //     "> bl_network_callsign_batch sql: {}",
+    //     query.clone().build(DbBackend::Postgres).to_string()
+    // );
+
+    let network_callsigns: Vec<(
+        sigint_network_callsign::Model,
+        Option<sigint_callsign::Model>,
+        Option<sigint_unit::Model>,
+    )> = query.all(txn).await.context(h!())?;
+
+    let mut res = vec![];
+    for (network_callsign, known_callsign, unit) in network_callsigns {
+        let nc =
+            render_network_callsign(&network_callsign, known_callsign, unit)?;
+
+        res.push(nc);
+    }
+    Ok(res)
+}
+
 pub fn render_network_callsign(
     network_callsign: &sigint_network_callsign::Model,
     known_callsign: Option<sigint_callsign::Model>,
@@ -115,4 +162,68 @@ pub fn render_network_callsign(
         source_id: network_callsign.source_id,
         created_at: network_callsign.created_at.and_utc().timestamp_millis(),
     })
+}
+
+#[post("/api/sigint/network-callsign/create")]
+pub async fn create_network_callsign(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreateNetworkCallsignReq>,
+) -> Result<Json<NetworkCallsign>, AppError> {
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    trace!(
+        "Adding callsign {} to network {}; user={}",
+        req.callsign, req.network_id, user_id
+    );
+
+    let txn = env.dbx.begin().await.context(h!())?;
+    let network = crate::sigint::network::find_network(&txn, req.network_id)
+        .await
+        .context(h!())?;
+
+    let network_callsign = sigint_network_callsign::ActiveModel {
+        id: NotSet,
+        sigint_network_id: Set(req.network_id),
+        deleted: NotSet,
+        created_at: NotSet,
+        sigint_callsign: Set(req.callsign.clone()),
+        sigint_callsign_id: NotSet,
+        position: Set(req.position.clone()),
+        comment: Set(req.comment.clone()),
+        source_id: Set(req.source_id),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(&txn)
+    .await
+    .context(h!())?;
+
+    // Update the network's updated_at timestamp
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_id.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    let res =
+        bl_network_callsigns_batch(vec![network_callsign.id], &txn)
+            .await
+            .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    if res.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    Ok(Json(res[0].clone()))
 }

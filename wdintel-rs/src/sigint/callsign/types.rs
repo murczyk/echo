@@ -146,3 +146,13 @@ pub struct ListNetworkCallsignsRes {
     pub network_callsigns: Vec<NetworkCallsign>,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateNetworkCallsignReq {
+    pub network_id: i64,
+    pub callsign: String,
+    pub position: Option<String>,
+    pub comment: Option<String>,
+    pub source_id: Option<i64>,
+}
