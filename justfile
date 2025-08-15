@@ -196,6 +196,8 @@ copy-db:
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-volyn2" ]]; then \
         just server={{ server }} _copy-db; \
+    elif [[ "{{ server }}" == "echo-pivnich" ]]; then \
+        just server={{ server }} _copy-db; \
     else \
         just _print-servers; exit 1; \
     fi
