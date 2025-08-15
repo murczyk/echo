@@ -432,6 +432,7 @@ type Msg
     | FreqCreateDescriptionInputChangedByUser String
     | ToggleFreqCreateShowActiveTo
     | AddFreqToNetwork
+    | FreqAddedToNetwork (Result ApiError B.Network)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1531,7 +1532,70 @@ update shared msg model =
             )
 
         AddFreqToNetwork ->
-            ( model, E.none ) -- TODO: Implement in next milestone
+            case model.network of
+                Success network ->
+                    let
+                        -- Create description object if input is not empty
+                        description =
+                            if String.trim model.freqCreateDescriptionInp == "" then
+                                Nothing
+                            else
+                                Just
+                                    { descrType = B.Confirmation
+                                    , description = model.freqCreateDescriptionInp
+                                    , freq = model.freqCreateState.freq
+                                    }
+
+                        -- Create the API request payload
+                        addFreqReq =
+                            { networkId = network.id
+                            , freqRec = 
+                                { freq = model.freqCreateState.freq
+                                , kind = model.freqCreateState.kind
+                                , modulationId = model.freqCreateState.modulationId
+                                , description = description
+                                , activeFrom = model.freqCreateState.activeFrom
+                                , activeTo = model.freqCreateState.activeTo
+                                }
+                            }
+                    in
+                    ( { model | freqEditSaving = True } -- Reuse existing loading state
+                    , E.addFreqToNetwork FreqAddedToNetwork addFreqReq
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqAddedToNetwork (Err e) ->
+            ( { model | freqEditSaving = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання частоти до мережі" e
+            )
+
+        FreqAddedToNetwork (Ok network) ->
+            ( { model
+                | network = Success network
+                , freqEditSaving = False
+                , freqCreateSidebar = False
+                , freqCreateDescriptionInp = ""
+                , freqCreateFormatError = Nothing
+                , freqCreateShowActiveTo = False
+                , freqCreateState = 
+                    { freq = ""
+                    , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
+                    , modulationId = Nothing
+                    , description = Nothing
+                    , activeFrom = Nothing
+                    , activeTo = Nothing
+                    }
+              }
+            , E.batch
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
+
+                ]
+            )
+
+
 
 
 
@@ -3540,10 +3604,15 @@ freqCreateSidebarContent shared model user =
                 [ Button.new { label = "Скасувати", onClick = CloseFreqCreateSidebar }
                     |> Button.withStyleSecondary
                     |> Button.view
-                , Button.new { label = "Додати", onClick = AddFreqToNetwork }
-                    |> Button.withDisabled
-                        (String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing)
-                    |> Button.view
+                , if model.freqEditSaving then
+                    Button.new { label = "Додавання...", onClick = AddFreqToNetwork }
+                        |> Button.withDisabled True
+                        |> Button.view
+                  else
+                    Button.new { label = "Додати", onClick = AddFreqToNetwork }
+                        |> Button.withDisabled
+                            (String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing)
+                        |> Button.view
                 ]
             ]
         ]
