@@ -461,7 +461,8 @@ pub async fn new_redisb(config: &Config) -> anyhow::Result<redis::Client> {
     Ok(redis_cli)
 }
 
-fn main() -> Result<(), AppError> {
+#[tokio::main]
+async fn main() -> Result<(), AppError> {
     // Install the default rustls crypto provider (ring) for the process
     ring::default_provider()
         .install_default()
@@ -469,12 +470,15 @@ fn main() -> Result<(), AppError> {
     let args = Arg::parse();
     let mode = args.mode;
 
-    env_logger::init_from_env(
+    env_logger::try_init_from_env(
         env_logger::Env::new().default_filter_or("info,wdintel_rs=debug"),
-    );
+    )
+    .ok(); // Ignore the error if logger is already initialized
 
     match args.action {
-        Cmd::Server(ps) => Ok(crate::server::main_server(mode, ps).unwrap()),
+        Cmd::Server(ps) => {
+            Ok(crate::server::main_server(mode, ps).await.unwrap())
+        }
         Cmd::OneoffEnsureTagsOrdering => {
             crate::tags::ordering::oneoff_ensure_tags_ordering(mode)
         }

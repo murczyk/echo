@@ -1,6 +1,6 @@
 use crate::config::read_config;
 use crate::types::*;
-use sea_orm_migration::cli;
+use sea_orm_migration::MigratorTrait;
 // use std::env;
 
 #[tokio::main]
@@ -19,9 +19,7 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
     echo_im::run_migration(&dbx).await.context(h!())?;
-    cli::run_migrate(echo_migration::Migrator, &dbx, None, false)
-        .await
-        .unwrap();
+    echo_migration::Migrator::up(&dbx, None).await.unwrap();
     println!("Running migration: done");
     Ok(())
 }

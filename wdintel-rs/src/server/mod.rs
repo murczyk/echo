@@ -14,7 +14,6 @@ mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
 
-#[actix_web::main]
 pub async fn main_server(
     mode: Mode,
     ps: crate::ServerPs,
