@@ -2,6 +2,7 @@ use crate::entities::*;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
+use crate::sigint::network::find_network;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::*;
@@ -96,10 +97,13 @@ pub async fn list_network_callsigns(
     }))
 }
 
-pub async fn bl_network_callsigns_batch(
+pub async fn bl_network_callsigns_batch<'a, 'async_trait, C>(
     callsign_ids: Vec<i64>,
-    txn: &DatabaseTransaction,
-) -> Result<Vec<NetworkCallsign>, AppError> {
+    txn: &'a C,
+) -> Result<Vec<NetworkCallsign>, AppError> 
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let query = sigint_network_callsign::Entity::find()
         .join(
             JoinType::LeftJoin,
@@ -123,7 +127,7 @@ pub async fn bl_network_callsigns_batch(
     //     "> bl_network_callsign_batch sql: {}",
     //     query.clone().build(DbBackend::Postgres).to_string()
     // );
-
+       
     let network_callsigns: Vec<(
         sigint_network_callsign::Model,
         Option<sigint_callsign::Model>,
@@ -184,7 +188,7 @@ pub async fn create_network_callsign(
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
-    let network = crate::sigint::network::find_network(&txn, req.network_id)
+    let network = find_network(&txn, req.network_id)
         .await
         .context(h!())?;
 
@@ -211,19 +215,76 @@ pub async fn create_network_callsign(
     network_model.updated_by = Set(Some(user_id.clone()));
     network_model.update(&txn).await.context(h!())?;
 
-    let res =
-        bl_network_callsigns_batch(vec![network_callsign.id], &txn)
-            .await
-            .context(h!())?;
-
     txn.commit().await.context(h!())?;
 
-    let event = EventMsg::new(EventType::ETNetworkChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    let res =
+        bl_network_callsigns_batch(vec![network_callsign.id], &env.dbx)
+            .await
+            .context(h!())?;
 
     if res.is_empty() {
         return Err(AppError::NotFound);
     }
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    Ok(Json(res[0].clone()))
+}
+
+#[post("/api/sigint/network-callsign/update")]
+pub async fn update_network_callsign(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<UpdateNetworkCallsignReq>,
+) -> Result<Json<NetworkCallsign>, AppError> {
+    let user_id = user.id()?;
+        crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    let txn = env.dbx.begin().await.context(h!())?;
+
+    let req = req.into_inner();
+
+    let network = find_network(&txn, req.network_id).await.context(h!())?;    
+    let network_callsign = sigint_network_callsign::Entity::find_by_id(req.id)
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut network_callsign_model = network_callsign.into_active_model();
+    network_callsign_model.sigint_network_id = Set(req.network_id.clone());
+    network_callsign_model.sigint_callsign = Set(req.callsign.clone());
+    network_callsign_model.position = Set(req.position.clone());
+    network_callsign_model.comment = Set(req.comment.clone());
+    network_callsign_model.source_id = Set(req.source_id.clone());
+
+    let network_callsign = network_callsign_model.update(&txn).await.context(h!())?;
+
+    // Update the network's updated_at timestamp as well as new active_from and active_to
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_id.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    let res =
+        bl_network_callsigns_batch(vec![network_callsign.id], &env.dbx)
+            .await
+            .context(h!())?;
+
+    if res.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     Ok(Json(res[0].clone()))
 }

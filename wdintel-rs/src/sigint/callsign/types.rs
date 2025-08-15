@@ -156,3 +156,15 @@ pub struct CreateNetworkCallsignReq {
     pub comment: Option<String>,
     pub source_id: Option<i64>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateNetworkCallsignReq {
+    pub id: i64,
+    pub network_id: i64,
+    pub callsign: String,
+    pub position: Option<String>,
+    pub comment: Option<String>,
+    pub source_id: Option<i64>,
+}
