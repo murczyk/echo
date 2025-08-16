@@ -12,7 +12,7 @@ use sea_query::JoinType;
 
 use crate::sigint::callsign::types::*;
 
-#[post("/api/sigint/network-callsigns")]
+#[post("/api/sigint/network-callsigns/list")]
 pub async fn list_network_callsigns(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
