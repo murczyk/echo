@@ -778,6 +778,7 @@ type alias ServerInfo =
     , grafanaAddress : String
     , featureDelta : Bool
     , featureAnalysisMap : Bool
+    , featureStrictNetworks : Bool
     , version : String
     }
 
@@ -790,6 +791,7 @@ serverInfoEncoder struct =
         , ( "grafana_address", Json.Encode.string struct.grafanaAddress )
         , ( "feature_delta", Json.Encode.bool struct.featureDelta )
         , ( "feature_analysis_map", Json.Encode.bool struct.featureAnalysisMap )
+        , ( "feature_strict_networks", Json.Encode.bool struct.featureStrictNetworks )
         , ( "version", Json.Encode.string struct.version )
         ]
 
@@ -2989,7 +2991,7 @@ type alias ZoneDatasourceGroup =
     , allowedUsers : List String
     , shortNote : Maybe String
     , longNote : Maybe String
-    , areaOfResponsibility : Maybe AreaOfResponsibility
+    , areasOfResponsibility : Maybe (List AreaOfResponsibility)
     }
 
 
@@ -3002,7 +3004,7 @@ zoneDatasourceGroupEncoder struct =
         , ( "allowed_users", Json.Encode.list Json.Encode.string struct.allowedUsers )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
-        , ( "area_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map areaOfResponsibilityEncoder) struct.areaOfResponsibility )
+        , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
 
 
@@ -3063,6 +3065,7 @@ type alias ZoneDatasourceGroupUpdateReq =
     , shortNote : Maybe String
     , longNote : Maybe String
     , areaOfResponsibilityId : Maybe Int
+    , areaOfResponsibilityIds : Maybe (List Int)
     }
 
 
@@ -3075,6 +3078,7 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.areaOfResponsibilityId )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
         ]
 
 
@@ -5522,7 +5526,7 @@ type alias GroupEntryF1 =
     , shortNote : Maybe String
     , longNote : Maybe String
     , groupStats : SignalGroupStats
-    , areaOfResponsibility : Maybe AreaOfResponsibility
+    , areasOfResponsibility : Maybe (List AreaOfResponsibility)
     }
 
 
@@ -5535,7 +5539,7 @@ groupEntryF1Encoder struct =
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
-        , ( "area_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map areaOfResponsibilityEncoder) struct.areaOfResponsibility )
+        , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
 
 
@@ -6048,6 +6052,7 @@ serverInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grafana_address" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_delta" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_analysis_map" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "feature_strict_networks" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" Json.Decode.string))
 
 
@@ -7263,7 +7268,7 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility" (Json.Decode.nullable areaOfResponsibilityDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list areaOfResponsibilityDecoder))))
 
 
 zoneDatasourceGroupsReqDecoder : Json.Decode.Decoder ZoneDatasourceGroupsReq
@@ -7300,6 +7305,7 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
 
 
 tagDecoder : Json.Decode.Decoder Tag
@@ -8860,4 +8866,4 @@ groupEntryF1Decoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility" (Json.Decode.nullable areaOfResponsibilityDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list areaOfResponsibilityDecoder))))
