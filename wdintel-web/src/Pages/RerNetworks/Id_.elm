@@ -2774,12 +2774,28 @@ contentBlock user shared network model =
                                             , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
                                             ]
                                         , div [ class "flex gap-[8px]" ]
-                                            [ i [ class "bi bi-pencil cursor-pointer" ] []
+                                            [ case Dict.get description.id model.descriptionsEditDict of
+                                                Just desc ->
+                                                    i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+
+                                                Nothing ->
+                                                    i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
                                             , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
                                             ]
                                         ]
-                                    , div [ style "white-space" "pre-line" ]
-                                        [ text description.description
+                                    , div []
+                                        [ case Dict.get description.id model.descriptionsEditDict of
+                                            Just desc ->
+                                                textarea
+                                                    [ class "textarea__field"
+                                                    , placeholder "Введіть розвідувальні ознаки"
+                                                    , value desc.description
+                                                    , onInput <| DescriptionEditedByUser desc.id
+                                                    ]
+                                                    []
+
+                                            Nothing ->
+                                                div [ style "white-space" "pre-line" ] [ text description.description ]
                                         ]
                                     ]
                             )
