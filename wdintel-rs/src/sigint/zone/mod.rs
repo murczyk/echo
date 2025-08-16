@@ -178,70 +178,18 @@ pub async fn zones_datasources_group_update(
         .context(h!())?
         .context(h!())?;
 
-    zones_datasources_group_update_bl(
-        req.user_logins,
-        req.is_secret,
-        req.short_note,
-        req.long_note,
-        szd.clone(),
-        &txn,
-    )
-    .await
-    .context(h!())?;
-    // Fetch updated allowed users
-    let allowed_users = secret_group_user::Entity::find()
-        .filter(secret_group_user::Column::MasterKey.eq(&szd.group_master_key))
-        .all(&txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|u| u.login)
-        .collect::<Vec<_>>();
-
-    // Fetch updated is_secret and other group attributes
-
-    let is_secret = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
-        .select_only()
-        .column(signal_group::Column::IsSecret)
-        .into_tuple::<bool>()
-        .one(&txn)
-        .await
-        .context(h!())?
-        .unwrap_or(false);
-    let (short_note, long_note) = group_admin_data::Entity::find()
-        .filter(
-            group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
-        )
-        .select_only()
-        .columns([
-            group_admin_data::Column::ShortNote,
-            group_admin_data::Column::LongNote,
-        ])
-        .into_tuple::<(Option<String>, Option<String>)>()
-        .one(&txn)
-        .await
-        .context(h!())?
-        .unwrap_or((None, None));
-
-    let aor = crate::messenger::bl::upsert_group_area_of_responsibility(
-        &txn,
-        &szd.group_master_key,
-        req.area_of_responsibility_id.clone(),
-    )
-    .await
-    .context(h!())?;
+    let rsp = bl_szd_group_update(&req, &szd, &txn).await.context(h!())?;
 
     txn.commit().await?;
 
     Ok(Json(ZoneDatasourceGroup {
         sigint_zone_datasource_id: szd.id,
         group_master_key: szd.group_master_key,
-        is_group_secret: is_secret,
-        area_of_responsibility: aor.map(render_aor),
-        allowed_users,
-        short_note,
-        long_note,
+        is_group_secret: rsp.is_secret,
+        area_of_responsibility: rsp.aor.map(|aor| render_aor(aor)),
+        allowed_users: rsp.allowed_users,
+        short_note: rsp.short_note,
+        long_note: rsp.long_note,
     }))
 }
 
@@ -253,7 +201,7 @@ pub async fn zones_datasources_group_add(
 ) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    let txn = env.dbx.begin().await?;
+    let txn = env.dbx.begin().await.context(h!())?;
     let req = req.into_inner();
     let szd = sigint_zone_datasource::ActiveModel {
         sigint_zone_id: Set(req.zone_id),
@@ -265,7 +213,7 @@ pub async fn zones_datasources_group_add(
     .await
     .context(h!())?;
 
-    zones_datasources_group_update_bl(
+    bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
         req.is_secret,
         req.short_note,
