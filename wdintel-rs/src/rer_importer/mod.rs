@@ -822,10 +822,13 @@ pub async fn collect_group_stats(
     Ok(result)
 }
 
-pub async fn collect_group_aors(
+pub async fn collect_group_aors<'a, 'async_trait, C>(
     keys: Vec<String>,
-    txn: &DatabaseConnection,
-) -> Result<BTreeMap<String, AreaOfResponsibility>, AppError> {
+    txn: &'a C,
+) -> Result<BTreeMap<String, AreaOfResponsibility>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let mut result = BTreeMap::new();
     let aors = area_of_responsibility::Entity::find()
         .find_with_related(signal_group_aor::Entity)

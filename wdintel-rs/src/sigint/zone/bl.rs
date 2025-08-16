@@ -1,4 +1,5 @@
 use crate::entities::*;
+use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
 use sea_orm::*;
 
@@ -150,4 +151,104 @@ pub async fn bl_zones_datasources_group_update_or_add(
     }
 
     Ok(())
+}
+
+pub struct BlSzdGroupsListRes {
+    pub groups: Vec<crate::sigint::zone::ZoneDatasourceGroup>,
+}
+
+pub async fn bl_szd_groups_list(
+    zone_id: i64,
+    datasource_id: i64,
+    txn: &DatabaseTransaction,
+) -> Result<BlSzdGroupsListRes, AppError> {
+    #[derive(FromQueryResult, Debug)]
+    struct Res {
+        login: Option<String>,
+        id: i64,
+        group_master_key: String,
+        is_secret: bool,
+        short_note: Option<String>,
+        long_note: Option<String>,
+    }
+
+    let rows = sigint_zone_datasource::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            sigint_zone_datasource::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::GroupAdminData.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::SecretGroupUser.def(),
+        )
+        .column_as(
+            sigint_zone_datasource::Column::GroupMasterKey,
+            "group_master_key",
+        )
+        .column_as(sigint_zone_datasource::Column::Id, "id")
+        .column_as(signal_group::Column::IsSecret, "is_secret")
+        .column_as(secret_group_user::Column::Login, "login")
+        .column(group_admin_data::Column::ShortNote)
+        .column(group_admin_data::Column::LongNote)
+        .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id))
+        .filter(sigint_zone_datasource::Column::DatasourceId.eq(datasource_id))
+        .into_model::<Res>()
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    let mut res = HashMap::<
+        String,
+        (bool, i64, Vec<String>, Option<String>, Option<String>),
+    >::new();
+    for row in rows {
+        if let Some((_, _, login_vec, _, _)) =
+            res.get_mut(&row.group_master_key)
+        {
+            if let Some(user_login) = row.login {
+                login_vec.push(user_login);
+            }
+        } else {
+            let logins = if let Some(user_login) = row.login {
+                vec![user_login]
+            } else {
+                vec![]
+            };
+            res.insert(
+                row.group_master_key,
+                (row.is_secret, row.id, logins, row.short_note, row.long_note),
+            );
+        }
+    }
+
+    let keys = res.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+    let group_aors = crate::sigint::zone::collect_group_aors(keys.clone(), txn)
+        .await
+        .context(h!())?;
+
+    let groups = res
+        .into_iter()
+        .map(
+            |(
+                master_key,
+                (is_secret, szd_id, allowed_users, short_note, long_note),
+            )| {
+                let aor = group_aors.get(&master_key).cloned();
+                ZoneDatasourceGroup {
+                    area_of_responsibility: aor,
+                    sigint_zone_datasource_id: szd_id,
+                    group_master_key: master_key,
+                    is_group_secret: is_secret,
+                    allowed_users,
+                    short_note,
+                    long_note,
+                }
+            },
+        )
+        .collect();
+    Ok(BlSzdGroupsListRes { groups })
 }
