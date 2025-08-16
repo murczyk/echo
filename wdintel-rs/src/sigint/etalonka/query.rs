@@ -384,6 +384,7 @@ pub async fn find_all_known_callsigns(
             Alias::new("source"),
         )
         .select_only()
+        .column(sigint_callsign::Column::Id)
         .column(sigint_callsign::Column::Callsign)
         .column(sigint_callsign::Column::Comment)
         .column(sigint_callsign::Column::Position)
@@ -457,6 +458,7 @@ pub async fn load_callsigns(
                 matched_known_callsigns
                     .into_iter()
                     .map(|kc| KnownCallsignShortRes {
+                        id: kc.id,
                         callsign: kc.callsign,
                         position: kc.position,
                         comment: kc.comment,

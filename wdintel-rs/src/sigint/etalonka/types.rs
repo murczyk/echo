@@ -109,6 +109,7 @@ pub struct CallsignRes {
     Eq,
 )]
 pub struct KnownCallsignShortRes {
+    pub id: i64,
     pub callsign: String,
     pub position: String,
     pub comment: String,
@@ -120,6 +121,7 @@ pub struct KnownCallsignShortRes {
 
 #[derive(Debug, Clone, FromQueryResult)]
 pub struct KnownCallsignRes {
+    pub id: i64,
     pub callsign: String,
     pub position: String,
     pub comment: String,
