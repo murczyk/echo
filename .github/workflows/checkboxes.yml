@@ -30,13 +30,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python dependencies
+      - name: Setup Pixi environment
         run: |
-          python3 -m pip install --user PyGithub
+          # Check if Pixi is available and working
+          if command -v pixi &> /dev/null && pixi --version &> /dev/null; then
+            echo "✓ Pixi is available: $(pixi --version)"
+
+            # Check if project dependencies are installed
+            if pixi list &> /dev/null; then
+              echo "✓ Project dependencies are already available"
+            else
+              echo "Installing project dependencies..."
+              pixi install
+            fi
+
+            # Set flag for next step
+            echo "USE_PIXI=true" >> $GITHUB_ENV
+          else
+            echo "⚠ Pixi not available, falling back to direct Python"
+            echo "Installing PyGithub with pip..."
+            python3 -m pip install --user PyGithub
+            echo "USE_PIXI=false" >> $GITHUB_ENV
+          fi
 
       - name: Check PR checkboxes
         run: |
-          python3 ./scripts/ci/check_pr_checkboxes.py \
-            --github-token ${{ secrets.GITHUB_TOKEN }} \
-            --github-repository ${{ github.repository }} \
-            --pr-number ${{ github.event.pull_request.number }}
+          if [[ "$USE_PIXI" == "true" ]]; then
+            echo "Running with Pixi environment..."
+            pixi run python ./scripts/ci/check_pr_checkboxes.py \
+              --github-token ${{ secrets.GITHUB_TOKEN }} \
+              --github-repository ${{ github.repository }} \
+              --pr-number ${{ github.event.pull_request.number }}
+          else
+            echo "Running with system Python..."
+            python3 ./scripts/ci/check_pr_checkboxes.py \
+              --github-token ${{ secrets.GITHUB_TOKEN }} \
+              --github-repository ${{ github.repository }} \
+              --pr-number ${{ github.event.pull_request.number }}
+          fi
