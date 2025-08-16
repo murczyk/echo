@@ -445,38 +445,16 @@ pub async fn load_callsigns(
         .map(|row| {
             let callsign = row.callsign.clone();
             let unit_id = row.unit_id.unwrap_or_default();
-            let regiment = row.regiment.clone();
-            let division = row.division.clone();
-            let army = row.army.clone();
 
-            // Collect all matching known_callsigns based on the same Regiment
+            // Callsign + UnitId matching
             let matched_known_callsigns = known_callsigns
                 .iter()
                 .filter(|kc| {
                     kc.callsign == callsign
-                        && kc.regiment.is_some()
-                        && kc.regiment == regiment
-                        && kc.division == division
-                        && kc.army == army
+                        && kc.unit_id == unit_id
                 })
                 .cloned()
-                .collect::<Vec<KnownCallsignRes>>();
-
-            // If no match found, fallback to Callsign + UnitId matching when Regiment is empty
-            let matched_known_callsigns = if matched_known_callsigns.is_empty()
-            {
-                known_callsigns
-                    .iter()
-                    .filter(|kc| {
-                        kc.callsign == callsign
-                            && kc.regiment.is_none()
-                            && kc.unit_id == unit_id
-                    })
-                    .cloned()
-                    .collect()
-            } else {
-                matched_known_callsigns
-            };
+                .collect();
 
             let short_known_callsigns: Vec<KnownCallsignShortRes> =
                 matched_known_callsigns
