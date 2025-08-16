@@ -389,4 +389,47 @@ pub mod tests {
         let out = build_aor(inp).insert(txn).await.context(h!())?;
         Ok(out)
     }
+
+    fn build_signal_group_aor(
+        inp: signal_group_aor::ActiveModel,
+    ) -> signal_group_aor::ActiveModel {
+        let mut out = inp.clone();
+        if out.master_key == NotSet {
+            out.master_key =
+                Set(random_word::get(random_word::Lang::En).to_string());
+        }
+        if out.aor_id == NotSet {
+            out.aor_id = Set(1); // This will be overridden by mk_ function
+        }
+        if out.created_at == NotSet {
+            out.created_at = Set(chrono::Utc::now().naive_utc());
+        }
+        out
+    }
+
+    pub async fn mk_signal_group_aor<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: signal_group_aor::ActiveModel,
+    ) -> Result<signal_group_aor::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let mut inp = inp.clone();
+        if inp.aor_id == NotSet {
+            let aor = mk_aor(
+                txn,
+                area_of_responsibility::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+            inp.aor_id = Set(aor.id);
+        }
+        let out = build_signal_group_aor(inp)
+            .insert(txn)
+            .await
+            .context(h!())?;
+        Ok(out)
+    }
 }

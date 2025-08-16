@@ -837,7 +837,7 @@ where
         .await
         .context(h!())?;
     for (aor, signal_aors) in aors {
-        if let Some(signal_aor) = signal_aors.into_iter().next() {
+        for signal_aor in signal_aors.into_iter() {
             let aor = render_aor(aor.clone());
             result.insert(signal_aor.master_key, aor);
         }

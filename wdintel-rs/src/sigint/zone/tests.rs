@@ -58,3 +58,131 @@ async fn test_bl_szd_group_update_01() {
 
     txn.rollback().await.unwrap();
 }
+
+/// Test listing zone datasource groups when two groups are assigned to the same AOR
+#[serial]
+#[tokio::test]
+async fn test_bl_szd_groups_list_01() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+
+    // Create zone, datasource and AOR manually
+    let zone = mk_sigint_zone(
+        &txn,
+        sigint_zone::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let datasource = mk_datasource(
+        &txn,
+        datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let aor = mk_aor(
+        &txn,
+        area_of_responsibility::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    // Create two signal_group records first
+    let group1 = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let group2 = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    // Create two sigint_zone_datasource records (groups) using the signal_group master keys
+    mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            sigint_zone_id: Set(zone.id),
+            datasource_id: Set(datasource.id),
+            group_master_key: Set(group1.master_key.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            sigint_zone_id: Set(zone.id),
+            datasource_id: Set(datasource.id),
+            group_master_key: Set(group2.master_key.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    // Create signal_group_aor records to assign both groups to the same AOR
+    mk_signal_group_aor(
+        &txn,
+        signal_group_aor::ActiveModel {
+            master_key: Set(group1.master_key.clone()),
+            aor_id: Set(aor.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    mk_signal_group_aor(
+        &txn,
+        signal_group_aor::ActiveModel {
+            master_key: Set(group2.master_key.clone()),
+            aor_id: Set(aor.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    // Call bl_szd_groups_list
+    let res = bl_szd_groups_list(zone.id, datasource.id, &txn)
+        .await
+        .unwrap();
+
+    // Verify we got both groups
+    assert_eq!(res.groups.len(), 2);
+
+    // Verify each group has an AOR assigned
+    for group in &res.groups {
+        assert!(
+            group.area_of_responsibility.is_some(),
+            "Group {} should have an AOR assigned",
+            group.group_master_key
+        );
+        assert_eq!(
+            group.area_of_responsibility.as_ref().unwrap().id,
+            aor.id,
+            "Group {} should be assigned to the correct AOR",
+            group.group_master_key
+        );
+    }
+
+    txn.rollback().await.unwrap();
+}

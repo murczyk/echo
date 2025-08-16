@@ -182,7 +182,7 @@ pub async fn zones_datasources_group_add(
             .context(h!())?
             .remove(&group_master_key);
 
-    txn.commit().await?;
+    txn.commit().await.context(h!())?;
 
     Ok(Json(ZoneDatasourceGroupAddRsp {
         zone_id: req.zone_id,
