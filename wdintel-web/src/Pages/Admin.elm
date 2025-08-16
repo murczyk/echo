@@ -198,20 +198,24 @@ renderGroup model zoneId activeSourceId group =
 
                     Nothing ->
                         text ""
-                -- , -- Area of responsibility display
-                --   case group.areaOfResponsibility of
-                --     Just area ->
-                --         div [ class "flex items-center" ]
-                --             [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
-                --             , span [ class "text-sm text-gray-600 flex items-center" ]
-                --                 [ i [ class "bi bi-geo-alt mr-1" ] []
-                --                 , span [ class "mr-1" ] [ text "Смуга:" ]
-                --                 , span [ class "font-medium" ] [ text area.name ]
-                --                 ]
-                --             ]
-                --
-                --     Nothing ->
-                --         text ""
+                , -- Areas of responsibility display
+                  case group.areasOfResponsibility of
+                    Just areas ->
+                        if List.isEmpty areas then
+                            text ""
+                        else
+                            div [ class "flex items-center" ]
+                                [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
+                                , span [ class "text-sm text-gray-600 flex items-center" ]
+                                    [ i [ class "bi bi-geo-alt mr-1" ] []
+                                    , span [ class "mr-1" ] [ text "Смуги:" ]
+                                    , span [ class "font-medium" ] 
+                                        [ text (areas |> List.map .name |> String.join ", ") ]
+                                    ]
+                                ]
+
+                    Nothing ->
+                        text ""
                 , if group.isGroupSecret then
                     span [ class "ml-2 text-lg text-amber-600" ] [ i [ class "bi bi-eye-slash-fill" ] [] ]
 
