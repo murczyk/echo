@@ -94,12 +94,11 @@ gen-elm:
 test-fe:
     (cd wdintel-web && npm ci && npx elm-land build && elm-test-rs)
 
-# cargo install cargo-nextest
 test-be:
     #!/bin/bash
     set -euxo pipefail
     # (cd wdintel-rs && cargo test)
-    (cd wdintel-rs && cargo nextest run)
+    (cd wdintel-rs && cargo test --release)
 
 test: test-fe test-be
 
