@@ -115,6 +115,17 @@ pub mod tests {
         out
     }
 
+    pub async fn mk_datasource<'a, 'async_trait, C>(
+        txn: &'a C,
+        inp: datasource::ActiveModel,
+    ) -> Result<datasource::Model, AppError>
+    where
+        C: ConnectionTrait + 'async_trait,
+    {
+        let out = build_datasource(inp).insert(txn).await.context(h!())?;
+        Ok(out)
+    }
+
     fn build_signal_group(
         inp: signal_group::ActiveModel,
     ) -> signal_group::ActiveModel {
@@ -149,17 +160,6 @@ pub mod tests {
         C: ConnectionTrait + 'async_trait,
     {
         let out = build_signal_group(inp).insert(txn).await.context(h!())?;
-        Ok(out)
-    }
-
-    pub async fn mk_datasource<'a, 'async_trait, C>(
-        txn: &'a C,
-        inp: datasource::ActiveModel,
-    ) -> Result<datasource::Model, AppError>
-    where
-        C: ConnectionTrait + 'async_trait,
-    {
-        let out = build_datasource(inp).insert(txn).await.context(h!())?;
         Ok(out)
     }
 
