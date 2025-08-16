@@ -178,7 +178,7 @@ pub async fn zones_datasources_group_add(
         .unwrap_or((None, None));
 
     let group_master_key = szd.group_master_key.clone();
-    let area_of_responsibility =
+    let areas_of_responsibility =
         collect_group_aors(vec![group_master_key.clone()], &env.dbx)
             .await
             .context(h!())?
@@ -194,7 +194,7 @@ pub async fn zones_datasources_group_add(
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
             is_group_secret: req.is_secret,
-            areas_of_responsibility: area_of_responsibility.map(|a| vec![a]),
+            areas_of_responsibility: areas_of_responsibility,
             group_master_key,
             allowed_users,
             short_note,

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 pub async fn collect_group_aors<'a, 'async_trait, C>(
     keys: Vec<String>,
     txn: &'a C,
-) -> Result<BTreeMap<String, AreaOfResponsibility>, AppError>
+) -> Result<BTreeMap<String, Vec<AreaOfResponsibility>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -22,7 +22,10 @@ where
     for (aor, signal_aors) in aors {
         for signal_aor in signal_aors.into_iter() {
             let aor = render_aor(aor.clone());
-            result.insert(signal_aor.master_key, aor);
+            result
+                .entry(signal_aor.master_key)
+                .or_insert_with(Vec::new)
+                .push(aor);
         }
     }
     Ok(result)

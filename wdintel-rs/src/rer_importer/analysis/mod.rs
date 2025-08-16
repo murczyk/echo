@@ -2185,7 +2185,7 @@ async fn collect_group_names(
         if let Some(name) = name {
             resolved_keys.push(master_key.clone());
             let stats = stats.get(&master_key).cloned().unwrap_or_default();
-            let aor = group_aors.get(master_key.as_str()).cloned();
+            let aors = group_aors.get(master_key.as_str()).cloned();
             let group_admin_data =
                 group_admin_data.get(master_key.as_str()).cloned();
             result.push(SignalGroupEntry {
@@ -2194,7 +2194,7 @@ async fn collect_group_names(
                 ignore_operativny,
                 group_stats: stats,
                 admin_data: group_admin_data,
-                areas_of_responsibility: aor.map(|a| vec![a]),
+                areas_of_responsibility: aors,
             });
         }
     }
@@ -2212,14 +2212,14 @@ async fn collect_group_names(
         let stats = stats.get(&master_key).cloned().unwrap_or_default();
         let group_admin_data =
             group_admin_data.get(master_key.as_str()).cloned();
-        let aor = group_aors.get(master_key.as_str()).cloned();
+        let aors = group_aors.get(master_key.as_str()).cloned();
         result.push(SignalGroupEntry {
             master_key,
             name,
             ignore_operativny,
             group_stats: stats,
             admin_data: group_admin_data,
-            areas_of_responsibility: aor.map(|a| vec![a]),
+            areas_of_responsibility: aors,
         });
     }
     Ok(result)

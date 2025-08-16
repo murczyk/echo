@@ -58,7 +58,7 @@ pub async fn orphan_signal_groups(
             let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
-            let aor = group_aors.get(g.master_key.as_str()).cloned();
+            let aors = group_aors.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
@@ -67,7 +67,7 @@ pub async fn orphan_signal_groups(
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
                 group_admin_data,
-                areas_of_responsibility: aor.map(|a| vec![a]),
+                areas_of_responsibility: aors,
             })
         })
         .collect();

@@ -246,9 +246,9 @@ pub async fn bl_szd_groups_list(
                 master_key,
                 (is_secret, szd_id, allowed_users, short_note, long_note),
             )| {
-                let aor = group_aors.get(&master_key).cloned();
+                let aors = group_aors.get(&master_key).cloned();
                 ZoneDatasourceGroup {
-                    areas_of_responsibility: aor.map(|a| vec![a]),
+                    areas_of_responsibility: aors,
                     sigint_zone_datasource_id: szd_id,
                     group_master_key: master_key,
                     is_group_secret: is_secret,

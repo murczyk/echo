@@ -708,7 +708,7 @@ pub async fn collect_groups(
                 .get(g.master_key.as_str())
                 .cloned()
                 .unwrap_or_default();
-            let aor = group_aors.get(g.master_key.as_str()).cloned();
+            let aors = group_aors.get(g.master_key.as_str()).cloned();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| SignalGroupEntry {
@@ -717,7 +717,7 @@ pub async fn collect_groups(
                 ignore_operativny: g.ignore_operativny,
                 group_stats: stats,
                 admin_data: group_admin_data,
-                areas_of_responsibility: aor.map(|a| vec![a]),
+                areas_of_responsibility: aors,
             })
         })
         .collect();
