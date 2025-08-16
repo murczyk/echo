@@ -18,6 +18,7 @@ pub use uuid::Uuid;
 pub enum Mode {
     Live,
     Debug,
+    Test,
 }
 
 #[derive(Clone)]
@@ -42,6 +43,7 @@ impl ToString for Mode {
         match self {
             Mode::Debug => "debug".to_string(),
             Mode::Live => "live".to_string(),
+            Mode::Test => "test".to_string(),
         }
     }
 }

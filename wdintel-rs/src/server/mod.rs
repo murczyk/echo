@@ -53,7 +53,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let settlements = Arc::new(RwLock::new(settlements_data));
 
     let version_file = match mode {
-        Mode::Debug => {
+        Mode::Debug | Mode::Test => {
             PathBuf::from(std::env::current_dir().unwrap()).to_path_buf()
         }
         Mode::Live => PathBuf::from("usr/share/echo"),
