@@ -209,7 +209,7 @@ renderGroup model zoneId activeSourceId group =
                                 , span [ class "text-sm text-gray-600 flex items-center" ]
                                     [ i [ class "bi bi-geo-alt mr-1" ] []
                                     , span [ class "mr-1" ] [ text "Смуги:" ]
-                                    , span [ class "font-medium" ] 
+                                    , span [ class "font-medium" ]
                                         [ text (areas |> List.map .name |> String.join ", ") ]
                                     ]
                                 ]
@@ -1116,7 +1116,7 @@ update msg model =
                                 , ignoreOperativny = False
                                 , groupStats = existingGroupStats
                                 , adminData = existingAdminData
-                                , areaOfResponsibility = Nothing --TODO
+                                , areasOfResponsibility = Nothing
                                 }
                                 model.groupInfos
 
@@ -1274,7 +1274,7 @@ update msg model =
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
                                         , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
                                         , groupAdminData = groupInfo |> Maybe.andThen .adminData
-                                        , areaOfResponsibility = Nothing --TODO
+                                        , areasOfResponsibility = Nothing
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1809,7 +1809,7 @@ update msg model =
                                         case model.groupEditDialog of
                                             Just dialog ->
                                                 let
-                                                    selectedAreas = 
+                                                    selectedAreas =
                                                         dialog.areaOfResponsibilitySelector.selected
                                                             |> List.filterMap (\areaId ->
                                                                 RD.withDefault [] model.areasOfResponsibility
@@ -1878,7 +1878,7 @@ update msg model =
                                 , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote |> Maybe.withDefault ""
                                 , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote |> Maybe.withDefault ""
                                 , areaOfResponsibilitySelector =
-                                    { selected = orphanGroup.areaOfResponsibility |> Maybe.map .id |> Maybe.map List.singleton |> Maybe.withDefault []
+                                    { selected = orphanGroup.areasOfResponsibility |> Maybe.withDefault [] |> List.map .id
                                     , available = RD.withDefault [] model.areasOfResponsibility
                                     , selectState = Select.initState (Select.selectIdentifier "area-select")
                                     }
@@ -1978,13 +1978,13 @@ update msg model =
                                                                 , longNote = updatedGroup.longNote
                                                                 }
 
-                                                -- Use the area of responsibility from the updated group
-                                                newAreaOfResponsibility =
-                                                    updatedGroup.areasOfResponsibility |> Maybe.andThen List.head
+                                                -- Use the areas of responsibility from the updated group
+                                                newAreasOfResponsibility =
+                                                    updatedGroup.areasOfResponsibility
                                             in
                                             { group
                                                 | groupAdminData = newAdminData
-                                                , areaOfResponsibility = newAreaOfResponsibility
+                                                , areasOfResponsibility = newAreasOfResponsibility
                                             }
 
                                         else
@@ -2461,7 +2461,7 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                 ]
                             , -- Інформація про вибрані смуги
                               let
-                                selectedAreas = 
+                                selectedAreas =
                                     dialog.areaOfResponsibilitySelector.selected
                                         |> List.filterMap (\areaId ->
                                             dialog.areaOfResponsibilitySelector.available
@@ -2649,7 +2649,7 @@ renderGroupEditSidebar isDark model dialog =
                             , -- Selected areas info
                               div []
                                 [ let
-                                    selectedAreas = 
+                                    selectedAreas =
                                         dialog.areaOfResponsibilitySelector.selected
                                             |> List.filterMap (\areaId ->
                                                 dialog.areaOfResponsibilitySelector.available
@@ -3173,28 +3173,30 @@ renderOrphanGroupsTable model groups =
         renderAreaOfResponsibilityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderAreaOfResponsibilityColumn group =
             let
+                areas = group.areasOfResponsibility |> Maybe.withDefault []
+                
                 displayText : String
                 displayText =
-                    case group.areaOfResponsibility of
-                        Just area ->
-                            area.name
-
-                        Nothing ->
-                            "-"
+                    if List.isEmpty areas then
+                        "-"
+                    else
+                        areas |> List.map .name |> String.join ", "
 
                 tooltipText : String
                 tooltipText =
-                    case group.areaOfResponsibility of
-                        Just area ->
-                            case area.description of
-                                Just desc ->
-                                    area.name ++ " - " ++ desc
+                    if List.isEmpty areas then
+                        "Смуги не призначені"
+                    else
+                        areas 
+                            |> List.map (\area ->
+                                case area.description of
+                                    Just desc ->
+                                        area.name ++ " - " ++ desc
 
-                                Nothing ->
-                                    area.name
-
-                        Nothing ->
-                            "Смуга не призначена"
+                                    Nothing ->
+                                        area.name
+                            )
+                            |> String.join "; "
             in
             { attributes = []
             , children =
@@ -3542,7 +3544,7 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                                     areaMatches =
                                         case model.areaOfResponsibilityFilter of
                                             Just areaId ->
-                                                group.areasOfResponsibility 
+                                                group.areasOfResponsibility
                                                     |> Maybe.withDefault []
                                                     |> List.any (\area -> area.id == areaId)
 
