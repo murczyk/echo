@@ -145,7 +145,7 @@ pub async fn create_network_callsign(
     txn.commit().await.context(h!())?;
 
     let res =
-        bl_network_callsigns_info_batch(vec![network_callsign.id], &env.dbx)
+        bl_get_network_callsigns_info_batch(vec![network_callsign.id], &env.dbx)
             .await
             .context(h!())?
             .into_iter()
@@ -206,7 +206,7 @@ pub async fn update_network_callsign(
     txn.commit().await.context(h!())?;
 
     let res =
-        bl_network_callsigns_info_batch(vec![network_callsign.id], &env.dbx)
+        bl_get_network_callsigns_info_batch(vec![network_callsign.id], &env.dbx)
             .await
             .context(h!())?
             .into_iter()
@@ -260,7 +260,7 @@ pub async fn find_network_callsign_one<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    find_network_callsign_batch(vec![network_callsign_id], txn)
+    find_network_callsigns_batch(vec![network_callsign_id], txn)
         .await
         .context(h!())?
         .into_iter()
@@ -268,7 +268,7 @@ where
         .ok_or(AppError::NotFound)
 }
 
-pub async fn find_network_callsign_batch<'a, 'async_trait, C>(
+pub async fn find_network_callsigns_batch<'a, 'async_trait, C>(
     network_callsign_ids: Vec<i64>,
     txn: &'a C,
 ) -> Result<
@@ -315,7 +315,7 @@ where
     Ok(network_callsigns)
 }
 
-pub async fn bl_network_callsigns_info_batch<'a, 'async_trait, C>(
+pub async fn bl_get_network_callsigns_info_batch<'a, 'async_trait, C>(
     network_callsign_ids: Vec<i64>,
     txn: &'a C,
 ) -> Result<Vec<NetworkCallsign>, AppError>
@@ -323,7 +323,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let network_callsigns =
-        find_network_callsign_batch(network_callsign_ids, txn)
+        find_network_callsigns_batch(network_callsign_ids, txn)
             .await
             .context(h!())?;
 
