@@ -1,11 +1,11 @@
-use super::{collect_group_stats, group_admin_data, signal_group};
+use super::{group_admin_data, signal_group};
 use crate::config::*;
 use crate::entities::area_of_responsibility::Model;
 use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
+use crate::messenger::group::collect_group_stats;
 use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
-
 use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::AppError;
 use crate::types::*;

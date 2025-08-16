@@ -4,9 +4,8 @@ use crate::delta::types::GeoJson;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
-use crate::rer_importer::{
-    collect_group_admin_data, collect_group_aors, collect_group_stats,
-};
+use crate::messenger::group::collect_group_stats;
+use crate::rer_importer::{collect_group_admin_data, collect_group_aors};
 use crate::types::*;
 use crate::users;
 use crate::users::*;
