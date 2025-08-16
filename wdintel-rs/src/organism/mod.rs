@@ -37,11 +37,11 @@ pub async fn add_group_to_organism(
         .context(h!())?
         .context(h!())?;
 
-    // checking if adding is allowed here
-    let organism_groups =
-        crate::organism::load_organism_group_ids(&env.dbx, organism.id)
-            .await
-            .context(h!())?;
+    // // checking if adding is allowed here
+    // let organism_groups =
+    //     crate::organism::load_organism_group_ids(&env.dbx, organism.id)
+    //         .await
+    //         .context(h!())?;
     // if organism.parent_id.is_some()
     //     && !organism_groups.available_keys.contains(&group.master_key)
     // {
