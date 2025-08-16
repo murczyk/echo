@@ -169,3 +169,11 @@ pub struct UpdateNetworkCallsignReq {
     pub comment: Option<String>,
     pub source_id: Option<i64>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AddAsKnownNetworkCallsignReq {
+    pub network_id: i64,
+    pub known_callsign_id: i64,
+}

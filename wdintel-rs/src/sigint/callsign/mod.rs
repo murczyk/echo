@@ -465,12 +465,15 @@ pub async fn delete_callsign(
     )?))
 }
 
-pub async fn find_callsign(
-    dbx: &DbConn,
+pub async fn find_callsign<'a, 'async_trait, C>(
+    txn: &'a C,
     callsign_id: i64,
-) -> Result<sigint_callsign::Model, AppError> {
+) -> Result<sigint_callsign::Model, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let callsign = sigint_callsign::Entity::find_by_id(callsign_id)
-        .one(dbx)
+        .one(txn)
         .await?
         .ok_or_else(|| AppError::NotFound)?;
     Ok(callsign)

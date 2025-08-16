@@ -160,6 +160,73 @@ pub async fn create_network_callsign(
     Ok(Json(res))
 }
 
+#[post("/api/sigint/network-callsign/add-as-known")]
+pub async fn add_as_known_network_callsign(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AddAsKnownNetworkCallsignReq>,
+) -> Result<Json<NetworkCallsign>, AppError> {
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer")
+        .await
+        .context(h!())?;
+    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
+        .await
+        .context(h!())?;
+
+    info!(
+        "Adding known network callsign {} to network {}; user={}",
+        req.known_callsign_id, req.network_id, user_id
+    );
+
+    let txn = env.dbx.begin().await.context(h!())?;
+    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let known_callsign =
+        crate::sigint::callsign::find_callsign(&txn, req.known_callsign_id)
+            .await
+            .context(h!())?;
+
+    let network_callsign = sigint_network_callsign::ActiveModel {
+        id: NotSet,
+        sigint_network_id: Set(req.network_id),
+        deleted: NotSet,
+        created_at: NotSet,
+        sigint_callsign: Set(known_callsign.callsign.clone()),
+        sigint_callsign_id: Set(Some(req.known_callsign_id)),
+        position: NotSet,
+        comment: NotSet,
+        source_id: NotSet,
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(&txn)
+    .await
+    .context(h!())?;
+
+    // Update the network's updated_at timestamp
+    let mut network_model = network.into_active_model();
+    network_model.updated_at = Set(Utc::now().naive_utc());
+    network_model.updated_by = Set(Some(user_id.clone()));
+    network_model.update(&txn).await.context(h!())?;
+
+    txn.commit().await.context(h!())?;
+
+    let res = bl_get_network_callsigns_info_batch(
+        vec![network_callsign.id],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .next()
+    .ok_or(AppError::NotFound)?;
+
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    Ok(Json(res))
+}
+
 #[post("/api/sigint/network-callsign/update")]
 pub async fn update_network_callsign(
     user: actix_identity::Identity,
