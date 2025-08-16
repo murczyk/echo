@@ -119,6 +119,7 @@ pub struct NetworkCallsign {
     pub comment: Option<String>,
     pub source_id: Option<i64>,
     pub created_at: i64,
+    pub active: bool,
 }
 
 #[derive(
