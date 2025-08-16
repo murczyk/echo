@@ -42,17 +42,17 @@ pub async fn add_group_to_organism(
         crate::organism::load_organism_group_ids(&env.dbx, organism.id)
             .await
             .context(h!())?;
-    if organism.parent_id.is_some()
-        && !organism_groups.available_keys.contains(&group.master_key)
-    {
-        return Err(AppError::from(
-            anyhow!(
-                "Not adding group {} to organism {} because it is not available due to its parent chain rights",
-                req.group_name, req.organism_id
-            )
-                .context(h!()))
-        );
-    }
+    // if organism.parent_id.is_some()
+    //     && !organism_groups.available_keys.contains(&group.master_key)
+    // {
+    //     return Err(AppError::from(
+    //         anyhow!(
+    //             "Not adding group {} to organism {} because it is not available due to its parent chain rights",
+    //             req.group_name, req.organism_id
+    //         )
+    //             .context(h!()))
+    //     );
+    // }
 
     organism_group::ActiveModel {
         organism_id: Set(organism.id),
