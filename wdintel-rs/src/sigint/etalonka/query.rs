@@ -449,12 +449,9 @@ pub async fn load_callsigns(
             // Callsign + UnitId matching
             let matched_known_callsigns = known_callsigns
                 .iter()
-                .filter(|kc| {
-                    kc.callsign == callsign
-                        && kc.unit_id == unit_id
-                })
+                .filter(|kc| kc.callsign == callsign && kc.unit_id == unit_id)
                 .cloned()
-                .collect();
+                .collect::<Vec<KnownCallsignRes>>();
 
             let short_known_callsigns: Vec<KnownCallsignShortRes> =
                 matched_known_callsigns

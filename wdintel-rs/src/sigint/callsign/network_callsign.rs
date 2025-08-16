@@ -144,13 +144,15 @@ pub async fn create_network_callsign(
 
     txn.commit().await.context(h!())?;
 
-    let res =
-        bl_get_network_callsigns_info_batch(vec![network_callsign.id], &env.dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .next()
-            .ok_or(AppError::NotFound)?;
+    let res = bl_get_network_callsigns_info_batch(
+        vec![network_callsign.id],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .next()
+    .ok_or(AppError::NotFound)?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
@@ -205,13 +207,15 @@ pub async fn update_network_callsign(
 
     txn.commit().await.context(h!())?;
 
-    let res =
-        bl_get_network_callsigns_info_batch(vec![network_callsign.id], &env.dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .next()
-            .ok_or(AppError::NotFound)?;
+    let res = bl_get_network_callsigns_info_batch(
+        vec![network_callsign.id],
+        &env.dbx,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .next()
+    .ok_or(AppError::NotFound)?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
