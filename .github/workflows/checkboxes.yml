@@ -30,7 +30,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check if Pixi is installed
+        id: check-pixi
+        run: |
+          if command -v pixi &> /dev/null; then
+            echo "pixi-exists=true" >> $GITHUB_OUTPUT
+            echo "Pixi is already installed"
+            pixi --version
+          else
+            echo "pixi-exists=false" >> $GITHUB_OUTPUT
+            echo "Pixi is not installed"
+          fi
+
       - uses: prefix-dev/setup-pixi@v0.8.1
+        if: steps.check-pixi.outputs.pixi-exists == 'false'
         with:
           pixi-version: v0.41.4
 
