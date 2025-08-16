@@ -14,13 +14,43 @@ mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
 
-pub async fn main_server(
-    mode: Mode,
-    ps: crate::ServerPs,
-) -> Result<(), std::io::Error> {
-    crate::migration::run_migration_1(mode).await.unwrap();
-
+pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = crate::config::read_config(mode).unwrap();
+    let redis = new_redis(&config).await.unwrap();
+    let redisb = new_redisb(&config).await.unwrap();
+    let b2_creds = aws_sdk_s3::config::Credentials::new(
+        config.b2_aws_access_key_id.clone(),
+        config.b2_aws_secret_access_key.clone(),
+        None,
+        None,
+        crate::config::B2_AWS_PROFILE_NAME,
+    );
+    let b2_s3 = config.b2_s3.clone();
+    let b2_config = aws_sdk_s3::Config::builder()
+        .region(aws_sdk_s3::config::Region::new(config.b2_s3_region.clone()))
+        // .endpoint_resolver(b2_endpoint)
+        .endpoint_url(b2_s3)
+        .credentials_provider(b2_creds)
+        .build();
+    let b2_cli = aws_sdk_s3::Client::from_conf(b2_config);
+    let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
+    let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+    let rq: reqwest::Client = reqwest::Client::builder()
+        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
+        .build()
+        .unwrap();
+    let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
+    let m_greptimedb = match e_greptimedb {
+        Ok(greptimedb) => Some(greptimedb),
+        Err(e) => {
+            warn!("failed to establish GreptimeDB connection: {:?}", e);
+            None
+        }
+    };
+    let settlement_paths = config.settlement_paths().unwrap();
+    let settlements_data = crate::location::load_from_file(settlement_paths)
+        .unwrap_or(SettlementsData::default());
+    let settlements = Arc::new(RwLock::new(settlements_data));
 
     let version_file = match mode {
         Mode::Debug => {
@@ -30,36 +60,48 @@ pub async fn main_server(
     }
     .join("version.txt");
     info!("version file: {}", version_file.display());
-
     let version = tokio::fs::read_to_string(version_file).await.unwrap();
 
-    let config1 = config.clone();
-    let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
-    let dbx4 = dbx.clone();
-    let dbx6 = dbx.clone();
-    let dbx7 = dbx.clone();
-    let dbx8 = dbx.clone();
-    let dbx9 = dbx.clone();
-    let e_greptimedb = crate::new_greptimedb_from_config(&config).await;
-    let m_greptimedb = match e_greptimedb {
-        Ok(greptimedb) => Some(greptimedb),
-        Err(e) => {
-            warn!("failed to establish GreptimeDB connection: {:?}", e);
-            None
-        }
+    let env = Env {
+        mode,
+        redis: redis.clone(),
+        redisb: redisb.clone(),
+        b2_cli,
+        mil_geo: mil_geo.clone(),
+        dbx: dbx.clone(),
+        rq,
+        config: config.clone(),
+        greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
+        settlements: settlements.clone(),
+        version: version.clone(),
     };
-    let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
-    let mil_geo2 = mil_geo.clone();
+    Ok(Arc::new(env))
+}
+
+pub async fn main_server(
+    mode: Mode,
+    ps: crate::ServerPs,
+) -> Result<(), std::io::Error> {
+    crate::migration::run_migration_1(mode).await.unwrap();
+
+    let env = new_env(mode).await.unwrap();
+
+    let config = env.config.clone();
+    let config1 = config.clone();
+    let dbx4 = env.dbx.clone();
+    let dbx6 = env.dbx.clone();
+    let dbx7 = env.dbx.clone();
+    let dbx8 = env.dbx.clone();
+    let dbx9 = env.dbx.clone();
+    let mil_geo2 = env.mil_geo.clone();
     if let Err(e) = crate::rer_importer::import_csv::ensure_import_group_exists(
-        &dbx, &config,
+        &env.dbx, &config,
     )
     .await
     {
         warn!("Failed to ensure import group exists: {:?}", e);
     };
 
-    let redis = new_redis(&config).await.unwrap();
-    let redisb = new_redisb(&config).await.unwrap();
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
             .await
@@ -75,8 +117,8 @@ pub async fn main_server(
             healthcheck::healthcheck_worker(&dbx9, config1).await;
         });
         // Activity details worker
-        if let Some(greptimedb) = m_greptimedb.clone() {
-            let redis = redis.clone();
+        if let Some(greptimedb) = env.greptime() {
+            let redis = env.redis.clone();
             tokio::spawn(async move {
                 middleware::activity_details_worker(redis, greptimedb).await;
             });
@@ -129,49 +171,9 @@ pub async fn main_server(
     info!("Starting server on {}:{}", bind_ip, bind_port);
 
     HttpServer::new(move || {
-        let b2_creds = aws_sdk_s3::config::Credentials::new(
-            config.b2_aws_access_key_id.clone(),
-            config.b2_aws_secret_access_key.clone(),
-            None,
-            None,
-            crate::config::B2_AWS_PROFILE_NAME,
-        );
-        let b2_s3 = config.b2_s3.clone();
-        // let b2_endpoint =
-        //     aws_sdk_s3::Endpoint::immutable(b2_s3.parse().unwrap());
-        let b2_config = aws_sdk_s3::Config::builder()
-            .region(aws_sdk_s3::config::Region::new(
-                config.b2_s3_region.clone(),
-            ))
-            // .endpoint_resolver(b2_endpoint)
-            .endpoint_url(b2_s3)
-            .credentials_provider(b2_creds)
-            .build();
-        let b2_cli = aws_sdk_s3::Client::from_conf(b2_config);
-        let rq: reqwest::Client = reqwest::Client::builder()
-            .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
-            .build()
-            .unwrap();
-        let settlement_paths = config.settlement_paths().unwrap();
-        let settlements_data = crate::location::load_from_file(settlement_paths).unwrap_or(SettlementsData::default());
-        let settlements = Arc::new(RwLock::new(settlements_data));
-
-        let env = Env {
-            mode,
-            redis: redis.clone(),
-            redisb: redisb.clone(),
-            b2_cli,
-            mil_geo: mil_geo.clone(),
-            dbx: dbx.clone(),
-            rq,
-            config: config.clone(),
-            greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
-            settlements: settlements.clone(),
-            version: version.clone(),
-        };
         App::new()
             .wrap(actix_web::middleware::Compress::default())
-            .app_data(actix_web::web::Data::new(env))
+            .app_data(actix_web::web::Data::new(env.clone()))
             // .wrap(
             //     actix_web::middleware::Logger::default()
             // )
@@ -186,7 +188,9 @@ pub async fn main_server(
                 Key::from(config.cookie_session_secret.clone().as_bytes()),
             ))
             .wrap(
-                actix_web::middleware::from_fn(middleware::mk_activity_middleware(Some(redis.clone())))
+                actix_web::middleware::from_fn(
+                    middleware::mk_activity_middleware(Some(env.redis.clone()))
+                )
             )
             .service(self::monitoring::ping)
             .service(self::monitoring::public_ping)

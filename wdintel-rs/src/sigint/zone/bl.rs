@@ -2,7 +2,7 @@ use crate::entities::*;
 use crate::types::*;
 use sea_orm::*;
 
-pub struct BlSZDGroupUpdateRes {
+pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
     pub aor: Option<area_of_responsibility::Model>,
     pub allowed_users: Vec<String>,
@@ -14,7 +14,7 @@ pub async fn bl_szd_group_update(
     req: &crate::sigint::types::ZoneDatasourceGroupUpdateReq,
     szd: &sigint_zone_datasource::Model,
     txn: &DatabaseTransaction,
-) -> Result<BlSZDGroupUpdateRes, AppError> {
+) -> Result<BlSzdGroupUpdateRes, AppError> {
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
         req.is_secret,
@@ -70,7 +70,7 @@ pub async fn bl_szd_group_update(
     .await
     .context(h!())?;
 
-    let res = BlSZDGroupUpdateRes {
+    let res = BlSzdGroupUpdateRes {
         is_secret,
         aor,
         allowed_users,
