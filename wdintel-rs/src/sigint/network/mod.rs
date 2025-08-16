@@ -1040,7 +1040,7 @@ pub async fn network_freqs_activity_one(
     .add_group_by([
         // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
-        Expr::cust("day"),        
+        Expr::cust("day"),
     ])
     .order_by_expr(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(), Order::Asc)
     .order_by_expr(Expr::cust("day"), Order::Asc)
@@ -3219,16 +3219,16 @@ async fn save_network_aors(
     areas_of_responsibility_ids: Vec<i64>,
     network_id: i64,
 ) -> Result<(), AppError> {
-    let mut ids = areas_of_responsibility_ids;
-    if ids.is_empty() {
+    let mut aor_ids = areas_of_responsibility_ids;
+    if aor_ids.is_empty() {
         let default_area =
             sigint::area_of_responsibility::load_default_aor(txn)
                 .await
                 .context(h!())?;
-        ids.push(default_area.id);
+        aor_ids.push(default_area.id);
     }
 
-    for aor_id in ids {
+    for aor_id in aor_ids {
         sigint_network_aor::ActiveModel {
             id: NotSet,
             network_id: Set(network_id),

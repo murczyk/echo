@@ -181,6 +181,12 @@ pub fn read_config(mode: Mode) -> Result<Config, AppError> {
             }
             path
         }
+        Mode::Test => PathBuf::from_iter([
+            std::env!("CARGO_MANIFEST_DIR"),
+            "..",
+            "deploy",
+            "config-test.toml",
+        ]),
     };
     read_from_path(path)
 }

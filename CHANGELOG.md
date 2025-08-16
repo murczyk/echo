@@ -1,4 +1,5 @@
 ## NEXT
+
 - [#1260](https://github.com/echoua/echo/issues/1260) Мережа: додавання частоти
 - [#1244](https://github.com/echoua/echo/issues/1244) Фіча-прапор: строгі привʼязки (feature_strict_networks).
 - [#1232](https://github.com/echoua/echo/issues/1232) окремо підтримувати статус перманентного видалення для організмів та логінів (а-ля архівація).
@@ -62,8 +63,10 @@
 - [#1094](https://github.com/echoua/echo/issues/1094) Мережа: зробити активність мережі статичним полем
 - [#1047](https://github.com/echoua/echo/issues/1047) Мережа: додано фільтр по активним і неактивним частотам
 - [#1046](https://github.com/echoua/echo/issues/1046) Налаштування: редизайн і додана версія білда
+- [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
 
 ## 2025-07-08
+
 - [#987](https://github.com/echoua/echo/issues/987) Еталонка. Виправлено формування звіту коли задано фільтр по конкретній частоті
 - [#984](https://github.com/echoua/echo/issues/984) Адміністрування користувачів. Не блокувати не активні логіни для NoAutoLogout ролі
 - [#983](https://github.com/echoua/echo/issues/983) Мережа. Виправлено помилку об'єднання 2х мереж

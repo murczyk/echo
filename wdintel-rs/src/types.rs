@@ -7,6 +7,7 @@ pub use itertools::Itertools;
 pub use log::*;
 use milgeo_rs::MilGeo;
 pub use serde::{Deserialize, Serialize};
+pub use serial_test::serial;
 pub use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub use std::hash::Hash;
 pub use std::path::{Path, PathBuf};
@@ -18,6 +19,7 @@ pub use uuid::Uuid;
 pub enum Mode {
     Live,
     Debug,
+    Test,
 }
 
 #[derive(Clone)]
@@ -42,6 +44,7 @@ impl ToString for Mode {
         match self {
             Mode::Debug => "debug".to_string(),
             Mode::Live => "live".to_string(),
+            Mode::Test => "test".to_string(),
         }
     }
 }
