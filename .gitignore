@@ -22,3 +22,4 @@ deploy/kibana/env-*
 deploy/vector/env-*
 deploy/vector/kibana/sink-hammer.yaml
 .cursor/
+.ai/
