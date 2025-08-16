@@ -124,13 +124,14 @@ pub async fn group_update(
     }
     .into_active_model();
 
-    let aor = bl::upsert_group_area_of_responsibility(
-        &txn,
-        &req.master_key,
-        req.area_of_responsibility_id.map(|id| vec![id]),
-    )
-    .await
-    .context(h!())?;
+    let aor_ids = match &req.area_of_responsibility_ids {
+        None => req.area_of_responsibility_id.map(|id| vec![id]),
+        Some(ids) => Some(ids.clone()),
+    };
+    let aor =
+        bl::upsert_group_area_of_responsibility(&txn, &req.master_key, aor_ids)
+            .await
+            .context(h!())?;
 
     group_data.short_note = Set(req.short_note);
     group_data.long_note = Set(req.long_note);

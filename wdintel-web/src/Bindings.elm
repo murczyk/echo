@@ -5506,6 +5506,7 @@ type alias GroupUpdateReq =
     , shortNote : Maybe String
     , longNote : Maybe String
     , areaOfResponsibilityId : Maybe Int
+    , areaOfResponsibilityIds : Maybe (List Int)
     }
 
 
@@ -5516,6 +5517,7 @@ groupUpdateReqEncoder struct =
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.longNote )
         , ( "area_of_responsibility_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.areaOfResponsibilityId )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
         ]
 
 
@@ -8855,6 +8857,7 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
 
 
 groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1

@@ -110,5 +110,7 @@ pub struct GroupUpdateReq {
     pub master_key: String,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    /// Deprecated - use area_of_responsibility_ids instead
     pub area_of_responsibility_id: Option<i64>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
 }
