@@ -8,6 +8,7 @@ use milgeo_rs::MilGeo;
 use sea_orm::*;
 
 pub mod types;
+pub mod bl;
 
 #[post("/api/sigint/aor")]
 pub async fn aor_list(

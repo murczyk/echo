@@ -6,8 +6,7 @@ use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
 use crate::messenger::group::collect_group_stats;
-use crate::sigint::area_of_responsibility::render_aor;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::sigint::area_of_responsibility::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
@@ -723,29 +722,6 @@ pub async fn collect_groups(
         })
         .collect();
     Ok(data)
-}
-
-pub async fn collect_group_aors<'a, 'async_trait, C>(
-    keys: Vec<String>,
-    txn: &'a C,
-) -> Result<BTreeMap<String, AreaOfResponsibility>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let mut result = BTreeMap::new();
-    let aors = area_of_responsibility::Entity::find()
-        .find_with_related(signal_group_aor::Entity)
-        .filter(signal_group_aor::Column::MasterKey.is_in(keys.clone()))
-        .all(txn)
-        .await
-        .context(h!())?;
-    for (aor, signal_aors) in aors {
-        for signal_aor in signal_aors.into_iter() {
-            let aor = render_aor(aor.clone());
-            result.insert(signal_aor.master_key, aor);
-        }
-    }
-    Ok(result)
 }
 
 pub async fn collect_group_admin_data<'a, 'async_trait, C>(

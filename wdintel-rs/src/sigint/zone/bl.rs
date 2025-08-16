@@ -231,7 +231,11 @@ pub async fn bl_szd_groups_list(
     }
 
     let keys = res.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
-    let group_aors = crate::sigint::zone::collect_group_aors(keys.clone(), txn)
+    let group_aors =
+        crate::sigint::area_of_responsibility::bl::collect_group_aors(
+            keys.clone(),
+            txn,
+        )
         .await
         .context(h!())?;
 

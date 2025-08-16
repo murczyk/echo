@@ -1,7 +1,7 @@
 use self::bl::*;
 use super::types::*;
 use crate::entities::*;
-use crate::rer_importer::collect_group_aors;
+use crate::sigint::area_of_responsibility::bl::collect_group_aors;
 use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::*;
 use actix_web::post;
