@@ -170,10 +170,14 @@ pub async fn main_server(
     let bind_port = 8081;
     info!("Starting server on {}:{}", bind_ip, bind_port);
 
+    let env_for_server = env.clone();
     HttpServer::new(move || {
+        let env = env_for_server.clone();
+        let cookie_secret = env.config.cookie_session_secret.clone();
+        let redis_for_middleware = env.redis.clone();
         App::new()
             .wrap(actix_web::middleware::Compress::default())
-            .app_data(actix_web::web::Data::new(env.clone()))
+            .app_data(actix_web::web::Data::from(env))
             // .wrap(
             //     actix_web::middleware::Logger::default()
             // )
@@ -185,11 +189,11 @@ pub async fn main_server(
             )
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
-                Key::from(config.cookie_session_secret.clone().as_bytes()),
+                Key::from(cookie_secret.as_bytes()),
             ))
             .wrap(
                 actix_web::middleware::from_fn(
-                    middleware::mk_activity_middleware(Some(env.redis.clone()))
+                    middleware::mk_activity_middleware(Some(redis_for_middleware))
                 )
             )
             .service(self::monitoring::ping)
