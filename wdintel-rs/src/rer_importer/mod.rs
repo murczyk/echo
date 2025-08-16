@@ -791,10 +791,13 @@ pub async fn collect_groups(
     Ok(data)
 }
 
-pub async fn collect_group_stats(
+pub async fn collect_group_stats<'a, 'async_trait, C>(
     keys: Vec<String>,
-    txn: &DatabaseConnection,
-) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
+    txn: &'a C,
+) -> Result<BTreeMap<String, SignalGroupStats>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let signal_message_counts_last_day =
         count_group_messages(keys.clone(), txn, 1)
             .await
@@ -872,11 +875,14 @@ where
     Ok(result)
 }
 
-async fn count_group_messages(
+async fn count_group_messages<'a, 'async_trait, C>(
     keys: Vec<String>,
-    txn: &DatabaseConnection,
+    txn: &'a C,
     num_days: i64,
-) -> Result<BTreeMap<String, i64>, AppError> {
+) -> Result<BTreeMap<String, i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
     let signal_message_counts = signal_message::Entity::find()
         .join(

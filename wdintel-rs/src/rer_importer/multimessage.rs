@@ -144,7 +144,7 @@ mod tests {
         }
     }
 
-   #[cfg_attr(debug_assertions, ignore)]
+    #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message3() {
         let text = r#"Отримано з поста "Khartiia"

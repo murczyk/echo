@@ -1,9 +1,11 @@
+use super::{collect_group_stats, group_admin_data, signal_group};
 use crate::config::*;
 use crate::entities::area_of_responsibility::Model;
 use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
-use crate::messenger::types::EchoAccountF1;
+use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
+
 use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::AppError;
 use crate::types::*;
@@ -13,7 +15,11 @@ use echo_im::entities::sea_orm_active_enums::{
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
 use sea_orm::prelude::DateTime;
-use sea_orm::*;
+use sea_orm::prelude::*;
+use sea_orm::{
+    ConnectionTrait, DatabaseTransaction, FromQueryResult, IntoActiveModel,
+    JoinType, NotSet, QuerySelect, Set,
+};
 use std::net::TcpListener;
 
 pub async fn load_echo_account<'a, 'async_trait, C>(
@@ -447,4 +453,72 @@ pub async fn upsert_group_area_of_responsibility(
         }
     };
     Ok(res)
+}
+
+pub struct BlGroupUpdateRes {
+    pub group: signal_group::Model,
+    pub group_data: group_admin_data::Model,
+    pub stats: crate::rer_importer::types::SignalGroupStats,
+    pub aors: Vec<Model>,
+}
+
+pub async fn bl_group_update(
+    req: &GroupUpdateReq,
+    txn: &DatabaseTransaction,
+) -> Result<BlGroupUpdateRes, AppError> {
+    let m_group = group_admin_data::Entity::find()
+        .filter(
+            group_admin_data::Column::GroupMasterKey
+                .eq(&req.master_key.clone()),
+        )
+        .one(txn)
+        .await
+        .context(h!())?;
+    let mut group_data = match m_group {
+        Some(group) => group,
+        None => group_admin_data::ActiveModel {
+            group_master_key: Set(Some(req.master_key.clone())),
+            short_note: Set(req.short_note.clone()),
+            long_note: Set(req.long_note.clone()),
+            id: NotSet,
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .context(h!())?,
+    }
+    .into_active_model();
+
+    let aor_ids = match &req.area_of_responsibility_ids {
+        None => req.area_of_responsibility_id.map(|id| vec![id]),
+        Some(ids) => Some(ids.clone()),
+    };
+    let aors =
+        upsert_group_area_of_responsibility(txn, &req.master_key, aor_ids)
+            .await
+            .context(h!())?;
+
+    group_data.short_note = Set(req.short_note.clone());
+    group_data.long_note = Set(req.long_note.clone());
+    let group_data = group_data.update(txn).await.context(h!())?;
+
+    let group = signal_group::Entity::find_by_id(req.master_key.clone())
+        .one(txn)
+        .await
+        .context(h!())?
+        .context(h!())?;
+
+    let stats = collect_group_stats(vec![group.master_key.clone()], txn)
+        .await
+        .context(h!())?
+        .get(&group.master_key)
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(BlGroupUpdateRes {
+        group,
+        group_data,
+        stats,
+        aors,
+    })
 }
