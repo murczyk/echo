@@ -9,6 +9,8 @@ use actix_web::web::Json;
 use sea_orm::*;
 
 pub mod bl;
+#[cfg(test)]
+pub mod tests;
 
 #[post("/api/sigint/zones/list")]
 pub async fn zones_list(
@@ -180,7 +182,7 @@ pub async fn zones_datasources_group_update(
 
     let rsp = bl_szd_group_update(&req, &szd, &txn).await.context(h!())?;
 
-    txn.commit().await?;
+    txn.commit().await.context(h!())?;
 
     Ok(Json(ZoneDatasourceGroup {
         sigint_zone_datasource_id: szd.id,

@@ -18,6 +18,7 @@ pub mod elm;
 pub mod entities;
 pub mod error;
 pub mod event_stream;
+pub mod functest;
 pub mod icons;
 pub mod importer;
 mod install;
@@ -38,6 +39,7 @@ pub mod session;
 pub mod sigint;
 pub mod tags;
 pub mod terminal;
+pub mod tests;
 pub mod types;
 pub mod unit;
 pub mod users;
@@ -356,7 +358,7 @@ struct Arg {
 pub async fn new_pg_pool_from_mode(
     mode: Mode,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
-    let config = config::read_config(mode).unwrap();
+    let config = config::read_config(mode).context(h!())?;
     new_pg_pool_from_config(&config).await
 }
 
