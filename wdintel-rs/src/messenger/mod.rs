@@ -127,7 +127,7 @@ pub async fn group_update(
     let aor = bl::upsert_group_area_of_responsibility(
         &txn,
         &req.master_key,
-        req.area_of_responsibility_id.clone(),
+        req.area_of_responsibility_id.map(|id| vec![id]),
     )
     .await
     .context(h!())?;
@@ -158,7 +158,11 @@ pub async fn group_update(
         short_note: group_data.short_note,
         long_note: group_data.long_note,
         group_stats: stats,
-        area_of_responsibility: aor.map(render_aor),
+        areas_of_responsibility: if aor.is_empty() {
+            None
+        } else {
+            Some(aor.into_iter().map(render_aor).collect())
+        },
     }))
 }
 

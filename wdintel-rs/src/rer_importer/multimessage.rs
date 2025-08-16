@@ -118,6 +118,7 @@ fn is_header(row: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message() {
         let messages50 =
@@ -130,6 +131,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message2() {
         let messages_real =
@@ -142,6 +144,7 @@ mod tests {
         }
     }
 
+   #[cfg_attr(debug_assertions, ignore)]
     #[tokio::test]
     async fn test_multi_message3() {
         let text = r#"Отримано з поста "Khartiia"

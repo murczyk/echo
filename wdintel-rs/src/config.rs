@@ -1,9 +1,5 @@
-use crate::error::AppError;
 use crate::types::*;
-use anyhow::{Context, Result};
-use log::*;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use anyhow::Result;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
@@ -169,6 +165,7 @@ pub struct VaultConfig {
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {
+    // debug!("read_config; mode: {:?}", mode);
     let path = match mode {
         Mode::Live => PathBuf::from("/etc/echo/config.toml"),
         Mode::Debug => {
@@ -195,7 +192,6 @@ pub fn read_from_path<T>(path: PathBuf) -> Result<T, AppError>
 where
     T: for<'a> Deserialize<'a>,
 {
-    info!("Reading config from {:?}", path);
     let config = std::fs::read_to_string(path)?;
     let config: T = toml::from_str(&config).context(h!())?;
     Ok(config)

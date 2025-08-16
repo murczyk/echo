@@ -137,7 +137,7 @@ chrono = "0.4.41"
 default = []
 opencv = ["dep:opencv"]
 
-[profile.dev]
+[profile.release]
 debug-assertions = false
 
 [package.metadata.deb]

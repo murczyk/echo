@@ -399,34 +399,30 @@ fn parse_message_source(
 pub async fn upsert_group_area_of_responsibility(
     txn: &DatabaseTransaction,
     master_key: &str,
-    area_of_responsibility_id: Option<i64>,
-) -> Result<Option<Model>, AppError> {
-    Ok(match area_of_responsibility_id {
+    aor_ids: Option<Vec<i64>>,
+) -> Result<Vec<Model>, AppError> {
+    let res = match aor_ids {
         None => {
             signal_group_aor::Entity::delete_many()
                 .filter(signal_group_aor::Column::MasterKey.eq(master_key))
                 .exec(txn)
                 .await
                 .context(h!())?;
-            None
+            vec![]
         }
-        Some(id) => {
-            let sg_aor = signal_group_aor::Entity::find()
+        Some(aor_ids) => {
+            // Delete existing associations for this master_key
+            signal_group_aor::Entity::delete_many()
                 .filter(signal_group_aor::Column::MasterKey.eq(master_key))
-                .one(txn)
+                .exec(txn)
                 .await
                 .context(h!())?;
-            let has_old_sg_aor =
-                sg_aor.clone().map(|x| !x.aor_id.eq(&id)).is_some();
-            let has_ok_sg_aor =
-                sg_aor.clone().map(|x| x.aor_id.eq(&id)).is_some();
-            if has_old_sg_aor {
-                sg_aor.context(h!())?.delete(txn).await.context(h!())?;
-            }
-            if !has_ok_sg_aor {
+
+            // Insert new associations
+            for aor_id in &aor_ids {
                 signal_group_aor::ActiveModel {
                     master_key: Set(master_key.to_string()),
-                    aor_id: Set(id),
+                    aor_id: Set(*aor_id),
                     id: NotSet,
                     created_at: NotSet,
                 }
@@ -434,10 +430,21 @@ pub async fn upsert_group_area_of_responsibility(
                 .await
                 .context(h!())?;
             }
-            area_of_responsibility::Entity::find_by_id(id)
-                .one(txn)
-                .await
-                .context(h!())?
+
+            // Return all AOR models
+            let mut models = vec![];
+            for aor_id in &aor_ids {
+                if let Some(model) =
+                    area_of_responsibility::Entity::find_by_id(*aor_id)
+                        .one(txn)
+                        .await
+                        .context(h!())?
+                {
+                    models.push(model);
+                }
+            }
+            models
         }
-    })
+    };
+    Ok(res)
 }

@@ -3,9 +3,10 @@ use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
 use sea_orm::*;
 
+#[derive(Debug)]
 pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
-    pub aor: Option<area_of_responsibility::Model>,
+    pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -63,17 +64,21 @@ pub async fn bl_szd_group_update(
         .context(h!())?
         .unwrap_or((None, None));
 
+    let aor_ids = match &req.area_of_responsibility_ids {
+        None => req.area_of_responsibility_id.map(|id| vec![id]),
+        Some(ids) => Some(ids.clone()),
+    };
     let aor = crate::messenger::bl::upsert_group_area_of_responsibility(
         txn,
         &szd.group_master_key,
-        req.area_of_responsibility_id.clone(),
+        aor_ids,
     )
     .await
     .context(h!())?;
 
     let res = BlSzdGroupUpdateRes {
         is_secret,
-        aor,
+        aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_users,
         short_note,
         long_note,
@@ -239,7 +244,7 @@ pub async fn bl_szd_groups_list(
             )| {
                 let aor = group_aors.get(&master_key).cloned();
                 ZoneDatasourceGroup {
-                    area_of_responsibility: aor,
+                    areas_of_responsibility: aor.map(|a| vec![a]),
                     sigint_zone_datasource_id: szd_id,
                     group_master_key: master_key,
                     is_group_secret: is_secret,
