@@ -2,7 +2,6 @@ use crate::entities::{group_admin_data, signal_group};
 use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::types::*;
-use crate::rer_importer::collect_group_stats;
 use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::{AppError, Env};
 use actix_web::post;
@@ -14,6 +13,8 @@ use sea_orm::*;
 
 pub mod bl;
 pub mod group;
+#[cfg(test)]
+pub mod tests;
 pub mod types;
 pub mod worker;
 
@@ -98,67 +99,24 @@ pub async fn group_update(
     req: Json<GroupUpdateReq>,
 ) -> Result<Json<GroupEntryF1>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
-
-    let txn = env.dbx.begin().await?;
     let req = req.into_inner();
-    let m_group = group_admin_data::Entity::find()
-        .filter(
-            group_admin_data::Column::GroupMasterKey
-                .eq(&req.master_key.clone()),
-        )
-        .one(&txn)
-        .await
-        .context(h!())?;
-    let mut group_data = match m_group {
-        Some(group) => group,
-        None => group_admin_data::ActiveModel {
-            group_master_key: Set(Some(req.master_key.clone())),
-            short_note: Set(req.short_note.clone()),
-            long_note: Set(req.long_note.clone()),
-            id: NotSet,
-            created_at: NotSet,
-        }
-        .insert(&txn)
-        .await
-        .context(h!())?,
-    }
-    .into_active_model();
+    let txn = env.dbx.begin().await.context(h!())?;
 
-    let aor = bl::upsert_group_area_of_responsibility(
-        &txn,
-        &req.master_key,
-        req.area_of_responsibility_id.clone(),
-    )
-    .await
-    .context(h!())?;
+    let res = bl::bl_group_update(&req, &txn).await.context(h!())?;
 
-    group_data.short_note = Set(req.short_note);
-    group_data.long_note = Set(req.long_note);
-    let group_data = group_data.update(&txn).await.context(h!())?;
-
-    let group = signal_group::Entity::find_by_id(req.master_key.clone())
-        .one(&txn)
-        .await
-        .context(h!())?
-        .context(h!())?;
-
-    let stats = collect_group_stats(vec![group.master_key.clone()], &env.dbx)
-        .await
-        .context(h!())?
-        .get(&group.master_key)
-        .cloned()
-        .unwrap_or_default();
-
-    txn.commit().await?;
-
+    txn.commit().await.context(h!())?;
     Ok(Json(GroupEntryF1 {
-        master_key: group.master_key,
-        name: group.name.unwrap_or("".to_string()),
-        ignore_operativny: group.ignore_operativny,
-        short_note: group_data.short_note,
-        long_note: group_data.long_note,
-        group_stats: stats,
-        area_of_responsibility: aor.map(render_aor),
+        master_key: res.group.master_key.clone(),
+        name: res.group.name.clone().unwrap_or("".to_string()),
+        ignore_operativny: res.group.ignore_operativny,
+        short_note: res.group_data.short_note.clone(),
+        long_note: res.group_data.long_note.clone(),
+        group_stats: res.stats.clone(),
+        areas_of_responsibility: if res.aors.is_empty() {
+            None
+        } else {
+            Some(res.aors.into_iter().map(render_aor).collect())
+        },
     }))
 }
 

@@ -707,7 +707,7 @@ mod tests {
 "- На 22-й скажите, что крестики-нолики - работают
 - (НВ) Я на 420-й разговариваю, так что не переживай"
 "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -731,7 +731,7 @@ mod tests {
 
         -Кольцо 22 воздух СИНИЙ
 "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -756,7 +756,7 @@ mod tests {
         let body = r#"
 11.04.23 08:25:42> 11.04.23 07:38:02 460,3500 Остановись где нибудь я сейчас подеду к тебе и обясню как принял ? [Мережа: УКХ р/м управління 1 мсб 4 ВБ ВАСИЛІВКА]
 "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -778,7 +778,7 @@ mod tests {
 -Клён: 4-4. прикратилось по этогу 5-ть. деревяв...
 -Остров:прийнял"
 "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -798,7 +798,7 @@ mod tests {
 - 73 - 73 - МИХАЛЫЧ спрашивает дальшие его действия - куда и че
 2.- .................так я откуда знаю .....
 1.- михалыч михалыч - вышел на 71й  вот и он сказал - я не знаю вы все делали ? или нет вы "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -817,7 +817,7 @@ mod tests {
         let body = r#""30.05.2023	УКХ радіомережа н\в підрозділу НОВОДОНЕЦЬКЕ-НОВОМАЙОРСЬКЕ	01:47			415.2500	"- Перо-1, Перо-2 по нулям
 - ...
 - Рубеж-1, Рубеж-2 по нулям"	(перевірка обстановки)"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -838,7 +838,7 @@ mod tests {
     fn extract_unit_07() {
         let body = r#""18:38	463.3000	УКХ радіомережа управління підрозділу 2 мсб 37 омсбр 36 армії	КЕРМЕНЧИК	- на приеме
 - Искра Байкалу прием"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -859,7 +859,7 @@ mod tests {
     fn extract_unit_08() {
         let body =
             r#"УКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А (ТАРАСІВКА - ПОЛОГИ)"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -879,7 +879,7 @@ mod tests {
     #[test]
     fn extract_unit_10() {
         let body = r#"УКХ радіомережа невизначеного підрозділу в районі населених пунктів       БЛАГОДАТНЕ - УРОЖАЙНЕ   -если человека одного ос"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -900,7 +900,7 @@ mod tests {
     fn extract_unit_11() {
         let body =
             r#"УКХ р/м підрозділу із складу 64 омсбр 35 А (н.п. Дорожнянка)"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -920,7 +920,7 @@ mod tests {
     #[test]
     fn extract_unit_12() {
         let body = r#"УКХ р/м управління мсб зі складу 5сб 123сп МР 1 АК"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -940,7 +940,7 @@ mod tests {
     #[test]
     fn extract_unit_13() {
         let body = r#"УКХ р/м 5 сб 112 мсп МР 1 АК КЕРМЕНЧИК"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -957,7 +957,7 @@ mod tests {
     #[test]
     fn extract_unit_14() {
         let body = r#"УКХ р/м управління стрілецькими підрозділами припустимо зі складу 1113 сп МР 1 АК (північніше ПОЛОГИ)"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -984,7 +984,7 @@ mod tests {
 — Да, плюс!
 — 5. Собщи.
 — Борный 34. Просто скажи."#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1002,7 +1002,7 @@ mod tests {
     fn extract_unit_16() {
         let body =
             r#"УКХ р/м 1 мсб 70 мсп 42 мсд 58 А (ПАВЛІВСЬКЕ, НОВОФЕДОРІВКА)"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1022,7 +1022,7 @@ mod tests {
     #[test]
     fn extract_unit_17() {
         let body = r#"УКХ р/м управління 1 мсб 38 омсбр 35 А (півд. МИРНЕ);"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1042,7 +1042,7 @@ mod tests {
     #[test]
     fn extract_unit_18() {
         let body = r#"30.05.23 13:11 \\ 438.500 УКХ р/м управління 5 сб 112 осп (131 сп) МР, 4 осб ТрО 110 омсбр (район н.п. Новодонецьке – Новомайорське		"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1079,7 +1079,7 @@ mod tests {
 
 (виклик на звязок)
 "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1100,7 +1100,7 @@ mod tests {
 1. 100-й (йм. вузол зв'язку 1 мсб 123 омсбр), 100-й Борзому (йм. бойовик зі складу 1 мсб 123 омсбр)
 2. Давай быстренько, в норку
 1. Да, да, плюс"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1128,7 +1128,7 @@ mod tests {
 — Антей, я Фугас, прием.
 --На приеме.
 --И короче, я там круги делал, там вышка есть высокая, прям такая, ее прям в темноте, прям четко видно было.  "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1162,7 +1162,7 @@ mod tests {
 НВ
 
 — По полю, откуда, с севера? Если что, светлячки запускай Андрюха сразу."#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1190,7 +1190,7 @@ mod tests {
 
 Коментар: том
 "#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1223,7 +1223,7 @@ mod tests {
 75Й
 
 — 75й, я Коробка, у нас 0 3."#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1255,7 +1255,7 @@ mod tests {
 — Слышу и разбираю на 5. Только учти, что говорить надо первый второму
 — Принял.
 — Если вызываю я тебя, то я говорю Второй Первому."#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1282,7 +1282,7 @@ mod tests {
 – Взрыв на 2 часа, похоже сброс.
 
 Коментар: T4"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1311,7 +1311,7 @@ mod tests {
 НВ
 
 — Лупс 50. Читер, Читер 50. Читер, Читер 50. Днепр, Днепр 50. Днепр, Днепр 50. Днепр повтори, не прошло. Днепр повтори, не прошло. Плюс, Абухов 50. Плюс, Абухов 50. Чернобы 50. Чернобы 50. Ялта АДС 55. Ялта АДС 55."#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1345,7 +1345,7 @@ mod tests {
 4. Колодец 38
 5. 119-й 38
 1. Колодец, Барвиха да, 119-й да"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1372,7 +1372,7 @@ mod tests {
 123 омсбр
 р-н Білогорівка-Берестове
 1. 80, 80, я 24. 05, 43, 2, 238 (баба-яга). Я 24, прием."#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1401,7 +1401,7 @@ mod tests {
 — Ну нахуй, прям над нами, я бы не слышал.\\\\ Высоко, не высоко, слышишь.
 — Она груженной была.
 — Сколько там метров?"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1428,7 +1428,7 @@ mod tests {
 406.975  
 1. п\"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1455,7 +1455,7 @@ mod tests {
 Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А  
 Радіус похибки: 1000 м"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1478,7 +1478,7 @@ mod tests {
 АЛТАЙ  
 АЛМАЗ"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1501,7 +1501,7 @@ mod tests {
 406.975
 1. п\с"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1528,7 +1528,7 @@ mod tests {
 Приналежність підрозділу: ймовірно 2 мсб 70 мсп 42 мсд 58 А
 Радіус похибки: 1000 м"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1554,7 +1554,7 @@ mod tests {
 — Кенгуру 1 огонь
 — Один огонь, да, принял."#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1574,7 +1574,7 @@ mod tests {
 АЛТАЙ
 АЛМАЗ"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1599,7 +1599,7 @@ mod tests {
 — Лимон, Ямалу, Лимон, Ямалу, 6 6 6.
 — Бутик, Ямалу, Бутик, Ямалу, 6 6."#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1627,7 +1627,7 @@ Az-155
 УКХ радіомережа невизначеного підрозділу
 околиці Новооєлизаветівки (уточнюється)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1656,7 +1656,7 @@ Az-155
 
 — Юла 0 1. Шторм 333, Шторм 333."#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1683,7 +1683,7 @@ Az-155
 - 3 мсб? правильно?;
 .
 Коментар: ( запит на зв'язок );"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1713,7 +1713,7 @@ Az-155
 - выйди на мотор
 
 ( Запит на звязок)"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1741,7 +1741,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 - да принял
 - из них 11 импорт 14 нашых , все полные
 - ...спасибо"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1768,7 +1768,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             УКХ р/м 1 мсб 114 мсп 127 мсд (захід ЧКАЛОВА)
             ЗАЯЦ
             БАЙКАЛ"#;
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1794,7 +1794,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 2. да принял.
 (Л)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1820,7 +1820,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 1. Спроси у ДОБРОГО он должен знать где находится
 2. Рядом с МЕДУЗОЙ по правой стороне, вся дорога в лепестках. Как принял?"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1843,7 +1843,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 1. ТУШКАН и БАБАЙ можете .. собираться вы сегодня днем пойдете вытаскивать 200-ых КРЕСТА
 (Л)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1864,7 +1864,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 1. БАТЯ как слишиш, принимаеш...СУББОТА ГАЛУ, 105. БАТЯ я ГАЛ, проверка связи...СУББОТА я слишу...
 (нов)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1886,7 +1886,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         2. Выстрел да
         (3)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1912,7 +1912,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         — На внимании ли там? Да.
         "#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1942,7 +1942,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             2. Да принял.
             (Спостереження за особовим складом/ОВТ СОУ)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1974,7 +1974,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             2. Да.
             (Обмін службовою інформацією)"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2006,7 +2006,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
             - Черкес я 3-й , 437 , Кузя убыл"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2042,7 +2042,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
              -- принял, принял.
             ";
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2070,7 +2070,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
 — З Юго Запада на Восток идет ФПВ."#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2094,7 +2094,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
 — Сейчас, 5 малых. Принял, хорошо. Ты мне что нибудь везешь? Так, а эти, блядь, как заступающие, они не с тобой?"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2132,7 +2132,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
     ВЕСЕЛЫЙ"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2153,7 +2153,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 НВ
 НВ"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -2181,7 +2181,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
 — второй 076 Спасибо за прикрытие счастья здоровья"#;
 
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),

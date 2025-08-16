@@ -1,11 +1,14 @@
 use crate::entities::*;
-use crate::error::AppError;
-use crate::h;
+use crate::rer_importer::count_group_messages;
+use crate::rer_importer::types::SignalGroupStats;
 use crate::types::*;
-use anyhow::Context;
 use echo_migration::JoinType;
-use log::error;
 use sea_orm::*;
+
+pub mod handlers;
+#[cfg(test)]
+pub mod tests;
+pub mod types;
 
 pub async fn add_group<'a, 'async_trait, C>(
     group: signal_group::ActiveModel,
@@ -51,6 +54,19 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let master_key = group.master_key.clone();
+
+    // Check if group already has AOR assignments
+    let existing_aors = signal_group_aor::Entity::find()
+        .filter(signal_group_aor::Column::MasterKey.eq(&master_key))
+        .count(dbx)
+        .await
+        .context(h!())?;
+
+    if existing_aors > 0 {
+        info!("[group={master_key}] skipped assigning group's area of responsibility: group already has AOR assignments");
+        return Ok(None);
+    }
+
     let Some(datasource_id) = group.datasource_id else {
         info!("[group={master_key}] skipped assigning group's area of responsibility: no datasource specified for the group");
         return Ok(None);
@@ -76,4 +92,38 @@ where
     };
     model.insert(dbx).await.context(h!())?;
     Ok(Some(aor))
+}
+
+pub async fn collect_group_stats<'a, 'async_trait, C>(
+    keys: Vec<String>,
+    txn: &'a C,
+) -> Result<BTreeMap<String, SignalGroupStats>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let signal_message_counts_last_day =
+        count_group_messages(keys.clone(), txn, 1)
+            .await
+            .context(h!())?;
+    let signal_message_counts_last_week =
+        count_group_messages(keys.clone(), txn, 7)
+            .await
+            .context(h!())?;
+    let mut result = BTreeMap::new();
+    for k in keys {
+        let activity_last_day =
+            signal_message_counts_last_day.get(&k).cloned().unwrap_or(0);
+        let activity_last_week = signal_message_counts_last_week
+            .get(&k)
+            .cloned()
+            .unwrap_or(0);
+        result.insert(
+            k,
+            SignalGroupStats {
+                activity_last_day,
+                activity_last_week,
+            },
+        );
+    }
+    Ok(result)
 }

@@ -64,6 +64,7 @@
 - [#1047](https://github.com/echoua/echo/issues/1047) Мережа: додано фільтр по активним і неактивним частотам
 - [#1046](https://github.com/echoua/echo/issues/1046) Налаштування: редизайн і додана версія білда
 - [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
+- [#1231](https://github.com/echoua/echo/issues/1231) Декілька смуг в групі
 
 ## 2025-07-08
 

@@ -57,7 +57,7 @@ type alias GroupEditDialog =
     , selectedUsers : List String
     , userSelectState : Select.State
     , areaOfResponsibilitySelector :
-        { selected : Maybe Int
+        { selected : List Int
         , available : List B.AreaOfResponsibility
         , selectState : Select.State
         }
@@ -72,7 +72,7 @@ type alias OrphanGroupEditDialog =
     , shortNote : String
     , longNote : String
     , areaOfResponsibilitySelector :
-        { selected : Maybe Int
+        { selected : List Int
         , available : List B.AreaOfResponsibility
         , selectState : Select.State
         }
@@ -198,17 +198,21 @@ renderGroup model zoneId activeSourceId group =
 
                     Nothing ->
                         text ""
-                , -- Area of responsibility display
-                  case group.areaOfResponsibility of
-                    Just area ->
-                        div [ class "flex items-center" ]
-                            [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
-                            , span [ class "text-sm text-gray-600 flex items-center" ]
-                                [ i [ class "bi bi-geo-alt mr-1" ] []
-                                , span [ class "mr-1" ] [ text "Смуга:" ]
-                                , span [ class "font-medium" ] [ text area.name ]
+                , -- Areas of responsibility display
+                  case group.areasOfResponsibility of
+                    Just areas ->
+                        if List.isEmpty areas then
+                            text ""
+                        else
+                            div [ class "flex items-center" ]
+                                [ span [ class "text-gray-400 mx-2" ] [ text "|" ]
+                                , span [ class "text-sm text-gray-600 flex items-center" ]
+                                    [ i [ class "bi bi-geo-alt mr-1" ] []
+                                    , span [ class "mr-1" ] [ text "Смуги:" ]
+                                    , span [ class "font-medium" ]
+                                        [ text (areas |> List.map .name |> String.join ", ") ]
+                                    ]
                                 ]
-                            ]
 
                     Nothing ->
                         text ""
@@ -438,7 +442,7 @@ type Msg
     | UpdateOrphanGroupAreaOfResponsibility (Maybe Int)
     | ShowFullNoteModal String String -- groupKey, note
     | CloseFullNoteModal
-    | GroupAreaSelectMsg (Select.Msg String)
+    | GroupAreaSelectMsg (Select.Msg Int)
     | UpdateGroupAreaOfResponsibility (Maybe Int)
     | UpdateAreaOfResponsibilityFilter (Maybe Int)
     | AreaOfResponsibilityFilterMsg (Select.Msg Int)
@@ -875,7 +879,7 @@ update msg model =
                                 |> List.filter (\g -> g.groupMasterKey == groupKey)
                                 |> List.head
                     in
-                    case group of
+                                                case group of
                         Just g ->
                             let
                                 req : B.ZoneDatasourceGroupUpdateReq
@@ -885,7 +889,8 @@ update msg model =
                                     , userLogins = model.userSelectorSelect.selectedItems
                                     , shortNote = g.shortNote
                                     , longNote = g.longNote
-                                    , areaOfResponsibilityId = Nothing --TODO
+                                    , areaOfResponsibilityId = Nothing -- Deprecated field, use areaOfResponsibilityIds
+                                    , areaOfResponsibilityIds = Nothing -- Not setting areas in user selector save
                                     }
                             in
                             ( model, E.sendCmd <| Api.zone_datasource_group_update UserSelectorSaveDone req )
@@ -1111,7 +1116,7 @@ update msg model =
                                 , ignoreOperativny = False
                                 , groupStats = existingGroupStats
                                 , adminData = existingAdminData
-                                , areaOfResponsibility = Nothing --TODO
+                                , areasOfResponsibility = Nothing
                                 }
                                 model.groupInfos
 
@@ -1269,7 +1274,7 @@ update msg model =
                                         , createdAt = 0 -- We don't have the original creation time, so use 0
                                         , groupStats = groupInfo |> Maybe.map .groupStats |> Maybe.withDefault { activityLastDay = 0, activityLastWeek = 0 }
                                         , groupAdminData = groupInfo |> Maybe.andThen .adminData
-                                        , areaOfResponsibility = Nothing --TODO
+                                        , areasOfResponsibility = Nothing
                                         }
                                 in
                                 -- Only add if not already in orphan groups
@@ -1581,7 +1586,7 @@ update msg model =
                                     , selectedUsers = g.allowedUsers
                                     , userSelectState = Select.initState (Select.selectIdentifier ("group-edit-users-" ++ groupMasterKey))
                                     , areaOfResponsibilitySelector =
-                                        { selected = g.areaOfResponsibility |> Maybe.map .id
+                                        { selected = g.areasOfResponsibility |> Maybe.withDefault [] |> List.map .id
                                         , available = RD.withDefault [] model.areasOfResponsibility
                                         , selectState = Select.initState (Select.selectIdentifier "group-area-select")
                                         }
@@ -1606,7 +1611,7 @@ update msg model =
                                     , selectedUsers = g.allowedUsers
                                     , userSelectState = Select.initState (Select.selectIdentifier ("group-edit-users-" ++ groupMasterKey))
                                     , areaOfResponsibilitySelector =
-                                        { selected = g.areaOfResponsibility |> Maybe.map .id
+                                        { selected = g.areasOfResponsibility |> Maybe.withDefault [] |> List.map .id
                                         , available = RD.withDefault [] model.areasOfResponsibility
                                         , selectState = Select.initState (Select.selectIdentifier "group-area-select")
                                         }
@@ -1732,7 +1737,8 @@ update msg model =
 
                                         else
                                             Just dialog.longNote
-                                    , areaOfResponsibilityId = dialog.areaOfResponsibilitySelector.selected
+                                    , areaOfResponsibilityId = Nothing
+                                    , areaOfResponsibilityIds = if List.isEmpty dialog.areaOfResponsibilitySelector.selected then Nothing else Just dialog.areaOfResponsibilitySelector.selected
                                     }
                             in
                             ( { model
@@ -1799,22 +1805,27 @@ update msg model =
                             if g.groupMasterKey == groupMasterKey then
                                 -- Update the area of responsibility from the dialog state
                                 let
-                                    newAreaOfResponsibility =
+                                    newAreasOfResponsibility =
                                         case model.groupEditDialog of
                                             Just dialog ->
-                                                case dialog.areaOfResponsibilitySelector.selected of
-                                                    Just areaId ->
-                                                        RD.withDefault [] model.areasOfResponsibility
-                                                            |> List.filter (\area -> area.id == areaId)
-                                                            |> List.head
-
-                                                    Nothing ->
-                                                        Nothing
+                                                let
+                                                    selectedAreas =
+                                                        dialog.areaOfResponsibilitySelector.selected
+                                                            |> List.filterMap (\areaId ->
+                                                                RD.withDefault [] model.areasOfResponsibility
+                                                                    |> List.filter (\area -> area.id == areaId)
+                                                                    |> List.head
+                                                            )
+                                                in
+                                                if List.isEmpty selectedAreas then
+                                                    Nothing
+                                                else
+                                                    Just selectedAreas
 
                                             Nothing ->
-                                                updatedGroup.areaOfResponsibility
+                                                updatedGroup.areasOfResponsibility
                                 in
-                                { updatedGroup | areaOfResponsibility = newAreaOfResponsibility }
+                                { updatedGroup | areasOfResponsibility = newAreasOfResponsibility }
 
                             else
                                 g
@@ -1867,7 +1878,7 @@ update msg model =
                                 , shortNote = orphanGroup.groupAdminData |> Maybe.andThen .shortNote |> Maybe.withDefault ""
                                 , longNote = orphanGroup.groupAdminData |> Maybe.andThen .longNote |> Maybe.withDefault ""
                                 , areaOfResponsibilitySelector =
-                                    { selected = orphanGroup.areaOfResponsibility |> Maybe.map .id
+                                    { selected = orphanGroup.areasOfResponsibility |> Maybe.withDefault [] |> List.map .id
                                     , available = RD.withDefault [] model.areasOfResponsibility
                                     , selectState = Select.initState (Select.selectIdentifier "area-select")
                                     }
@@ -1931,7 +1942,8 @@ update msg model =
 
                                 else
                                     Just dialog.longNote
-                            , areaOfResponsibilityId = dialog.areaOfResponsibilitySelector.selected
+                            , areaOfResponsibilityId = Nothing
+                            , areaOfResponsibilityIds = if List.isEmpty dialog.areaOfResponsibilitySelector.selected then Nothing else Just dialog.areaOfResponsibilitySelector.selected
                             }
                     in
                     ( { model
@@ -1966,13 +1978,13 @@ update msg model =
                                                                 , longNote = updatedGroup.longNote
                                                                 }
 
-                                                -- Use the area of responsibility from the updated group
-                                                newAreaOfResponsibility =
-                                                    updatedGroup.areaOfResponsibility
+                                                -- Use the areas of responsibility from the updated group
+                                                newAreasOfResponsibility =
+                                                    updatedGroup.areasOfResponsibility
                                             in
                                             { group
                                                 | groupAdminData = newAdminData
-                                                , areaOfResponsibility = newAreaOfResponsibility
+                                                , areasOfResponsibility = newAreasOfResponsibility
                                             }
 
                                         else
@@ -2027,9 +2039,9 @@ update msg model =
                         ( mAction, imodel2, icmd ) =
                             Select.update imsg dialog.areaOfResponsibilitySelector.selectState
 
-                        selected : Maybe Int
+                        selected : List Int
                         selected =
-                            Le.Block.Select.singleUpd mAction dialog.areaOfResponsibilitySelector.selected
+                            Le.Block.Select.multiUpdI mAction dialog.areaOfResponsibilitySelector.selected
                     in
                     ( { model
                         | orphanGroupEditDialog =
@@ -2046,7 +2058,7 @@ update msg model =
                 Just dialog ->
                     ( { model
                         | orphanGroupEditDialog =
-                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea, available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
+                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea |> Maybe.map List.singleton |> Maybe.withDefault [], available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
                       }
                     , E.none
                     )
@@ -2071,10 +2083,9 @@ update msg model =
                         ( mAction, imodel2, icmd ) =
                             Select.update imsg dialog.areaOfResponsibilitySelector.selectState
 
-                        selected : Maybe Int
+                        selected : List Int
                         selected =
-                            Le.Block.Select.singleUpd mAction (dialog.areaOfResponsibilitySelector.selected |> Maybe.map String.fromInt)
-                                |> Maybe.andThen String.toInt
+                            Le.Block.Select.multiUpdI mAction dialog.areaOfResponsibilitySelector.selected
                     in
                     ( { model
                         | groupEditDialog =
@@ -2091,7 +2102,7 @@ update msg model =
                 Just dialog ->
                     ( { model
                         | groupEditDialog =
-                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea, available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
+                            Just { dialog | areaOfResponsibilitySelector = { selected = newArea |> Maybe.map List.singleton |> Maybe.withDefault [], available = dialog.areaOfResponsibilitySelector.available, selectState = dialog.areaOfResponsibilitySelector.selectState } }
                       }
                     , E.none
                     )
@@ -2419,15 +2430,14 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                     ]
                                     [ text "Смуга відповідальності:" ]
                                 , let
-                                    selectedItem =
-                                        Maybe.andThen
-                                            (\areaId ->
+                                    selectedItems =
+                                        dialog.areaOfResponsibilitySelector.selected
+                                            |> List.filterMap (\areaId ->
                                                 dialog.areaOfResponsibilitySelector.available
                                                     |> List.filter (\area -> area.id == areaId)
                                                     |> List.head
                                                     |> Maybe.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
                                             )
-                                            dialog.areaOfResponsibilitySelector.selected
 
                                     availableItems =
                                         dialog.areaOfResponsibilitySelector.available
@@ -2442,36 +2452,41 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                   in
                                   Html.map OrphanGroupAreaSelectMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
-                                            selectedItem
+                                        Le.Block.Select.renderSelect
+                                            selectedItems
                                             dialog.areaOfResponsibilitySelector.selectState
                                             availableItems
-                                            "виберіть смугу"
+                                            "виберіть смуги"
                                             selectConfig
                                 ]
-                            , -- Інформація про вибрану смугу
-                              case dialog.areaOfResponsibilitySelector.selected of
-                                Just areaId ->
-                                    case List.filter (\area -> area.id == areaId) dialog.areaOfResponsibilitySelector.available |> List.head of
-                                        Just area ->
-                                            div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
-                                                [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
-                                                , case area.description of
-                                                    Just desc ->
-                                                        div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
+                            , -- Інформація про вибрані смуги
+                              let
+                                selectedAreas =
+                                    dialog.areaOfResponsibilitySelector.selected
+                                        |> List.filterMap (\areaId ->
+                                            dialog.areaOfResponsibilitySelector.available
+                                                |> List.filter (\area -> area.id == areaId)
+                                                |> List.head
+                                        )
+                              in
+                              if List.isEmpty selectedAreas then
+                                div [ class "text-sm text-gray-500 italic" ] [ text "Смуги не вибрані" ]
+                              else
+                                div [ class "space-y-2" ]
+                                    (selectedAreas |> List.map (\area ->
+                                        div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
+                                            [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
+                                            , case area.description of
+                                                Just desc ->
+                                                    div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
 
-                                                    Nothing ->
-                                                        text ""
-                                                , div [ class "text-xs text-blue-500 mt-2" ]
-                                                    [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
-                                                    ]
+                                                Nothing ->
+                                                    text ""
+                                            , div [ class "text-xs text-blue-500 mt-2" ]
+                                                [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
                                                 ]
-
-                                        Nothing ->
-                                            text ""
-
-                                Nothing ->
-                                    div [ class "text-sm text-gray-500 italic" ] [ text "Смуга не вибрана" ]
+                                            ]
+                                    ))
                             ]
                         ]
                     , -- Error message
@@ -2602,20 +2617,18 @@ renderGroupEditSidebar isDark model dialog =
                                     ]
                                     [ text "Виберіть смугу:" ]
                                 , let
-                                    selectedItem =
-                                        case dialog.areaOfResponsibilitySelector.selected of
-                                            Just areaId ->
+                                    selectedItems =
+                                        dialog.areaOfResponsibilitySelector.selected
+                                            |> List.filterMap (\areaId ->
                                                 dialog.areaOfResponsibilitySelector.available
                                                     |> List.filter (\area -> area.id == areaId)
                                                     |> List.head
-                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
-
-                                            Nothing ->
-                                                Nothing
+                                                    |> Maybe.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
+                                            )
 
                                     availableItems =
                                         dialog.areaOfResponsibilitySelector.available
-                                            |> List.map (\area -> Select.basicMenuItem { item = String.fromInt area.id, label = area.name })
+                                            |> List.map (\area -> Select.basicMenuItem { item = area.id, label = area.name })
 
                                     selectConfig =
                                         { loading = False
@@ -2626,37 +2639,42 @@ renderGroupEditSidebar isDark model dialog =
                                   in
                                   Html.map GroupAreaSelectMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
-                                            selectedItem
+                                        Le.Block.Select.renderSelect
+                                            selectedItems
                                             dialog.areaOfResponsibilitySelector.selectState
                                             availableItems
-                                            "виберіть смугу"
+                                            "виберіть смуги"
                                             selectConfig
                                 ]
-                            , -- Selected area info
+                            , -- Selected areas info
                               div []
-                                [ case dialog.areaOfResponsibilitySelector.selected of
-                                    Just areaId ->
-                                        case List.filter (\area -> area.id == areaId) dialog.areaOfResponsibilitySelector.available |> List.head of
-                                            Just area ->
-                                                div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
-                                                    [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
-                                                    , case area.description of
-                                                        Just desc ->
-                                                            div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
+                                [ let
+                                    selectedAreas =
+                                        dialog.areaOfResponsibilitySelector.selected
+                                            |> List.filterMap (\areaId ->
+                                                dialog.areaOfResponsibilitySelector.available
+                                                    |> List.filter (\area -> area.id == areaId)
+                                                    |> List.head
+                                            )
+                                  in
+                                  if List.isEmpty selectedAreas then
+                                    div [ class "text-sm text-gray-500 italic" ] [ text "Смуги не вибрані" ]
+                                  else
+                                    div [ class "space-y-2" ]
+                                        (selectedAreas |> List.map (\area ->
+                                            div [ class "p-3 bg-blue-50 rounded border border-blue-200" ]
+                                                [ div [ class "text-sm font-medium text-blue-800" ] [ text area.name ]
+                                                , case area.description of
+                                                    Just desc ->
+                                                        div [ class "text-sm text-blue-600 mt-1" ] [ text desc ]
 
-                                                        Nothing ->
-                                                            text ""
-                                                    , div [ class "text-xs text-blue-500 mt-2" ]
-                                                        [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
-                                                        ]
+                                                    Nothing ->
+                                                        text ""
+                                                , div [ class "text-xs text-blue-500 mt-2" ]
+                                                    [ text ("Діапазон: " ++ String.fromFloat area.leftBound ++ " - " ++ String.fromFloat area.rightBound)
                                                     ]
-
-                                            Nothing ->
-                                                text ""
-
-                                    Nothing ->
-                                        div [ class "text-sm text-gray-500 italic" ] [ text "Смуга не вибрана" ]
+                                                ]
+                                        ))
                                 ]
                             ]
                         ]
@@ -3155,28 +3173,30 @@ renderOrphanGroupsTable model groups =
         renderAreaOfResponsibilityColumn : B.OrphanSignalGroupEntry -> Table.HtmlDetails Msg
         renderAreaOfResponsibilityColumn group =
             let
+                areas = group.areasOfResponsibility |> Maybe.withDefault []
+                
                 displayText : String
                 displayText =
-                    case group.areaOfResponsibility of
-                        Just area ->
-                            area.name
-
-                        Nothing ->
-                            "-"
+                    if List.isEmpty areas then
+                        "-"
+                    else
+                        areas |> List.map .name |> String.join ", "
 
                 tooltipText : String
                 tooltipText =
-                    case group.areaOfResponsibility of
-                        Just area ->
-                            case area.description of
-                                Just desc ->
-                                    area.name ++ " - " ++ desc
+                    if List.isEmpty areas then
+                        "Смуги не призначені"
+                    else
+                        areas 
+                            |> List.map (\area ->
+                                case area.description of
+                                    Just desc ->
+                                        area.name ++ " - " ++ desc
 
-                                Nothing ->
-                                    area.name
-
-                        Nothing ->
-                            "Смуга не призначена"
+                                    Nothing ->
+                                        area.name
+                            )
+                            |> String.join "; "
             in
             { attributes = []
             , children =
@@ -3524,7 +3544,9 @@ zoneCard2 isDark model user ( zoneId, zone ) =
                                     areaMatches =
                                         case model.areaOfResponsibilityFilter of
                                             Just areaId ->
-                                                group.areaOfResponsibility |> Maybe.map .id |> Maybe.withDefault 0 |> (==) areaId
+                                                group.areasOfResponsibility
+                                                    |> Maybe.withDefault []
+                                                    |> List.any (\area -> area.id == areaId)
 
                                             Nothing ->
                                                 True

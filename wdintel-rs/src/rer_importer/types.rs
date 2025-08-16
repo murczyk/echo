@@ -352,7 +352,7 @@ pub struct SignalGroupsRsp {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode, PartialEq, Clone,
 )]
 pub struct SignalGroupEntry {
     pub master_key: String,
@@ -360,7 +360,7 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
-    pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
 
 #[derive(
@@ -393,26 +393,6 @@ pub struct SignalGroupStats {
 pub struct GroupAdminData {
     pub short_note: Option<String>,
     pub long_note: Option<String>,
-}
-
-/// Запис групи, яка не прив'язана до жодного напрямку
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct OrphanSignalGroupEntry {
-    /// Унікальний ідентифікатор групи
-    pub master_key: String,
-    /// Назва групи
-    pub name: String,
-    /// Прапорець, що вказує чи ігнорувати повідомлення в Оперативному
-    pub ignore_operativny: bool,
-    /// Ідентифікатор джерела даних, з якого походить група (може бути None)
-    pub datasource_id: Option<i64>,
-    /// Час створення групи (в мілісекундах від epoch)
-    pub created_at: i64,
-    pub group_stats: SignalGroupStats,
-    pub group_admin_data: Option<GroupAdminData>,
-    pub area_of_responsibility: Option<AreaOfResponsibility>,
 }
 
 #[derive(
