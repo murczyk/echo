@@ -1274,7 +1274,7 @@ type alias SignalGroupEntry =
     , ignoreOperativny : Bool
     , groupStats : SignalGroupStats
     , adminData : Maybe GroupAdminData
-    , areaOfResponsibility : Maybe AreaOfResponsibility
+    , areasOfResponsibility : Maybe (List AreaOfResponsibility)
     }
 
 
@@ -1286,7 +1286,7 @@ signalGroupEntryEncoder struct =
         , ( "ignore_operativny", Json.Encode.bool struct.ignoreOperativny )
         , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map groupAdminDataEncoder) struct.adminData )
-        , ( "area_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map areaOfResponsibilityEncoder) struct.areaOfResponsibility )
+        , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
 
 
@@ -1298,7 +1298,7 @@ type alias OrphanSignalGroupEntry =
     , createdAt : Int
     , groupStats : SignalGroupStats
     , groupAdminData : Maybe GroupAdminData
-    , areaOfResponsibility : Maybe AreaOfResponsibility
+    , areasOfResponsibility : Maybe (List AreaOfResponsibility)
     }
 
 
@@ -1312,7 +1312,7 @@ orphanSignalGroupEntryEncoder struct =
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "group_stats", signalGroupStatsEncoder struct.groupStats )
         , ( "group_admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map groupAdminDataEncoder) struct.groupAdminData )
-        , ( "area_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map areaOfResponsibilityEncoder) struct.areaOfResponsibility )
+        , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
 
 
@@ -6597,7 +6597,7 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_admin_data" (Json.Decode.nullable groupAdminDataDecoder)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility" (Json.Decode.nullable areaOfResponsibilityDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list areaOfResponsibilityDecoder))))
 
 
 rerAnalysisQueryStateDecoder : Json.Decode.Decoder RerAnalysisQueryState
@@ -6653,7 +6653,7 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ignore_operativny" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" signalGroupStatsDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable groupAdminDataDecoder)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility" (Json.Decode.nullable areaOfResponsibilityDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list areaOfResponsibilityDecoder))))
 
 
 batchMessageCommentsReqDecoder : Json.Decode.Decoder BatchMessageCommentsReq

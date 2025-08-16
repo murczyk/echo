@@ -439,7 +439,7 @@ pub async fn orphan_signal_groups(
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
                 group_admin_data,
-                area_of_responsibility: aor,
+                areas_of_responsibility: aor.map(|a| vec![a]),
             })
         })
         .collect();
@@ -783,8 +783,8 @@ pub async fn collect_groups(
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
                 group_stats: stats,
-                area_of_responsibility: aor,
                 admin_data: group_admin_data,
+                areas_of_responsibility: aor.map(|a| vec![a]),
             })
         })
         .collect();

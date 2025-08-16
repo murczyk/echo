@@ -2194,7 +2194,7 @@ async fn collect_group_names(
                 ignore_operativny,
                 group_stats: stats,
                 admin_data: group_admin_data,
-                area_of_responsibility: aor,
+                areas_of_responsibility: aor.map(|a| vec![a]),
             });
         }
     }
@@ -2219,7 +2219,7 @@ async fn collect_group_names(
             ignore_operativny,
             group_stats: stats,
             admin_data: group_admin_data,
-            area_of_responsibility: aor,
+            areas_of_responsibility: aor.map(|a| vec![a]),
         });
     }
     Ok(result)

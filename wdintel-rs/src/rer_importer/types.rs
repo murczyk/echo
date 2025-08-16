@@ -352,7 +352,7 @@ pub struct SignalGroupsRsp {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode, PartialEq, Clone,
 )]
 pub struct SignalGroupEntry {
     pub master_key: String,
@@ -360,7 +360,7 @@ pub struct SignalGroupEntry {
     pub ignore_operativny: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
-    pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
 
 #[derive(
@@ -412,7 +412,7 @@ pub struct OrphanSignalGroupEntry {
     pub created_at: i64,
     pub group_stats: SignalGroupStats,
     pub group_admin_data: Option<GroupAdminData>,
-    pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
 
 #[derive(
