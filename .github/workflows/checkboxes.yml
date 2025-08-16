@@ -30,21 +30,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Pixi
+      - name: Setup Python dependencies
         run: |
-          if command -v pixi &> /dev/null; then
-            echo "Pixi is already installed"
-            pixi --version
-          else
-            echo "Installing Pixi..."
-            curl -fsSL https://pixi.sh/install.sh | bash
-            export PATH="$HOME/.pixi/bin:$PATH"
-            echo "$HOME/.pixi/bin" >> $GITHUB_PATH
-          fi
+          python3 -m pip install --user PyGithub
 
       - name: Check PR checkboxes
         run: |
-          pixi run ./scripts/ci/check_pr_checkboxes.py \
+          python3 ./scripts/ci/check_pr_checkboxes.py \
             --github-token ${{ secrets.GITHUB_TOKEN }} \
             --github-repository ${{ github.repository }} \
             --pr-number ${{ github.event.pull_request.number }}
