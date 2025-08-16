@@ -2053,22 +2053,6 @@ pub async fn network_callsigns_list(
 
     let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
 
-    let filter = EtalonkaFilter {
-        since_date_inclusive_ms: Some(
-            network.active_from.and_utc().timestamp_millis(),
-        ),
-        till_date_noninclusive_ms: Some(
-            network
-                .active_to
-                .map(|dt| dt.and_utc().timestamp_millis())
-                .unwrap_or_else(|| {
-                    Utc::now().naive_utc().and_utc().timestamp_millis()
-                }),
-        ),
-        network_id: req.network_id,
-        filter_further_investigation: None,
-    };
-
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
         &user,
@@ -2081,7 +2065,7 @@ pub async fn network_callsigns_list(
         find_all_known_callsigns(&env.dbx).await.context(h!())?;
 
     let callsigns_raw =
-        load_callsigns(&env.dbx, &groups, &filter, &all_known_callsigns)
+        load_callsigns(&env.dbx, &groups, req.network_id, &all_known_callsigns)
             .await
             .context(h!())?;
 
@@ -2128,23 +2112,8 @@ pub async fn network_freqs_list(
         .await
         .context(h!())?;
 
-    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
-
-    let filter = EtalonkaFilter {
-        since_date_inclusive_ms: Some(
-            network.active_from.and_utc().timestamp_millis(),
-        ),
-        till_date_noninclusive_ms: Some(
-            network
-                .active_to
-                .map(|dt| dt.and_utc().timestamp_millis())
-                .unwrap_or_else(|| {
-                    Utc::now().naive_utc().and_utc().timestamp_millis()
-                }),
-        ),
-        network_id: req.network_id,
-        filter_further_investigation: None,
-    };
+    let _network =
+        find_network(&env.dbx, req.network_id).await.context(h!())?;
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -2154,7 +2123,7 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, &filter, false)
+    let freqs = load_freqs(&env.dbx, &groups, req.network_id, false)
         .await
         .context(h!())?;
 

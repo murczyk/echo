@@ -262,7 +262,7 @@ pub async fn generate_networks_docx_report(
             let callsigns = load_callsigns(
                 &env.dbx,
                 &groups,
-                &filter,
+                network.id,
                 &all_known_callsigns,
             )
             .await
@@ -295,7 +295,7 @@ pub async fn generate_networks_docx_report(
             let freqs = load_freqs(
                 &env.dbx,
                 &groups,
-                &filter,
+                network.id,
                 settings.active_freqs_only,
             )
             .await

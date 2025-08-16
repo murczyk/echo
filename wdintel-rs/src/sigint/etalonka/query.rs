@@ -109,10 +109,10 @@ pub enum Callsigns {
 pub async fn load_freqs(
     db: &DatabaseConnection,
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
     active_freqs_only: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
-    trace!("> load freqs for network: {:?}", filter.network_id);
+    trace!("> load freqs for network: {:?}", network_id);
 
     let mut q: SelectStatement = Query::select();
     q.expr_as(
@@ -157,7 +157,10 @@ pub async fn load_freqs(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
     )
     .and_where(
-        Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(filter.network_id),
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
+    )
+    .and_where(
+        Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
     )
     .and_where(
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
@@ -282,8 +285,11 @@ pub async fn load_freqs(
                 .eq(false),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id))
-                .eq(filter.network_id),
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
         )
         .order_by_expr(Expr::cust("freq"), Order::Asc)
         .to_owned();
@@ -415,25 +421,25 @@ pub async fn find_all_known_callsigns(
 }
 
 #[derive(Debug, Clone)]
-struct CallsignCommunicationInfo {
-    message_count: i64,
-    last_datetime: Option<i64>,
-    freqs: Option<Vec<String>>,
-    network_names: Option<Vec<String>>,
+pub struct CallsignCommunicationInfo {
+    pub message_count: i64,
+    pub last_datetime: Option<i64>,
+    pub freqs: Option<Vec<String>>,
+    pub network_names: Option<Vec<String>>,
 }
 
 pub async fn load_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
     known_callsigns: &Vec<KnownCallsignRes>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
-    trace!("> load_callsigns for network: {:?}", filter.network_id);
+    trace!("> load_callsigns for network: {:?}", network_id);
 
     let (base_with, callsigns_select) =
-        build_callsigns_queries(groups, filter).context(h!())?;
+        build_callsigns_queries(groups, network_id).context(h!())?;
 
     // Step 1. Get all active callsigns for the given network
     let active_callsigns =
@@ -520,15 +526,15 @@ pub async fn load_callsigns(
     trace!(
         "[load_callsigns] Execution time: {:.2?} (network: {:?})",
         duration,
-        filter.network_id
+        network_id
     );
 
     Ok(res)
 }
 
-fn build_callsigns_queries(
+pub fn build_callsigns_queries(
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
 ) -> Result<(WithClause, SelectStatement), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
@@ -573,8 +579,11 @@ fn build_callsigns_queries(
                 .eq(false),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
-                .eq(filter.network_id),
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
         )
         .to_owned();
 
@@ -703,7 +712,7 @@ fn build_callsigns_queries(
         )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintUnit::Id))
-                .eq(filter.network_id),
+                .eq(network_id),
         )
         .to_owned();
 
@@ -768,12 +777,15 @@ pub async fn get_active_callsigns(
     Ok(records)
 }
 
-async fn get_communication_info_for_callsigns(
-    db: &DatabaseConnection,
+pub async fn get_communication_info_for_callsigns<'a, 'async_trait, C>(
+    txn: &'a C,
     base_with: WithClause,
     callsigns_select: SelectStatement,
     callsigns: &[String],
-) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError> {
+) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     if callsigns.is_empty() {
         return Ok(HashMap::new());
     }
@@ -806,7 +818,7 @@ async fn get_communication_info_for_callsigns(
 
     let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
 
-    let rows = db
+    let rows = txn
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query.to_string(PostgresQueryBuilder),

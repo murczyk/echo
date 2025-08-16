@@ -120,6 +120,8 @@ pub struct NetworkCallsign {
     pub source_id: Option<i64>,
     pub created_at: i64,
     pub active: bool,
+    pub message_count: i64,
+    pub last_datetime: Option<i64>,
 }
 
 #[derive(
