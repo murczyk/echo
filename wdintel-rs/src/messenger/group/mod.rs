@@ -7,6 +7,9 @@ use echo_migration::JoinType;
 use log::error;
 use sea_orm::*;
 
+#[cfg(test)]
+pub mod tests;
+
 pub async fn add_group<'a, 'async_trait, C>(
     group: signal_group::ActiveModel,
     dbx: &'a C,
@@ -51,6 +54,19 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let master_key = group.master_key.clone();
+
+    // Check if group already has AOR assignments
+    let existing_aors = signal_group_aor::Entity::find()
+        .filter(signal_group_aor::Column::MasterKey.eq(&master_key))
+        .count(dbx)
+        .await
+        .context(h!())?;
+
+    if existing_aors > 0 {
+        info!("[group={master_key}] skipped assigning group's area of responsibility: group already has AOR assignments");
+        return Ok(None);
+    }
+
     let Some(datasource_id) = group.datasource_id else {
         info!("[group={master_key}] skipped assigning group's area of responsibility: no datasource specified for the group");
         return Ok(None);
