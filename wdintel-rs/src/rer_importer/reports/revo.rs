@@ -161,8 +161,8 @@ fn render_network_row(row: NetworkRow) -> TableRow {
     let mut network_cell =
         mk_bold_text_cell(&row.name).add_paragraph(mk_paragraph(""));
     for freq in row.freqs {
-        network_cell = network_cell
-            .add_paragraph(mk_paragraph(&format!("\n{freq} МГц")));
+        network_cell =
+            network_cell.add_paragraph(mk_paragraph(&format!("\n{freq} МГц")));
     }
     let activity_cell =
         mk_text_cell(&row.activity.since.format(DTM_FORMAT).to_string())
@@ -496,7 +496,10 @@ async fn collect_report(
     let mut hostile_networks = vec![];
     let mut undefined_networks = vec![];
     for id in network_ids {
-        let keys = seances_map.keys().filter(|&(_, id_val, _)| id == *id_val).cloned()
+        let keys = seances_map
+            .keys()
+            .filter(|&(_, id_val, _)| id == *id_val)
+            .cloned()
             .collect_vec();
         let seances = seances_map
             .iter()
@@ -554,12 +557,8 @@ async fn collect_report(
             network_name = "Радіомережа".to_string();
         }
         let (name, is_defined) = match network.unit_name.clone() {
-            None => {
-                (format!("{network_name} невизначеного підрозділу"), false)
-            }
-            Some(unit_name) => {
-                (format!("{network_name} {unit_name}"), true)
-            }
+            None => (format!("{network_name} невизначеного підрозділу"), false),
+            Some(unit_name) => (format!("{network_name} {unit_name}"), true),
         };
         let row = NetworkRow {
             name,

@@ -25,9 +25,7 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
             let Some(part_c) = m_cap_s(&capts, "freq_c") else {
                 break '_if;
             };
-            return Ok(Some(etalon(&format!(
-                "{part_a}.{part_b}{part_c}"
-            ))));
+            return Ok(Some(etalon(&format!("{part_a}.{part_b}{part_c}"))));
         }
     }
     '_if: {

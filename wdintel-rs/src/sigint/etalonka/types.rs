@@ -52,8 +52,7 @@ pub struct NetworkEtalonkaResult {
     pub active_to: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, FromQueryResult)]
-#[derive(Default)]
+#[derive(Debug, FromQueryResult, Default)]
 pub struct FreqStatsRes {
     pub freq: String,
     pub name: String,
@@ -205,7 +204,6 @@ pub struct FreqActivityHistoryRec {
     pub active_from: i64,
     pub active_to: Option<i64>,
 }
-
 
 impl Ord for KnownCallsignShortRes {
     fn cmp(&self, other: &Self) -> Ordering {

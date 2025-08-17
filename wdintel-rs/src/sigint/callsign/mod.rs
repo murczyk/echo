@@ -512,10 +512,7 @@ pub async fn callsign_binds(
         let binds = binds.all(&env.dbx).await?;
         res_map.insert(
             one_callsign_id.to_string(),
-            binds
-                .into_iter()
-                .map(render_callsign_bind)
-                .collect(),
+            binds.into_iter().map(render_callsign_bind).collect(),
         );
     }
     Ok(Json(res_map))

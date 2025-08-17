@@ -133,12 +133,9 @@ pub async fn report_docx_kind_naushnom(
                         .set_borders(TableCellBorders::new()),
                     TableCell::new()
                         .width(width_unit * 11, WidthType::Dxa)
-                        .add_paragraph(
-                            Paragraph::new().add_run(
-                                Run::new()
-                                    .add_text(msg.freq.clone().to_string()),
-                            ),
-                        )
+                        .add_paragraph(Paragraph::new().add_run(
+                            Run::new().add_text(msg.freq.clone().to_string()),
+                        ))
                         .set_borders(TableCellBorders::new()),
                     split_into_lines(
                         TableCell::new().width(width_unit * 50, WidthType::Dxa),

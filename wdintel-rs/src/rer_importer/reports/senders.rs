@@ -22,8 +22,7 @@ pub enum ReportAggregation {
     ByPost,
 }
 
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 struct SenderStats {
     overall: u64,
     per_day: BTreeMap<String, u64>,
@@ -36,7 +35,6 @@ struct MessageStatRecord {
     sender: Option<String>,
     post: Option<String>,
 }
-
 
 pub async fn report_xlsx_kind_senders(
     aggregation_kind: ReportAggregation,

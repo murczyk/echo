@@ -39,7 +39,7 @@ pub async fn secret_worker(config: VaultConfig) {
     loop {
         info!("> starting secret_worker");
         match fetch_config(&config).await {
-            Ok(_) => return ,
+            Ok(_) => return,
             Err(e) => {
                 info!("retry scheduled, unable to load config: {e}");
             }

@@ -463,8 +463,7 @@ async fn sync_senders(
         .flat_map(|m| m.sender.clone())
         .map(|s| (s.uuid.clone(), s))
         .collect::<BTreeMap<_, _>>();
-    let sender_ids =
-        senders.keys().cloned().collect::<Vec<_>>();
+    let sender_ids = senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.is_in(sender_ids))
         .select_only()

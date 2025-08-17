@@ -33,10 +33,8 @@ async fn rer_callsign_info_single(
         .all(dbx)
         .await
         .context(h!())?;
-    let callsign_ids = callsigns_data
-        .iter()
-        .map(|(x, _)| x.id)
-        .collect::<Vec<_>>();
+    let callsign_ids =
+        callsigns_data.iter().map(|(x, _)| x.id).collect::<Vec<_>>();
     let reported_networks_per_callsign =
         collect_reported_networks_per_callsign(callsign_ids, dbx)
             .await
@@ -49,8 +47,11 @@ async fn rer_callsign_info_single(
                 callsign: callsign.callsign,
                 position: callsign.position,
                 comment: callsign.comment.to_string()
-                    + if callsign
-                        .developing { " (в дорозвідці)" } else { "" },
+                    + if callsign.developing {
+                        " (в дорозвідці)"
+                    } else {
+                        ""
+                    },
                 unit_1: unit.name,
                 unit_2: "".to_string(),
                 unit_id: Some(unit.id),
@@ -168,10 +169,7 @@ pub async fn load_callsigns(
             .for_each(|c| callsigns.push(c));
     }
 
-    let callsign_ids = callsigns
-        .iter()
-        .map(|(x, _)| x.id)
-        .collect::<Vec<_>>();
+    let callsign_ids = callsigns.iter().map(|(x, _)| x.id).collect::<Vec<_>>();
 
     let reported_networks_per_callsign =
         collect_reported_networks_per_callsign(callsign_ids, dbx)
@@ -191,8 +189,11 @@ pub async fn load_callsigns(
                         callsign: callsign.callsign.clone(),
                         position: callsign.position.clone(),
                         comment: callsign.comment.to_string()
-                            + if callsign
-                                .developing { " (в дорозвідці)" } else { "" },
+                            + if callsign.developing {
+                                " (в дорозвідці)"
+                            } else {
+                                ""
+                            },
                         unit_1: unit.name.clone(),
                         unit_2: "".to_string(),
                         unit_id: Some(unit.id),

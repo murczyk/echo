@@ -53,10 +53,8 @@ pub async fn report_networks(
             .await
             .context(h!())?;
 
-    let filename = format!(
-        "report_{}.docx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
-    );
+    let filename =
+        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
     let outpath = generate_networks_docx_report(
         &env,
@@ -104,10 +102,8 @@ pub async fn report_networks_batch_id(
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
         load_networks_by_id(&env.dbx, &req).await.context(h!())?;
 
-    let filename = format!(
-        "report_{}.docx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
-    );
+    let filename =
+        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
 
     let outpath = generate_networks_docx_report(
         &env,
@@ -322,16 +318,12 @@ pub async fn generate_networks_docx_report(
             doc = add_field(
                 doc,
                 "2. Район функціонування/розгортання: ",
-                network
-                    .location.as_deref()
-                    .unwrap_or_default(),
+                network.location.as_deref().unwrap_or_default(),
             );
             doc = add_field(
                 doc,
                 "3. Призначення: ",
-                network
-                    .purpose.as_deref()
-                    .unwrap_or(DEFAULT_PURPOSE),
+                network.purpose.as_deref().unwrap_or(DEFAULT_PURPOSE),
             );
             doc = add_field(
                 doc,
@@ -402,21 +394,24 @@ pub async fn generate_networks_docx_report(
                 doc,
                 "8. Режим роботи радіомережі: ",
                 network
-                    .operation_mode.as_deref()
+                    .operation_mode
+                    .as_deref()
                     .unwrap_or(DEFAULT_OPERATION_MODE),
             );
             doc = add_field(
                 doc,
                 "9. Характер роботи: ",
                 network
-                    .operation_type.as_deref()
+                    .operation_type
+                    .as_deref()
                     .unwrap_or(DEFAULT_OPERATION_TYPE),
             );
             doc = add_field(
                 doc,
                 "10. Період функціонування: ",
                 network
-                    .operation_period.as_deref()
+                    .operation_period
+                    .as_deref()
                     .unwrap_or(DEFAULT_OPERATION_PERIOD),
             );
 
@@ -499,17 +494,15 @@ pub async fn generate_networks_docx_report(
                 }
             }
 
-            if !settings.networks_only
-                && settings.include_pelengs_map {
-                    let pelengs_map =
-                        load_pelengs_map(&env.dbx, &groups, &filter)
-                            .await
-                            .context(h!())?;
+            if !settings.networks_only && settings.include_pelengs_map {
+                let pelengs_map = load_pelengs_map(&env.dbx, &groups, &filter)
+                    .await
+                    .context(h!())?;
 
-                    if let Some(img) = pelengs_map {
-                        let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
+                if let Some(img) = pelengs_map {
+                    let pic = Pic::new(&img).size(600 * 9525, 450 * 9525);
 
-                        doc = doc
+                    doc = doc
                             // Add map locations
                             .add_paragraph(
                                 Paragraph::new()
@@ -529,8 +522,8 @@ pub async fn generate_networks_docx_report(
                                     .align(docx_rs::alignment_type::AlignmentType::Center),
                             )
                             .add_paragraph(Paragraph::new());
-                    }
                 }
+            }
 
             // Add empty paragraph after each network if this is not the last network
             if index < unit_networks.len() - 1 {
@@ -1112,8 +1105,6 @@ fn define_new_paragraph_style(
         run_property = run_property.bold();
     }
 
-    
-
     Style {
         run_property,
         paragraph_property: ParagraphProperty::new().align(align),
@@ -1197,11 +1188,9 @@ where
     T: Ord + Clone,
     F: Fn(&T) -> String,
 {
-    let field_vec = input.as_ref().map(|vec| {
-        vec.iter()
-            .map(field_extractor)
-            .collect::<Vec<_>>()
-    });
+    let field_vec = input
+        .as_ref()
+        .map(|vec| vec.iter().map(field_extractor).collect::<Vec<_>>());
 
     if let Some(vec) = field_vec {
         crate::utils::uniq_via_btreeset(&vec).join(", ")

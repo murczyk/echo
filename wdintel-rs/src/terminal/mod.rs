@@ -631,9 +631,7 @@ pub async fn oneoff_test_full_circle() -> Result<(), AppError> {
     let input_pdf = tmp_dir.path().join("input.pdf");
 
     std::fs::copy(
-        Path::new(
-            "data/2022-12-21-report_2022-12-21_00-37-05_20122022-В1.pdf",
-        ),
+        Path::new("data/2022-12-21-report_2022-12-21_00-37-05_20122022-В1.pdf"),
         &input_pdf,
     )?;
 
@@ -704,11 +702,11 @@ pub fn as_u32_be(array: &[u8; 4]) -> u32 {
     ((array[0] as u32) << 24)
         + ((array[1] as u32) << 16)
         + ((array[2] as u32) << 8)
-        + ((array[3] as u32))
+        + (array[3] as u32)
 }
 
 pub fn as_u32_le(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32))
+    (array[0] as u32)
         + ((array[1] as u32) << 8)
         + ((array[2] as u32) << 16)
         + ((array[3] as u32) << 24)

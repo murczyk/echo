@@ -674,16 +674,18 @@ pub fn try_extract_comm_operator(body: &str) -> Option<String> {
 
     for (index, line) in lines.iter().enumerate() {
         if line.starts_with("--------------------------------------")
-            && range.contains(&(index as i32 - 1)) {
-                if let Some(minus_one) = lines.get(index - 1) {
-                    if minus_one.starts_with("Отримано з поста")
-                        && range.contains(&(index as i32 - 2)) {
-                            if let Some(minus_two) = lines.get(index - 2) {
-                                return Some(minus_two.to_string());
-                            }
-                        }
+            && range.contains(&(index as i32 - 1))
+        {
+            if let Some(minus_one) = lines.get(index - 1) {
+                if minus_one.starts_with("Отримано з поста")
+                    && range.contains(&(index as i32 - 2))
+                {
+                    if let Some(minus_two) = lines.get(index - 2) {
+                        return Some(minus_two.to_string());
+                    }
                 }
             }
+        }
     }
 
     None
@@ -2208,10 +2210,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
 — 505 Дед, 505 Дед, 505 Сын и 505 с Отца на грядке.
         "#;
-        assert_eq!(
-            try_extract_comm_operator(body).as_deref(),
-            Some("Zenit")
-        );
+        assert_eq!(try_extract_comm_operator(body).as_deref(), Some("Zenit"));
     }
 
     #[test]

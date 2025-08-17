@@ -292,6 +292,13 @@ pub struct OneoffPrintOrganismGroupsPs {
     pub organism_name: String,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffFixAreasOfResponsibilityPs {
+    /// Force overwriting all networks even if they have aor set
+    #[arg(long, default_value = "false")]
+    pub force_all_networks: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -342,7 +349,7 @@ enum Cmd {
     OneoffRestoreVaultSecretsFromBitwarden,
     OneoffImportDataSource(OneoffImportDataSourcePs),
     OneoffExportDataSource(OneoffExportDataSourcePs),
-    OneoffFixAreasOfResponsibility,
+    OneoffFixAreasOfResponsibility(OneoffFixAreasOfResponsibilityPs),
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
 }
 
@@ -642,8 +649,11 @@ async fn main() -> Result<(), AppError> {
         Cmd::OneoffExportDataSource(ps) => {
             crate::datasource::importer::oneoff_export_datasource(mode, ps)
         }
-        Cmd::OneoffFixAreasOfResponsibility => {
-            oneoff::oneoff_fix_areas_of_responsibility(mode)
+        Cmd::OneoffFixAreasOfResponsibility(ps) => {
+            oneoff::oneoff_fix_areas_of_responsibility(
+                mode,
+                ps.force_all_networks,
+            )
         }
         Cmd::OneoffPrintOrganismGroups(ps) => {
             crate::organism::oneoff::oneoff_print_organism_groups(mode, &ps)

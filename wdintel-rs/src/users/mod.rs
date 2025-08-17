@@ -602,8 +602,7 @@ pub async fn user_login(
         )])));
     };
 
-    Identity::login(&http_req.extensions(), user_id.clone())
-        .context(h!())?;
+    Identity::login(&http_req.extensions(), user_id.clone()).context(h!())?;
 
     let session_id = Uuid::now_v7();
     session.insert("id", session_id.to_string()).context(h!())?;

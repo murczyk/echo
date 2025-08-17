@@ -1,6 +1,10 @@
 ## Running
 
+SIGINT analytical platform webapp.
+
 **USE THIS REPO WITH [GIT Large File Storage](https://git-lfs.com/)**
+
+## SETUP
 
 Setup local nginx per [deploy/README.md](deploy/README.md). Also see `just setup-dev` for notes and scripts.
 
@@ -111,83 +115,35 @@ see [[wdintel-py/README]]
 - 5000 - python api
 - 8061..8072 (or more) - oauth callback api
 
-## Adding more restreamer instances
-
-- create new lightsail instance named `restreamerXX` in your region of choice
-  - if key pair wasn't known you'll need to put it on server to refer from /root/.ssh/config
-- ssh into every host to make it known
-- setup:
-
-```
-sudo apt-get update
-sudo apt-get install -y ffmpeg python3-pip
-# sudo pip3 install -U yt-dlp
-sudo pip install -U git+https://github.com/ytdl-org/youtube-dl.git
-```
-
 ## Building signal-cli and signal-cli-rest-api
 
-**signal-cli-rest-api**
-
-<details>
-Build:
-
-```
-ssh jvln
-cd /fast/kon/workspace/signal-cli-rest-api/src
-git pull
-go build
-```
-
-Get the result:
-
-```
-cd ~/Downloads
-scp jvln:/fast/kon/workspace/signal-cli-rest-api/src/signal-cli-rest-api .
-```
-
-</details>
-
-**signal-cli-native**
-
-<details>
-```
-ssh jvln
-cd /fast/kon/workspace/signal-cli
-git pull
-GRAALVM_HOME=/fast/kon/Downloads/graalvm-jdk-21.0.2+13.1 ./gradlew --no-daemon nativeCompile
-```
-
-Get the result:
-
-```
-scp jvln:/fast/kon/workspace/signal-cli/build/native/nativeCompile/signal-cli ./signal-cli-native
-```
-
-</details>
+read echo-im repo instructions
 
 ## DEPLOY
 
 For server like echo-kherson do:
 
 ```
-just server=echo-kherson deploy-echo
+just builder=$BUILDER server=$SERVER deploy
 ```
 
 Batch-deploy:
 
 ```
-for server in echo-kherson echo-soledarnist; do echo "\n🚀🚀🚀 deploying $server 🚀🚀🚀\n"; just server=$server deploy-echo; done
+for server in echo-kherson echo-soledarnist; do echo "\n🚀🚀🚀 deploying $server 🚀🚀🚀\n"; just server=$server deploy; done
 ```
 ## Docs maintainance
+
 ### [Postman.md](postman/README.md)
 
 ### Generate and deploy rust docs
+
 ```bash
 just server=echo-gpu deploy-rustdocs
 ```
 
 ## Delta integration
+
 [Delta.md](DELTA.md)
 
 Config with access details for delta is being stored in Hashicorp Vault. 
@@ -197,10 +153,12 @@ One-off commands for backup Vault secrets:
 - restore: OneoffRestoreVaultSecretsFromBitwarden
 
 ## Wipe DB
+
 in order to erase data from db you may just run [clear_db.sql](deploy/clear_db.sql).
 it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
 
 # Etalon
+
 1. push etalon to mothership: `just server=echo-volyn2 origin=volyn import-etalon-to-mothership`
 > origins are in `sigint_origin` table, check out [this migration](wdintel-rs/migration/src/m20250714_150613_add_sigint_origin.rs)
 2. clear mothership 1/2: wipe db on mothership : `just server=echo-mothership init-new-db`

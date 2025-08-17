@@ -962,10 +962,9 @@ pub async fn list_freqs_v2(
     }
     let mut last_freq = String::from("");
     for (freq, message_count, location_v2, post_id) in freqs_period {
-        if show_load_more
-            && !last_freq.eq(&freq) {
-                break;
-            }
+        if show_load_more && !last_freq.eq(&freq) {
+            break;
+        }
         if need_skip {
             if req.after_freq_nonincl == Some(freq) {
                 need_skip = false;

@@ -47,6 +47,7 @@ pub fn oneoff_batch_usk_to_wgs(
 #[tokio::main]
 pub async fn oneoff_fix_areas_of_responsibility(
     mode: Mode,
+    force_all_networks: bool,
 ) -> Result<(), AppError> {
     info!("starting oneoff_fix_areas_of_responsibility...");
     let config = crate::config::read_config(mode).context(h!())?;
@@ -56,9 +57,12 @@ pub async fn oneoff_fix_areas_of_responsibility(
     crate::messenger::group::fix_group_areas_of_responsibility(&db)
         .await
         .context(h!())?;
-    crate::sigint::network::fix_network_areas_of_responsibility(&db)
-        .await
-        .context(h!())?;
+    crate::sigint::network::fix_network_areas_of_responsibility(
+        &db,
+        force_all_networks,
+    )
+    .await
+    .context(h!())?;
     info!("done oneoff_fix_areas_of_responsibility");
     Ok(())
 }

@@ -7,8 +7,8 @@ use milgeo_rs::coord_util::LatLng;
 use milgeo_rs::MilGeo;
 use sea_orm::*;
 
-pub mod types;
 pub mod bl;
+pub mod types;
 
 #[post("/api/sigint/aor")]
 pub async fn aor_list(
@@ -166,7 +166,7 @@ pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
             }
             _ => None,
         };
-    
+
     AreaOfResponsibility {
         id: aor.id,
         name: aor.name,

@@ -122,10 +122,8 @@ pub async fn report_docx(
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
-    let filename = format!(
-        "report_{}.docx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
-    );
+    let filename =
+        format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
     let outpath = outfolder.join(&filename);
     let user_login = user.id().context(h!())?;
     if req.kind == "tags" {
