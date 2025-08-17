@@ -896,7 +896,7 @@ pub async fn kmz_to_geojson(
 
 pub fn delta_objs_to_kmz(
     config: &crate::config::Config,
-    objs: &Vec<ObjectContract>,
+    objs: &[ObjectContract],
     obj_detail: &BTreeMap<String, ObjectRsp>,
     obj_attachments: &BTreeMap<String, Vec<String>>,
 ) -> Result<Vec<u8>, AppError> {
