@@ -429,4 +429,19 @@ Kupol80
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "4333_1".to_string())
     }
+
+    #[test]
+    fn extract_post_with_label_prefix() {
+        let body = r#"32 15.08.2025
+16:13:18
+419.46DMR (HYTERA (256 bit))
+Пост: П123
+ЗЕМЛЯ
+16:10:28
+15-й
+30-й
+Также высокоскоростные? в секторе работаю"#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "П123".to_string())
+    }
 }
