@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use self::types::*;
 use crate::entities::*;
 use crate::event_stream::fanout;
@@ -14,6 +12,7 @@ use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
 use sea_query::{Expr, SimpleExpr};
+use std::collections::{HashMap, HashSet};
 
 pub mod types;
 
@@ -830,4 +829,22 @@ pub async fn callsign_unit_stats(
         });
     }
     Ok(Json(CallsignUnitStatsRsp { units: res }))
+}
+
+pub async fn load_whitelist_from_file() -> anyhow::Result<HashSet<String>> {
+    let root_dir = if Path::new("/etc/echo").exists() {
+        Path::new("/etc/echo")
+    } else {
+        Path::new(std::env!("CARGO_MANIFEST_DIR"))
+    };
+    let path = root_dir.join("callsigns_whitelist.txt");
+    let callsigns = crate::utils::read_lines_from_file(path)
+        .await
+        .unwrap_or_else(|e| {
+            error!("failed to load callsigns: {e:?}\nfallback to empty set");
+            vec![]
+        })
+        .into_iter()
+        .collect();
+    Ok(callsigns)
 }

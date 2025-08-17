@@ -151,10 +151,10 @@ test: test-fe test-be
 
 # CI commands
 ci-setup-cache clean="false":
-    bash deploy/setup_ci_cache.sh {{clean}}
+    bash deploy/setup_ci_cache.sh {{ clean }}
 
 ci-save-cache clean="false":
-    bash deploy/save_ci_cache.sh {{clean}}
+    bash deploy/save_ci_cache.sh {{ clean }}
 
 ci-setup-cache-frontend:
     bash deploy/setup_ci_cache_frontend.sh
@@ -162,13 +162,25 @@ ci-setup-cache-frontend:
 ci-save-cache-frontend:
     bash deploy/save_ci_cache_frontend.sh
 
+ci-setup-cache-optimized clean="false":
+    bash deploy/setup_ci_cache_optimized.sh {{ clean }}
+
+ci-save-cache-optimized clean="false":
+    bash deploy/save_ci_cache_optimized.sh {{ clean }}
+
+ci-setup-cache-sccache clean="false":
+    bash deploy/setup_ci_cache_sccache.sh {{ clean }}
+
+ci-save-cache-sccache clean="false":
+    bash deploy/save_ci_cache_sccache.sh {{ clean }}
+
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
 setup-test-db branch_name="":
     #!/bin/bash
-    if [ -n "{{branch_name}}" ]; then
-        bash deploy/setup_test_database.sh "{{branch_name}}"
+    if [ -n "{{ branch_name }}" ]; then
+        bash deploy/setup_test_database.sh "{{ branch_name }}"
     else
         bash deploy/setup_test_database.sh
     fi
@@ -637,8 +649,7 @@ deploy-docs:
     ssh -t {{ server }} 'cd Downloads && sudo dpkg -i echo-docs_0.1.0-1_amd64.deb'
 
 fmt:
-    (cd wdintel-rs/migration && cargo fmt)
-    (cd signal-cli-native && cargo fmt)
+    (cd echo-migration && cargo fmt)
     (cd wdintel-rs && cargo fmt)
     just --fmt --unstable
 

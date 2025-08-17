@@ -32,7 +32,7 @@ pub struct NetworkRow {
     pub correspondents: Vec<NetworkCorrespondent>,
     pub communication_kind: Option<String>,
     pub functionality_details: String,
-    pub identified_details: Option<String>,
+    pub identified_details: Vec<String>,
 }
 
 pub struct NetworkActivity {
@@ -74,12 +74,15 @@ pub async fn report_docx_kind_revo(
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
     let login = user.id()?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .context(h!())?;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
             &login, &logins, env, &req.req,
         )
-        .await?;
+        .await
+        .context(h!())?;
     let mut report = collect_report(messages.clone(), logins.clone(), env)
         .await
         .context(h!())?;
@@ -190,9 +193,8 @@ fn render_network_row(row: NetworkRow) -> TableRow {
     let correspondents_cell = mk_multiline_text_cell(correspondents);
 
     let functionality_details_cell = mk_text_cell(&row.functionality_details);
-
-    let identified_details = row.identified_details.unwrap_or("".to_string());
-    let identified_details_cell = mk_text_cell(&identified_details);
+    let identified_details_cell =
+        mk_multiline_text_cell(row.identified_details);
 
     let communication_kind_cell =
         mk_text_cell(&row.communication_kind.unwrap_or("".to_string()));
@@ -384,11 +386,32 @@ async fn collect_report(
         .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
         .collect::<HashMap<_, _>>();
 
+    let message_ids = messages
+        .iter()
+        .map(|(id, _)| *id)
+        .collect_vec()
+        .chunks(20000)
+        .map(|slice| slice.to_vec())
+        .collect_vec();
+
+    let mut comments = BTreeMap::new();
+    for ids in message_ids {
+        sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.is_in(ids))
+            .all(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|c| {
+                comments.insert(c.signal_message_id, c.comment);
+            });
+    }
+
     for (k, v) in all_networks {
         networks.insert(k, v);
     }
 
-    let networks_dictionary = {
+    let mut networks_dictionary = {
         let mut result = HashMap::new();
         for n in networks.values() {
             result.insert(n.id, n.clone());
@@ -442,21 +465,61 @@ async fn collect_report(
         .map(|c| ((c.network_id, c.callsign.clone()), c))
         .collect::<HashMap<_, _>>();
 
+    let mut network_comments_map = HashMap::new();
     let mut linked_callsigns_map = HashMap::new();
     let mut unlinked_callsigns_map = HashMap::new();
     let mut seances_map = HashMap::new();
+    let mut unmapped_freqs = HashMap::new();
+    let mut messages = messages;
+    messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
     for (_id, message) in messages {
+        let is_pure_peleng = message.coords.is_some()
+            && message.callsign_tokens.unwrap_or(vec![]).is_empty();
+        if is_pure_peleng {
+            continue;
+        }
         let (Some(master_key), Some(freq)) =
             (message.group_master_key, message.freq)
         else {
             continue;
         };
-        let Some(summary) = networks
+        let m_network_summary = networks
             .get(&(freq.clone(), Some(master_key)))
             .or(networks.get(&(freq.clone(), None)))
-            .cloned()
-        else {
-            continue;
+            .cloned();
+        let summary = match m_network_summary {
+            None => {
+                let Ok(freq_num) = freq.parse::<f64>() else {
+                    error!("[{}] bad freq: {freq}", h!());
+                    continue;
+                };
+                let id = -1 * (freq_num * 10000.0).ceil() as i64;
+                if let Some(id) = unmapped_freqs
+                    .iter()
+                    .map(|(f, _)| f)
+                    .filter(|f| (((**f - id) as i64).abs()) < 250)
+                    .next()
+                {
+                    networks_dictionary.get(&id).cloned().context(h!())?
+                } else {
+                    let mut freqs =
+                        unmapped_freqs.remove(&id).unwrap_or(vec![]);
+                    freqs.push(freq.clone());
+                    unmapped_freqs.insert(id, freqs);
+                    let new_summary = NetworkSummary {
+                        id,
+                        name: "".to_string(),
+                        freq: freq.clone(),
+                        unit_name: None,
+                        master_key: None,
+                    };
+                    networks_dictionary
+                        .insert(new_summary.id, new_summary.clone());
+                    network_ids.insert(new_summary.id);
+                    new_summary
+                }
+            }
+            Some(s) => s,
         };
         let network_key = (summary.name.clone(), summary.id, freq);
 
@@ -489,13 +552,21 @@ async fn collect_report(
         }
         linked_callsigns_map.insert(network_key.clone(), linked_callsigns);
         unlinked_callsigns_map.insert(network_key, data);
+        if let Some(comment) = comments.remove(&_id) {
+            let mut list =
+                network_comments_map.remove(&summary.id).unwrap_or(vec![]);
+            list.push(comment);
+            network_comments_map.insert(summary.id, list);
+        }
     }
 
     let mut identified_qty = 0;
     let mut unidentified_qty = 0;
-    let mut hostile_networks = vec![];
-    let mut undefined_networks = vec![];
+    let mut all_hostile_networks = vec![];
+    let mut all_undefined_networks = vec![];
+    let mut skipped_callsigns = HashSet::<String>::new();
     for id in network_ids {
+        let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
         let keys = seances_map
             .keys()
             .filter(|&(_, id_val, _)| id == *id_val)
@@ -523,7 +594,7 @@ async fn collect_report(
             .unique()
             .collect_vec();
         unlinked_callsigns.sort();
-        let freqs = keys
+        let mut freqs = keys
             .into_iter()
             .map(|(_name, _id, freq)| freq)
             .collect_vec();
@@ -534,6 +605,22 @@ async fn collect_report(
         let till = *seances.iter().max().context(h!())?;
         let seances_qty = seances.len() as u64;
         let mut correspondents = vec![];
+
+        let network = networks_dictionary.get(&id).context(h!())?;
+        let mut network_name = network.name.clone();
+        if network_name.trim().is_empty() {
+            network_name = "Радіомережа".to_string();
+        }
+        let (name, is_defined) = match network.unit_name.clone() {
+            None => (format!("{network_name} невизначеного підрозділу"), false),
+            Some(unit_name) => (format!("{network_name} {unit_name}"), true),
+        };
+
+        let unmapped_network: bool = id < 0;
+        if unmapped_network {
+            freqs = unmapped_freqs.remove(&id).context(h!())?;
+            freqs.sort_unstable();
+        }
         for c in linked_callsigns {
             correspondents.push(NetworkCorrespondent {
                 callsign: c.callsign,
@@ -541,6 +628,12 @@ async fn collect_report(
             })
         }
         for c in unlinked_callsigns {
+            if unmapped_network {
+                if !env.callsigns_whitelist.contains(&c) {
+                    skipped_callsigns.insert(c);
+                    continue;
+                }
+            }
             correspondents.push(NetworkCorrespondent {
                 callsign: c,
                 position: None,
@@ -551,15 +644,6 @@ async fn collect_report(
             till,
             seances_qty,
         };
-        let network = networks_dictionary.get(&id).context(h!())?;
-        let mut network_name = network.name.clone();
-        if network_name.trim().is_empty() {
-            network_name = "Радіомережа".to_string();
-        }
-        let (name, is_defined) = match network.unit_name.clone() {
-            None => (format!("{network_name} невизначеного підрозділу"), false),
-            Some(unit_name) => (format!("{network_name} {unit_name}"), true),
-        };
         let row = NetworkRow {
             name,
             freqs,
@@ -567,14 +651,29 @@ async fn collect_report(
             correspondents,
             communication_kind: None,
             functionality_details: FUNCTIONALITY_DESC_DEFAULT.to_string(),
-            identified_details: None,
+            identified_details: comments,
         };
         if is_defined {
             identified_qty += 1;
-            hostile_networks.push(row);
+            all_hostile_networks.push(row);
         } else {
-            unidentified_qty += 1;
-            undefined_networks.push(row);
+            all_undefined_networks.push(row);
+        }
+    }
+    all_undefined_networks.sort_by_key(|n| n.activity.seances_qty);
+    all_undefined_networks.reverse();
+    let total_undefined_seances_count: u64 = all_undefined_networks
+        .iter()
+        .map(|n| n.activity.seances_qty)
+        .sum();
+    let mut cutoff = (total_undefined_seances_count as f64 * 0.9).ceil() as i64;
+    let mut undefined_networks = vec![];
+    for n in all_undefined_networks {
+        unidentified_qty += 1;
+        cutoff -= n.activity.seances_qty as i64;
+        undefined_networks.push(n);
+        if cutoff < 0 {
+            break;
         }
     }
     let report = Report {
@@ -582,8 +681,14 @@ async fn collect_report(
             identified_qty,
             unidentified_qty,
         },
-        hostile_networks,
         undefined_networks,
+        hostile_networks: all_hostile_networks,
     };
+
+    debug!(
+        "skipped unmapped callsigns: {}",
+        skipped_callsigns.into_iter().sorted_unstable().join(", ")
+    );
+
     Ok(report)
 }

@@ -38,6 +38,7 @@ pub struct Env {
     pub redisb: redis::Client,
     pub settlements: Arc<RwLock<crate::location::SettlementsData>>,
     pub version: String,
+    pub callsigns_whitelist: HashSet<String>,
 }
 
 impl std::fmt::Display for Mode {

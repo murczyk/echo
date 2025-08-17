@@ -157,9 +157,8 @@ One-off commands for backup Vault secrets:
 in order to erase data from db you may just run [clear_db.sql](deploy/clear_db.sql).
 it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
 
-# Etalon
-
-1. push etalon to mothership: `just server=echo-volyn2 origin=volyn import-etalon-to-mothership`
-> origins are in `sigint_origin` table, check out [this migration](wdintel-rs/migration/src/m20250714_150613_add_sigint_origin.rs)
-2. clear mothership 1/2: wipe db on mothership : `just server=echo-mothership init-new-db`
-3. clear mothership 2/2: wipe mothership ids : `just unlink-mothership`
+# Reports
+## РЕО
+Доповідь про радіоелектронну обстановку.
+- неприв'язані мережі: показуємо лише топ 90% активних за кількістю сеансів зв'язку, групуємо по частотах в межах +-12.5КГц
+- на неприв'язаних частотах показуємо лише позивні які б'ються із білим списком [callsigns_whitelist.txt](wdintel-rs/data/callsigns_whitelist.txt). він генеруєжться в модулі callsign-crawler проету milgeo-rs: https://github.com/echoua/milgeo-rs/tree/main/callsigns_crawler
