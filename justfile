@@ -145,6 +145,16 @@ test-be:
 
 test: test-fe test-be
 
+# CI commands
+ci-setup-cache clean="false":
+    bash deploy/setup_ci_cache.sh {{clean}}
+
+ci-save-cache clean="false":
+    bash deploy/save_ci_cache.sh {{clean}}
+
+ci-test-be:
+    bash deploy/run_backend_tests.sh
+
 clean-deps:
     bash deploy/clean_deps.sh
 
