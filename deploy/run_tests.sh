@@ -7,6 +7,17 @@ echo "Starting CI test run with optimized dependency management..."
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
     echo "Running in GitHub Actions CI environment"
 
+    # launch dev server in background for CI as well
+    just dev-py &
+    DEV_PID=$!
+
+    # ensure dev server is killed on script exit (success or failure)
+    trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
+
+    # wait a moment for the Python service to start up
+    echo "Waiting for Python service to start..."
+    sleep 5
+
     # Use optimized CI test recipe
     just test-ci
 else

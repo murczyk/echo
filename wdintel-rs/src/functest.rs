@@ -162,11 +162,15 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        signal_group::Entity::delete_many()
+        login::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
         sigint_zone::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        signal_group::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
@@ -175,10 +179,6 @@ pub mod tests {
             .await
             .context(h!())?;
         area_of_responsibility::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        login::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
