@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: ${{ github.event.pull_request.number }}-pr-checkboxes
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 defaults:
   run:
