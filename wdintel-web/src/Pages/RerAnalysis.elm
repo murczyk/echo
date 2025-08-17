@@ -142,7 +142,6 @@ init route _ =
             , filterUnits = ""
             , now = Nothing
             , tags = []
-
             , showReportConstructor = False
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
@@ -185,7 +184,8 @@ init route _ =
             , filterSelectedAdjacentFreqs = []
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
-            , unitsExactMatchOnly = False
+            , unitsExactMatchOnly = True
+
             }
 
         m2 =
@@ -194,7 +194,7 @@ init route _ =
                     Query.updModelFromQueryState model state
 
                 Nothing ->
-                    model
+                    { model | unitsExactMatchOnly = True }
 
         m3 =
             case Dict.get "showMap" route.query of
