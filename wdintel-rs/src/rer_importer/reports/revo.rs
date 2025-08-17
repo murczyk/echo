@@ -32,7 +32,7 @@ pub struct NetworkRow {
     pub correspondents: Vec<NetworkCorrespondent>,
     pub communication_kind: Option<String>,
     pub functionality_details: String,
-    pub identified_details: Option<String>,
+    pub identified_details: Vec<String>,
 }
 
 pub struct NetworkActivity {
@@ -190,9 +190,8 @@ fn render_network_row(row: NetworkRow) -> TableRow {
     let correspondents_cell = mk_multiline_text_cell(correspondents);
 
     let functionality_details_cell = mk_text_cell(&row.functionality_details);
-
-    let identified_details = row.identified_details.unwrap_or("".to_string());
-    let identified_details_cell = mk_text_cell(&identified_details);
+    let identified_details_cell =
+        mk_multiline_text_cell(row.identified_details);
 
     let communication_kind_cell =
         mk_text_cell(&row.communication_kind.unwrap_or("".to_string()));
@@ -551,7 +550,8 @@ async fn collect_report(
         linked_callsigns_map.insert(network_key.clone(), linked_callsigns);
         unlinked_callsigns_map.insert(network_key, data);
         if let Some(comment) = comments.remove(&_id) {
-            let mut list = network_comments_map.remove(&summary.id).unwrap_or(vec![]);
+            let mut list =
+                network_comments_map.remove(&summary.id).unwrap_or(vec![]);
             list.push(comment);
             network_comments_map.insert(summary.id, list);
         }
@@ -648,7 +648,7 @@ async fn collect_report(
             correspondents,
             communication_kind: None,
             functionality_details: FUNCTIONALITY_DESC_DEFAULT.to_string(),
-            identified_details: None,
+            identified_details: comments,
         };
         if is_defined {
             identified_qty += 1;

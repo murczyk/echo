@@ -179,8 +179,8 @@ ci-test-be:
 
 setup-test-db branch_name="":
     #!/bin/bash
-    if [ -n "{{branch_name}}" ]; then
-        bash deploy/setup_test_database.sh "{{branch_name}}"
+    if [ -n "{{ branch_name }}" ]; then
+        bash deploy/setup_test_database.sh "{{ branch_name }}"
     else
         bash deploy/setup_test_database.sh
     fi
