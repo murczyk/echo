@@ -1896,6 +1896,8 @@ type alias RerAnalysisQueryState =
     , search : String
     , tags : List Int
     , includePelengLocations : Bool
+    , unitsExactMatchOnly : Bool
+    , adjacentFreqsRange : Float
     }
 
 
@@ -1919,6 +1921,8 @@ rerAnalysisQueryStateEncoder struct =
         , ( "search", Json.Encode.string struct.search )
         , ( "tags", Json.Encode.list Json.Encode.int struct.tags )
         , ( "include_peleng_locations", Json.Encode.bool struct.includePelengLocations )
+        , ( "units_exact_match_only", Json.Encode.bool struct.unitsExactMatchOnly )
+        , ( "adjacent_freqs_range", Json.Encode.float struct.adjacentFreqsRange )
         ]
 
 
@@ -6620,6 +6624,8 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "adjacent_freqs_range" Json.Decode.float))
 
 
 editFreqUnitNameReqDecoder : Json.Decode.Decoder EditFreqUnitNameReq

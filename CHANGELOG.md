@@ -4,7 +4,8 @@
 - [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
 - [#1231](https://github.com/echoua/echo/issues/1231) Декілька смуг в групі
 - [#1260](https://github.com/echoua/echo/issues/1260) Мережа: додавання частоти
-- [#1244](https://github.com/echoua/echo/issues/1244) Фіча-прапор: строгі привʼязки (feature_strict_networks).
+- [#1244](https://github.com/echoua/echo/issues/1244) Аналіз і Оперативний: строгі прив'язки і фільтр на аналізі .
+    Фільтр суміжних частот і строгих підрозділів зберігається в урл
 - [#1232](https://github.com/echoua/echo/issues/1232) окремо підтримувати статус перманентного видалення для організмів та логінів (а-ля архівація).
 - [#1222](https://github.com/echoua/echo/issues/1222) Мережа: Прибрати фільтрацію по датам зі сторінки мереж
 - [#1219](https://github.com/echoua/echo/issues/1219) Підтримка нового формату позивних (`Отримувач`, `Відправник:`) в перехопленнях

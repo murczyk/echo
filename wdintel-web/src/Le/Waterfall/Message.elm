@@ -606,6 +606,8 @@ leftColumn ( messageId, message ) ps model =
                                         , orWithCoords = False
                                         , search = ""
                                         , tags = []
+                                        , unitsExactMatchOnly = True
+                                        , adjacentFreqsRange = 0
                                         }
                                     )
 
@@ -771,22 +773,36 @@ rightColumn ( messageId, message ) ps model =
                             |> def []
 
                     networkBlock =
+                        let
+                            isStrict =
+                                ps.serverInfo
+                                    |> Maybe.map .featureStrictNetworks
+                                    |> Maybe.withDefault False
+                        in
                         case message.freq of
                             Nothing ->
                                 text " "
 
                             Just _ ->
                                 if List.isEmpty ps.messageNetworkIds then
-                                    text <| " " ++ (message.unit |> def "Не встановлений")
+                                    if isStrict then
+                                        text "Не встановлена"
+
+                                    else
+                                        text <| " " ++ (message.unit |> def "Не встановлена")
+
                                 else
                                     div [] <|
-                                        List.map (\networkId ->
-                                            case Dict.get networkId ps.networks of
-                                                Just network ->
-                                                    Le.Block.Unit.boldMasterUnit ps.masterUnits network
-                                                _ ->
-                                                    text "Невідома мережа"
-                                        ) ps.messageNetworkIds
+                                        List.map
+                                            (\networkId ->
+                                                case Dict.get networkId ps.networks of
+                                                    Just network ->
+                                                        Le.Block.Unit.boldMasterUnit ps.masterUnits network
+
+                                                    _ ->
+                                                        text "Невідома мережа"
+                                            )
+                                            ps.messageNetworkIds
 
                     metaFields =
                         let

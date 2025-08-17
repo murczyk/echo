@@ -26,6 +26,8 @@ emptyQueryState =
     , orWithCoords = False
     , search = ""
     , tags = []
+    , unitsExactMatchOnly = True
+    , adjacentFreqsRange = 0
     }
 
 
@@ -48,6 +50,8 @@ modelQueryState model =
     , orWithCoords = model.orWithCoords
     , search = model.searchInput
     , tags = model.tagsSelected
+    , unitsExactMatchOnly = model.unitsExactMatchOnly
+    , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
     }
 
 
@@ -67,6 +71,12 @@ updModelFromQueryState model ms =
         , orWithExtendedForm = ms.orWithExtendedForm
         , orBookmarked = ms.orBookmarked
         , searchInput = ms.search
+        , unitsExactMatchOnly = ms.unitsExactMatchOnly
+        , adjacentFreqsRangeSelect = 
+            let
+                current = model.adjacentFreqsRangeSelect
+            in
+            { current | selected = ms.adjacentFreqsRange }
     }
 
 
@@ -89,7 +99,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
     , search = Just model.searchInput
     , selectedTags = emptyToNothing model.tagsSelected
     , filterTagsOption = Nothing
-    , unitsExactMatchOnly = Nothing
+    , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     }
 
 

@@ -144,6 +144,8 @@ createAnalysisQueryState shared model callsign =
     , orWithCoords = False
     , search = ""
     , tags = []
+    , unitsExactMatchOnly = True
+    , adjacentFreqsRange = 0
     }
 
 
@@ -1421,12 +1423,12 @@ update shared msg model =
             ( { model | freqCreateSidebar = True }, E.none )
 
         CloseFreqCreateSidebar ->
-            ( { model 
+            ( { model
                 | freqCreateSidebar = False
                 , freqCreateDescriptionInp = ""
                 , freqCreateFormatError = Nothing
                 , freqCreateShowActiveTo = False
-                , freqCreateState = 
+                , freqCreateState =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
@@ -1442,7 +1444,7 @@ update shared msg model =
             let
                 newFreqState =
                     updateFunc model.freqCreateState
-                
+
                 formatError =
                     if String.trim newFreqState.freq == "" then
                         Nothing
@@ -1451,7 +1453,7 @@ update shared msg model =
                     else
                         Nothing
             in
-            ( { model 
+            ( { model
                 | freqCreateState = newFreqState
                 , freqCreateFormatError = formatError
               }
@@ -1524,7 +1526,7 @@ update shared msg model =
                     else
                         model.freqCreateState
             in
-            ( { model 
+            ( { model
                 | freqCreateShowActiveTo = newShowActiveTo
                 , freqCreateState = updatedFreqState
               }
@@ -1549,7 +1551,7 @@ update shared msg model =
                         -- Create the API request payload
                         addFreqReq =
                             { networkId = network.id
-                            , freqRec = 
+                            , freqRec =
                                 { freq = model.freqCreateState.freq
                                 , kind = model.freqCreateState.kind
                                 , modulationId = model.freqCreateState.modulationId
@@ -1579,7 +1581,7 @@ update shared msg model =
                 , freqCreateDescriptionInp = ""
                 , freqCreateFormatError = Nothing
                 , freqCreateShowActiveTo = False
-                , freqCreateState = 
+                , freqCreateState =
                     { freq = ""
                     , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
                     , modulationId = Nothing
@@ -2582,7 +2584,7 @@ contentBlock user shared network model =
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
         , div [ class "flex gap-[8px]" ]
-            [ 
+            [
              Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
              , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
@@ -3423,19 +3425,19 @@ validateFrequencyFormat freq =
         let
             hasOnlyValidChars =
                 String.all (\char -> Char.isDigit char || char == '.') trimmed
-            
+
             decimalCount =
                 String.foldl (\char count -> if char == '.' then count + 1 else count) 0 trimmed
-            
+
             startsWithDecimal =
                 String.startsWith "." trimmed
-            
+
             endsWithDecimal =
                 String.endsWith "." trimmed
         in
-        hasOnlyValidChars 
-            && decimalCount <= 1 
-            && not startsWithDecimal 
+        hasOnlyValidChars
+            && decimalCount <= 1
+            && not startsWithDecimal
             && not endsWithDecimal
 
 
@@ -3577,7 +3579,7 @@ freqCreateSidebarContent shared model user =
                     []
                 ]
             , div []
-                [ 
+                [
                  Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
                     |> Checkbox.withContent [ text "Частота вже не активна" ]
                     |> Checkbox.view

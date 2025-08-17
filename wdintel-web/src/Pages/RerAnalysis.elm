@@ -142,7 +142,6 @@ init route _ =
             , filterUnits = ""
             , now = Nothing
             , tags = []
-
             , showReportConstructor = False
             , reportTemplate = RTTags
             , reportTagsOnlyThisUnit = False
@@ -185,6 +184,8 @@ init route _ =
             , filterSelectedAdjacentFreqs = []
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
+            , unitsExactMatchOnly = True
+
             }
 
         m2 =
@@ -256,7 +257,7 @@ getInboxReq model =
     , calculateFreqPelengsSummary = Nothing
     , filterTagsOption = Just model.filterTagsOption
     , pageId = Just "rer-analysis"
-    , unitsExactMatchOnly = Nothing
+    , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     }
 
 
@@ -282,7 +283,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , search = Just model.searchInput
             , selectedTags = emptyToNothing model.tagsSelected
             , filterTagsOption = Just model.filterTagsOption
-            , unitsExactMatchOnly = Nothing
+            , unitsExactMatchOnly = Just model.unitsExactMatchOnly
             }
 
     else
@@ -1194,7 +1195,7 @@ update user shared route msg model =
                 , calculateFreqPelengsSummary = Nothing
                 , filterTagsOption = Just model.filterTagsOption
                 , pageId = Just "rer-analysis"
-                , unitsExactMatchOnly = Nothing
+                , unitsExactMatchOnly = Just model.unitsExactMatchOnly
                 }
             )
 
@@ -1396,6 +1397,13 @@ update user shared route msg model =
             ( { model | unfoldUnitsFilter = not model.unfoldUnitsFilter }
             , E.none
             )
+
+        UnitsExactMatchOnlyChanged val ->
+            let
+                m2 =
+                    { model | unitsExactMatchOnly = val }
+            in
+            loadCoreStatsAndPushUrl m2
 
         ToggleUnfoldLocationsFilter ->
             ( { model | unfoldLocationsFilter = not model.unfoldLocationsFilter }
@@ -2777,7 +2785,7 @@ update user shared route msg model =
                                             Utils.findAllAdjacentFreqs (RD.withDefault [] model.freqs |> List.map .freq) model.freqsSelected a2.selected
                                     }
                             in
-                            loadCoreStats m3
+                            loadCoreStatsAndPushUrl m3
 
                         _ ->
                             ( m2, E.none )

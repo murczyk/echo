@@ -135,3 +135,4 @@ type Msg
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
+    | UnitsExactMatchOnlyChanged Bool

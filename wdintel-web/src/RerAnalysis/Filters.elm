@@ -617,6 +617,11 @@ leftColumn isDark model =
                             "всі"
                             (Le.Block.Select.defaultOptions isDark)
                     )
+                , div [ class "my-1" ]
+                    [ Components.Checkbox.new { isChecked = model.unitsExactMatchOnly, onToggle = UnitsExactMatchOnlyChanged }
+                        |> Components.Checkbox.withContent [ text "точний збіг за еталонкою" ]
+                        |> Components.Checkbox.view
+                    ]
                 ]
 
         tabFiltersLocations =
