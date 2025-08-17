@@ -3212,131 +3212,28 @@ contentBlock user shared network model =
         ]
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
-            [ h4 [ class "" ] [ text "Позивні" ]
+            [ h4 [ class "" ] [ text "Позивні мережі" ]
+            ]
+        , case model.networkCallsigns of
+            Success networkCallsigns ->
+                div [ class "overflow-y-auto grow-1 mb-4" ]
+                    [ Table.view (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState networkCallsigns
+                    ]
+            Loading ->
+                Le.Block.Spinner.loadingSpinnerSm
+            Failure e ->
+                div [ class "text-red-500" ] [ text "Помилка завантаження позивних мережі" ]
+            NotAsked ->
+                text ""
+            NeedsReload _ ->
+                Le.Block.Spinner.loadingSpinnerSm
+        , div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h4 [ class "" ] [ text "Всі позивні" ]
             ]
         , case model.callsigns of
             Success callsigns ->
-                div [ class "overflow-y-auto  grow-1" ]
+                div [ class "overflow-y-auto grow-1" ]
                     [ let
-                        renderCallsignMainRow :
-                            Shared.Model
-                            -> Model
-                            -> CallsignResModified
-                            -> List (Html Msg)
-                        renderCallsignMainRow sharedModel modelState callsign =
-                            let
-                                rowCount =
-                                    List.length callsign.knownCallsigns
-                            in
-                            case callsign.knownCallsigns of
-                                x :: xs ->
-                                    tr [ class "" ]
-                                        [ td [ rowspan rowCount ]
-                                            [ div [ class "flex items-center flex-wrap" ]
-                                                [ text <| String.toUpper callsign.callsign
-                                                , a
-                                                    [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
-                                                    , target "_blank"
-                                                    , title "Відкрити позивний в аналізі"
-                                                    , class "ml-2"
-                                                    ]
-                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
-                                                ]
-                                            ]
-                                        , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
-                                        , td [ rowspan rowCount ]
-                                            [ case callsign.lastDatetime of
-                                                Just lastDatetime ->
-                                                    text <|
-                                                        Le.Time.renderDateF6 sharedModel.timeZone
-                                                            (Time.millisToPosix lastDatetime)
-
-                                                Nothing ->
-                                                    text ""
-                                            ]
-                                        , td [] [ text x.position ]
-                                        , td [] [ text x.unitName ]
-                                        , td [] [ text x.comment ]
-                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                        , td [] [ text <| x.sourceName ]
-                                        ]
-                                        :: List.map
-                                            (\knownCallsign ->
-                                                tr []
-                                                    [ td [] [ text knownCallsign.position ]
-                                                    , td [] [ text knownCallsign.unitName ]
-                                                    , td [] [ text knownCallsign.comment ]
-                                                    , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                                    , td [] [ text <| knownCallsign.sourceName ]
-                                                    ]
-                                            )
-                                            xs
-
-                                [] ->
-                                    [ text "" ]
-
-                        renderCallsignEdit :
-                            Shared.Model
-                            -> Model
-                            -> Dict String Bool
-                            -> CallsignResModified
-                            -> List (Html Msg)
-                        renderCallsignEdit sharedModel modelState editingDict callsign =
-                            let
-                                rowCount =
-                                    List.length callsign.knownCallsigns
-
-                                isReported =
-                                    Dict.get callsign.callsign editingDict
-                                        |> Maybe.withDefault callsign.isReported
-                            in
-                            case callsign.knownCallsigns of
-                                x :: xs ->
-                                    tr [ class "" ]
-                                        [ td [ rowspan rowCount ]
-                                            [ div [ class "flex items-center flex-wrap" ]
-                                                [ span [] [ text <| String.toUpper callsign.callsign ]
-                                                , a
-                                                    [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
-                                                    , target "_blank"
-                                                    , title "Відкрити позивний в аналізі"
-                                                    , class "ml-2"
-                                                    ]
-                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
-                                                ]
-                                            ]
-                                        , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
-                                        , td [ rowspan rowCount ]
-                                            [ case callsign.lastDatetime of
-                                                Just lastDatetime ->
-                                                    text <|
-                                                        Le.Time.renderDateF6 sharedModel.timeZone
-                                                            (Time.millisToPosix lastDatetime)
-
-                                                Nothing ->
-                                                    text ""
-                                            ]
-                                        , td [] [ text x.position ]
-                                        , td [] [ text x.unitName ]
-                                        , td [] [ text x.comment ]
-                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                        , td [] [ text <| x.sourceName ]
-                                        ]
-                                        :: List.map
-                                            (\knownCallsign ->
-                                                tr []
-                                                    [ td [] [ text knownCallsign.position ]
-                                                    , td [] [ text knownCallsign.unitName ]
-                                                    , td [] [ text knownCallsign.comment ]
-                                                    , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                                    , td [] [ text <| knownCallsign.sourceName ]
-                                                    ]
-                                            )
-                                            xs
-
-                                [] ->
-                                    [ text "" ]
-
                         -- Перетворюємо дані у плоску структуру для таблиці
                         callsignsTableRows =
                             callsigns
