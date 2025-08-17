@@ -101,17 +101,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Discord notification - Overall CI status
+      - name: Discord notification - Overall CI failures only
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           frontend_status="${{ needs.frontend-tests.result }}"
           backend_status="${{ needs.backend-tests.result }}"
-
-          if [ "$frontend_status" = "cancelled" ] || [ "$backend_status" = "cancelled" ]; then
-            ./scripts/notifications/discord-notify.sh ci_cancelled "" "CI Workflow Cancelled" "Frontend: $frontend_status\\nBackend: $backend_status"
-          else
-            if [ ! "$frontend_status" = "success" ] || [ ! "$backend_status" = "success" ]; then
-              ./scripts/notifications/discord-notify.sh ci_failure "" "💥 CI Tests Failed" "Frontend: $frontend_status\\nBackend: $backend_status\\n\\nPlease check the logs for details."
-            fi
+          if [ ! "$frontend_status" = "success" ] || [ ! "$backend_status" = "success" ]; then
+            ./scripts/notifications/discord-notify.sh ci_failure "" "💥 CI Tests Failed" "Frontend: $frontend_status\\nBackend: $backend_status\\n\\nPlease check the logs for details."
           fi
