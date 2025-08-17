@@ -1,0 +1,17 @@
+[package]
+name = "echo-migration"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+name = "echo_migration"
+path = "src/lib.rs"
+
+[dependencies]
+async-std = { workspace = true }
+# # added due to failing build
+# ahash = "^0.8.10"
+# crc32c = "^0.6.5"
+
+sea-orm-migration = { workspace = true }
