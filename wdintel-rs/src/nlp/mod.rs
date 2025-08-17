@@ -90,6 +90,6 @@ pub async fn complete_callsigns(
             .split(", ")
             .map(|x| x.trim().to_lowercase())
             .filter(|x| !x.is_empty())
-            .collect(),
+            .collect::<Vec<String>>(),
     ))
 }

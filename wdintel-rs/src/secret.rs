@@ -109,7 +109,6 @@ async fn do_fetch_config(
     Ok(response.data.data)
 }
 
-#[tokio::main]
 pub async fn oneoff_backup_vault_secrets_to_bitwarden(
     _mode: Mode,
 ) -> Result<(), AppError> {
@@ -122,7 +121,6 @@ pub async fn oneoff_backup_vault_secrets_to_bitwarden(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_restore_vault_secrets_from_bitwarden(
     _mode: Mode,
 ) -> Result<(), AppError> {

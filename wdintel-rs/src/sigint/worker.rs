@@ -1,7 +1,6 @@
 use super::*;
 use log::*;
 
-#[tokio::main]
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
 
@@ -446,8 +445,8 @@ where
 {
     let statement = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        r#"insert into sigint_search (id, search_tsv) 
-                select sii.id, to_tsvector('russian', sii.body_noheader->>'body') 
+        r#"insert into sigint_search (id, search_tsv)
+                select sii.id, to_tsvector('russian', sii.body_noheader->>'body')
                 from sigint_inbox_item sii
                 where sii.id = $1"#,
         [db_message_id.into()],

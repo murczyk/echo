@@ -141,7 +141,6 @@ pub async fn oneoff_rer_csv_import_1(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_rer_csv_import(
     mode: Mode,
     ps: &crate::OneoffRerCsvImportPs,

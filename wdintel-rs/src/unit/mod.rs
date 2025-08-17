@@ -9,11 +9,17 @@ use std::cell::OnceCell;
 mod const_units;
 pub mod parser;
 
+#[allow(clippy::declare_interior_mutable_const)]
 const NAMES_RE: OnceCell<Regex> = OnceCell::new();
+#[allow(clippy::declare_interior_mutable_const)]
 const DIVISIONS_RE: OnceCell<Regex> = OnceCell::new();
+#[allow(clippy::declare_interior_mutable_const)]
 const BATTALIONS_RE: OnceCell<Regex> = OnceCell::new();
+#[allow(clippy::declare_interior_mutable_const)]
 const COMPANIES_RE: OnceCell<Regex> = OnceCell::new();
+#[allow(clippy::declare_interior_mutable_const)]
 const ARMIES_RE: OnceCell<Regex> = OnceCell::new();
+#[allow(clippy::declare_interior_mutable_const)]
 const REGIMENTS_RE: OnceCell<Regex> = OnceCell::new();
 
 #[derive(Clone, Debug, PartialEq, Eq)]

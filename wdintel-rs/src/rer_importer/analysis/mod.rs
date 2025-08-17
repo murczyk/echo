@@ -626,7 +626,10 @@ pub async fn summary_table_freq_1(
         BTreeMap::new();
     let mut nominatimres_per_freq: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     for nominatimres_id in uniq_via_btreeset(
-        &rows_res.iter().filter_map(|x| x.nominatimres_id).collect(),
+        &rows_res
+            .iter()
+            .filter_map(|x| x.nominatimres_id)
+            .collect::<Vec<i64>>(),
     ) {
         let m_nominatimres = nominatimres::Entity::find_by_id(nominatimres_id)
             .one(&env.dbx)

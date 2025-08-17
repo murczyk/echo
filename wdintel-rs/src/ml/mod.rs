@@ -42,7 +42,6 @@ async fn format_f2(
     ))
 }
 
-#[tokio::main]
 pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
     let dbx = crate::new_pg_pool_from_config(&config).await?;

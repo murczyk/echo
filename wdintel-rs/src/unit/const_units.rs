@@ -5,10 +5,15 @@ use std::iter::{IntoIterator, Iterator};
 
 #[derive(Clone, Debug, Copy, Ord, Eq, PartialOrd, PartialEq)]
 pub enum UnitType {
+    #[allow(clippy::upper_case_acronyms)]
     COMPANY = 1,
+    #[allow(clippy::upper_case_acronyms)]
     BATTALION = 2,
+    #[allow(clippy::upper_case_acronyms)]
     REGIMENT = 3,
+    #[allow(clippy::upper_case_acronyms)]
     DIVISION = 4,
+    #[allow(clippy::upper_case_acronyms)]
     ARMY = 5,
 }
 

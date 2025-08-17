@@ -44,7 +44,6 @@ pub fn oneoff_batch_usk_to_wgs(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_fix_areas_of_responsibility(
     mode: Mode,
     force_all_networks: bool,

@@ -21,11 +21,9 @@ pub async fn log_error(req: HttpRequest) -> HttpResponse {
 }
 
 fn extract_referer_header(req: &HttpRequest) -> Option<String> {
-    let Some(referer_header) =
-        req.headers().get(HeaderName::from_static("referer"))
-    else {
-        return None;
-    };
+    let referer_header = req
+        .headers()
+        .get(HeaderName::from_static("referer"))?;
     if let Ok(referer_str) = referer_header.to_str() {
         Some(referer_str.to_string())
     } else {

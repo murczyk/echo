@@ -1,11 +1,11 @@
 use crate::location::SettlementDetails;
 
-pub fn format_location(location: &String) -> String {
+pub fn format_location(location: &str) -> String {
     format!("|{}|", location.to_uppercase())
 }
 
-pub fn to_location_list(text: &String) -> Vec<String> {
-    text.clone()
+pub fn to_location_list(text: &str) -> Vec<String> {
+    text.to_owned()
         .split("|")
         .map(|s| String::from(s.trim()))
         .filter(|l| !l.is_empty())

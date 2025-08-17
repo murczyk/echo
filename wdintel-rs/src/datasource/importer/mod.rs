@@ -15,7 +15,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 mod bl;
 mod types;
 
-#[tokio::main]
 pub async fn oneoff_import_datasource(
     mode: Mode,
     params: OneoffImportDataSourcePs,
@@ -65,7 +64,6 @@ pub async fn oneoff_import_datasource(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_export_datasource(
     mode: Mode,
     params: OneoffExportDataSourcePs,

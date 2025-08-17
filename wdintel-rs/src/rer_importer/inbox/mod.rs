@@ -361,7 +361,11 @@ async fn inbox_submit(
     for (id, message) in req.messages.iter() {
         let mut message = message.clone();
         let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-            &message.callsigns.iter().map(|x| x.to_lowercase()).collect(),
+            &message
+                .callsigns
+                .iter()
+                .map(|x| x.to_lowercase())
+                .collect::<Vec<String>>(),
         );
         fill_callsigns(&env.rq, &txn, &callsigns).await?;
         message.callsigns = callsigns.clone();
@@ -526,8 +530,8 @@ async fn get_freq_pelengs_summary(
         .context(h!())?;
 
     let q = format!(
-        r#"SELECT "freq" as freq, COUNT(*) AS count 
-            FROM ({}) q 
+        r#"SELECT "freq" as freq, COUNT(*) AS count
+            FROM ({}) q
             INNER JOIN sigint_peleng sp ON sp.source_inbox_item_id = q."id"
             WHERE sp.deleted = false
             AND "freq" IS NOT NULL

@@ -107,7 +107,7 @@ async fn long_poll(
         .context(h!())?;
     let srr: StreamReadReply = redis_con
         .xread_options(
-            &[srr_key.clone()],
+            std::slice::from_ref(&srr_key),
             &[last_stream_id.clone()],
             &StreamReadOptions::default()
                 .count(REDIS_READ_STREAM_ELEMENTS_MAX)

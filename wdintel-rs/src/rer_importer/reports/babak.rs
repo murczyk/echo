@@ -12,13 +12,13 @@ use sea_query::{Alias, CommonTableExpression, Expr, Func, Query, SimpleExpr};
 use serde::Deserialize;
 use serde_json::Value;
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::Path;
 
 pub async fn report_docx_kind_babak(
     user: Identity,
     env: &Env,
     req: &super::ReportPreviewReq,
-    outpath: &PathBuf,
+    outpath: &Path,
 ) -> Result<(), AppError> {
     let user_id = &user.id()?;
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
@@ -34,7 +34,7 @@ pub async fn report_docx_kind_babak(
         Utc.from_utc_datetime(&date_from_dt).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to_dt).with_timezone(&tz);
 
-    let file = std::fs::File::create(outpath.clone())?;
+    let file = std::fs::File::create(outpath)?;
 
     let units = get_inbox_messages_report_unit(user, env, &req.req).await?;
 
@@ -535,8 +535,8 @@ pub async fn get_inbox_messages_report_unit(
         // For the messages without a network assigned (or no frequency), we use the unit_v2 field
         .expr_as(
             Expr::cust(
-                r#"coalesce(nullif("sigint_unit"."regiment", ''), 
-                            nullif("sigint_unit"."battalion",''), 
+                r#"coalesce(nullif("sigint_unit"."regiment", ''),
+                            nullif("sigint_unit"."battalion",''),
                             nullif("sigint_unit"."division",''),
                             nullif("sigint_unit"."army",''),
                             nullif("sigint_unit"."name",''),

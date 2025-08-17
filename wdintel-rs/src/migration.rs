@@ -3,7 +3,6 @@ use crate::types::*;
 use sea_orm_migration::MigratorTrait;
 // use std::env;
 
-#[tokio::main]
 pub async fn run_migration(mode: Mode) -> Result<(), AppError> {
     run_migration_1(mode).await.context(h!())?;
     Ok(())

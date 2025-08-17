@@ -56,7 +56,7 @@ pub fn dt_zoned_from_millis(
     Ok(dt)
 }
 
-pub fn cond_json_contains_oneof(col: &str, vs: &Vec<String>) -> String {
+pub fn cond_json_contains_oneof(col: &str, vs: &[String]) -> String {
     let mut conds = vec![];
     for x in vs.iter() {
         conds.push(format!("{col}::jsonb ? '{x}'"));
@@ -65,7 +65,7 @@ pub fn cond_json_contains_oneof(col: &str, vs: &Vec<String>) -> String {
     final_cond
 }
 
-pub fn cond_json_contains_oneof_i64(col: &str, vs: &Vec<i64>) -> String {
+pub fn cond_json_contains_oneof_i64(col: &str, vs: &[i64]) -> String {
     let mut conds = vec![];
     for x in vs.iter() {
         conds.push(format!("{col}::jsonb @> '{x}'"));
@@ -74,7 +74,7 @@ pub fn cond_json_contains_oneof_i64(col: &str, vs: &Vec<i64>) -> String {
     final_cond
 }
 
-pub fn cond_json_contains_all_i64(col: &str, vs: &Vec<i64>) -> String {
+pub fn cond_json_contains_all_i64(col: &str, vs: &[i64]) -> String {
     let mut conds = vec![];
     for x in vs.iter() {
         conds.push(format!("{col}::jsonb @> '{x}'"));
@@ -84,7 +84,7 @@ pub fn cond_json_contains_all_i64(col: &str, vs: &Vec<i64>) -> String {
 }
 
 /// Preserves order of elements in the input vector
-pub fn uniq_via_btreeset<A>(input: &Vec<A>) -> Vec<A>
+pub fn uniq_via_btreeset<A>(input: &[A]) -> Vec<A>
 where
     A: Ord + Clone,
 {

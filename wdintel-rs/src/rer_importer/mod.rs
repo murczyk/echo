@@ -455,7 +455,6 @@ pub async fn signal_profile_save(
     Ok(Json(()))
 }
 
-#[tokio::main]
 pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     println!("> starting oneoff_round_freq");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
@@ -493,7 +492,6 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     println!("> starting oneoff_nominalize_freq");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
@@ -522,7 +520,6 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;

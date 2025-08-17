@@ -698,12 +698,8 @@ fn extract_sender_receiver_pair(
         regex: &Regex,
         msg_pos: usize,
     ) -> Option<CNCallsign> {
-        let Some(capts) = regex.captures(line) else {
-            return None;
-        };
-        let Some(callsign_match) = capts.name("callsign") else {
-            return None;
-        };
+        let capts = regex.captures(line)?;
+        let callsign_match = capts.name("callsign")?;
         let callsign: String =
             callsign_match.as_str().to_lowercase().trim().to_string();
         if callsign == "нв" || callsign == "н.в." || callsign == "н/в" {
@@ -774,7 +770,6 @@ fn is_non_caps_format(lines: &Vec<String>) -> Result<bool, AppError> {
     Ok(true)
 }
 
-#[tokio::main]
 pub async fn oneoff_reprocess_callsign_tokens(
     mode: Mode,
     ps: &crate::OneoffReprocessCallsignTokensPs,
@@ -841,7 +836,6 @@ pub async fn oneoff_reprocess_callsign_tokens(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_reprocess_callsigns(
     mode: Mode,
     ps: &crate::OneoffReprocessCallsignsPs,
@@ -889,7 +883,10 @@ pub async fn oneoff_reprocess_callsigns(
             let callsign_tokens =
                 super::callsigns::find_known_callsigns(&rq, &body).await?;
             let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-                &callsign_tokens.iter().map(|x| x.etalon.clone()).collect(),
+                &callsign_tokens
+                    .iter()
+                    .map(|x| x.etalon.clone())
+                    .collect::<Vec<String>>(),
             );
             let callsign_tokens =
                 highlight_callsigns(&rq, &body, &callsigns).await?;
@@ -949,7 +946,7 @@ pub async fn callsigns_graph(
             .rows
             .iter()
             .map(|row| row.freq.clone())
-            .collect(),
+            .collect::<Vec<String>>(),
     );
     let summary_table_callsigns = BTreeSet::from_iter(
         summary_table
@@ -1208,9 +1205,9 @@ mod tests {
 УКХ радіомережа управління 1-й мсб 38 омсбр 35А (УКРАЇНСЬКЕ, ЗАГІРНЕ, КОСТЯНТИНІВКА)
 1-Й (НВ)
 НВ (НВ)
-"1. там с водой вместе на ноль должны приехать ещё коробочка с блинчиками для нас надо будет помочь 
-2. их сюда же да разгружать ? 
-1. ну да 
+"1. там с водой вместе на ноль должны приехать ещё коробочка с блинчиками для нас надо будет помочь
+2. их сюда же да разгружать ?
+1. ну да
 2. принял""#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
@@ -1394,9 +1391,9 @@ mod tests {
     async fn extract_callsigns_10() {
         let rq = reqwest::Client::new();
         let body = r#"09.01.2025_18:34 F=446,0810(МГц) ЦФП62
-1 загін "Барс" 
-1- ДЕМОН 
-2- ВОЛНА 
+1 загін "Барс"
+1- ДЕМОН
+2- ВОЛНА
 
 1-Волна, Волна, Демону, коробочка дома.
 2-Принял тебя, Демон."#;
@@ -1437,7 +1434,7 @@ mod tests {
         let rq = reqwest::Client::new();
         let body = r#"09.01, 17:07:25
 401.9000
-УКХ р/м йм мср 1 мсб 1199 мсп 
+УКХ р/м йм мср 1 мсб 1199 мсп
 ВОЛНА-7
 ВОЛНА-6, ВОЛНА-8
 
@@ -1488,12 +1485,12 @@ mod tests {
 
     #[test]
     fn extract_callsigns_kazhanchik_03() {
-        let body = r#"01.04.2023_10:16 F=470,1000(МГц)  
-НВ(Не встановлено)  
-КУБАНЬ  
-КАЗАНЬ  
-"- По нам прилетело, по середине в поле с задней стороны в Яр!  
-- (1) Карандаши прибыли.....  
+        let body = r#"01.04.2023_10:16 F=470,1000(МГц)
+НВ(Не встановлено)
+КУБАНЬ
+КАЗАНЬ
+"- По нам прилетело, по середине в поле с задней стороны в Яр!
+- (1) Карандаши прибыли.....
 - Принял, пусть сразу.."
 ""#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
@@ -1503,10 +1500,10 @@ mod tests {
 
     #[test]
     fn extract_callsigns_kazhanchik_04() {
-        let body = r#"01.04.2023_10:00 F=463,1250(МГц)  
-ймовірно 1 мсб 291 мсп 42 мсд 58 А (пн зах РОБОТИННЕ).  
-НВ (НВ)  
-НВ (НВ)  
+        let body = r#"01.04.2023_10:00 F=463,1250(МГц)
+ймовірно 1 мсб 291 мсп 42 мсд 58 А (пн зах РОБОТИННЕ).
+НВ (НВ)
+НВ (НВ)
 "- Кто стрелял ??//Я на посту Артик позивний 33 било розрешение взяли пострелять сегодня постреляли успокоилися что за паника если конкретно нада кто стрелял значит можна узнать и поговорить""#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let expected: Vec<String> = vec![];
@@ -1516,10 +1513,10 @@ mod tests {
 
     #[test]
     fn extract_callsigns_kazhanchik_05() {
-        let body = r#"02.04.2023_15:46 F=453,2000(МГц)  
-УКХ р/м 1 мсб 503 мсп 19 мсд 58 ЗА (р-н МИРНЕ)  
-КИРПИЧ (НВ)  
-АМПЕР (НВ)  
+        let body = r#"02.04.2023_15:46 F=453,2000(МГц)
+УКХ р/м 1 мсб 503 мсп 19 мсд 58 ЗА (р-н МИРНЕ)
+КИРПИЧ (НВ)
+АМПЕР (НВ)
 "1.- АМПЕР АМПЕР - прогревайся подьезжай к СЕРОМУ КИРПИЧУ буем загружать""#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
@@ -1559,7 +1556,7 @@ mod tests {
 КАСПЕР
 
 1.Каспер, я Малыш.
-2. Каспер, да. 
+2. Каспер, да.
 1.Пост  Краснодар, север на 2 часа. Работает ТАНК,  кладет туда изумительно.
 2. Принял."#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
@@ -1584,8 +1581,8 @@ mod tests {
 - Тело (ГАЙДУКА) проясни ... находится (ГОНЕЦ) тоже там находится ...
 - ..... огромная !
 - .... одного, потому что у одного там что-то плечо ....
-- (4) ГЛАДИАТОР я АЙРОН как меня принимаешь 
-- (2) -На 5-ть 
+- (4) ГЛАДИАТОР я АЙРОН как меня принимаешь
+- (2) -На 5-ть
 - (4) -... АЗОВ шумит ... по утру когда будет смена АЗОВ даст еще одного карандашика , чтобы при смене (по утру) они помогли ... вытащить ГАЙДУКА!
 - ..... что это всё будет по утру!
 - -Да да  принял!"#;
@@ -1603,7 +1600,7 @@ mod tests {
     fn extract_callsigns_kazhanchik_10() {
         let body = r#"27.10, 18:02:28
 433.3750
-Пн. Вербове | підрозділ н.в. 
+Пн. Вербове | підрозділ н.в.
 
 НВ (1)
 НВ (2)
@@ -1613,7 +1610,7 @@ mod tests {
 
 1. Сухому.
 2.Она у меня въебала вот здесь тоже. Тихий какраз здесь у меня был.
-1. Угомони блядь. Ловушку,  заебал он нахуй прятаться от меня. 
+1. Угомони блядь. Ловушку,  заебал он нахуй прятаться от меня.
 2. Как вариант блядь.
 1. 300 на 733, как принял?
 1. Трое 300 от Звезды на 733. Как принял? Прием."#;
@@ -1631,7 +1628,7 @@ mod tests {
     fn extract_callsigns_kazhanchik_12() {
         let body = r#"27.10, 18:02:28
 433.3750
-Пн. Вербове | підрозділ н.в. 
+Пн. Вербове | підрозділ н.в.
 
 НВ
 ИРТЫШ 2
@@ -1679,18 +1676,18 @@ mod tests {
 
     #[test]
     fn extract_callsigns_buran_01() {
-        let body = r#"Дата: 2024-02-21;  
-Частота: 408.500;  
-Локація: Авдіївка (йм. в напрямку Ласточкине);  
-Підрозділ: УКХ р/м невизначеного підрозділу;  
-Час: 17:28;  
-Хто: Змей;  
-Кому: Чёрный;  
-Текст:  
-- Чёрный я Змей ответь по керосину  
-- ..  
-- 3 мсб? правильно?;  
-.  
+        let body = r#"Дата: 2024-02-21;
+Частота: 408.500;
+Локація: Авдіївка (йм. в напрямку Ласточкине);
+Підрозділ: УКХ р/м невизначеного підрозділу;
+Час: 17:28;
+Хто: Змей;
+Кому: Чёрный;
+Текст:
+- Чёрный я Змей ответь по керосину
+- ..
+- 3 мсб? правильно?;
+.
 Коментар: ( запит на зв'язок );"#;
         let res = extract_buran_callsigns(body).unwrap();
         let expected: Vec<String> =
@@ -2245,7 +2242,7 @@ mod tests {
  ОРЛЯНСЬКЕ
  01.01.2025 3:3:03
  Відправник: Бульдог
- Отримувач(і): Псих,                                             
+ Отримувач(і): Псих,
   Люстра
  Перехоплення:
  1. Бульдог Люстра.

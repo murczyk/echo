@@ -2,7 +2,6 @@ use crate::error::AppError;
 use crate::types::*;
 use chrono::prelude::*;
 
-#[tokio::main]
 pub async fn oneoff_reprocess_search_index(
     mode: Mode,
     ps: &crate::OneoffReprocessSearchIndexPs,

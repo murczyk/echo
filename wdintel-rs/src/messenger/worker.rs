@@ -249,7 +249,7 @@ async fn sync_groups(
                             .clone()
                             .context(h!())?
                             .into_active_model();
-                        model.name = Set(name.unwrap_or("".to_string()));
+                        model.name = Set(g.name.clone());
                         model.update(txn).await.context(h!())?;
                     }
                 }

@@ -19,7 +19,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 mod query;
 pub mod types;
 
-#[tokio::main]
 pub async fn oneoff_export_etalon_data(
     mode: Mode,
     destination_path: String,
@@ -35,7 +34,6 @@ pub async fn oneoff_export_etalon_data(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_import_etalon_data(
     mode: Mode,
     path: String,
@@ -125,7 +123,6 @@ pub async fn oneoff_import_etalon_data(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_clear_mothership_ids(mode: Mode) -> Result<(), AppError> {
     info!("clearing mothership ids");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
@@ -253,7 +250,6 @@ pub async fn oneoff_clear_mothership_ids(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_import_mothership_ids(
     mode: Mode,
     path: String,
@@ -837,7 +833,6 @@ where
 ///
 /// IMPORT METHODS GO HERE
 ///
-
 async fn import_modulation_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,

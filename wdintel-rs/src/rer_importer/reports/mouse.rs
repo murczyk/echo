@@ -22,13 +22,13 @@ use geoconvert::{LatLon, Mgrs};
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub async fn report_docx_kind_mouse(
     user: Identity,
     env: &Env,
     req: &super::ReportPreviewReq,
-    outpath: &PathBuf,
+    outpath: &Path,
 ) -> Result<(), AppError> {
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
@@ -50,7 +50,7 @@ pub async fn report_docx_kind_mouse(
         .format("%H:%M %d.%m.%Y")
         .to_string();
 
-    let file = std::fs::File::create(outpath.clone())?;
+    let file = std::fs::File::create(outpath)?;
 
     let mut per_tag_msgs: BTreeMap<i64, Vec<InboxMessage>> = BTreeMap::new();
     for (_message_id, message) in messages.iter() {

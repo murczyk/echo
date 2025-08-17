@@ -351,7 +351,7 @@ mod tests {
         let expected = Some(
             NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
                 .unwrap()
-                .and_hms_opt(20, 09, 41)
+                .and_hms_opt(20, 9, 41)
                 .unwrap(),
         );
         assert_eq!(res, expected);
@@ -410,9 +410,9 @@ mod tests {
 — второй 076 Спасибо за прикрытие счастья здоровья"#;
         let res = extract_datetime(input).unwrap();
         let expected = Some(
-            NaiveDate::from_ymd_opt(2025, 01, 13)
+            NaiveDate::from_ymd_opt(2025, 1, 13)
                 .unwrap()
-                .and_hms_opt(17, 02, 34)
+                .and_hms_opt(17, 2, 34)
                 .unwrap(),
         );
         assert_eq!(res, expected);
@@ -430,9 +430,9 @@ mod tests {
 — Да, все живы, машине пизда."#;
         let res = extract_datetime(input).unwrap();
         let expected = Some(
-            NaiveDate::from_ymd_opt(2025, 07, 24)
+            NaiveDate::from_ymd_opt(2025, 7, 24)
                 .unwrap()
-                .and_hms_opt(08, 05, 21)
+                .and_hms_opt(8, 5, 21)
                 .unwrap(),
         );
         assert_eq!(res, expected);

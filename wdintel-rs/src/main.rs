@@ -497,7 +497,7 @@ async fn main() -> Result<(), AppError> {
             Ok(())
         }
         Cmd::OneoffEnsureTagsOrdering => {
-            crate::tags::ordering::oneoff_ensure_tags_ordering(mode)
+            crate::tags::ordering::oneoff_ensure_tags_ordering(mode).await
         }
         Cmd::OneoffTestKml => crate::kml::main_test_kml(mode),
         Cmd::OneoffTestXmlLib => crate::atak::main_test_xml_lib(mode),
@@ -511,33 +511,37 @@ async fn main() -> Result<(), AppError> {
         Cmd::OneoffTestOpencv => crate::terminal::oneoff_test_opencv(),
         Cmd::OneoffParseHtml => crate::terminal::oneoff_parse_html(),
         Cmd::OneoffTestFullCirclePdf => {
-            crate::terminal::oneoff_test_full_circle()
+            crate::terminal::oneoff_test_full_circle().await
         }
         Cmd::OneoffKmzToGeojson(ps) => crate::delta::oneoff_kmz_to_geojson(&ps),
-        Cmd::OneoffRadioByFreq => crate::kml::oneoff_radio_by_freq(),
+        Cmd::OneoffRadioByFreq => crate::kml::oneoff_radio_by_freq().await,
         Cmd::OneoffRadioPerDayPerAbonent(ps) => {
             crate::kml::oneoff_radio_per_day_per_abonent_main(
                 mode, &ps, None, None,
             )
+            .await
         }
-        Cmd::OneoffFixKmz(ps) => crate::kml::oneoff_fix_kml_main(mode, &ps),
-        Cmd::SigintWorker => crate::sigint::worker::sigint_worker(mode),
-        Cmd::Migration => crate::migration::run_migration(mode),
+        Cmd::OneoffFixKmz(ps) => {
+            crate::kml::oneoff_fix_kml_main(mode, &ps).await
+        }
+        Cmd::SigintWorker => crate::sigint::worker::sigint_worker(mode).await,
+        Cmd::Migration => crate::migration::run_migration(mode).await,
         Cmd::RenewTailscaleCert(ps) => renew_tailscale_cert(mode, ps.force),
-        Cmd::Backup => crate::backup::backup(mode),
+        Cmd::Backup => crate::backup::backup(mode).await,
         Cmd::OneoffSigintImportMouse(ps) => {
-            crate::sigint::oneoff_sigint_import_mouse(mode, &ps)
+            crate::sigint::oneoff_sigint_import_mouse(mode, &ps).await
         }
         Cmd::OneoffReprocessCoords(ps) => {
-            crate::sigint::oneoff_reprocess_coords(mode, &ps)
+            crate::sigint::oneoff_reprocess_coords(mode, &ps).await
         }
         Cmd::OneoffReprocessUnitNames => {
-            crate::rer_importer::oneoff_reprocess_unit_names(mode)
+            crate::rer_importer::oneoff_reprocess_unit_names(mode).await
         }
         Cmd::OneoffReprocessSearchIndex(ps) => {
             crate::rer_importer::search::oneoff_reprocess_search_index(
                 mode, &ps,
             )
+            .await
         }
         Cmd::OneoffDeltaCsvToKmz(ps) => {
             let _ = crate::delta::csv::csv_to_kmz(mode, &ps).unwrap();
@@ -547,80 +551,65 @@ async fn main() -> Result<(), AppError> {
             crate::rer_importer::callsigns::oneoff_reprocess_callsign_tokens(
                 mode, &ps,
             )
-            .unwrap();
-            Ok(())
+            .await
         }
         Cmd::OneoffReprocessCallsigns(ps) => {
             crate::rer_importer::callsigns::oneoff_reprocess_callsigns(
                 mode, &ps,
             )
-            .unwrap();
-            Ok(())
+            .await
         }
         Cmd::OneoffGenDatasetCallsigns => {
-            crate::ml::oneoff_gen_dataset_callsigns(mode).unwrap();
-            Ok(())
+            crate::ml::oneoff_gen_dataset_callsigns(mode).await
         }
         Cmd::OneoffNominalizeFreq => {
-            crate::rer_importer::oneoff_nominalize_freq(mode).unwrap();
-            Ok(())
+            crate::rer_importer::oneoff_nominalize_freq(mode).await
         }
         Cmd::OneoffRoundFreq => {
-            crate::rer_importer::oneoff_round_freq(mode).unwrap();
-            Ok(())
+            crate::rer_importer::oneoff_round_freq(mode).await
         }
         Cmd::OneoffRegisterUser(ps) => {
-            crate::users::oneoff_register_user(mode, &ps).unwrap();
-            Ok(())
+            crate::users::oneoff_register_user(mode, &ps).await
         }
         Cmd::OneoffRegisterDeltaUser(ps) => {
-            crate::users::oneoff_register_delta_user(mode, &ps).unwrap();
-            Ok(())
+            crate::users::oneoff_register_delta_user(mode, &ps).await
         }
         Cmd::OneoffRerCsvImport(ps) => {
             crate::rer_importer::import_csv::oneoff_rer_csv_import(mode, &ps)
-                .unwrap();
-            Ok(())
+                .await
         }
         Cmd::OneoffFillCompFreq(ps) => {
-            crate::rer_importer::reports::oneoff_fill_comp_freq(mode, &ps)
-                .unwrap();
-            Ok(())
+            crate::rer_importer::reports::oneoff_fill_comp_freq(mode, &ps).await
         }
         Cmd::OneoffBatchUskToWgs(ps) => {
             oneoff::oneoff_batch_usk_to_wgs(mode, &ps).unwrap();
             Ok(())
         }
         Cmd::ExportUnit(ps) => {
-            crate::rer_importer::unit::export_unit(mode, &ps).unwrap();
-            Ok(())
+            crate::rer_importer::unit::export_unit(mode, &ps).await
         }
         Cmd::ImportUnit(ps) => {
-            crate::rer_importer::unit::import_unit(mode, &ps).unwrap();
-            Ok(())
+            crate::rer_importer::unit::import_unit(mode, &ps).await
         }
         Cmd::OneoffMergeAllNetworks => {
             crate::sigint::network::oneoff_merge_all_possible_networks(mode)
-                .unwrap();
-            Ok(())
+                .await
         }
         Cmd::OneoffMergeTwoNetworks(ps) => {
-            crate::sigint::network::oneoff_merge_two_networks(mode, &ps)
-                .unwrap();
-            Ok(())
+            crate::sigint::network::oneoff_merge_two_networks(mode, &ps).await
         }
-        Cmd::OneoffInstall(ps) => {
-            crate::install::mount_tmp(&ps).unwrap();
-            Ok(())
-        }
+        Cmd::OneoffInstall(ps) => crate::install::mount_tmp(&ps)
+            .await
+            .map_err(|e| AppError::AnyhowError { source: e }),
         Cmd::OneoffReprocessUnitsSearchIndex => {
-            crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
+            crate::sigint::unit::oneoff_reprocess_units_search_index(mode).await
         }
         Cmd::OneoffExportEtalonData(ps) => {
             crate::sigint::import::oneoff_export_etalon_data(
                 mode,
                 ps.destination_path,
             )
+            .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
             crate::sigint::import::oneoff_import_etalon_data(
@@ -630,33 +619,40 @@ async fn main() -> Result<(), AppError> {
                 ps.mothership_ids_destination_path,
                 ps.autocommit.unwrap_or(false),
             )
+            .await
         }
         Cmd::OneoffImportMothershipIds(ps) => {
             crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
+                .await
         }
         Cmd::OneoffClearMothershipIds => {
-            crate::sigint::import::oneoff_clear_mothership_ids(mode)
+            crate::sigint::import::oneoff_clear_mothership_ids(mode).await
         }
         Cmd::OneoffBackupVaultSecretsToBitwarden => {
-            crate::secret::oneoff_backup_vault_secrets_to_bitwarden(mode)
+            crate::secret::oneoff_backup_vault_secrets_to_bitwarden(mode).await
         }
         Cmd::OneoffRestoreVaultSecretsFromBitwarden => {
             crate::secret::oneoff_restore_vault_secrets_from_bitwarden(mode)
+                .await
         }
         Cmd::OneoffImportDataSource(ps) => {
             crate::datasource::importer::oneoff_import_datasource(mode, ps)
+                .await
         }
         Cmd::OneoffExportDataSource(ps) => {
             crate::datasource::importer::oneoff_export_datasource(mode, ps)
+                .await
         }
         Cmd::OneoffFixAreasOfResponsibility(ps) => {
             oneoff::oneoff_fix_areas_of_responsibility(
                 mode,
                 ps.force_all_networks,
             )
+            .await
         }
         Cmd::OneoffPrintOrganismGroups(ps) => {
             crate::organism::oneoff::oneoff_print_organism_groups(mode, &ps)
+                .await
         }
     }
 }

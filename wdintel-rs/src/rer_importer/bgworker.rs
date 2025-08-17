@@ -114,7 +114,10 @@ where
         super::callsigns::find_known_callsigns(rq, &body).await?;
     let keyword_tokens = super::highlight::extract_keywords(&body)?;
     let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-        &callsign_tokens.iter().map(|x| x.etalon.clone()).collect(),
+        &callsign_tokens
+            .iter()
+            .map(|x| x.etalon.clone())
+            .collect::<Vec<String>>(),
     );
     let checked = freq.is_some();
     let reviewed = false;

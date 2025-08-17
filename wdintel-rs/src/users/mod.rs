@@ -656,7 +656,7 @@ pub async fn register_user(
     dbx: &sea_orm::DatabaseConnection,
     user: &str,
     password: &str,
-    roles: &Vec<String>,
+    roles: &[String],
     sigint_zone_id: i64,
     organism_id: Option<i64>,
 ) -> Result<(), AppError> {
@@ -669,7 +669,7 @@ pub async fn register_user(
     login::ActiveModel {
         login: Set(user.to_string()),
         password: Set(Some(hash_s.clone())),
-        roles: Set(serde_json::to_value(roles.clone()).context(h!())?),
+        roles: Set(serde_json::to_value(roles.to_owned()).context(h!())?),
         created_at: NotSet,
         sigint_zone_id: Set(Some(sigint_zone_id)),
         organism_id: Set(organism_id),
@@ -866,7 +866,6 @@ pub async fn get_identity_sigint_groups_noimport(
     Ok(master_keys)
 }
 
-#[tokio::main]
 pub async fn oneoff_register_user(
     mode: Mode,
     ps: &crate::OneoffRegisterUserPs,
@@ -886,7 +885,6 @@ pub async fn oneoff_register_user(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_register_delta_user(
     mode: Mode,
     ps: &crate::OneoffRegisterDeltaUserPs,

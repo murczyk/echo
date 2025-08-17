@@ -624,7 +624,6 @@ pub async fn upload_pdf(
 }
 
 /// | Test upload_pdf api as much as possible
-#[tokio::main]
 pub async fn oneoff_test_full_circle() -> Result<(), AppError> {
     let tmp_dir = Arc::new(TempDir::new("wdintel-importer-pdf")?);
     let tmp_dir2 = tmp_dir.clone();

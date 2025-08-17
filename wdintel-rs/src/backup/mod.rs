@@ -4,7 +4,6 @@ use chrono::prelude::*;
 use log::*;
 use xshell::{cmd, Shell};
 
-#[tokio::main]
 pub async fn backup(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
     if let Some(sleep_before_backup_mins) = config.sleep_before_backup_mins {
@@ -60,7 +59,6 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-#[tokio::main]
 #[allow(dead_code)]
 pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;

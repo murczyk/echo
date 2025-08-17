@@ -59,7 +59,6 @@ pub fn from_base64(s: &str) -> Result<Vec<u8>, AppError> {
     Ok(base64::engine::general_purpose::STANDARD_NO_PAD.decode(s)?)
 }
 
-#[tokio::main]
 pub async fn oneoff_reprocess_coords(
     mode: Mode,
     ps: &OneoffReprocessCoordsPs,
@@ -225,7 +224,6 @@ fn display_message(
     ))
 }
 
-#[tokio::main]
 pub async fn oneoff_sigint_import_mouse(
     mode: Mode,
     ps: &crate::OneoffSigintImportMousePs,

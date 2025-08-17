@@ -3,7 +3,6 @@ use anyhow::Context;
 use cmd_lib::run_cmd;
 use echo_install_utils::tmpdir::mount_tmp_to_tmpfs;
 
-#[tokio::main]
 pub async fn mount_tmp(args: &OneoffInstallPs) -> anyhow::Result<()> {
     run_mount_tmp_to_tmpfs(args.interactive).await
 }

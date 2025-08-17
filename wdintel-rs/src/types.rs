@@ -39,13 +39,14 @@ pub struct Env {
     pub version: String,
 }
 
-impl ToString for Mode {
-    fn to_string(&self) -> String {
-        match self {
-            Mode::Debug => "debug".to_string(),
-            Mode::Live => "live".to_string(),
-            Mode::Test => "test".to_string(),
-        }
+impl std::fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Mode::Debug => "debug",
+            Mode::Live => "live",
+            Mode::Test => "test",
+        };
+        write!(f, "{}", s)
     }
 }
 

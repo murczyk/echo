@@ -4,14 +4,13 @@ use crate::entities::*;
 use crate::types::*;
 use crate::users::validate_login;
 use actix_identity::Identity;
-use actix_web::dev::Extensions;
+
 use actix_web::web::{Data, Json};
 use actix_web::{get, HttpMessage, HttpRequest, HttpResponse};
 use anyhow::Error;
 use echo_migration::Expr;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
-use std::cell::Ref;
 
 pub mod oauth;
 pub mod types;
@@ -47,11 +46,10 @@ pub async fn handle_redirect(
     env: actix_web::web::Data<Env>,
 ) -> HttpResponse {
     let req_clone = req.clone();
-    let extensions = req_clone.extensions();
     match oauth::handle_receive_code(env.clone(), req).await {
         Ok(user_info) => {
             let user_name = user_info.user_name.clone();
-            match perform_login(&env, extensions, user_info).await {
+            match perform_login(&env, &req_clone, user_info).await {
                 Ok(_) => HttpResponse::Found()
                     .insert_header(("Location", "/"))
                     .body("Success. Redirecting.."),
@@ -80,7 +78,7 @@ pub async fn handle_redirect(
 
 async fn perform_login(
     env: &Data<Env>,
-    extensions: Ref<'_, Extensions>,
+    req: &HttpRequest,
     user_info: UserInfo,
 ) -> Result<(), Error> {
     let username = user_info.user_name;
@@ -114,6 +112,9 @@ async fn perform_login(
 
     let login = result_login.context(h!())?;
     let login = validate_login(&env.dbx, &login.login).await.context(h!())?;
-    Identity::login(&extensions, login.login)?;
+    {
+        let extensions = req.extensions();
+        Identity::login(&extensions, login.login)?;
+    }
     Ok(())
 }

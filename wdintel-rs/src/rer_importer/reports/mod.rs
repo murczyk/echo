@@ -185,7 +185,6 @@ pub async fn report_docx(
 }
 
 /// Fills the comp_freq table with data about when the frequency was first seen.
-#[tokio::main]
 pub async fn oneoff_fill_comp_freq(
     mode: Mode,
     ps: &crate::OneoffFillCompFreqPs,

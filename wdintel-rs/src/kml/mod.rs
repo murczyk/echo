@@ -423,7 +423,6 @@ pub fn oneoff_print_description_icon_title(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
     let kml_path = Path::new(
         "/Users/kon/Library/Application Support/Google Earth/myplaces.kml",
@@ -609,7 +608,6 @@ fn get_rer_folders(kml: &Kml) -> Result<Vec<Folder>, AppError> {
 }
 
 /// Checks broken images, ideally replaces them
-#[tokio::main]
 pub async fn oneoff_fix_kml_main(
     mode: Mode,
     ps: &crate::OneoffFixKmzPs,
@@ -1128,7 +1126,6 @@ fn extract_radio_info(nn: &str) -> Result<Option<RadioInfo>, AppError> {
     Ok(None)
 }
 
-#[tokio::main]
 pub async fn oneoff_radio_per_day_per_abonent_main(
     mode: Mode,
     ps: &crate::OneoffRadioPerDayPerAbonentPs,

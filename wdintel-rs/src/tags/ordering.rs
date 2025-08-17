@@ -32,7 +32,6 @@ pub async fn collect_tags_list(
     Ok(regular_tags)
 }
 
-#[tokio::main]
 pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
     info!("> oneoff_ensure_tags_ordering start");
     let db = crate::new_pg_pool_from_mode(mode).await.context(h!())?;

@@ -25,7 +25,6 @@ pub struct JsonUnit {
     pub callsigns: Vec<JsonCallsign>,
 }
 
-#[tokio::main]
 pub async fn export_unit(
     mode: Mode,
     ps: &crate::ExportUnitPs,
@@ -86,7 +85,6 @@ pub async fn export_unit(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn import_unit(
     mode: Mode,
     ps: &crate::ImportUnitPs,

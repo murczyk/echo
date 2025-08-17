@@ -8,7 +8,7 @@ use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
 use sea_orm::*;
-use std::path::PathBuf;
+use std::path::Path;
 
 const WIDTH_UNIT: usize = 1870;
 const DTM_FORMAT: &str = "%Y.%m.%d %H:%M:%S";
@@ -70,7 +70,7 @@ pub async fn report_docx_kind_revo(
     user: Identity,
     env: &Env,
     req: &super::ReportPreviewReq,
-    outpath: &PathBuf,
+    outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
     let login = user.id()?;
@@ -150,7 +150,7 @@ pub async fn report_docx_kind_revo(
         .add_paragraph(Paragraph::new())
         .add_table(table_amrp);
     info!("report_docx_kind_revo done, saving to file...");
-    let file = std::fs::File::create(outpath.clone())?;
+    let file = std::fs::File::create(outpath)?;
     docx.build().pack(file).context(h!())?;
 
     info!("report_docx_kind_revo completed");

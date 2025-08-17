@@ -305,9 +305,7 @@ pub fn parse_delta_kmz(
 }
 
 fn extract_datetime(filepath: &&str, regex: &Regex) -> Option<NaiveDateTime> {
-    let Some(captures) = regex.captures(filepath) else {
-        return None;
-    };
+    let captures = regex.captures(filepath)?;
     let _filename_prefix = captures.get(1).unwrap().as_str().to_string();
     let day = captures.get(2).unwrap().as_str().parse().ok();
     let month = captures.get(3).unwrap().as_str().parse().ok();
@@ -403,7 +401,7 @@ amplitude: -101.59 dBm
             rec1.time,
             NaiveDate::from_ymd_opt(2024, 3, 31)
                 .unwrap()
-                .and_hms_opt(18, 51, 05)
+                .and_hms_opt(18, 51, 5)
                 .unwrap()
         );
         let rec2 = &res[1];

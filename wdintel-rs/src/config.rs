@@ -205,12 +205,14 @@ pub fn m_unit_to_unidenfitied(unit: Option<String>) -> String {
     res
 }
 
-pub fn location_contain_empty(xs: &Vec<String>) -> bool {
-    xs.contains(&"Не визначено".to_string()) || xs.contains(&"".to_string())
+pub fn location_contain_empty(xs: &[String]) -> bool {
+    xs.iter()
+        .any(|s| s.as_str() == "Не визначено" || s.is_empty())
 }
 
-pub fn location_is_empty(s: &String) -> bool {
-    s.trim().eq(&"--Не визначено--".to_string()) || s.trim().is_empty()
+pub fn location_is_empty(s: &str) -> bool {
+    let t = s.trim();
+    t == "--Не визначено--" || t.is_empty()
 }
 
 pub fn m_location_to_unidenfitied(location: Option<String>) -> String {

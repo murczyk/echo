@@ -4,7 +4,6 @@ use crate::types::*;
 use crate::utils::string::master_key_shortcut;
 use sea_orm::*;
 
-#[tokio::main]
 pub async fn oneoff_print_organism_groups(
     mode: Mode,
     ps: &crate::OneoffPrintOrganismGroupsPs,

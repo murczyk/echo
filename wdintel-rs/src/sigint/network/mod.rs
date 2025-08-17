@@ -2596,7 +2596,6 @@ pub async fn delete_network_description(
     Ok(Json(network_detail[0].clone()))
 }
 
-#[tokio::main]
 pub async fn oneoff_merge_all_possible_networks(
     mode: crate::types::Mode,
 ) -> anyhow::Result<(), AppError> {
@@ -2679,7 +2678,6 @@ pub async fn oneoff_merge_all_possible_networks(
     Ok(())
 }
 
-#[tokio::main]
 pub async fn oneoff_merge_two_networks(
     mode: crate::types::Mode,
     ps: &crate::OneoffMergeNetworksPs,
@@ -3077,7 +3075,7 @@ fn map_add_network_description(
 }
 
 fn map_add_network_frequency_description(
-    user_login: &String,
+    user_login: &str,
     network: &sigint_network::Model,
     freq_id: i64,
     descr: AddNetworkFrequencyDescription,
@@ -3085,7 +3083,7 @@ fn map_add_network_frequency_description(
     sigint_network_description::ActiveModel {
         id: NotSet,
         network_id: Set(network.id),
-        login: Set(user_login.clone()),
+        login: Set(user_login.to_owned()),
         r#type: Set(NetworkDescriptionType::from(descr.descr_type)),
         description: Set(descr.description.clone()),
         sigint_network_freq_id: Set(Some(freq_id)),

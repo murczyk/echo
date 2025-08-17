@@ -583,7 +583,6 @@ async fn update_original_unit(
 }
 
 /// Oneoff function to reprocess the search index for units.
-#[tokio::main]
 pub async fn oneoff_reprocess_units_search_index(
     mode: Mode,
 ) -> Result<(), AppError> {
@@ -614,8 +613,8 @@ where
 {
     let statement = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        r#"UPDATE sigint_unit 
-                SET search_tsv = to_tsvector('russian', name) 
+        r#"UPDATE sigint_unit
+                SET search_tsv = to_tsvector('russian', name)
                 WHERE id = $1"#,
         [unit_id.into()],
     );
@@ -639,7 +638,7 @@ where
 /// Запит використовує структуру [`UnitSearchReq`], яка має наступні поля:
 ///
 /// * `search`: `String` - пошукова строка.
-
+///
 ///
 /// # Повертає
 ///

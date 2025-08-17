@@ -608,23 +608,24 @@ pub async fn import_map(
     let bgtask_id = bgtask.id;
     let config = env.config.clone();
     let dbx = env.dbx.clone();
+    let convert_id = convert.id;
 
     tokio::spawn(async move {
-        let res = (async |db, bgid, id, config: crate::config::Config| {
+        let res = async {
             let tmp_dir = TempDir::new("wdintel-kmz2geojson")?;
             bgtask_log(
-                Some(bgid),
+                Some(bgtask_id),
                 &format!("> tmp_dir {}", &tmp_dir.path().display()),
-                &db,
+                &dbx,
             )
             .await?;
             let geojson_file = Path::new(&filename).with_extension("geojson");
             let geojson_file = geojson_file.file_name().ok_or("impossible")?;
             let kmz_file = tmp_dir.path().join(filename);
             bgtask_log(
-                Some(bgid),
+                Some(bgtask_id),
                 &format!("> kmz_file: {}", &kmz_file.display()),
-                &db,
+                &dbx,
             )
             .await?;
             std::fs::write(&kmz_file, val)?;
@@ -632,13 +633,13 @@ pub async fn import_map(
                 .args([tmp_dir.path()])
                 .spawn()?;
             bgtask_log(
-                Some(bgid),
+                Some(bgtask_id),
                 &format!("> running unzip {}", &kmz_file.display()),
-                &db,
+                &dbx,
             )
             .await?;
             crate::zip::unzip(&kmz_file)?;
-            bgtask_log(Some(bgid), "> unzip done", &db).await?;
+            bgtask_log(Some(bgtask_id), "> unzip done", &dbx).await?;
             crate::utils::backup_tmp_dir(tmp_dir.path())?;
             let mut doc_kml = tmp_dir
                 .path()
@@ -663,13 +664,13 @@ pub async fn import_map(
                 }
             }
             bgtask_log(
-                Some(bgid),
+                Some(bgtask_id),
                 &format!("> doc_kml: {}", &doc_kml.display()),
-                &db,
+                &dbx,
             )
             .await?;
 
-            let geojson_name = format!("enemy-units-{id}.geojson");
+            let geojson_name = format!("enemy-units-{}.geojson", convert_id);
             let raw_kmz_output = PathBuf::from(config.storage_dir.clone())
                 .join(geojson_name.clone())
                 .with_extension("kmz");
@@ -684,9 +685,9 @@ pub async fn import_map(
             let output2 = PathBuf::from(config.storage_dir.clone())
                 .join(geojson_name.clone());
             bgtask_log(
-                Some(bgid),
+                Some(bgtask_id),
                 &format!("> copy to storage: {}", &output2.display()),
-                &db,
+                &dbx,
             )
             .await?;
             let kmz_dir = output.parent().unwrap();
@@ -719,9 +720,9 @@ pub async fn import_map(
                 })
                 .map(|_| ());
 
-            finish_bgtask(Some(bgid), &db, &res).await?;
+            finish_bgtask(Some(bgtask_id), &dbx, &res).await?;
             Ok::<(), AppError>(())
-        })(dbx.clone(), bgtask_id, convert.id, config);
+        };
 
         println!("> task finished");
         let mut convert_active = convert.into_active_model();
@@ -1049,28 +1050,23 @@ pub fn delta_objs_to_kmz(
                     let app6d =
                         crate::icons::parse_app6d(&obj.symbol.app6d.sidc)?;
                     // println!("{} {:?}", &obj.symbol.app6d.sidc, app6d);
-                    let mut style_url = if &app6d.identity == "3" {
-                        "map-line-friendly"
-                    } else if &app6d.identity == "2" {
-                        "map-line-friendly"
-                    } else if &app6d.identity == "4" {
-                        "map-line-neutral"
-                    } else if &app6d.identity == "1" {
-                        "map-line-unknown"
-                    } else if &app6d.identity == "0" {
-                        "map-line-unknown"
-                    } else if &app6d.identity == "6" {
-                        "map-line-hostile"
-                    } else if &app6d.identity == "5" {
-                        "map-line-hostile"
-                    } else {
-                        return Err(AppError::BL {
-                            msg: format!(
-                                "Couldn't handle identity: {}",
-                                app6d.identity
-                            ),
-                        });
-                    };
+                    let mut style_url =
+                        if matches!(app6d.identity.as_str(), "3" | "2") {
+                            "map-line-friendly"
+                        } else if &app6d.identity == "4" {
+                            "map-line-neutral"
+                        } else if matches!(app6d.identity.as_str(), "1" | "0") {
+                            "map-line-unknown"
+                        } else if matches!(app6d.identity.as_str(), "6" | "5") {
+                            "map-line-hostile"
+                        } else {
+                            return Err(AppError::BL {
+                                msg: format!(
+                                    "Couldn't handle identity: {}",
+                                    app6d.identity
+                                ),
+                            });
+                        };
                     // зуби дракона
                     if &app6d.main_icon == "290202"
                         || &app6d.main_icon == "290204"
@@ -1174,216 +1170,218 @@ pub fn delta_objs_to_kmz(
 }
 
 fn get_kmz_line_styles() -> Vec<Style> {
-    let mut styles = vec![];
-    styles.push(Style {
-        id: Some("normal-line-friendly".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_FRIENDLY_LINE.to_string(),
+    let styles = vec![
+        Style {
+            id: Some("normal-line-friendly".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_FRIENDLY_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "2.0".to_string(),
+                }),
             }),
-            width: Some(Width {
-                body: "2.0".to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("normal-line-neutral".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_NEUTRAL_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "2.0".to_string(),
+                }),
             }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("normal-line-neutral".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_NEUTRAL_LINE.to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("normal-line-unknown".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_UNKNOWN_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "2.0".to_string(),
+                }),
             }),
-            width: Some(Width {
-                body: "2.0".to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("normal-line-hostile".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_HOSTILE_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "2.0".to_string(),
+                }),
             }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("normal-line-unknown".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_UNKNOWN_LINE.to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("highlight-line-friendly".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_FRIENDLY_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "3.0".to_string(),
+                }),
             }),
-            width: Some(Width {
-                body: "2.0".to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("highlight-line-neutral".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_NEUTRAL_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "3.0".to_string(),
+                }),
             }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("normal-line-hostile".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_HOSTILE_LINE.to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("highlight-line-unknown".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_UNKNOWN_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "3.0".to_string(),
+                }),
             }),
-            width: Some(Width {
-                body: "2.0".to_string(),
+            poly_style: None,
+        },
+        Style {
+            id: Some("highlight-line-hostile".to_string()),
+            icon_style: None,
+            label_style: None,
+            balloon_style: None,
+            line_style: Some(LineStyle {
+                color: Some(Color {
+                    body: crate::icons::COLOR_HOSTILE_LINE.to_string(),
+                }),
+                width: Some(Width {
+                    body: "3.0".to_string(),
+                }),
             }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("highlight-line-friendly".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_FRIENDLY_LINE.to_string(),
-            }),
-            width: Some(Width {
-                body: "3.0".to_string(),
-            }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("highlight-line-neutral".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_NEUTRAL_LINE.to_string(),
-            }),
-            width: Some(Width {
-                body: "3.0".to_string(),
-            }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("highlight-line-unknown".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_UNKNOWN_LINE.to_string(),
-            }),
-            width: Some(Width {
-                body: "3.0".to_string(),
-            }),
-        }),
-        poly_style: None,
-    });
-    styles.push(Style {
-        id: Some("highlight-line-hostile".to_string()),
-        icon_style: None,
-        label_style: None,
-        balloon_style: None,
-        line_style: Some(LineStyle {
-            color: Some(Color {
-                body: crate::icons::COLOR_HOSTILE_LINE.to_string(),
-            }),
-            width: Some(Width {
-                body: "3.0".to_string(),
-            }),
-        }),
-        poly_style: None,
-    });
+            poly_style: None,
+        },
+    ];
     styles
 }
 
 fn get_kmz_line_style_maps() -> Vec<StyleMap> {
-    let mut style_maps = vec![];
-    style_maps.push(StyleMap {
-        id: Some("map-line-friendly".to_string()),
-        pairs: vec![
-            Pair {
-                key: Key {
-                    body: "normal".to_string(),
+    let style_maps = vec![
+        StyleMap {
+            id: Some("map-line-friendly".to_string()),
+            pairs: vec![
+                Pair {
+                    key: Key {
+                        body: "normal".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#normal-line-friendly".to_string(),
+                    },
                 },
-                style_url: StyleUrl {
-                    body: "#normal-line-friendly".to_string(),
+                Pair {
+                    key: Key {
+                        body: "highlight".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#highlight-line-friendly".to_string(),
+                    },
                 },
-            },
-            Pair {
-                key: Key {
-                    body: "highlight".to_string(),
+            ],
+        },
+        StyleMap {
+            id: Some("map-line-neutral".to_string()),
+            pairs: vec![
+                Pair {
+                    key: Key {
+                        body: "normal".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#normal-line-neutral".to_string(),
+                    },
                 },
-                style_url: StyleUrl {
-                    body: "#highlight-line-friendly".to_string(),
+                Pair {
+                    key: Key {
+                        body: "highlight".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#highlight-line-neutral".to_string(),
+                    },
                 },
-            },
-        ],
-    });
-    style_maps.push(StyleMap {
-        id: Some("map-line-neutral".to_string()),
-        pairs: vec![
-            Pair {
-                key: Key {
-                    body: "normal".to_string(),
+            ],
+        },
+        StyleMap {
+            id: Some("map-line-unknown".to_string()),
+            pairs: vec![
+                Pair {
+                    key: Key {
+                        body: "normal".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#normal-line-unknown".to_string(),
+                    },
                 },
-                style_url: StyleUrl {
-                    body: "#normal-line-neutral".to_string(),
+                Pair {
+                    key: Key {
+                        body: "highlight".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#highlight-line-unknown".to_string(),
+                    },
                 },
-            },
-            Pair {
-                key: Key {
-                    body: "highlight".to_string(),
+            ],
+        },
+        StyleMap {
+            id: Some("map-line-hostile".to_string()),
+            pairs: vec![
+                Pair {
+                    key: Key {
+                        body: "normal".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#normal-line-hostile".to_string(),
+                    },
                 },
-                style_url: StyleUrl {
-                    body: "#highlight-line-neutral".to_string(),
+                Pair {
+                    key: Key {
+                        body: "highlight".to_string(),
+                    },
+                    style_url: StyleUrl {
+                        body: "#highlight-line-hostile".to_string(),
+                    },
                 },
-            },
-        ],
-    });
-    style_maps.push(StyleMap {
-        id: Some("map-line-unknown".to_string()),
-        pairs: vec![
-            Pair {
-                key: Key {
-                    body: "normal".to_string(),
-                },
-                style_url: StyleUrl {
-                    body: "#normal-line-unknown".to_string(),
-                },
-            },
-            Pair {
-                key: Key {
-                    body: "highlight".to_string(),
-                },
-                style_url: StyleUrl {
-                    body: "#highlight-line-unknown".to_string(),
-                },
-            },
-        ],
-    });
-    style_maps.push(StyleMap {
-        id: Some("map-line-hostile".to_string()),
-        pairs: vec![
-            Pair {
-                key: Key {
-                    body: "normal".to_string(),
-                },
-                style_url: StyleUrl {
-                    body: "#normal-line-hostile".to_string(),
-                },
-            },
-            Pair {
-                key: Key {
-                    body: "highlight".to_string(),
-                },
-                style_url: StyleUrl {
-                    body: "#highlight-line-hostile".to_string(),
-                },
-            },
-        ],
-    });
+            ],
+        },
+    ];
     style_maps
 }
 

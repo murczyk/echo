@@ -196,9 +196,7 @@ pub fn filename_to_app6d_code(x: &str) -> String {
         "10061000001211020000".to_string() // хрест піхота та овал
     } else if x.starts_with("Танк") {
         "10061500001202000000".to_string() // квадрат з ручками
-    } else if x.starts_with("РСЗО") {
-        "10061500001116000000".to_string() // перевернутий тризуб без палки
-    } else if x.starts_with("РСЗВ") {
+    } else if x.starts_with("РСЗО") || x.starts_with("РСЗВ") {
         "10061500001116000000".to_string() // перевернутий тризуб без палки
     } else if x.starts_with("Піхота") {
         "10061000001211000000".to_string() // хрест піхота
@@ -220,17 +218,13 @@ pub fn filename_to_app6d_code(x: &str) -> String {
         "10061000001110010000".to_string() // Command and Control - Signal - Radio
     } else if x.starts_with("БПЛА") {
         "10061000001219000000".to_string() // БПЛА
-    } else if x.starts_with("Міномет РОВ") {
-        "10061500001114000000".to_string() // стрілка вгору з кільцем внизу
-    } else if x.starts_with("Гранатомет") {
+    } else if x.starts_with("Міномет РОВ") || x.starts_with("Гранатомет") {
         "10061500001114000000".to_string()
     } else if x.starts_with("Особовий склад, піхота") {
         "10061000001211000000".to_string() // хрест піхота
     } else if x.starts_with("ІФО") {
         "10062500002811000000".to_string() // Квадрат
-    } else if x.starts_with("Механізовані, ОіВТ") {
-        "10061000000000000000".to_string()
-    } else if x.starts_with("ОіВТ") {
+    } else if x.starts_with("Механізовані, ОіВТ") || x.starts_with("ОіВТ") {
         "10061000000000000000".to_string()
     } else if x.starts_with("РЕБ") {
         "10061000001505000000".to_string()
