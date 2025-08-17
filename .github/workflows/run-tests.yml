@@ -13,6 +13,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
+        with:
+          lfs: true
 
       - name: Restore npm cache
         run: ./scripts/cache/restore-npm.sh || true
@@ -29,6 +31,8 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
+        with:
+          lfs: true
 
       - name: Restore Python cache
         run: ./scripts/cache/restore-python.sh || true
