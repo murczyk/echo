@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      clean_cache:
+        description: "Clean Python dependency cache"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
@@ -14,5 +21,70 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Display cache cleanup status
+        run: |
+          if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
+            echo "🧹 Cache cleanup requested - will invalidate existing caches"
+          else
+            echo "♻️  Using existing caches if available"
+          fi
+
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
+            echo "key=python-deps-clean-$(date +%s)" >> $GITHUB_OUTPUT
+          else
+            echo "key=python-deps-$(sha256sum wdintel-rs/wdintel-py/requirements.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cache Python virtual environment
+        uses: actions/cache@v3
+        with:
+          path: wdintel-rs/wdintel-py/.venv
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            python-deps-
+
+      - name: Report Python cache status
+        run: |
+          if [ -d "wdintel-rs/wdintel-py/.venv" ]; then
+            echo "✅ Python virtual environment restored from cache"
+            echo "📦 Cached packages:"
+            wdintel-rs/wdintel-py/.venv/bin/pip list --format=columns | head -10
+          else
+            echo "📥 Python virtual environment will be created fresh"
+          fi
+
+      - name: Cache spacy model
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/spacy
+          key: spacy-model-ru_core_news_md-v1
+          restore-keys: |
+            spacy-model-
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v3
+        with:
+          path: wdintel-web/node_modules
+          key: npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}
+          restore-keys: |
+            npm-deps-
+
+      - name: Report npm cache status
+        run: |
+          if [ -d "wdintel-web/node_modules" ]; then
+            echo "✅ npm dependencies restored from cache"
+            echo "📦 Package count: $(find wdintel-web/node_modules -maxdepth 1 -type d | wc -l)"
+          else
+            echo "📥 npm dependencies will be installed fresh"
+          fi
+
       - name: Run tests
-        run: bash deploy/run_tests.sh
+        env:
+          GITHUB_ACTIONS: true
+        run: |
+          echo "🚀 Starting test run..."
+          bash deploy/run_tests.sh
+          echo "✅ All tests completed successfully!"
