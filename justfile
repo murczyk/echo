@@ -134,6 +134,10 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
+    echo "Running cargo clippy..."
+    # Lint all targets for this crate; fail on any warning
+    cargo clippy --all-targets --all-features -- -D warnings
+
     # Check if we should use cached build
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
         echo "Running Rust tests in CI with optimizations..."

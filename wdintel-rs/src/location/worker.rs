@@ -130,8 +130,7 @@ async fn push_frequency_locations<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let mut locations =
-        locations.to_owned().into_iter().collect::<BTreeSet<_>>();
+    let mut locations = locations.iter().cloned().collect::<BTreeSet<_>>();
     for (_, localities) in peleng_locations {
         for l in localities {
             locations.insert(l.settlement_name.clone());

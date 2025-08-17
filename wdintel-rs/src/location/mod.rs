@@ -256,14 +256,8 @@ fn find_matching_settlements(
     }
     let mut i = 0;
     while i + 2 < words.len() {
-        i = handle_three_words_group(
-            &regions,
-            trie,
-            &mut result,
-            &mut cache,
-            i,
-        )
-        .context(h!())?;
+        i = handle_three_words_group(regions, trie, &mut result, &mut cache, i)
+            .context(h!())?;
     }
     let remainder = words.len() - i;
     if remainder == 1 {
@@ -272,7 +266,7 @@ fn find_matching_settlements(
             result.insert(row, coords);
         }
     } else {
-        handle_two_words_group(&regions, trie, &mut result, &mut cache, i)
+        handle_two_words_group(regions, trie, &mut result, &mut cache, i)
             .context(h!())?;
     }
     let mut result = result.into_iter().collect_vec();
