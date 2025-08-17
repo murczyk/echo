@@ -427,7 +427,7 @@ _echo-generic-build-rs:
     ssh {{ builder }} '(cd workspace/echo/wdintel-rs && touch build.rs && $HOME/.cargo/bin/cargo deb)'
 
     # TODO: determine version from Cargo.toml
-    rsync --progress {{ builder }}:workspace/echo/wdintel-rs/target/debian/wdintel-rs_0.1.0-1_amd64.deb ~/Downloads/
+    rsync --progress {{ builder }}:workspace/echo/target/debian/wdintel-rs_0.1.0-1_amd64.deb /tmp
 
 _echo-generic-deploy-back:
     #!/bin/bash
@@ -442,8 +442,8 @@ _echo-generic-deploy-back:
     set -x
 
     # TODO: determine version from Cargo.toml
-    rsync --progress ~/Downloads/wdintel-rs_0.1.0-1_amd64.deb {{ server }}:Downloads/
-    ssh {{ server }} 'cd Downloads && sudo dpkg -i wdintel-rs_0.1.0-1_amd64.deb'
+    rsync --progress /tmp/wdintel-rs_0.1.0-1_amd64.deb {{ server }}:/tmp
+    ssh {{ server }} 'cd /tmp && sudo dpkg -i wdintel-rs_0.1.0-1_amd64.deb'
     set +x
     echo "\n❗ Not deploying signal-cli-native, explicitly run \"just deploy-signal-cli-native\" for that\n"
     set -x
@@ -473,26 +473,6 @@ deploy-geo-screenshot:
     ssh {{ server }} 'sudo apt-get install -y xvfb libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev'
     ssh {{ server }} 'cd Downloads && sudo dpkg -i geo-screenshot_0.1.0-1_amd64.deb'
     echo "geo-screenshot deploy completed succesfully"
-
-builder-build-signal-cli-native:
-    #!/bin/bash
-    set -euxo pipefail
-    if [[ "{{ builder }}" == "jvln" ]]; then
-        ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-        ssh jvln '(cd /fast/kon/workspace/echo/signal-cli-native && /fast/kon/.cargo/bin/cargo deb)'
-        rsync --progress jvln:/fast/kon/workspace/echo/signal-cli-native/target/debian/signal-cli-native_0.1.0-1_amd64.deb ~/Downloads/
-    else
-        echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
-    fi
-
-deploy-signal-cli-native:
-    @if [[ "{{ server }}" == "" ]]; then \
-        just _print-servers; exit 1; \
-    fi
-
-    just builder={{ builder }} builder-build-signal-cli-native
-    rsync --progress ~/Downloads/signal-cli-native_0.1.0-1_amd64.deb {{ server }}:Downloads/
-    ssh -t {{ server }} 'cd Downloads && sudo dpkg -i signal-cli-native_0.1.0-1_amd64.deb'
 
 build-docker:
     docker buildx build --platform linux/amd64 .
