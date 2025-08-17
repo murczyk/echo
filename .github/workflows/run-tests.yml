@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      clean_cache:
-        description: "Clean Python dependency cache"
-        required: false
-        default: false
-        type: boolean
 
 jobs:
   frontend-tests:
@@ -20,14 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup cache
-        run: just ci-setup-cache-frontend
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: wdintel-web/node_modules
+          key: npm-${{ runner.os }}-${{ hashFiles('wdintel-web/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
 
       - name: Run frontend tests
         run: just test-fe
-
-      - name: Save cache
-        run: just ci-save-cache-frontend
 
   backend-tests:
     if: github.repository == 'echoua/echo'
@@ -35,23 +31,42 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup cache
-        run: |
-          if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
-            just ci-setup-cache clean
-          else
-            just ci-setup-cache
-          fi
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: wdintel-rs/wdintel-py/.venv
+          key: python-${{ runner.os }}-${{ hashFiles('wdintel-rs/wdintel-py/requirements.txt') }}
+          restore-keys: |
+            python-${{ runner.os }}-
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: wdintel-rs/target/
+          key: cargo-build-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
+          restore-keys: |
+            cargo-build-${{ runner.os }}-
+
+      - name: Cache Spacy models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/spacy
+          key: spacy-models-${{ runner.os }}
+          restore-keys: |
+            spacy-models-${{ runner.os }}
 
       - name: Run backend tests
         env:
           GITHUB_ACTIONS: true
         run: just ci-test-be
-
-      - name: Save cache
-        run: |
-          if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
-            just ci-save-cache clean
-          else
-            just ci-save-cache
-          fi
