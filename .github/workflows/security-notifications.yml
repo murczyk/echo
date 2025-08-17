@@ -5,9 +5,8 @@ on:
     types: [opened, closed, reopened]
   issue_comment:
     types: [created]
-  security_advisory:
-    types: [published, updated]
-  repository_vulnerability_alert:
+  dependabot_alert:
+    types: [created, dismissed, fixed]
   push:
     branches: [main, master]
     paths:
@@ -38,7 +37,7 @@ jobs:
           fi
 
   notify-vulnerability-alert:
-    if: github.event_name == 'repository_vulnerability_alert'
+    if: github.event_name == 'dependabot_alert'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3

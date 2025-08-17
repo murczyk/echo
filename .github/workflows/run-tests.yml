@@ -42,9 +42,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            ./scripts/notifications/discord-notify.sh ci_success "" "Frontend Tests Passed" "All frontend tests completed successfully"
-          else
+          if [ "${{ job.status }}" != "success" ]; then
             ./scripts/notifications/discord-notify.sh ci_failure "" "Frontend Tests Failed" "Frontend tests encountered failures"
           fi
 
@@ -92,9 +90,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            ./scripts/notifications/discord-notify.sh ci_success "" "Backend Tests Passed" "All backend tests completed successfully"
-          else
+          if [ "${{ job.status }}" != "success" ]; then
             ./scripts/notifications/discord-notify.sh ci_failure "" "Backend Tests Failed" "Backend tests encountered failures"
           fi
 
@@ -112,10 +108,10 @@ jobs:
           frontend_status="${{ needs.frontend-tests.result }}"
           backend_status="${{ needs.backend-tests.result }}"
 
-          if [ "$frontend_status" = "success" ] && [ "$backend_status" = "success" ]; then
-            ./scripts/notifications/discord-notify.sh ci_success "" "🎉 All CI Tests Passed" "Frontend: ✅ Success\\nBackend: ✅ Success\\n\\nAll tests completed successfully!"
-          elif [ "$frontend_status" = "cancelled" ] || [ "$backend_status" = "cancelled" ]; then
+          if [ "$frontend_status" = "cancelled" ] || [ "$backend_status" = "cancelled" ]; then
             ./scripts/notifications/discord-notify.sh ci_cancelled "" "CI Workflow Cancelled" "Frontend: $frontend_status\\nBackend: $backend_status"
           else
-            ./scripts/notifications/discord-notify.sh ci_failure "" "💥 CI Tests Failed" "Frontend: $frontend_status\\nBackend: $backend_status\\n\\nPlease check the logs for details."
+            if [ ! "$frontend_status" = "success" ] || [ ! "$backend_status" = "success" ]; then
+              ./scripts/notifications/discord-notify.sh ci_failure "" "💥 CI Tests Failed" "Frontend: $frontend_status\\nBackend: $backend_status\\n\\nPlease check the logs for details."
+            fi
           fi
