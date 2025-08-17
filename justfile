@@ -195,6 +195,11 @@ deploy:
     if [[ "{{ server }}" == "" ]]; then
      just _print-servers; exit 1;
     fi
+    # Notify Discord at the start of deployment including local hostname
+    curl -sS -X POST \
+      -H 'Content-Type: application/json' \
+      -d "{\"content\":\"deploying {{ server }} from $(hostname)\"}" \
+      'https://discord.com/api/webhooks/1126490645310222417/FKvFD2FAXo2BAYgMclrRIn3ygI6bZcIRQ4Cm-bGk3l7O4D2YgHwyiXF4q1z4hEkJ6utW' || true
     if [[ "{{ server }}" == "jvln" ]]; then
         just _jvln-deploy;
     else
