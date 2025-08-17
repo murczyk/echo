@@ -301,7 +301,8 @@ pub async fn report_docx_kind_babak(
             .clone()
             .into_iter()
             .filter(|c| c.comment.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>().is_empty()
+            .collect::<Vec<_>>()
+            .is_empty()
         {
             continue;
         }
@@ -361,7 +362,8 @@ pub async fn report_docx_kind_babak(
             .clone()
             .into_iter()
             .filter(|c| c.comment.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>().is_empty()
+            .collect::<Vec<_>>()
+            .is_empty()
         {
             continue;
         }
@@ -438,7 +440,8 @@ pub async fn report_docx_kind_babak(
             .clone()
             .into_iter()
             .filter(|c| c.text.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>().is_empty()
+            .collect::<Vec<_>>()
+            .is_empty()
         {
             continue;
         }

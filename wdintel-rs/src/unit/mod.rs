@@ -36,9 +36,7 @@ where
 }
 
 pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
-    units_list
-        .into_iter()
-        .reduce(|a, b| format!("{a}, {b}"))
+    units_list.into_iter().reduce(|a, b| format!("{a}, {b}"))
 }
 
 async fn parse_units<'a, 'async_trait, C>(
@@ -63,11 +61,13 @@ where
     let mut divisions = collect_divisions(text, dbx).await.context(h!())?;
     let mut armies = collect_armies(text, dbx).await.context(h!())?;
 
-    let mut size = [companies.len(),
+    let mut size = [
+        companies.len(),
         battalions.len(),
         regiments.len(),
         armies.len(),
-        divisions.len()]
+        divisions.len(),
+    ]
     .iter()
     .max()
     .cloned()
@@ -119,10 +119,7 @@ fn join_results(
                             unit_meta
                                 .get(&value0)
                                 .cloned()
-                                .filter(|t| {
-                                    (*t as i32)
-                                        == unit_type0 as i32
-                                })
+                                .filter(|t| (*t as i32) == unit_type0 as i32)
                                 .is_some()
                         },
                     );
@@ -316,8 +313,7 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
         .build()
         .expect("Invalid Regex");
         static ref UNIT_STANDALONE_RE: Regex = RegexBuilder::new(
-            &r#"\b(?<name>$s1)\b"#
-                .replace("$s1", &list_standalone().join("|"))
+            &r#"\b(?<name>$s1)\b"#.replace("$s1", &list_standalone().join("|"))
         )
         .case_insensitive(true)
         .build()

@@ -574,10 +574,9 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                 callsigns,
             )?;
             let unit_new = result.unit.clone();
-            if unit_new.is_none()
-                && unit_old.is_some() {
-                    continue;
-                }
+            if unit_new.is_none() && unit_old.is_some() {
+                continue;
+            }
             println!("{unit_old:?} -> {unit_new:?}");
             let mut item: sigint_inbox_item::ActiveModel = item.into();
             let location_v2 =

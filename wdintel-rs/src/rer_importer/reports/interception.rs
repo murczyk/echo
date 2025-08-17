@@ -362,9 +362,7 @@ pub async fn report_xlsx_kind_interception(
         sheet1
             .write_string(i, 4, from.to_uppercase())
             .context(h!())?;
-        sheet1
-            .write_string(i, 5, to.to_uppercase())
-            .context(h!())?;
+        sheet1.write_string(i, 5, to.to_uppercase()).context(h!())?;
         sheet1
             .write_string(i, 6, m.body.clone().unwrap_or("".to_string()))
             .context(h!())?;

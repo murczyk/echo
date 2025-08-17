@@ -428,10 +428,7 @@ pub async fn create_network(
             .map(dt_from_millis)
             .transpose()?
             .unwrap_or(Utc::now().naive_utc());
-        let active_to = frequency
-            .active_to
-            .map(dt_from_millis)
-            .transpose()?;
+        let active_to = frequency.active_to.map(dt_from_millis).transpose()?;
 
         let freq_id = sigint_network_freq::ActiveModel {
             id: NotSet,
@@ -1366,11 +1363,8 @@ pub async fn add_network_freq(
             .map(dt_from_millis)
             .transpose()?
             .unwrap_or(Utc::now().naive_utc());
-        let active_to = req
-            .freq_rec
-            .active_to
-            .map(dt_from_millis)
-            .transpose()?;
+        let active_to =
+            req.freq_rec.active_to.map(dt_from_millis).transpose()?;
 
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
@@ -1528,8 +1522,7 @@ pub async fn update_network_freq(
     if let Some(network_freq_model) = network_freq_model {
         let active_from =
             dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
-        let active_to =
-            req.active_to.map(dt_from_millis).transpose()?;
+        let active_to = req.active_to.map(dt_from_millis).transpose()?;
 
         let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
@@ -2047,13 +2040,10 @@ pub async fn network_callsigns_list(
         .map(|c| c.callsign.clone())
         .collect::<Vec<_>>();
 
-    let callsigns_reporting = get_network_callsings_reporting(
-        &env.dbx,
-        network.id,
-        callsigns_txt,
-    )
-    .await
-    .context(h!())?;
+    let callsigns_reporting =
+        get_network_callsings_reporting(&env.dbx, network.id, callsigns_txt)
+            .await
+            .context(h!())?;
 
     let callsigns = callsigns_raw
         .into_iter()
@@ -2934,9 +2924,7 @@ pub async fn merge_two_networks(
     network_from_model.updated_by = Set(Some(login));
     network_from_model.update(txn).await.context(h!())?;
 
-    println!(
-        "✅ Merged network {network_id_from} into {network_id_to}"
-    );
+    println!("✅ Merged network {network_id_from} into {network_id_to}");
 
     Ok(())
 }
@@ -3162,16 +3150,16 @@ fn compute_network_activity_range(
 
 pub async fn fix_network_areas_of_responsibility(
     db: &DatabaseConnection,
+    force_all: bool,
 ) -> Result<(), AppError> {
-    let networks = sigint_network::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkAor.def(),
-        )
-        .filter(sigint_network_aor::Column::Id.is_null())
-        .all(db)
-        .await
-        .context(h!())?;
+    let mut networks = sigint_network::Entity::find().join(
+        JoinType::LeftJoin,
+        sigint_network::Relation::SigintNetworkAor.def(),
+    );
+    if !force_all {
+        networks = networks.filter(sigint_network_aor::Column::Id.is_null());
+    }
+    let networks = networks.all(db).await.context(h!())?;
     for n in networks {
         if let Err(e) = insert_network_aor(db, &n, None).await {
             error!("failed to insert group's area of responsibility: {e:?}")
@@ -3200,13 +3188,18 @@ where
             .await
             .context(h!())?,
     };
-    let model = sigint_network_aor::ActiveModel {
+    sigint_network_aor::Entity::delete_many()
+        .filter(sigint_network_aor::Column::NetworkId.eq(network.id))
+        .exec(dbx)
+        .await
+        .context(h!())?;
+    let network_aor = sigint_network_aor::ActiveModel {
         aor_id: Set(aor.id),
         created_at: NotSet,
         id: NotSet,
         network_id: Set(network.id),
     };
-    model.insert(dbx).await.context(h!())?;
+    network_aor.insert(dbx).await.context(h!())?;
     Ok(())
 }
 

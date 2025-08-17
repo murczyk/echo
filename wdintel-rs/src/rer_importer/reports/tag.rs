@@ -296,8 +296,6 @@ fn message_full_text_nocomments(
             message.body.clone().unwrap_or("".to_string()),
         ))
     } else {
-        Err(
-            format!("Unknown datasource kind: {:?}", datasource.kind).into()
-        )
+        Err(format!("Unknown datasource kind: {:?}", datasource.kind).into())
     }
 }

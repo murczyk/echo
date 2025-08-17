@@ -124,9 +124,7 @@ pub async fn rer_delta_kmz_import_go(
 ) -> Result<(), AppError> {
     bgtask_log(
         bgtask_id,
-        &format!(
-            "> rer_delta_kmz_import_go starting; kmz_file: {file_name}",
-        ),
+        &format!("> rer_delta_kmz_import_go starting; kmz_file: {file_name}",),
         dbx,
     )
     .await?;

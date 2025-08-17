@@ -523,8 +523,9 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
         };
         kml_nodes.push(Node::Folder(freq_folder));
     }
-    let kml_fol1 = node_as_folder(kml.nodes.first().ok_or("kml has no nodes")?)?
-        .ok_or("kml node must be a folderish")?;
+    let kml_fol1 =
+        node_as_folder(kml.nodes.first().ok_or("kml has no nodes")?)?
+            .ok_or("kml node must be a folderish")?;
     let root_node = Node::Folder(Folder {
         name: Some(Name {
             body: "РЕР".to_string(),
@@ -1378,8 +1379,9 @@ async fn render_nodes(
         };
         kml_nodes.push(Node::Folder(date_folder));
     }
-    let kml_fol1 = node_as_folder(kml.nodes.first().ok_or("kml has no nodes")?)?
-        .ok_or("kml node must be a folderish")?;
+    let kml_fol1 =
+        node_as_folder(kml.nodes.first().ok_or("kml has no nodes")?)?
+            .ok_or("kml node must be a folderish")?;
     let root_node = Node::Folder(Folder {
         name: Some(Name {
             body: kmz_path
@@ -1447,8 +1449,7 @@ async fn render_nodes(
     )
     .await?;
     for (date, per_radio_map) in node_map.iter() {
-        let num_items: usize =
-            per_radio_map.values().map(|v| v.len()).sum();
+        let num_items: usize = per_radio_map.values().map(|v| v.len()).sum();
         bgtask_log2(
             m_bgtask_id,
             &format!("> date: {date}, items: {num_items}"),
@@ -1494,9 +1495,7 @@ async fn render_nodes_csv(
                     direction: "".to_string(),
                     speed: "".to_string(),
                     // like POINT (37.083 47.5489)
-                    coordinates: format!(
-                        "POINT ({lon} {lat})"
-                    ),
+                    coordinates: format!("POINT ({lon} {lat})"),
                     // comment_1: v.description.clone().unwrap_or("".to_string()),
                     comment_1: "".to_string(),
                 };
@@ -1530,8 +1529,7 @@ async fn render_nodes_csv(
     }
 
     for (date, per_radio_map) in node_map.iter() {
-        let num_items: usize =
-            per_radio_map.values().map(|v| v.len()).sum();
+        let num_items: usize = per_radio_map.values().map(|v| v.len()).sum();
         bgtask_log2(
             m_bgtask_id,
             &format!("> date: {date}, items: {num_items}"),

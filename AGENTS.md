@@ -1,3 +1,11 @@
+## General project into
+
+- Read README.md to understand the general project purpose
+
+## CODE STYLE
+
+- keep code formatted with `cargo fmt`
+
 ## GIT
 
 - **Never Commit or Push Without Permission**

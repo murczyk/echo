@@ -39,8 +39,7 @@ pub async fn list_signals(
         })
         .apply_if(req.filter_unit.as_ref(), |q, unit| {
             q.filter(
-                Expr::col(sigint_unit::Column::Name)
-                    .ilike(format!("%{unit}%")),
+                Expr::col(sigint_unit::Column::Name).ilike(format!("%{unit}%")),
             )
         });
     let q = req.sort_by.iter().fold(q, |q, sort_by| match sort_by {

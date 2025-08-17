@@ -105,7 +105,8 @@ where
     let date_v = m_dt
         .map(|dt| format!("{}-{:02}-{:02}", dt.year(), dt.month(), dt.day()));
     let time_v = m_dt.map(|dt| format!("{:02}:{:02}", dt.hour(), dt.minute()));
-    let freq = super::frequency::extract_freq(&body)?.map(|v| crate::rer_importer::frequency::etalon(&v));
+    let freq = super::frequency::extract_freq(&body)?
+        .map(|v| crate::rer_importer::frequency::etalon(&v));
     let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
     let mut other_coords = coords_vec.clone();
     let coords = pop_vector(&mut other_coords);
@@ -145,12 +146,8 @@ where
         match (unit_and_loc.locality, unit_and_loc.locality_v2) {
             (Some(_), Some(locations)) => locations,
             (Some(location), None) => {
-                
-                crate::location::parse_location(
-                    settlements.clone(),
-                    location,
-                )
-                .context(h!())?
+                crate::location::parse_location(settlements.clone(), location)
+                    .context(h!())?
             }
             _ => vec![],
         };

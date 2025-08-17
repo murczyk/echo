@@ -256,14 +256,8 @@ fn find_matching_settlements(
     }
     let mut i = 0;
     while i + 2 < words.len() {
-        i = handle_three_words_group(
-            regions,
-            trie,
-            &mut result,
-            &mut cache,
-            i,
-        )
-        .context(h!())?;
+        i = handle_three_words_group(regions, trie, &mut result, &mut cache, i)
+            .context(h!())?;
     }
     let remainder = words.len() - i;
     if remainder == 1 {
@@ -525,10 +519,7 @@ fn deduplicate_settlement_names(
         let Some(id) = rec.id else {
             continue;
         };
-        aggregated_result
-            .entry(id)
-            .or_default()
-            .push(rec);
+        aggregated_result.entry(id).or_default().push(rec);
     }
     let mut result = vec![];
     for (_, recs) in aggregated_result {

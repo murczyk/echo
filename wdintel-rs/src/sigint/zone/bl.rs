@@ -105,8 +105,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
 
         let m_group = group_admin_data::Entity::find()
             .filter(
-                group_admin_data::Column::GroupMasterKey
-                    .eq(master_key.clone()),
+                group_admin_data::Column::GroupMasterKey.eq(master_key.clone()),
             )
             .one(txn)
             .await

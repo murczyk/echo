@@ -150,9 +150,16 @@ pub struct MessageIdsReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
 )]
-#[derive(Default)]
 pub struct InboxMessagesReq {
     pub since_id_noninclusive: Option<i64>,
     pub before_id_noninclusive: Option<i64>,
@@ -1027,4 +1034,3 @@ pub struct MessageTimestampPerGroupStat {
 pub struct FreqPelengsActivityRsp {
     pub freq_pelengs_summary: Vec<FreqPelengsEntry>,
 }
-

@@ -47,8 +47,8 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         }
     };
     let settlement_paths = config.settlement_paths().unwrap();
-    let settlements_data = crate::location::load_from_file(settlement_paths)
-        .unwrap_or_default();
+    let settlements_data =
+        crate::location::load_from_file(settlement_paths).unwrap_or_default();
     let settlements = Arc::new(RwLock::new(settlements_data));
 
     let version_file = match mode {

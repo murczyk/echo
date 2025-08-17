@@ -84,6 +84,6 @@ fn run_from_file(filename: &'static str) -> String {
     if !file.exists() {
         file = path.deref();
     }
-    
+
     std::fs::read_to_string(file).expect("Unable to read SQL file")
 }

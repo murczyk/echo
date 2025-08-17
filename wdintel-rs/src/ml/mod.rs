@@ -27,7 +27,8 @@ async fn format_f2(
     for bound in bounds {
         let bound_l = bound.to_lowercase();
         let m_callsign = callsign_lexemes
-            .iter().find(|x| x.lexeme == bound_l)
+            .iter()
+            .find(|x| x.lexeme == bound_l)
             .map(|x| x.callsign.clone());
         let is_callsign = m_callsign.is_some();
         if is_callsign {
@@ -61,12 +62,10 @@ pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
         outfile_p_f2.display()
     );
     let mut outfile = std::fs::OpenOptions::new()
-        
         .append(true)
         .create(true)
         .open(outfile_p)?;
     let mut outfile_f2 = std::fs::OpenOptions::new()
-        
         .append(true)
         .create(true)
         .open(outfile_p_f2)?;

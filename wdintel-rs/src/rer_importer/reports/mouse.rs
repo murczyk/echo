@@ -56,10 +56,7 @@ pub async fn report_docx_kind_mouse(
     for (_message_id, message) in messages.iter() {
         let tags = message.tags.clone().unwrap_or(vec![]);
         if tags.is_empty() {
-            per_tag_msgs
-                .entry(0)
-                .or_default()
-                .push(message.clone());
+            per_tag_msgs.entry(0).or_default().push(message.clone());
         } else {
             for tag_id in tags {
                 per_tag_msgs
@@ -94,9 +91,7 @@ pub async fn report_docx_kind_mouse(
     let freq_first_seen: BTreeMap<String, NaiveDateTime> = comp_freqs
         .iter()
         .filter_map(|comp_freq| {
-            comp_freq
-                .first_seen
-                .map(|x| (comp_freq.freq.clone(), x))
+            comp_freq.first_seen.map(|x| (comp_freq.freq.clone(), x))
         })
         .collect();
     let comp_freqs_callsigns = comp_freq_callsign::Entity::find()
@@ -666,7 +661,8 @@ pub async fn report_docx_kind_mouse(
                 need_highlight = true;
             }
             let m_comment = comments
-                .iter().find(|x| x.signal_message_id.eq(&message_id))
+                .iter()
+                .find(|x| x.signal_message_id.eq(&message_id))
                 .cloned();
             let mut full_text =
                 message_full_text(&msg, &inbox, &datasource, &m_comment)?;
@@ -724,7 +720,8 @@ pub async fn report_docx_kind_mouse(
                         Paragraph::new().add_run(
                             Run::new().add_text(
                                 message
-                                    .callsigns.first()
+                                    .callsigns
+                                    .first()
                                     .unwrap_or(&"".to_string())
                                     .clone()
                                     .to_uppercase(),
@@ -1351,8 +1348,6 @@ fn message_full_text(
             message.body.clone().unwrap_or("".to_string()),
         ))
     } else {
-        Err(
-            format!("Unknown datasource kind: {:?}", datasource.kind).into()
-        )
+        Err(format!("Unknown datasource kind: {:?}", datasource.kind).into())
     }
 }

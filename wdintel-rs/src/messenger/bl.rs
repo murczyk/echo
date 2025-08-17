@@ -32,7 +32,8 @@ where
     let account = list_accounts(Some(id), txn)
         .await
         .context(h!())?
-        .into_iter().find(|a| a.id == id)
+        .into_iter()
+        .find(|a| a.id == id)
         .context(h!())?;
     Ok(account)
 }
@@ -136,7 +137,8 @@ pub async fn link_account(
                 .map(|s| s.eq(system_service_name))
                 .is_some()
         })
-        .filter(|a| a.phone_number.eq(phone_number)).find(|a| a.messenger.eq(&src_name));
+        .filter(|a| a.phone_number.eq(phone_number))
+        .find(|a| a.messenger.eq(&src_name));
 
     if let Some(acc) = existing_account {
         let msg = format!("Номером телефону {phone_number} вже прив'язано");
@@ -230,7 +232,8 @@ pub async fn get_qr_code(
     let account = list_accounts(Some(account_id), txn)
         .await
         .context(h!())?
-        .into_iter().find(|a| a.id.eq(&account_id))
+        .into_iter()
+        .find(|a| a.id.eq(&account_id))
         .context(h!())?;
 
     let messenger = parse_message_source(&account).context(h!())?;
@@ -358,9 +361,9 @@ pub async fn find_port_available(
     start: i32,
     end: i32,
 ) -> Result<i32, AppError> {
-    let Some(port) = (start..end).find(|p| {
-        TcpListener::bind(format!("127.0.0.1:{p}")).is_ok()
-    }) else {
+    let Some(port) = (start..end)
+        .find(|p| TcpListener::bind(format!("127.0.0.1:{p}")).is_ok())
+    else {
         return Err(AppError::BL {
             msg: "can't find free port".to_string(),
         });
@@ -457,8 +460,7 @@ pub async fn bl_group_update(
 ) -> Result<BlGroupUpdateRes, AppError> {
     let m_group = group_admin_data::Entity::find()
         .filter(
-            group_admin_data::Column::GroupMasterKey
-                .eq(req.master_key.clone()),
+            group_admin_data::Column::GroupMasterKey.eq(req.master_key.clone()),
         )
         .one(txn)
         .await

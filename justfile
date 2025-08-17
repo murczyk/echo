@@ -585,10 +585,10 @@ oneoff-import-gdocs:
     echo "DONE. Now redeploy all the sigint workers"
 
 migrate-up:
-    cd wdintel-rs && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd sea-orm-cli migrate up
+    cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- up
 
 migrate-down:
-    cd wdintel-rs && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd sea-orm-cli migrate down
+    cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- down
 
 # # builds whatsapp worker on jvln and puts into current repo for an update
 # _jvln-build-whatsapp-worker:

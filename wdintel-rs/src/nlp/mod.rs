@@ -89,6 +89,7 @@ pub async fn complete_callsigns(
         &comp_s
             .split(", ")
             .map(|x| x.trim().to_lowercase())
-            .filter(|x| !x.is_empty()).collect(),
+            .filter(|x| !x.is_empty())
+            .collect(),
     ))
 }

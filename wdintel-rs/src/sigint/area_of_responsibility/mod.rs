@@ -7,8 +7,8 @@ use milgeo_rs::coord_util::LatLng;
 use milgeo_rs::MilGeo;
 use sea_orm::*;
 
-pub mod types;
 pub mod bl;
+pub mod types;
 
 #[post("/api/sigint/aor")]
 pub async fn aor_list(
@@ -100,21 +100,14 @@ pub async fn load_default_aor<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let all_areas = area_of_responsibility::Entity::find()
+    let default_aor = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .all(txn)
+        .filter(area_of_responsibility::Column::IsDefault.eq(true))
+        .one(txn)
         .await
         .context(h!())?;
-    let mut max_area_size = -1.0;
-    let mut result = None;
-    for area in all_areas {
-        let area_span = (area.left_bound - area.right_bound).abs();
-        if max_area_size < area_span {
-            max_area_size = area_span;
-            result = Some(area);
-        }
-    }
-    result.context(h!())
+
+    default_aor.context("No default AOR found").context(h!())
 }
 
 /// Get aor id from db by aor name
@@ -166,7 +159,7 @@ pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
             }
             _ => None,
         };
-    
+
     AreaOfResponsibility {
         id: aor.id,
         name: aor.name,
@@ -246,6 +239,7 @@ async fn map_insert(
         created_at: NotSet,
         deleted: Set(false),
         is_top_level: Set(req.is_top_level),
+        is_default: NotSet,
     };
     Ok(model)
 }
