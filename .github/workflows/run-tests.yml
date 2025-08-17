@@ -14,20 +14,28 @@ on:
         type: boolean
 
 jobs:
-  test:
-    # Only run this job if the repository is echoua/echo
+  frontend-tests:
     if: github.repository == 'echoua/echo'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
 
-      - name: Display cache cleanup status
-        run: |
-          if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
-            echo "🧹 Cache cleanup requested - will invalidate existing caches"
-          else
-            echo "♻️  Using existing caches if available"
-          fi
+      - name: Cache npm dependencies
+        uses: actions/cache@v3
+        with:
+          path: wdintel-web/node_modules
+          key: npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}
+          restore-keys: |
+            npm-deps-
+
+      - name: Run frontend tests
+        run: just test-fe
+
+  backend-tests:
+    if: github.repository == 'echoua/echo'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
 
       - name: Generate cache key
         id: cache-key
@@ -45,16 +53,6 @@ jobs:
           key: ${{ steps.cache-key.outputs.key }}
           restore-keys: |
             python-deps-
-
-      - name: Report Python cache status
-        run: |
-          if [ -d "wdintel-rs/wdintel-py/.venv" ]; then
-            echo "✅ Python virtual environment restored from cache"
-            echo "📦 Cached packages:"
-            wdintel-rs/wdintel-py/.venv/bin/pip list --format=columns | head -10
-          else
-            echo "📥 Python virtual environment will be created fresh"
-          fi
 
       - name: Cache spacy model
         uses: actions/cache@v3
@@ -77,36 +75,7 @@ jobs:
           restore-keys: |
             rust-deps-
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v3
-        with:
-          path: wdintel-web/node_modules
-          key: npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}
-          restore-keys: |
-            npm-deps-
-
-      - name: Report Rust cache status
-        run: |
-          if [ -d "wdintel-rs/target" ]; then
-            echo "✅ Rust dependencies restored from cache"
-            echo "📦 Target directory size: $(du -sh wdintel-rs/target 2>/dev/null | cut -f1 || echo 'unknown')"
-          else
-            echo "📥 Rust dependencies will be compiled fresh"
-          fi
-
-      - name: Report npm cache status
-        run: |
-          if [ -d "wdintel-web/node_modules" ]; then
-            echo "✅ npm dependencies restored from cache"
-            echo "📦 Package count: $(find wdintel-web/node_modules -maxdepth 1 -type d | wc -l)"
-          else
-            echo "📥 npm dependencies will be installed fresh"
-          fi
-
-      - name: Run tests
+      - name: Run backend tests
         env:
           GITHUB_ACTIONS: true
-        run: |
-          echo "🚀 Starting test run..."
-          bash deploy/run_tests.sh
-          echo "✅ All tests completed successfully!"
+        run: just test-be

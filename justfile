@@ -145,31 +145,6 @@ test-be:
 
 test: test-fe test-be
 
-test-ci:
-    #!/bin/bash
-    set -euxo pipefail
-    echo "Running CI tests with optimized dependency management..."
-
-    # Frontend tests
-    cd wdintel-web
-    if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
-        echo "Installing npm dependencies..."
-        npm ci
-        touch "node_modules/.npm_installed"
-    else
-        echo "npm dependencies already up to date, skipping installation"
-    fi
-    npx elm-land build && elm-test-rs
-    cd ..
-
-    # Backend tests
-    cd wdintel-rs
-    export CARGO_INCREMENTAL=1
-    export RUSTC_WRAPPER=""
-    echo "Running Rust tests with incremental compilation..."
-    cargo test --release --locked
-    cd ..
-
 clean-deps:
     bash deploy/clean_deps.sh
 
