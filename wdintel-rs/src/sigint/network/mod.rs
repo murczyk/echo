@@ -3188,13 +3188,18 @@ where
             .await
             .context(h!())?,
     };
-    let model = sigint_network_aor::ActiveModel {
+    sigint_network_aor::Entity::delete_many()
+        .filter(sigint_network_aor::Column::NetworkId.eq(network.id))
+        .exec(dbx)
+        .await
+        .context(h!())?;
+    let network_aor = sigint_network_aor::ActiveModel {
         aor_id: Set(aor.id),
         created_at: NotSet,
         id: NotSet,
         network_id: Set(network.id),
     };
-    model.insert(dbx).await.context(h!())?;
+    network_aor.insert(dbx).await.context(h!())?;
     Ok(())
 }
 
