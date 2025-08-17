@@ -6,7 +6,7 @@ pub async fn extract(
     payload: &mut Multipart,
 ) -> Result<(actix_multipart::Field, Vec<u8>), AppError> {
     let mut val = vec![];
-    while let Some(item) = payload.next().await {
+    if let Some(item) = payload.next().await {
         let mut field = item.map_err(to_app_error)?;
         while let Some(chunk) = field.next().await {
             val.extend(chunk.map_err(to_app_error)?.to_vec());

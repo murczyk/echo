@@ -153,10 +153,11 @@ fn arrange_tags(
     tags: &BTreeMap<i64, tag::Model>,
     known_seeds: Vec<String>,
 ) -> anyhow::Result<(OrderingData, String)> {
-    let fuel = 10;
+    let mut fuel = 10;
     let mut result_ordering = OrderingData::default();
     let mut result_seed = String::default();
     while fuel > 0 {
+        fuel -= 1;
         let mut seed_entries = vec![];
         let mut result = vec![];
 

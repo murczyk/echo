@@ -338,7 +338,7 @@ pub async fn list_organisms(
     }
 
     if default_sorting {
-        list.sort_by_key(|e| e.parent_id.map(|id| id * 0).unwrap_or(-1)); // first goes root elements, then the others
+        list.sort_by_key(|e| e.parent_id.unwrap_or(-1)); // first goes root elements, then the others
     }
     Ok(Json(list))
 }
