@@ -23,7 +23,7 @@ pub async fn s3_put_object(
             writer.close().await
         }
         .await;
-        let res = write_res.map_err(|e| e);
+        let res = write_res;
         match res {
             Err(e) => {
                 retries_left -= 1;
