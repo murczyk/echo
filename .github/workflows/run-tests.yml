@@ -19,23 +19,35 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
+        with:
+          path: frontend-workspace
 
       - name: Setup cache
+        working-directory: frontend-workspace
         run: just ci-setup-cache
 
       - name: Run frontend tests
+        working-directory: frontend-workspace
         run: just test-fe
 
       - name: Save cache
+        working-directory: frontend-workspace
         run: just ci-save-cache
+
+      - name: Cleanup workspace
+        if: always()
+        run: rm -rf frontend-workspace
 
   backend-tests:
     if: github.repository == 'echoua/echo'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
+        with:
+          path: backend-workspace
 
       - name: Setup cache
+        working-directory: backend-workspace
         run: |
           if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
             just ci-setup-cache clean
@@ -44,14 +56,20 @@ jobs:
           fi
 
       - name: Run backend tests
+        working-directory: backend-workspace
         env:
           GITHUB_ACTIONS: true
         run: just ci-test-be
 
       - name: Save cache
+        working-directory: backend-workspace
         run: |
           if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
             just ci-save-cache clean
           else
             just ci-save-cache
           fi
+
+      - name: Cleanup workspace
+        if: always()
+        run: rm -rf backend-workspace
