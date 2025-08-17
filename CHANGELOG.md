@@ -1,8 +1,8 @@
 ## NEXT
-
 - [#1264](https://github.com/echoua/echo/issues/1264) Не так часто кидати події про оновлення
 - [#1265](https://github.com/echoua/echo/issues/1265) Парсинг посту: додаткові кейси
 - [#1283](https://github.com/echoua/echo/issues/1283) Додано нову модуляцію "Умовна"
+- [#1242](https://github.com/echoua/echo/issues/1242) Покращення до звіту РЕО - показуємо коментарі, показуємо неприв'язані мережі (лише активні, з курованим списком позивних)
 - [#1262](https://github.com/echoua/echo/issues/1262) Сумга груп та мереж має бути завжди
 - [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
 - [#1231](https://github.com/echoua/echo/issues/1231) Декілька смуг в групі
