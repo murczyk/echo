@@ -1,4 +1,6 @@
 ## NEXT
+
+- [#1265](https://github.com/echoua/echo/issues/1265) Парсинг посту: додаткові кейси
 - [#1283](https://github.com/echoua/echo/issues/1283) Додано нову модуляцію "Умовна"
 - [#1262](https://github.com/echoua/echo/issues/1262) Сумга груп та мереж має бути завжди
 - [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
