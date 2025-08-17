@@ -170,6 +170,11 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        // Ensure we remove admin data referencing groups before deleting groups
+        group_admin_data::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         signal_group::Entity::delete_many()
             .exec(&env.dbx)
             .await
