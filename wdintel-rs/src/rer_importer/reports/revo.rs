@@ -74,12 +74,15 @@ pub async fn report_docx_kind_revo(
 ) -> Result<(), AppError> {
     info!("report_docx_kind_revo started");
     let login = user.id()?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
+    let logins = crate::users::get_organism_logins(&env.dbx, user)
+        .await
+        .context(h!())?;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
             &login, &logins, env, &req.req,
         )
-        .await?;
+        .await
+        .context(h!())?;
     let mut report = collect_report(messages.clone(), logins.clone(), env)
         .await
         .context(h!())?;
