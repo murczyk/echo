@@ -9,6 +9,7 @@ import Components.Button as Button
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
+import Components.ModalDialog as ModalDialog
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -61,6 +62,7 @@ type alias Model =
     , inpUnitSelState : Select.State
     , signals : List B.Signal
     , deleteSignalConfirmation : Maybe Int
+    , deleteDialogOpen : Bool
     , inpText : String
     , inpMeaning : String
     , inpUnit : Maybe Int
@@ -153,6 +155,7 @@ init _ =
             , inpUnitSelState = Select.initState (Select.selectIdentifier "sel-unit-add")
             , signals = []
             , deleteSignalConfirmation = Nothing
+            , deleteDialogOpen = False
             , inpText = ""
             , inpMeaning = ""
             , inpUnit = Nothing
@@ -262,14 +265,14 @@ update shared msg model =
             )
 
         DeleteSignal id ->
-            ( { model | deleteSignalConfirmation = Just id }
+            ( { model | deleteSignalConfirmation = Just id, deleteDialogOpen = True }
             , E.none
             )
 
         DeleteSignalConfirm ->
             let
                 m2 =
-                    { model | deleteSignalConfirmation = Nothing }
+                    { model | deleteSignalConfirmation = Nothing, deleteDialogOpen = False }
             in
             case model.deleteSignalConfirmation of
                 Nothing ->
@@ -281,7 +284,7 @@ update shared msg model =
                     )
 
         DeleteSignalCancel ->
-            ( { model | deleteSignalConfirmation = Nothing }, E.none )
+            ( { model | deleteSignalConfirmation = Nothing, deleteDialogOpen = False }, E.none )
 
         DeleteSignalDone (Err err) ->
             ( model
@@ -289,7 +292,7 @@ update shared msg model =
             )
 
         DeleteSignalDone (Ok _) ->
-            ( { model | loading = True, loadingUnitStats = True }
+            ( { model | loading = True, loadingUnitStats = True, deleteDialogOpen = False }
             , initLoad model
             )
 
@@ -407,7 +410,7 @@ update shared msg model =
 
         --TODO: подивитися чи можна не перезавантажувати все кожного разу
         AddSignalDone (Ok _) ->
-            ( { model | loading = True, loadingUnitStats = True, inpText = "", inpMeaning = "", inpUnit = Nothing, inpCoordinates = "" }
+            ( { model | loading = True, loadingUnitStats = True, inpText = "", inpMeaning = "", inpCoordinates = "" }
             , initLoad model
             )
 
@@ -882,6 +885,133 @@ unitsBlock shared model =
             List.concatMap renderUnitStat model.unitStats
 
 
+deleteConfirmationModal : Model -> Html Msg
+deleteConfirmationModal model =
+    let
+        dialogContent =
+            [ div [ class "p-6" ]
+                [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Видалення сигналу" ]
+                , p [ class "text-gray-600 mb-6" ] [ text "Ви впевнені, що хочете видалити цей сигнал?" ]
+                , div [ class "flex justify-end gap-3" ]
+                    [ Button.new { label = "Відміна", onClick = DeleteSignalCancel }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    , Button.new { label = "Видалити", onClick = DeleteSignalConfirm }
+                        |> Button.withStyleDanger
+                        |> Button.view
+                    ]
+                ]
+            ]
+    in
+    ModalDialog.modalDialog model.deleteDialogOpen DeleteSignalCancel [] dialogContent
+
+
+renderSignalTrEdit : Shared.Model -> Model -> B.User -> B.Signal -> EditSignalState -> Html Msg
+renderSignalTrEdit shared model user signal editState =
+    let
+        hasEditorRole =
+            Le.Auth.hasRole "UnitsEditor" user
+    in
+    tr []
+        [ td []
+            [ input
+                [ class "form-control"
+                , type_ "text"
+                , placeholder "Позиція/Сигнал"
+                , value editState.inpText
+                , onInput <| EditSignalMsg << (\v -> { editState | inpText = v })
+                ]
+                []
+            ]
+        , td []
+            [ input
+                [ class "form-control"
+                , type_ "text"
+                , placeholder "Значення"
+                , value editState.inpMeaning
+                , onInput <| EditSignalMsg << (\v -> { editState | inpMeaning = v })
+                ]
+                []
+            ]
+        , td []
+            [ let
+                selectItem : Maybe (Select.MenuItem Int)
+                selectItem =
+                    case shared.masterUnits of
+                        Success units ->
+                            Dict.get editState.inpUnit units
+                                |> Maybe.map
+                                    (\unit ->
+                                        Select.basicMenuItem
+                                            { item = unit.id, label = unit.name }
+                                    )
+                        _ ->
+                            Nothing
+              in
+              div
+                [ class "d-flex justify-content-between align-items-center"
+                , style "min-width" "200px"
+                , style "font-size" ".8rem"
+                ]
+                [ div [ class "flex-grow-1" ]
+                    [ let
+                        options =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+
+                        options2 =
+                            { options | disabled = not hasEditorRole }
+                      in
+                      Html.map EditUnitSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                editState.inpUnitSelState
+                                (populateUnitMenu shared)
+                                "підрозділ"
+                                options2
+                    ]
+
+                ]
+            ]
+        , td []
+            [ input
+                [ class "form-control"
+                , type_ "text"
+                , placeholder "Координати"
+                , value editState.inpCoordinates
+                , onInput <| EditSignalMsg << (\v -> { editState | inpCoordinates = v })
+                ]
+                []
+            ]
+        , td []
+            [ text <|
+                case model.zone of
+                    Nothing ->
+                        "Loading..."
+
+                    Just zone ->
+                        Le.Time.renderDateTimeF1 zone
+                            (Time.millisToPosix signal.createdAt)
+            ]
+        , td [ style "font-size" ".8rem" ]
+            [ div [ class "d-flex justify-content-start align-items-center" ]
+                [ button
+                    [ Attr.title "Зберегти"
+                    , class "icon-btn icon-btn-primary"
+                    , onClick <| EditSignalSave signal.id
+                    ]
+                    [ i [ class "bi bi-check2" ] [] ]
+                , button
+                    [ Attr.title "Скасувати"
+                    , class "icon-btn icon-btn-danger"
+                    , onClick <| EditSignalCancel signal.id
+                    ]
+                    [ i [ class "bi bi-x" ] [] ]
+                ]
+            ]
+        ]
+
+
 contentBlock : Shared.Model -> Model -> Auth.User -> Html Msg
 contentBlock shared model user =
     let
@@ -931,150 +1061,6 @@ contentBlock shared model user =
                     []
                 ]
 
-        deleteConfirmationModal =
-            div
-                [ class "modal fade"
-                , attribute "tabindex" "-1"
-                , attribute "role" "dialog"
-                , attribute "aria-hidden" "true"
-                , id "deleteConfirmationModal"
-                ]
-                [ div
-                    [ class "modal-dialog"
-                    , attribute "role" "document"
-                    ]
-                    [ div
-                        [ class "modal-content" ]
-                        [ div
-                            [ class "modal-header" ]
-                            [ h5 [ class "modal-title" ] [ text "Видалення сигналу" ]
-                            , button
-                                [ class "btn-close"
-                                , type_ "button"
-                                , attribute "data-bs-dismiss" "modal"
-                                , attribute "ariaLabel" "Close"
-                                ]
-                                []
-                            ]
-                        , div
-                            [ class "modal-body p-3" ]
-                            [ text "Ви впевнені, що хочете видалити цей сигнал?"
-                            ]
-                        , div
-                            [ class "modal-footer" ]
-                            [ Button.new { label = "Відміна", onClick = DeleteSignalCancel }
-                                |> Button.withSecondary
-                                |> Button.view
-                            , Button.new { label = "Видалити", onClick = DeleteSignalConfirm }
-                                |> Button.withSecondary
-                                |> Button.view
-                            ]
-                        ]
-                    ]
-                ]
-
-        renderSignalTrEdit : B.Signal -> EditSignalState -> Html Msg
-        renderSignalTrEdit signal editState =
-            tr []
-                [ td []
-                    [ input
-                        [ class "form-control"
-                        , type_ "text"
-                        , placeholder "Позиція/Сигнал"
-                        , value editState.inpText
-                        , onInput <| EditSignalMsg << (\v -> { editState | inpText = v })
-                        ]
-                        []
-                    ]
-                , td []
-                    [ input
-                        [ class "form-control"
-                        , type_ "text"
-                        , placeholder "Значення"
-                        , value editState.inpMeaning
-                        , onInput <| EditSignalMsg << (\v -> { editState | inpMeaning = v })
-                        ]
-                        []
-                    ]
-                , td []
-                    [ let
-                        selectItem : Maybe (Select.MenuItem Int)
-                        selectItem =
-                            case shared.masterUnits of
-                                Success units ->
-                                    Dict.get editState.inpUnit units
-                                        |> Maybe.map
-                                            (\unit ->
-                                                Select.basicMenuItem
-                                                    { item = unit.id, label = unit.name }
-                                            )
-                                _ ->
-                                    Nothing
-                      in
-                      div
-                        [ class "d-flex justify-content-between align-items-center"
-                        , style "min-width" "200px"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ div [ class "flex-grow-1" ]
-                            [ let
-                                options =
-                                    Le.Block.Select.defaultOptions shared.isDarkMode
-
-                                options2 =
-                                    { options | disabled = not hasEditorRole }
-                              in
-                                                             Html.map EditUnitSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        selectItem
-                                        editState.inpUnitSelState
-                                        (populateUnitMenu shared)
-                                        "підрозділ"
-                                        options2
-                            ]
-
-                        ]
-                    ]
-                , td []
-                    [ input
-                        [ class "form-control"
-                        , type_ "text"
-                        , placeholder "Координати"
-                        , value editState.inpCoordinates
-                        , onInput <| EditSignalMsg << (\v -> { editState | inpCoordinates = v })
-                        ]
-                        []
-                    ]
-                , td []
-                    [ text <|
-                        case model.zone of
-                            Nothing ->
-                                "Loading..."
-
-                            Just zone ->
-                                Le.Time.renderDateTimeF1 zone
-                                    (Time.millisToPosix signal.createdAt)
-                    ]
-                , td [ style "font-size" ".8rem" ]
-                    [ div [ class "d-flex justify-content-start align-items-center" ]
-                        [ button
-                            [ Attr.title "Зберегти"
-                            , class "icon-btn icon-btn-primary"
-                            , onClick <| EditSignalSave signal.id
-                            ]
-                            [ i [ class "bi bi-check2" ] [] ]
-                        , button
-                            [ Attr.title "Скасувати"
-                            , class "icon-btn icon-btn-danger"
-                            , onClick <| EditSignalCancel signal.id
-                            ]
-                            [ i [ class "bi bi-x" ] [] ]
-                        ]
-                    ]
-                ]
-
-        addSignalPanel : Html Msg
         addSignalPanel =
             div
                 [ class "d-flex justify-content-start align-items-center" ]
@@ -1143,12 +1129,14 @@ contentBlock shared model user =
                     , value model.inpCoordinates
                     ]
                     []
-                , Button.new { label = "Додати", onClick = AddSignal }
-                    |> Button.withDisabled (not hasEditorRole)
-                    |> Button.view
-                , Button.new { label = "Очистити", onClick = ClearInputs }
-                    |> Button.withStyleSecondary
-                    |> Button.view
+                , div [class "flex gap-1"]
+                    [ Button.new { label = "Додати", onClick = AddSignal }
+                        |> Button.withDisabled (not hasEditorRole)
+                        |> Button.view
+                    , Button.new { label = "Очистити", onClick = ClearInputs }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                    ]
                 ]
 
         mainContent =
@@ -1166,8 +1154,7 @@ contentBlock shared model user =
                 ]
     in
     div []
-        [ deleteConfirmationModal
-        , mainContent
+        [ mainContent
         ]
 
 
@@ -1235,5 +1222,6 @@ view _ shared user model =
                 ]
             ]
         , Sidebar.view sidebarOpen CloseEditSignalSidebar sidebarContent
+        , deleteConfirmationModal model
         ]
     }
