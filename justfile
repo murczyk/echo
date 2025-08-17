@@ -128,8 +128,20 @@ test-fe:
 test-be:
     #!/bin/bash
     set -euxo pipefail
-    # (cd wdintel-rs && cargo test)
-    (cd wdintel-rs && cargo test --release)
+    cd wdintel-rs
+
+    # Use incremental compilation for faster builds
+    export CARGO_INCREMENTAL=1
+    export RUSTC_WRAPPER=""
+
+    # Check if we should use cached build
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        echo "Running Rust tests in CI with optimizations..."
+        cargo test --release --locked
+    else
+        echo "Running Rust tests locally..."
+        cargo test --release
+    fi
 
 test: test-fe test-be
 
@@ -151,7 +163,12 @@ test-ci:
     cd ..
 
     # Backend tests
-    (cd wdintel-rs && cargo test --release)
+    cd wdintel-rs
+    export CARGO_INCREMENTAL=1
+    export RUSTC_WRAPPER=""
+    echo "Running Rust tests with incremental compilation..."
+    cargo test --release --locked
+    cd ..
 
 clean-deps:
     bash deploy/clean_deps.sh

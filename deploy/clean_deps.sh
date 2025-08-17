@@ -49,13 +49,24 @@ if command -v pip >/dev/null 2>&1; then
     pip cache purge 2>/dev/null || echo "pip cache purge failed or not needed"
 fi
 
-# Clean cargo cache (optional)
+# Clean cargo cache
 echo "🦀 Cleaning cargo build cache..."
 safe_remove "wdintel-rs/target"
+
+# Clean cargo registry cache
+echo "🦀 Cleaning cargo registry cache..."
+safe_remove "$HOME/.cargo/registry/cache"
+safe_remove "$HOME/.cargo/registry/index"
+safe_remove "$HOME/.cargo/git/db"
+
+# Clean cargo incremental cache
+echo "🦀 Cleaning cargo incremental cache..."
+safe_remove "$HOME/.cargo/.package-cache"
 
 echo "✅ Cleanup complete!"
 echo ""
 echo "Next steps:"
 echo "  - Run 'just dev-py' to recreate Python environment"
 echo "  - Run 'just test-fe' to reinstall npm dependencies"
+echo "  - Run 'just test-be' to recompile Rust dependencies"
 echo "  - Or simply run 'just test' to rebuild everything"

@@ -64,6 +64,19 @@ jobs:
           restore-keys: |
             spacy-model-
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            wdintel-rs/target/
+          key: rust-deps-${{ hashFiles('wdintel-rs/Cargo.lock') }}
+          restore-keys: |
+            rust-deps-
+
       - name: Cache npm dependencies
         uses: actions/cache@v3
         with:
@@ -71,6 +84,15 @@ jobs:
           key: npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}
           restore-keys: |
             npm-deps-
+
+      - name: Report Rust cache status
+        run: |
+          if [ -d "wdintel-rs/target" ]; then
+            echo "✅ Rust dependencies restored from cache"
+            echo "📦 Target directory size: $(du -sh wdintel-rs/target 2>/dev/null | cut -f1 || echo 'unknown')"
+          else
+            echo "📥 Rust dependencies will be compiled fresh"
+          fi
 
       - name: Report npm cache status
         run: |
