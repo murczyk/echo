@@ -66,7 +66,6 @@ async fn test_bl_szd_groups_list_01() {
     let env = cleanup().await.unwrap();
     let txn = env.dbx.begin().await.unwrap();
 
-    // Create zone, datasource and AOR manually
     let zone = mk_sigint_zone(
         &txn,
         sigint_zone::ActiveModel {
@@ -75,7 +74,6 @@ async fn test_bl_szd_groups_list_01() {
     )
     .await
     .unwrap();
-
     let datasource = mk_datasource(
         &txn,
         datasource::ActiveModel {
@@ -84,7 +82,6 @@ async fn test_bl_szd_groups_list_01() {
     )
     .await
     .unwrap();
-
     let aor = mk_aor(
         &txn,
         area_of_responsibility::ActiveModel {
@@ -93,8 +90,6 @@ async fn test_bl_szd_groups_list_01() {
     )
     .await
     .unwrap();
-
-    // Create two signal_group records first
     let group1 = mk_signal_group(
         &txn,
         signal_group::ActiveModel {
@@ -103,7 +98,6 @@ async fn test_bl_szd_groups_list_01() {
     )
     .await
     .unwrap();
-
     let group2 = mk_signal_group(
         &txn,
         signal_group::ActiveModel {
