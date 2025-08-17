@@ -5,8 +5,8 @@ on:
     types: [opened, closed, reopened]
   issue_comment:
     types: [created]
-  dependabot_alert:
-    types: [created, dismissed, fixed]
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
   push:
     branches: [main, master]
     paths:
@@ -37,16 +37,19 @@ jobs:
           fi
 
   notify-vulnerability-alert:
-    if: github.event_name == 'dependabot_alert'
+    if: github.event_name == 'pull_request' && (github.actor == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'security') || contains(github.event.pull_request.labels.*.name, 'dependencies'))
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
 
-      - name: Discord notification - Vulnerability Alert
+      - name: Discord notification - Vulnerability PR
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          ./scripts/notifications/discord-notify.sh vulnerability_alert "" "🔍 Vulnerability Alert" "A new vulnerability has been detected in repository dependencies."
+          pr_title="${{ github.event.pull_request.title }}"
+          pr_number="${{ github.event.pull_request.number }}"
+          pr_url="${{ github.event.pull_request.html_url }}"
+          ./scripts/notifications/discord-notify.sh vulnerability_alert "" "🔍 Security/Dependency PR" "PR #$pr_number: $pr_title\\n$pr_url"
 
   notify-critical-issues:
     if: github.event_name == 'issues' && (contains(github.event.issue.labels.*.name, 'critical') || contains(github.event.issue.labels.*.name, 'security') || contains(github.event.issue.labels.*.name, 'bug'))
