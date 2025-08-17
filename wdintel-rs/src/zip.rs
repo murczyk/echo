@@ -60,15 +60,45 @@ where
 }
 
 pub fn unzip(fname: &Path) -> Result<(), AppError> {
-    zip_extract::extract(
-        fs::File::open(fname)?,
-        fname.parent().ok_or(AppError::BL {
-            msg: "No parent dir".to_string(),
-        })?,
-        true,
-    )
-    .map_err(|e| AppError::BL {
-        msg: format!("Unzip error: {e:?}"),
+    let file = File::open(fname).context(here!())?;
+    let outdir = fname.parent().ok_or(AppError::BL {
+        msg: "No parent dir".to_string(),
     })?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| AppError::BL {
+        msg: format!("Open zip error: {e:?}"),
+    })?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| AppError::BL {
+            msg: format!("Read zip entry error: {e:?}"),
+        })?;
+
+        let rel = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => continue, // skip suspicious paths
+        };
+        let outpath = outdir.join(rel);
+
+        if file.is_dir() {
+            fs::create_dir_all(&outpath).context(here!())?;
+        } else {
+            if let Some(parent) = outpath.parent() {
+                fs::create_dir_all(parent).context(here!())?;
+            }
+            let mut outfile = File::create(&outpath).context(here!())?;
+            std::io::copy(&mut file, &mut outfile).context(here!())?;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Some(mode) = file.unix_mode() {
+                let _ = fs::set_permissions(
+                    &outpath,
+                    fs::Permissions::from_mode(mode),
+                );
+            }
+        }
+    }
     Ok(())
 }
