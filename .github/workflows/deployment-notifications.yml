@@ -1,0 +1,76 @@
+name: Deployment & Release Notifications
+
+on:
+  release:
+    types: [published, prereleased]
+  deployment_status:
+  workflow_run:
+    workflows: ["CI Run Tests"]
+    types: [completed]
+
+jobs:
+  notify-release:
+    if: github.event_name == 'release'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Discord notification - Release
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "${{ github.event.action }}" = "published" ]; then
+            ./scripts/notifications/discord-notify.sh release_published "" "🚀 Release Published" "New release **${{ github.event.release.tag_name }}** has been published!\\n\\n${{ github.event.release.body }}"
+          else
+            ./scripts/notifications/discord-notify.sh release_prerelease "" "⚠️ Pre-release Published" "New pre-release **${{ github.event.release.tag_name }}** has been published!\\n\\n${{ github.event.release.body }}"
+          fi
+
+  notify-deployment:
+    if: github.event_name == 'deployment_status'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Discord notification - Deployment
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          environment="${{ github.event.deployment.environment }}"
+          ref="${{ github.event.deployment.ref }}"
+
+          case "${{ github.event.deployment_status.state }}" in
+            "success")
+              ./scripts/notifications/discord-notify.sh deployment_success "" "🟢 Deployment Successful" "Deployment to **$environment** completed successfully\\n\\nRef: \`$ref\`"
+              ;;
+            "failure"|"error")
+              ./scripts/notifications/discord-notify.sh deployment_failure "" "🔴 Deployment Failed" "Deployment to **$environment** failed\\n\\nRef: \`$ref\`\\n\\n${{ github.event.deployment_status.description }}"
+              ;;
+            "pending")
+              ./scripts/notifications/discord-notify.sh deployment_pending "warning" "🟡 Deployment In Progress" "Deployment to **$environment** is in progress\\n\\nRef: \`$ref\`"
+              ;;
+          esac
+
+  notify-workflow-completion:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != null && (github.event.workflow_run.head_branch == 'main' || github.event.workflow_run.head_branch == 'master' || github.event.workflow_run.conclusion == 'failure')
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Discord notification - Workflow Completion
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          workflow_name="${{ github.event.workflow_run.name }}"
+          branch="${{ github.event.workflow_run.head_branch }}"
+
+          case "${{ github.event.workflow_run.conclusion }}" in
+            "success")
+              ./scripts/notifications/discord-notify.sh ci_success "" "✅ Workflow '$workflow_name' Completed" "Workflow completed successfully on branch \`$branch\`"
+              ;;
+            "failure")
+              ./scripts/notifications/discord-notify.sh ci_failure "" "❌ Workflow '$workflow_name' Failed" "Workflow failed on branch \`$branch\`"
+              ;;
+            "cancelled")
+              ./scripts/notifications/discord-notify.sh ci_cancelled "" "⏹️ Workflow '$workflow_name' Cancelled" "Workflow was cancelled on branch \`$branch\`"
+              ;;
+          esac

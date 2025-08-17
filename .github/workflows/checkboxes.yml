@@ -54,6 +54,7 @@ jobs:
           fi
 
       - name: Check PR checkboxes
+        id: checkbox_check
         run: |
           if [[ "$USE_PIXI" == "true" ]]; then
             echo "Running with Pixi environment..."
@@ -67,4 +68,15 @@ jobs:
               --github-token ${{ secrets.GITHUB_TOKEN }} \
               --github-repository ${{ github.repository }} \
               --pr-number ${{ github.event.pull_request.number }}
+          fi
+
+      - name: Discord notification - PR Checkbox Check
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "${{ steps.checkbox_check.outcome }}" = "success" ]; then
+            ./scripts/notifications/discord-notify.sh pr_check_success "" "PR Checkboxes Valid" "All required checkboxes are checked in PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
+          else
+            ./scripts/notifications/discord-notify.sh pr_check_failure "" "PR Checkboxes Invalid" "Some required checkboxes are missing in PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
           fi

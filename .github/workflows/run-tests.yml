@@ -37,6 +37,17 @@ jobs:
         if: always()
         run: ./scripts/cache/save-npm.sh
 
+      - name: Discord notification - Frontend tests
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            ./scripts/notifications/discord-notify.sh ci_success "" "Frontend Tests Passed" "All frontend tests completed successfully"
+          else
+            ./scripts/notifications/discord-notify.sh ci_failure "" "Frontend Tests Failed" "Frontend tests encountered failures"
+          fi
+
   backend-tests:
     if: github.repository == 'echoua/echo'
     runs-on: self-hosted
@@ -59,9 +70,6 @@ jobs:
       - name: Restore Python cache
         run: ./scripts/cache/restore-python.sh || true
 
-      # - name: Restore Cargo cache
-      #   run: ./scripts/cache/restore-cargo.sh || true
-
       - name: Restore Spacy cache
         run: ./scripts/cache/restore-spacy.sh || true
 
@@ -75,10 +83,39 @@ jobs:
         if: always()
         run: ./scripts/cache/save-python.sh
 
-      # - name: Save Cargo cache
-      #   if: always()
-      #   run: ./scripts/cache/save-cargo.sh
-
       - name: Save Spacy cache
         if: always()
         run: ./scripts/cache/save-spacy.sh
+
+      - name: Discord notification - Backend tests
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            ./scripts/notifications/discord-notify.sh ci_success "" "Backend Tests Passed" "All backend tests completed successfully"
+          else
+            ./scripts/notifications/discord-notify.sh ci_failure "" "Backend Tests Failed" "Backend tests encountered failures"
+          fi
+
+  notify-completion:
+    if: always() && github.repository == 'echoua/echo'
+    needs: [frontend-tests, backend-tests]
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Discord notification - Overall CI status
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          frontend_status="${{ needs.frontend-tests.result }}"
+          backend_status="${{ needs.backend-tests.result }}"
+
+          if [ "$frontend_status" = "success" ] && [ "$backend_status" = "success" ]; then
+            ./scripts/notifications/discord-notify.sh ci_success "" "🎉 All CI Tests Passed" "Frontend: ✅ Success\\nBackend: ✅ Success\\n\\nAll tests completed successfully!"
+          elif [ "$frontend_status" = "cancelled" ] || [ "$backend_status" = "cancelled" ]; then
+            ./scripts/notifications/discord-notify.sh ci_cancelled "" "CI Workflow Cancelled" "Frontend: $frontend_status\\nBackend: $backend_status"
+          else
+            ./scripts/notifications/discord-notify.sh ci_failure "" "💥 CI Tests Failed" "Frontend: $frontend_status\\nBackend: $backend_status\\n\\nPlease check the logs for details."
+          fi
