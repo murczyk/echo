@@ -25,6 +25,24 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
         transit_post = Some(post.to_string());
     }
 
+    // Extract transit_post_name for unquoted form: Отримано з поста <name>
+    // Keep scanning afterwards to find a more specific original post name, if present
+    '_if: {
+        lazy_static! {
+            static ref RE: Regex = Regex::new(
+                r#"Отримано з поста (?P<post>[a-zA-Zа-яіїА-ЯІЇ0-9)(_/ \.]+)"#
+            )
+            .unwrap();
+        }
+        let Some(capts) = RE.captures(inp) else {
+            break '_if;
+        };
+        let Some(post) = m_cap_s(&capts, "post") else {
+            break '_if;
+        };
+        transit_post = Some(post.to_string());
+    }
+
     // like: П54 or ЦФП157
     '_if: {
         lazy_static! {
@@ -394,5 +412,21 @@ Kupol80
 "#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "ЦФП-51".to_string())
+    }
+
+    #[test]
+    fn extract_post_otrymano_unquoted_numeric_underscore() {
+        let body = r#"4333_1
+Отримано з поста 4333_1
+--------------------------------------
+15.08.2025, 16:44:40
+161.2000
+УКХ р/м НВ підрозділу 161.200 МГц
+ПЕСОК
+НВ
+
+— Песок, расход 10, 10-ка ушла на восток, по северу."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res.unwrap(), "4333_1".to_string())
     }
 }
