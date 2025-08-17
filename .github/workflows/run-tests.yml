@@ -69,4 +69,5 @@ jobs:
       - name: Run backend tests
         env:
           GITHUB_ACTIONS: true
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: just ci-test-be

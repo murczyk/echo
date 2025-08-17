@@ -2,6 +2,10 @@
 
 For server setup see [[server.md]]
 
+## Test Database Management
+
+For CI/testing, use `just setup-test-db [branch_name]` to create branch-specific test databases from the base dump. Use `just cleanup-test-dbs` to remove all test databases. CI automatically handles this for each branch via the `TEST_DB_NAME` environment variable.
+
 ### runtime deps
 
 See "Denendencies" in [[../README.md]]

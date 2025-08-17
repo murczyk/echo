@@ -417,10 +417,18 @@ fn mk_conn_string(config: &Config) -> String {
         .pg_password
         .clone()
         .unwrap_or(DEFAULT_PG_PASSWORD.to_string());
-    let pg_dbname = config
+    let mut pg_dbname = config
         .pg_dbname
         .clone()
         .unwrap_or(DEFAULT_PG_DBNAME.to_string());
+
+    // Override database name for tests if TEST_DB_NAME environment variable is set
+    if let Ok(test_db_name) = std::env::var("TEST_DB_NAME") {
+        if !test_db_name.is_empty() {
+            pg_dbname = test_db_name;
+        }
+    }
+
     let conn_string = format!(
         "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
     );
@@ -533,10 +541,8 @@ async fn main() -> Result<(), AppError> {
                 mode, &ps,
             )
             .unwrap();
-            Ok(
-                (),
-            )
-        },
+            Ok(())
+        }
         Cmd::OneoffReprocessCallsigns(ps) => {
             crate::rer_importer::callsigns::oneoff_reprocess_callsigns(
                 mode, &ps,
@@ -566,18 +572,14 @@ async fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffRerCsvImport(ps) => {
             crate::rer_importer::import_csv::oneoff_rer_csv_import(mode, &ps)
-            .unwrap();
-            Ok(
-                (),
-            )
-        },
+                .unwrap();
+            Ok(())
+        }
         Cmd::OneoffFillCompFreq(ps) => {
             crate::rer_importer::reports::oneoff_fill_comp_freq(mode, &ps)
-            .unwrap();
-            Ok(
-                (),
-            )
-        },
+                .unwrap();
+            Ok(())
+        }
         Cmd::OneoffBatchUskToWgs(ps) => {
             oneoff::oneoff_batch_usk_to_wgs(mode, &ps).unwrap();
             Ok(())
@@ -592,20 +594,18 @@ async fn main() -> Result<(), AppError> {
         }
         Cmd::OneoffMergeAllNetworks => {
             crate::sigint::network::oneoff_merge_all_possible_networks(mode)
-            .unwrap();
-            Ok(
-                (),
-            )
-        },
+                .unwrap();
+            Ok(())
+        }
         Cmd::OneoffMergeTwoNetworks(ps) => {
             crate::sigint::network::oneoff_merge_two_networks(mode, &ps)
-            .unwrap();
+                .unwrap();
             Ok(())
         }
         Cmd::OneoffInstall(ps) => {
             crate::install::mount_tmp(&ps).unwrap();
             Ok(())
-        },
+        }
         Cmd::OneoffReprocessUnitsSearchIndex => {
             crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
         }

@@ -161,6 +161,17 @@ ci-save-cache-frontend:
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
+setup-test-db branch_name="":
+    #!/bin/bash
+    if [ -n "{{branch_name}}" ]; then
+        bash deploy/setup_test_database.sh "{{branch_name}}"
+    else
+        bash deploy/setup_test_database.sh
+    fi
+
+cleanup-test-dbs:
+    bash deploy/setup_test_database.sh --cleanup
+
 clean-deps:
     bash deploy/clean_deps.sh
 
