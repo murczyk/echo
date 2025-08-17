@@ -7,7 +7,7 @@ use chrono::SecondsFormat;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -268,7 +268,7 @@ pub fn main_test_xml_lib(mode: Mode) -> Result<(), AppError> {
     for folder in folders.iter() {
         if folder.name.clone().map(|x| x.body) == Some("2022-10-28".to_string())
         {
-            let tmp_dir = TempDir::new("wdintel-atak-datapackage")?;
+            let tmp_dir = TempDir::new()?;
             let dst_file =
                 folder_to_data_package_zip(&tmp_dir, folder, &BTreeMap::new())?;
             std::fs::copy(
@@ -302,7 +302,7 @@ async fn operatyvka_download(
     let folders = crate::kml::extract_operatyvka_folders(&kml)?;
     for folder in folders.iter() {
         if folder.name.as_ref().map(|x| &x.body) == Some(&req.folder) {
-            let tmp_dir = TempDir::new("wdintel-atak-datapackage")?;
+            let tmp_dir = TempDir::new()?;
             let dst_file =
                 folder_to_data_package_zip(&tmp_dir, folder, &style_maps)?;
             let file = actix_files::NamedFile::open_async(dst_file).await?;

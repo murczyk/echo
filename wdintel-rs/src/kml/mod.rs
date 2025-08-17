@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use walkdir::WalkDir;
 
 pub mod types;
@@ -309,7 +309,7 @@ async fn operatyvka_download(
             let kml = Kml {
                 nodes: vec![Node::Folder(folder2)],
             };
-            let tmp_dir = TempDir::new("operatyvka")?;
+            let tmp_dir = TempDir::new()?;
             println!("> style_ids: {style_ids:?}");
             // keep res to not remove tmp dir
             let dst_file_res = crate::importer::package_up_kmz(
@@ -547,7 +547,7 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
         nodes: vec![root_node],
     };
     // persist with styles and icons
-    let tmp_dir = TempDir::new("rerkmz")?;
+    let tmp_dir = TempDir::new()?;
     let style_maps = extract_style_maps(&kml.nodes)?;
     let mut style_maps_reversed = BTreeMap::new();
     for (style, icon) in style_maps {
@@ -623,7 +623,7 @@ pub async fn oneoff_fix_kml(
 ) -> Result<(), AppError> {
     let config = crate::config::read_config(mode)?;
     let kmz_path = Path::new(&ps.kmz);
-    let tmp_dir = TempDir::new("fixkmz")?;
+    let tmp_dir = TempDir::new()?;
     let kmz_fname = kmz_path.file_name().ok_or("no filename")?;
     let tmp_dir_kmz = tmp_dir.path().join(kmz_fname);
     std::fs::copy(kmz_path, &tmp_dir_kmz)?;
@@ -677,7 +677,7 @@ pub async fn oneoff_fix_kml(
         )?;
     }
 
-    let tmp_dir_res = TempDir::new("fixkmz-res")?;
+    let tmp_dir_res = TempDir::new()?;
     let res_p = tmp_dir_res.path();
     std::fs::write(
         res_p.join("doc.kml"),
@@ -1001,7 +1001,7 @@ pub async fn api_fix_kmz(
             val = val_curr;
         }
     }
-    let tmp_dir = TempDir::new("wdintel-fixkmz")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let kmz_file = tmp_dir.path().join(filename);
     println!("> kmz_file: {}", &kmz_file.display());
@@ -1150,7 +1150,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     )
     .await?;
     let kmz_path = Path::new(&ps.input);
-    let tmp_dir = TempDir::new("oneoff-radiostation-by-freq")?;
+    let tmp_dir = TempDir::new()?;
     let tmp_dir_kmz = tmp_dir
         .path()
         .join(kmz_path.file_name().ok_or("no filename")?);
@@ -1407,7 +1407,7 @@ async fn render_nodes(
         nodes: vec![root_node],
     };
     // persist with styles and icons
-    let tmp_dir = Arc::new(TempDir::new("rerkmz")?);
+    let tmp_dir = Arc::new(TempDir::new()?);
     let style_maps = extract_style_maps(&kml.nodes)?;
     let mut style_maps_reversed = BTreeMap::new();
     for (style, icon) in style_maps {

@@ -24,7 +24,7 @@ use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, *};
 use sea_query::*;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 pub mod geojson;
 pub mod kmz;
@@ -826,7 +826,7 @@ async fn summary_table_xlsx(
     let summary_table: SummaryTableFreq =
         summary_table_freq_1(&user, &env, &req).await?;
 
-    let tmp_dir = TempDir::new("wdintel-summary-table")?;
+    let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
     let mut workbook = Workbook::new(); // No argument needed here
 

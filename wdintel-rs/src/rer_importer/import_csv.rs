@@ -10,7 +10,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::ActiveValue::Set;
 use sea_orm::*;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 pub async fn oneoff_rer_csv_import_go(
     mode: Mode,
@@ -158,7 +158,7 @@ pub async fn rer_csv_import(
 ) -> Result<Json<i64>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let (field, val) = multipart::extract(&mut payload).await?;
-    let tmp_dir = TempDir::new("wdintel-rer-csv-import")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let csv_file = tmp_dir.path().join(field.name().context(h!())?);
     println!("> csv_file: {}", &csv_file.display());
@@ -219,7 +219,7 @@ pub async fn rer_delta_csv_import(
 ) -> Result<Json<i64>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let (field, val) = multipart::extract(&mut payload).await?;
-    let tmp_dir = TempDir::new("wdintel-rer-csv-import")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let csv_file = tmp_dir.path().join(field.name().context(h!())?);
     println!("> csv_file: {}", &csv_file.display());

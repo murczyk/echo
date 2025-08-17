@@ -18,7 +18,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use uuid::Uuid;
 
 fn pdf_to_text(file: &Path) -> Result<String, AppError> {
@@ -30,7 +30,7 @@ fn pdf_to_text(file: &Path) -> Result<String, AppError> {
 
 fn pdf_to_text_1(file: &Path) -> Result<String, AppError> {
     println!("> file: {}", file.display());
-    let tmp_dir = TempDir::new("wdintel-pdf2text")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir: {}", tmp_dir.path().display());
     let input_pdf = tmp_dir.path().join("input.pdf");
     println!("> input_pdf: {}", input_pdf.display());
@@ -264,10 +264,7 @@ pub fn cut_out_photo(in_path: &str, out_path: &str) -> Result<(), AppError> {
         }
     }
     cont_and_area.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
-    for (i, img_contour_pair) in cont_and_area.iter().enumerate() {
-        let img_contour = img_contour_pair.0.clone();
-        let area = img_contour_pair.1;
-    }
+
     let img_contour = &cont_and_area
         .first()
         .ok_or("couldn't find one contour that fits")?
@@ -499,7 +496,7 @@ pub async fn upload_pdf(
 
     let (_, val) = multipart::extract(&mut payload).await?;
 
-    let tmp_dir = Arc::new(TempDir::new("wdintel-importer-pdf")?);
+    let tmp_dir = Arc::new(TempDir::new()?);
     let tmp_dir2 = tmp_dir.clone();
     let input_pdf = tmp_dir.path().join("input.pdf");
     println!("> upload_pdf writing into {}", &input_pdf.display());
@@ -601,7 +598,7 @@ pub async fn upload_pdf(
 
 /// | Test upload_pdf api as much as possible
 pub async fn oneoff_test_full_circle() -> Result<(), AppError> {
-    let tmp_dir = Arc::new(TempDir::new("wdintel-importer-pdf")?);
+    let tmp_dir = Arc::new(TempDir::new()?);
     let tmp_dir2 = tmp_dir.clone();
     let input_pdf = tmp_dir.path().join("input.pdf");
 

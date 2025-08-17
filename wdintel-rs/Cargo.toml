@@ -27,7 +27,6 @@ chrono = { workspace = true }
 chrono-tz = "0.10.4"
 lazy_static = "1.5.0"
 regex = { version = "1.11.1", features = ["pattern"] }
-tempdir = "~0.3"
 tempfile = "3.20.0"
 walkdir = "^2.5.0"
 zip = "3.0.0"
@@ -87,12 +86,12 @@ tokio-postgres = { version = "0.7.13", default-features = false, features = [
 time = "0.3.41"
 deadpool-redis = { version = "0.20.0", features = ["json", "serde", "streams"] }
 tokio-stream = "0.1.17"
-cmd_lib = "1.9.6"
 rustls = { version = "0.23.31", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 ssh2 = "0.9.5"
 demoji = "0.0.3"
 dialoguer = "0.11.0"
 tracing-subscriber = { version = "0.3.19", features = ["tracing-log"] }
+[dev-dependencies]
 random_word = { version = "0.5.0", features = ["en"] }
 
 [dependencies.echo-install-utils]

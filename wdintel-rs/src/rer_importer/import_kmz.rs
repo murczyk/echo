@@ -11,7 +11,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
 use std::path::PathBuf;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 #[post("/api/rer/delta-kmz-import")]
 pub async fn rer_delta_kmz_import(
@@ -21,7 +21,7 @@ pub async fn rer_delta_kmz_import(
 ) -> Result<Json<i64>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let (field, val) = multipart::extract(&mut payload).await?;
-    let tmp_dir = TempDir::new("wdintel-rer-kmz-import")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let kmz_file = tmp_dir.path().join(field.name().context(h!())?);
     let original_path = kmz_file.clone();

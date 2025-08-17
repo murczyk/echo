@@ -1,6 +1,7 @@
 use super::*;
 use actix_web::post;
 use std::collections::HashMap;
+use tempfile::TempDir;
 
 /// Summary table showing row-per-frequency
 #[post("/api/rer/analysis/download-geojson")]
@@ -92,7 +93,7 @@ pub async fn rer_analysis_download_geojson(
     let unique_freqs: HashSet<String> =
         items.iter().filter_map(|item| item.freq.clone()).collect();
 
-    let tmp_dir = TempDir::new("wdintel-rer-analytics-geojson")?;
+    let tmp_dir = TempDir::new()?;
     let now = Utc::now();
     let outpath = tmp_dir
         .path()

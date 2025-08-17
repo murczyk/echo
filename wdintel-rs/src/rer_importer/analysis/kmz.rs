@@ -1,5 +1,6 @@
 use super::*;
 use actix_web::post;
+use tempfile::TempDir;
 
 /// Summary table showing row-per-frequency
 #[post("/api/rer/analysis/download-kmz")]
@@ -74,7 +75,7 @@ pub async fn rer_analysis_download_kmz(
     // );
     let items = items.into_model::<Res>().all(&env.dbx).await?;
 
-    let tmp_dir = TempDir::new("wdintel-rer-analytics-kmz")?;
+    let tmp_dir = TempDir::new()?;
     // let outpath = tmp_dir.path().join("summary-table.kmz");
 
     let sidc = "10061000001110010000".to_string();

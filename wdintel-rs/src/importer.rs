@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use walkdir::WalkDir;
 
 #[derive(
@@ -149,7 +149,7 @@ async fn download_kmz(
     };
     let node = Node::Folder(folder);
     let kml: Kml = Kml { nodes: vec![node] };
-    let tmp_dir = TempDir::new("operatyvka")?;
+    let tmp_dir = TempDir::new()?;
     // keep res to not remove tmp dir
     let dst_file_res = package_up_kmz(
         Arc::new(tmp_dir),

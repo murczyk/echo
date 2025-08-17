@@ -16,7 +16,7 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 pub mod csv;
 pub mod login;
@@ -322,7 +322,7 @@ async fn radios_convert(
 ) -> Result<Json<i64>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
     let (field, val) = multipart::extract(&mut payload).await?;
-    let tmp_dir = TempDir::new("wdintel-fixkmz")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let data_file = tmp_dir.path().join(field.name().context(h!())?);
     println!("> data_file: {}", &data_file.display());
@@ -612,7 +612,7 @@ pub async fn import_map(
 
     tokio::spawn(async move {
         let res = async {
-            let tmp_dir = TempDir::new("wdintel-kmz2geojson")?;
+            let tmp_dir = TempDir::new()?;
             bgtask_log(
                 Some(bgtask_id),
                 &format!("> tmp_dir {}", &tmp_dir.path().display()),
@@ -848,7 +848,7 @@ pub async fn kmz_to_geojson(
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
     let (field, val) = multipart::extract(&mut payload).await?;
     let filename = field.name().context(h!())?;
-    let tmp_dir = TempDir::new("wdintel-kmz2geojson")?;
+    let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
     let geojson_file = Path::new(&filename).with_extension("geojson");
     let geojson_file = geojson_file.file_name().ok_or("impossible")?;
@@ -1162,7 +1162,7 @@ pub fn delta_objs_to_kmz(
 
     // bgtask_log(m_bgtask_id, "Wrapping in kmz", dbx).await?;
 
-    let tmp_dir = TempDir::new("wdintel-delta2kmz")?;
+    let tmp_dir = TempDir::new()?;
     let res_path = crate::importer::package_up_kmz2(config, &tmp_dir, &kml)?;
     let res_bytes = std::fs::read(res_path)?;
 
@@ -1410,7 +1410,7 @@ async fn download_layer_result(
     ))?;
     let downloaded_layer: DownloadedLayer =
         serde_json::from_value(res_json).context(h!())?;
-    let tmp_dir = TempDir::new("wdintel-delta2kmz")?;
+    let tmp_dir = TempDir::new()?;
     let filename = format!("{}.kmz", downloaded_layer.overlay_name);
     let outfile = tmp_dir.path().join(filename);
     let res_bytes = bgtask_res.res_bytes.ok_or(format!(
