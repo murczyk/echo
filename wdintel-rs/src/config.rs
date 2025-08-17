@@ -1,9 +1,5 @@
-use crate::error::AppError;
 use crate::types::*;
-use anyhow::{Context, Result};
-use log::*;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use anyhow::Result;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
 pub const DEFAULT_PG_PORT: u16 = 5432;
@@ -112,14 +108,14 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn secret_config(self: &Self) -> Option<SecretConfig> {
+    pub fn secret_config(&self) -> Option<SecretConfig> {
         match &self.secret_config {
             Some(config) => Some(config.clone()),
             None => crate::secret::SECRET.get().cloned(),
         }
     }
 
-    pub fn settlement_paths(self: &Self) -> Result<Vec<String>> {
+    pub fn settlement_paths(&self) -> Result<Vec<String>> {
         get_settlement_paths(self.settlements_sources.clone())
     }
 }
@@ -169,6 +165,7 @@ pub struct VaultConfig {
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {
+    // debug!("read_config; mode: {:?}", mode);
     let path = match mode {
         Mode::Live => PathBuf::from("/etc/echo/config.toml"),
         Mode::Debug => {
@@ -195,7 +192,6 @@ pub fn read_from_path<T>(path: PathBuf) -> Result<T, AppError>
 where
     T: for<'a> Deserialize<'a>,
 {
-    info!("Reading config from {:?}", path);
     let config = std::fs::read_to_string(path)?;
     let config: T = toml::from_str(&config).context(h!())?;
     Ok(config)
@@ -203,7 +199,7 @@ where
 
 pub fn m_unit_to_unidenfitied(unit: Option<String>) -> String {
     let res = unit.unwrap_or("Не визначено".to_string());
-    if res == "" {
+    if res.is_empty() {
         return "Не визначено".to_string();
     }
     res
@@ -219,7 +215,7 @@ pub fn location_is_empty(s: &String) -> bool {
 
 pub fn m_location_to_unidenfitied(location: Option<String>) -> String {
     let res = location.unwrap_or("--Не визначено--".to_string());
-    if res == "" {
+    if res.is_empty() {
         return "--Не визначено--".to_string();
     }
     res

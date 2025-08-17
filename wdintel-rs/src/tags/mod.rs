@@ -26,8 +26,8 @@ async fn tags_list(
             tag.id,
             Tag {
                 label: tag.label.clone(),
-                extra: tag.extra.clone(),
-                ord: tag.ord.clone(),
+                extra: tag.extra,
+                ord: tag.ord,
             },
         ));
     }

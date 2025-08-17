@@ -35,7 +35,7 @@ pub async fn report_docx_kind_mouse(
     let width_unit = 1870;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, &env, &req.req,
+            &login, &logins, env, &req.req,
         )
         .await?;
     let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms else {
@@ -58,13 +58,13 @@ pub async fn report_docx_kind_mouse(
         if tags.is_empty() {
             per_tag_msgs
                 .entry(0)
-                .or_insert_with(|| vec![])
+                .or_default()
                 .push(message.clone());
         } else {
             for tag_id in tags {
                 per_tag_msgs
                     .entry(tag_id)
-                    .or_insert_with(|| vec![])
+                    .or_default()
                     .push(message.clone());
             }
         }
@@ -96,7 +96,6 @@ pub async fn report_docx_kind_mouse(
         .filter_map(|comp_freq| {
             comp_freq
                 .first_seen
-                .clone()
                 .map(|x| (comp_freq.freq.clone(), x))
         })
         .collect();
@@ -111,7 +110,7 @@ pub async fn report_docx_kind_mouse(
         comp_freqs_callsigns
             .iter()
             .filter_map(|comp_freq_callsign| {
-                comp_freq_callsign.first_seen.clone().map(|x| {
+                comp_freq_callsign.first_seen.map(|x| {
                     (
                         (
                             comp_freq_callsign.freq.clone(),
@@ -127,12 +126,12 @@ pub async fn report_docx_kind_mouse(
         for callsign in message.callsigns.iter() {
             per_freq_callsigns
                 .entry(freq.clone())
-                .or_insert_with(|| BTreeSet::new())
+                .or_default()
                 .insert(callsign.clone());
         }
         per_freq_messages
             .entry(freq.clone())
-            .or_insert_with(|| vec![])
+            .or_default()
             .push((*message_id, message.clone()));
     }
     // fill per_freq_units_counted
@@ -234,7 +233,7 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .vertical_merge(VMergeType::Restart)
@@ -301,7 +300,7 @@ pub async fn report_docx_kind_mouse(
             ),
         TableCell::new()
             .vertical_align(VAlignType::Center)
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
                 Paragraph::new()
@@ -397,7 +396,7 @@ pub async fn report_docx_kind_mouse(
                         .add_run(Run::new().add_text("НВ".to_string())),
                 ),
             TableCell::new()
-                .width(width_unit * 1, WidthType::Dxa)
+                .width(width_unit, WidthType::Dxa)
                 .add_paragraph(
                     Paragraph::new().add_run(
                         Run::new().add_text(
@@ -438,7 +437,7 @@ pub async fn report_docx_kind_mouse(
                             .add_run(Run::new().add_text("НВ".to_string())),
                     ),
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new().add_run(
                             Run::new().add_text(
@@ -483,7 +482,7 @@ pub async fn report_docx_kind_mouse(
     let mut rows2: Vec<TableRow> = vec![];
     rows2.push(TableRow::new(vec![
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
@@ -493,7 +492,7 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
@@ -503,7 +502,7 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
@@ -513,7 +512,7 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
@@ -523,7 +522,7 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
@@ -543,7 +542,7 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
         TableCell::new()
-            .width(width_unit * 1, WidthType::Dxa)
+            .width(width_unit, WidthType::Dxa)
             .vertical_align(VAlignType::Center)
             .shading(Shading::new().fill("f2f2f2"))
             .add_paragraph(
@@ -667,14 +666,12 @@ pub async fn report_docx_kind_mouse(
                 need_highlight = true;
             }
             let m_comment = comments
-                .iter()
-                .filter(|x| x.signal_message_id.eq(&message_id))
-                .next()
+                .iter().find(|x| x.signal_message_id.eq(&message_id))
                 .cloned();
             let mut full_text =
                 message_full_text(&msg, &inbox, &datasource, &m_comment)?;
             if need_highlight {
-                full_text = format!("⚠️ {}", full_text);
+                full_text = format!("⚠️ {full_text}");
             }
             for line in full_text.lines() {
                 body_cell = body_cell.add_paragraph(
@@ -683,7 +680,7 @@ pub async fn report_docx_kind_mouse(
             }
             rows2.push(TableRow::new(vec![
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new()
                             .align(
@@ -692,7 +689,7 @@ pub async fn report_docx_kind_mouse(
                             .add_run(Run::new().add_text(freq.clone())),
                     ),
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new()
                             .align(
@@ -700,14 +697,14 @@ pub async fn report_docx_kind_mouse(
                             )
                             .add_run(
                                 Run::new().add_text(
-                                    dt_zoned_from_millis(timestamp.clone())?
+                                    dt_zoned_from_millis(*timestamp)?
                                         .format("%d.%m.%Y")
                                         .to_string(),
                                 ),
                             ),
                     ),
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new()
                             .align(
@@ -715,20 +712,19 @@ pub async fn report_docx_kind_mouse(
                             )
                             .add_run(
                                 Run::new().add_text(
-                                    dt_zoned_from_millis(timestamp.clone())?
+                                    dt_zoned_from_millis(*timestamp)?
                                         .format("%H:%M:%S")
                                         .to_string(),
                                 ),
                             ),
                     ),
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new().add_run(
                             Run::new().add_text(
                                 message
-                                    .callsigns
-                                    .get(0)
+                                    .callsigns.first()
                                     .unwrap_or(&"".to_string())
                                     .clone()
                                     .to_uppercase(),
@@ -736,7 +732,7 @@ pub async fn report_docx_kind_mouse(
                         ),
                     ),
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new().add_run(
                             Run::new().add_text(
@@ -751,7 +747,7 @@ pub async fn report_docx_kind_mouse(
                     ),
                 body_cell,
                 TableCell::new()
-                    .width(width_unit * 1, WidthType::Dxa)
+                    .width(width_unit, WidthType::Dxa)
                     .add_paragraph(
                         Paragraph::new()
                             .align(AlignmentType::Center)
@@ -870,7 +866,7 @@ pub async fn report_docx_kind_mouse(
             TableCell::new().add_paragraph(
                 Paragraph::new()
                     .align(docx_rs::alignment_type::AlignmentType::Center)
-                    .add_run(Run::new().add_text(format!("{}, {}", lat, lon))),
+                    .add_run(Run::new().add_text(format!("{lat}, {lon}"))),
             ),
             TableCell::new().add_paragraph(
                 Paragraph::new()
@@ -977,12 +973,10 @@ pub async fn report_docx_kind_mouse(
                 let paragraph =
                     Paragraph::new().add_run(Run::new().add_text(format!(
                         "- {date} {time}: {freq} {extended_form}",
-                        date = dt_zoned_from_millis(timestamp.clone())?
-                            .format("%d.%m.%Y")
-                            .to_string(),
-                        time = dt_zoned_from_millis(timestamp.clone())?
-                            .format("%H:%M:%S")
-                            .to_string(),
+                        date = dt_zoned_from_millis(*timestamp)?
+                            .format("%d.%m.%Y"),
+                        time = dt_zoned_from_millis(*timestamp)?
+                            .format("%H:%M:%S"),
                         extended_form = extended_form
                     )));
                 docx = docx.add_paragraph(paragraph);
@@ -1114,7 +1108,7 @@ pub async fn report_xlsx_kind_pelengs1(
     info!("[report_xlsx_kind_pelengs1] {}: querying data", Utc::now());
     let mut i = 1;
     let messages: Vec<(i64, Option<(f64, f64)>, InboxMessage)> =
-        crate::rer_importer::reports::report_xlsx_kind_pelengs::get_inbox_messages_report(&user, &env, &req.req).await?;
+        crate::rer_importer::reports::report_xlsx_kind_pelengs::get_inbox_messages_report(&user, env, &req.req).await?;
     info!("[report_xlsx_kind_pelengs1] {}: query done", Utc::now());
     for (_, m_coords, m) in messages.iter() {
         let Some(coords) = m.coords.as_ref() else {
@@ -1123,7 +1117,7 @@ pub async fn report_xlsx_kind_pelengs1(
         if coords.is_empty() {
             continue;
         }
-        let Some((lat, lng)) = m_coords.clone() else {
+        let Some((lat, lng)) = *m_coords else {
             continue;
         };
         let Some(date) = m.date.as_ref() else {
@@ -1146,33 +1140,33 @@ pub async fn report_xlsx_kind_pelengs1(
 
         sheet1.write_number(i, 0, (i - 1) as f64).context(h!())?;
         sheet1
-            .write_string(i, 1, &m.unit.clone().unwrap_or("НВ".to_string()))
+            .write_string(i, 1, m.unit.clone().unwrap_or("НВ".to_string()))
             .context(h!())?;
         sheet1.write_string(i, 2, freq).context(h!())?;
         sheet1
             .write_string(
                 i,
                 3,
-                &format!("{}, {}", &time, &date.format("%d.%m.%y")),
+                format!("{}, {}", &time, &date.format("%d.%m.%y")),
             )
             .context(h!())?;
         sheet1
-            .write_string(i, 4, &m.callsigns.join(", "))
+            .write_string(i, 4, m.callsigns.join(", "))
             .context(h!())?;
         sheet1
-            .write_string(i, 5, &m.location.clone().unwrap_or("".to_string()))
+            .write_string(i, 5, m.location.clone().unwrap_or("".to_string()))
             .context(h!())?;
         sheet1
-            .write_string(i, 6, &format!("{} {}", usk2000.x, usk2000.y))
+            .write_string(i, 6, format!("{} {}", usk2000.x, usk2000.y))
             .context(h!())?;
         sheet1
-            .write_string(i, 7, &format!("{} {}", lat, lng))
+            .write_string(i, 7, format!("{lat} {lng}"))
             .context(h!())?;
         sheet1
             .write_string(
                 i,
                 8,
-                &Mgrs::from_latlon(&LatLon::create(lat, lng).unwrap(), 5)
+                Mgrs::from_latlon(&LatLon::create(lat, lng).unwrap(), 5)
                     .to_string(),
             )
             .context(h!())?;
@@ -1202,7 +1196,7 @@ pub async fn report_xlsx_kind_pelengs(
     let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, &env, &req.req,
+            &login, &logins, env, &req.req,
         )
         .await?;
     let messages: Vec<(i64, InboxMessage)> = messages
@@ -1287,22 +1281,22 @@ pub async fn report_xlsx_kind_pelengs(
             .write_number(i as u32 + 1, 0, i as f64 + 1.0)
             .context(h!())?;
         sheet1
-            .write_string(i as u32 + 1, 1, &format!("{}", date.format("%d.%m")))
+            .write_string(i as u32 + 1, 1, format!("{}", date.format("%d.%m")))
             .context(h!())?;
         sheet1
-            .write_string(i as u32 + 1, 2, &time.clone())
+            .write_string(i as u32 + 1, 2, time.clone())
             .context(h!())?;
         sheet1
-            .write_string(i as u32 + 1, 3, &freq.clone())
+            .write_string(i as u32 + 1, 3, freq.clone())
             .context(h!())?;
         sheet1
-            .write_string(i as u32 + 1, 4, &format!("{}, {}", lat, lon))
+            .write_string(i as u32 + 1, 4, format!("{lat}, {lon}"))
             .context(h!())?;
         sheet1
             .write_string(
                 i as u32 + 1,
                 5,
-                &format!("{} {}", usk2000.x, usk2000.y),
+                format!("{} {}", usk2000.x, usk2000.y),
             )
             .context(h!())?;
     }
@@ -1319,20 +1313,20 @@ fn message_full_text(
 ) -> Result<String, AppError> {
     if datasource.kind == "signal" || datasource.kind == "whatsapp" {
         let extended_form = m_comment.clone().map(|x| x.comment);
-        return Ok(format!(
+        Ok(format!(
             "{}\n\n{}",
             message.body.clone().unwrap_or("".to_string()),
             extended_form.clone().unwrap_or("".to_string())
-        ));
+        ))
     } else if datasource.kind == "api" {
         let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {
             (Some(date), Some(time)) => format!("{} ", date + " " + &time),
-            (Some(date), None) => format!("{} ", date),
-            (None, Some(time)) => format!("{} ", time),
+            (Some(date), None) => format!("{date} "),
+            (None, Some(time)) => format!("{time} "),
             (None, None) => "".to_string(),
         };
         let freq_part = match inbox.freq.clone() {
-            Some(freq) => format!("{} ", freq),
+            Some(freq) => format!("{freq} "),
             None => "".to_string(),
         };
         let unit_part = match inbox.freq {
@@ -1349,16 +1343,16 @@ fn message_full_text(
         };
         let extended_form = m_comment.clone().map(|x| x.comment);
         let comment_part = match extended_form {
-            Some(comment) => format!("\n\nКоментар: {}", comment),
+            Some(comment) => format!("\n\nКоментар: {comment}"),
             None => "".to_string(),
         };
-        return Ok(format!(
+        Ok(format!(
             "{datetime_part}{freq_part}\n{unit_part}{location_part}\n{}{comment_part}",
             message.body.clone().unwrap_or("".to_string()),
-        ));
+        ))
     } else {
-        return Err(
+        Err(
             format!("Unknown datasource kind: {:?}", datasource.kind).into()
-        );
+        )
     }
 }

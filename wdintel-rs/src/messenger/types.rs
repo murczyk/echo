@@ -46,7 +46,7 @@ pub struct GroupEntryF1 {
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     pub group_stats: SignalGroupStats,
-    pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -110,5 +110,7 @@ pub struct GroupUpdateReq {
     pub master_key: String,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    /// Deprecated - use area_of_responsibility_ids instead
     pub area_of_responsibility_id: Option<i64>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
 }

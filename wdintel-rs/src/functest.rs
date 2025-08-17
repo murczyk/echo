@@ -36,6 +36,84 @@ pub mod tests {
             .await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
         // Delete dependent entities first to avoid foreign key constraint violations
+        secret_group_user::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_callsign_bind::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_callsign_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+
+        // Delete entities that depend on sigint_network first
+        sigint_network_activity_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_aor::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_callsign::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_freq_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_freq::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_post::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_unit_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_description::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_settlement::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_signal_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_unit_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        tags_ordering::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        log_users_report_generation::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_peleng::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -64,6 +142,47 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        signal_group_aor::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        comp_freq::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        comp_freq_callsign::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_zone_aor::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_zone_datasource::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        login::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_zone::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        signal_group::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        datasource::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        area_of_responsibility::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+
         Ok(env)
     }
 

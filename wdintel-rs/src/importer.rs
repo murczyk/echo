@@ -69,7 +69,7 @@ async fn download_kmz(
                 }),
                 icon: Some(Icon {
                     href: Some(Href {
-                        body: Some(format!("{icon}")),
+                        body: Some(icon.to_string()),
                     }),
                 }),
             }),
@@ -204,7 +204,7 @@ pub async fn package_up_kmz(
                 }
             }
         }
-        crate::utils::backup_tmp_dir(&tmp_dir2.path())?;
+        crate::utils::backup_tmp_dir(tmp_dir2.path())?;
         let dst_file: PathBuf = tmp_dir2.path().join("operatyvka.kmz");
         debug!("dst_file: {}", dst_file.display());
         let walkdir = WalkDir::new(&base_path);
@@ -289,8 +289,7 @@ pub fn package_up_kmz2(
 }
 
 fn known_to_error(icon: &str) -> bool {
-    let known = vec![
-        "10012500002902020000.png",
+    let known = ["10012500002902020000.png",
         "10012500002902040000.png",
         "10032500002902020000.png",
         "10052500002909000000.png",
@@ -300,7 +299,6 @@ fn known_to_error(icon: &str) -> bool {
         "10062500002909000000.png",
         "10062500002910000000.png",
         "10062510001510000000.png",
-        "10062510002909000000.png",
-    ];
+        "10062510002909000000.png"];
     known.contains(&icon)
 }

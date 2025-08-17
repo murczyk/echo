@@ -74,7 +74,7 @@ pub(crate) async fn load_organism_with_children(
         parent_id: i64,
     ) -> Vec<i64> {
         let mut result = vec![];
-        for (_id, o) in organisms {
+        for o in organisms.values() {
             let Some(actual_parent_id) = &o.parent_id else {
                 continue;
             };
@@ -164,7 +164,7 @@ mod tests {
             id: i64,
             organisms: &BTreeMap<i64, organism::Model>,
         ) {
-            let parents = find_parent_chain(&organisms, id, 10).unwrap();
+            let parents = find_parent_chain(organisms, id, 10).unwrap();
             assert_eq!(expected_parents, parents);
         }
 

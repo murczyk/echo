@@ -4,9 +4,9 @@ use crate::delta::types::GeoJson;
 use crate::entities::*;
 use crate::kml::types::*;
 use crate::location::utils::*;
-use crate::rer_importer::{
-    collect_group_admin_data, collect_group_aors, collect_group_stats,
-};
+use crate::messenger::group::collect_group_stats;
+use crate::rer_importer::collect_group_admin_data;
+use crate::sigint::area_of_responsibility::bl::collect_group_aors;
 use crate::types::*;
 use crate::users;
 use crate::users::*;
@@ -521,7 +521,7 @@ pub async fn summary_table_freq_1(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -537,7 +537,7 @@ pub async fn summary_table_freq_1(
 
     let master_keys = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
-        &user,
+        user,
         &env.config,
     )
     .await?;
@@ -659,7 +659,7 @@ pub async fn summary_table_freq_1(
             .entry(freq.clone())
             .and_modify(|xs| {
                 for unit in row.units.iter() {
-                    if !xs.contains(&unit) && !unit.trim().is_empty() {
+                    if !xs.contains(unit) && !unit.trim().is_empty() {
                         xs.push(unit.clone())
                     }
                 }
@@ -676,13 +676,12 @@ pub async fn summary_table_freq_1(
             .locations
             .iter()
             .flat_map(|r| to_location_list(r).into_iter())
-            .map(|s| String::from(s))
             .collect_vec();
         locations_per_freq
             .entry(freq.clone())
             .and_modify(|xs| {
                 for location in locations.iter() {
-                    if !xs.contains(&location) && !location.trim().is_empty() {
+                    if !xs.contains(location) && !location.trim().is_empty() {
                         xs.push(location.clone())
                     }
                 }
@@ -711,7 +710,7 @@ pub async fn summary_table_freq_1(
         }
         if let (Some(lat), Some(lng)) = (row.lat, row.lng) {
             // println!("> some freq {freq} lat lng: {lat} {lng}");
-            let m_nominatimres_id = row.nominatimres_id.clone();
+            let m_nominatimres_id = row.nominatimres_id;
             let v = LatLngNominatim {
                 lat,
                 lng,
@@ -731,10 +730,10 @@ pub async fn summary_table_freq_1(
             .entry(freq.clone())
             .and_modify(|xs| {
                 if !xs.contains(&nominatimres_id) {
-                    xs.push(nominatimres_id.clone());
+                    xs.push(nominatimres_id);
                 }
             })
-            .or_insert(vec![nominatimres_id.clone()]);
+            .or_insert(vec![nominatimres_id]);
     }
 
     let mut rows = vec![];
@@ -866,10 +865,10 @@ async fn summary_table_xlsx(
             .write_number(row_i, 1, row.count as f64)
             .context(h!())?; // Removed None
         sheet1
-            .write_string(row_i, 2, &row.callsigns.join(", "))
+            .write_string(row_i, 2, row.callsigns.join(", "))
             .context(h!())?; // Removed None
         sheet1
-            .write_string(row_i, 3, &row.units.join(", "))
+            .write_string(row_i, 3, row.units.join(", "))
             .context(h!())?; // Removed None
     }
 
@@ -1036,7 +1035,7 @@ async fn correlated_freqs(
             freq_common_callsigns
                 .entry(freq.clone())
                 .and_modify(|xs| {
-                    if !xs.contains(&callsign) {
+                    if !xs.contains(callsign) {
                         xs.push(callsign.clone())
                     }
                 })
@@ -1340,7 +1339,7 @@ pub async fn saved_filter_rename(
     path: actix_web::web::Path<String>,
 ) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let filter_type = filter_type_form_path(&path.into_inner().as_str())?;
+    let filter_type = filter_type_form_path(path.into_inner().as_str())?;
     let saved_filter = sigint_saved_filter::Entity::find_by_id(req.id)
         .filter(sigint_saved_filter::Column::Login.eq(Some(user.id()?)))
         .filter(sigint_saved_filter::Column::Type.eq(filter_type.clone()))
@@ -1362,7 +1361,7 @@ pub async fn saved_filter_delete(
     path: actix_web::web::Path<String>,
 ) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let filter_type = filter_type_form_path(&path.into_inner().as_str())?;
+    let filter_type = filter_type_form_path(path.into_inner().as_str())?;
     let saved_filter =
         sigint_saved_filter::Entity::find_by_id(req.into_inner())
             .filter(sigint_saved_filter::Column::Login.eq(Some(user.id()?)))
@@ -1399,7 +1398,7 @@ pub async fn bi_new_callsigns(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -1584,7 +1583,7 @@ pub async fn batch_message_comments(
 ) -> Result<Json<MessageComments>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let message_ids: Vec<i64> =
-        req.messages.iter().map(|m| m.message_id.clone()).collect();
+        req.messages.iter().map(|m| m.message_id).collect();
     let comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.is_in(message_ids))
         .order_by_asc(sigint_comment::Column::CreatedAt)
@@ -1817,7 +1816,7 @@ async fn fetch_locations(
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
     let mut locations_map = BTreeMap::new();
-    stats::fetch_locations(&req, &user, &env, master_keys)
+    stats::fetch_locations(req, user, env, master_keys)
         .await
         .context(h!())?
         .into_iter()
@@ -2185,7 +2184,7 @@ async fn collect_group_names(
         if let Some(name) = name {
             resolved_keys.push(master_key.clone());
             let stats = stats.get(&master_key).cloned().unwrap_or_default();
-            let aor = group_aors.get(master_key.as_str()).cloned();
+            let aors = group_aors.get(master_key.as_str()).cloned();
             let group_admin_data =
                 group_admin_data.get(master_key.as_str()).cloned();
             result.push(SignalGroupEntry {
@@ -2194,7 +2193,7 @@ async fn collect_group_names(
                 ignore_operativny,
                 group_stats: stats,
                 admin_data: group_admin_data,
-                area_of_responsibility: aor,
+                areas_of_responsibility: aors,
             });
         }
     }
@@ -2212,14 +2211,14 @@ async fn collect_group_names(
         let stats = stats.get(&master_key).cloned().unwrap_or_default();
         let group_admin_data =
             group_admin_data.get(master_key.as_str()).cloned();
-        let aor = group_aors.get(master_key.as_str()).cloned();
+        let aors = group_aors.get(master_key.as_str()).cloned();
         result.push(SignalGroupEntry {
             master_key,
             name,
             ignore_operativny,
             group_stats: stats,
             admin_data: group_admin_data,
-            area_of_responsibility: aor,
+            areas_of_responsibility: aors,
         });
     }
     Ok(result)

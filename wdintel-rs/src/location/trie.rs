@@ -76,7 +76,7 @@ impl<D: Default + Clone> Trie<D> {
         collector: &String,
         result: &mut Result<D>,
     ) {
-        let current_distance = levenshtein(&collector, &result.query);
+        let current_distance = levenshtein(collector, &result.query);
         if !word.is_empty() {
             let c = word.remove(0);
             prefix.push(c);

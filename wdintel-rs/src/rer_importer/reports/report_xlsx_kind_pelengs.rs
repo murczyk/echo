@@ -19,7 +19,7 @@ pub async fn get_inbox_messages_report(
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
     let login = user.id()?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
 
     #[derive(FromQueryResult)]
     struct Message {
@@ -103,7 +103,7 @@ pub async fn get_inbox_messages_report(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 
-    q = crate::rer_importer::inbox::query::get_order_by(&env, &req, q.clone())
+    q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())
         .await?;
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -172,7 +172,7 @@ pub async fn get_inbox_messages_report(
     for peleng in sigint_pelengs.into_iter().flat_map(|s| s.into_iter()) {
         pelengs_map
             .entry(peleng.source_inbox_item_id)
-            .or_insert(vec![])
+            .or_default()
             .push(peleng);
     }
     info!(
@@ -187,7 +187,7 @@ pub async fn get_inbox_messages_report(
             Some(pelengs) => {
                 let mut result = vec![];
                 for p in pelengs {
-                    let location = build_location(&p).context(h!())?;
+                    let location = build_location(p).context(h!())?;
                     let coordinates = Some(format!("{}, {}", p.lat, p.lng));
                     result.push((location, coordinates, Some((p.lat, p.lng))));
                 }
@@ -285,7 +285,7 @@ fn translate_direction(dir: String) -> anyhow::Result<String> {
             [a, b] => {
                 let prefix = translate_direction(String::from(a))?;
                 let suffix = translate_direction(String::from(b))?;
-                Ok(format!("{}-{}", prefix, suffix))
+                Ok(format!("{prefix}-{suffix}"))
             }
             _ => bail!("failed to parse: {}", dir),
         },

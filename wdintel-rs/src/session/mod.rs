@@ -43,7 +43,7 @@ pub async fn record_new_session(
             let client = match greptime.get().await {
                 Ok(client) => client,
                 Err(e) => {
-                    warn!("Failed to get connection from pool: {:?}", e);
+                    warn!("Failed to get connection from pool: {e:?}");
                     return;
                 }
             };
@@ -54,7 +54,7 @@ pub async fn record_new_session(
             ).await {
                 Ok(stmt) => stmt,
                 Err(e) => {
-                    warn!("Failed to prepare statement: {:?}", e);
+                    warn!("Failed to prepare statement: {e:?}");
                     return;
                 }
             };
@@ -112,7 +112,7 @@ pub async fn record_page_visit(
             let client = match greptime.get().await {
                 Ok(client) => client,
                 Err(e) => {
-                    warn!("Failed to get connection from pool: {:?}", e);
+                    warn!("Failed to get connection from pool: {e:?}");
                     return;
                 }
             };
@@ -123,7 +123,7 @@ pub async fn record_page_visit(
             ).await {
                 Ok(stmt) => stmt,
                 Err(e) => {
-                    warn!("Failed to prepare statement: {:?}", e);
+                    warn!("Failed to prepare statement: {e:?}");
                     return;
                 }
             };
@@ -164,19 +164,19 @@ pub async fn get_all_sessions(
 
     let session_keys = session_ids
         .iter()
-        .map(|s| crate::event_stream::get_sess_key(s.clone()))
+        .map(|s| crate::event_stream::get_sess_key(*s))
         .collect::<Vec<String>>();
 
     if !session_keys.is_empty() {
         let sessions: Vec<Option<RedisSession>> =
             redis.mget(session_keys).await.context(h!())?;
 
-        trace!("sessions: {:?}", sessions);
+        trace!("sessions: {sessions:?}");
         let existing_sessions = sessions
             .into_iter()
-            .flat_map(|s| s)
+            .flatten()
             .collect::<Vec<RedisSession>>();
-        trace!("Existing sessions: {:?}", existing_sessions);
+        trace!("Existing sessions: {existing_sessions:?}");
         // remove ids that exist in SET but have no appropriate key due to expiration by TTL
         let existing_ids_s = existing_sessions
             .iter()
@@ -192,7 +192,7 @@ pub async fn get_all_sessions(
         }
         let orphant_ids: HashSet<_> =
             session_ids.difference(&existing_ids).collect();
-        trace!("sessions, orphant_ids: {:?}", orphant_ids);
+        trace!("sessions, orphant_ids: {orphant_ids:?}");
         if !orphant_ids.is_empty() {
             let orphan_ids_str: Vec<String> =
                 orphant_ids.iter().map(|s| s.to_string()).collect();
@@ -227,7 +227,7 @@ pub async fn add_session(
     let current_datetime = Utc::now().naive_utc();
     let session = RedisSession {
         account_id: account_id.to_string(),
-        session_id: session_id.clone(),
+        session_id,
         created_at: current_datetime,
         heartbeat_at: current_datetime,
     };
@@ -266,7 +266,7 @@ pub async fn get_session_by_id(
     session_id: Uuid,
 ) -> Result<Option<RedisSession>, AppError> {
     let session: Option<RedisSession> = redis
-        .get(crate::event_stream::get_sess_key(session_id.clone()))
+        .get(crate::event_stream::get_sess_key(session_id))
         .await
         .context(h!())?;
     Ok(session)

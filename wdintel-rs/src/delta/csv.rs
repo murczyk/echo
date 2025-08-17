@@ -71,7 +71,7 @@ pub fn csv_to_kmz(
             .map(|x| x.to_string())
             .collect();
         for cor_pair in cors.iter() {
-            let (lat, lng) = extract_lat_lng(&cor_pair)?;
+            let (lat, lng) = extract_lat_lng(cor_pair)?;
             line_points.push(LocationGeometryRsp {
                 type_: "AbsolutePointTypeCustom".to_string(),
                 extension: None,

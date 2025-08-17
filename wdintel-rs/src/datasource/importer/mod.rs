@@ -133,7 +133,7 @@ async fn collect_datasource_data(
             chrono::DateTime::from_timestamp_millis(since_ms)
         {
             let since = datetime.naive_utc();
-            info!("collecting messages since {}", since);
+            info!("collecting messages since {since}");
             messages_q = messages_q
                 .filter(sigint_inbox_item::Column::Datetime.gte(since));
         }
@@ -143,7 +143,7 @@ async fn collect_datasource_data(
         if let Some(datetime) = chrono::DateTime::from_timestamp_millis(till_ms)
         {
             let till = datetime.naive_utc();
-            info!("collecting messages till {}", till);
+            info!("collecting messages till {till}");
             messages_q = messages_q
                 .filter(sigint_inbox_item::Column::Datetime.lte(till));
         }

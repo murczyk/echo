@@ -29,7 +29,7 @@ pub async fn list_datasources(
                 kind: datasource.kind.clone(),
                 display_name: datasource.display_name.clone(),
                 signal_phone: datasource.signal_phone.clone(),
-                enabled: datasource.enabled.clone(),
+                enabled: datasource.enabled,
             },
         ));
     }
@@ -46,7 +46,7 @@ pub async fn datasource_group_list(
     let is_admin = crate::users::has_role(&env.dbx, &user.id()?, "Admin")
         .await
         .is_ok();
-    let datasource_id: i64 = req.into_inner().clone();
+    let datasource_id: i64 = req.into_inner();
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(&env.dbx)
         .await?
@@ -83,8 +83,7 @@ pub async fn datasource_group_list(
             .context(h!())?;
         if res.iter().any(|x| x.is_none()) {
             warn!(
-                "Found null group_master_key list for datasource id={}",
-                datasource_id
+                "Found null group_master_key list for datasource id={datasource_id}"
             );
         }
         return Ok(Json(res.into_iter().flatten().collect()));

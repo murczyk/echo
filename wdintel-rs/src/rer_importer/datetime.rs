@@ -116,7 +116,7 @@ pub fn extract_datetime(body: &str) -> Result<Option<NaiveDateTime>, AppError> {
                 break '_if;
             };
             if res_tz > lnow {
-                res = res - chrono::Duration::days(1);
+                res -= chrono::Duration::days(1);
             }
             return Ok(Some(res));
         }
@@ -175,15 +175,15 @@ fn parse_datetime(
             });
         };
         if res_tz > lnow {
-            res = res - chrono::Duration::days(1);
+            res -= chrono::Duration::days(1);
         }
     }
-    return Ok(res);
+    Ok(res)
 }
 
 /// Parses datetime string like "11 грудня 2023 19:46"
 pub fn parse_delta_csv_dt(s: &str) -> Result<NaiveDateTime, AppError> {
-    println!("s = {}", s);
+    println!("s = {s}");
     let s = s
         .replace("січня", "01")
         .replace("лютого", "02")
@@ -210,7 +210,7 @@ pub fn parse_delta_csv_dt(s: &str) -> Result<NaiveDateTime, AppError> {
         .replace("october", "10")
         .replace("november", "11")
         .replace("december", "12");
-    println!("s = {}", s);
+    println!("s = {s}");
     Ok(NaiveDateTime::parse_from_str(&s, "%d %m %Y %H:%M")?)
 }
 
@@ -338,7 +338,7 @@ mod tests {
         let res = extract_datetime(input).unwrap();
         let tz = crate::config::get_tz();
         let now = Local::now().with_timezone(&tz);
-        let dt = now.clone();
+        let dt = now;
         let dt = if now.hour() <= 20 {
             if now.hour() == 20 && now.minute() > 9 {
                 dt
@@ -476,7 +476,7 @@ mod tests {
         let res = extract_datetime(body).unwrap();
         let tz = crate::config::get_tz();
         let lnow = Local::now().with_timezone(&tz);
-        let dt = lnow.clone();
+        let dt = lnow;
         let dt = if lnow.hour() <= 20 {
             if lnow.hour() == 20 && lnow.minute() > 9 {
                 dt

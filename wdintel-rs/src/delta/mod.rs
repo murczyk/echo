@@ -22,7 +22,7 @@ pub mod csv;
 pub mod login;
 pub mod types;
 
-const TEMPORARY_KML_FILE_EXTENSION: &'static str = "kml.tmp";
+const TEMPORARY_KML_FILE_EXTENSION: &str = "kml.tmp";
 
 pub fn oneoff_kmz_to_geojson(
     ps: &crate::OneoffKmzToGeojsonPs,
@@ -341,14 +341,14 @@ async fn radios_convert(
 
     let dbx2 = env.dbx.clone();
     let config = env.config.clone();
-    tokio::spawn((async move || {
+    tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let config2 = config;
         let data_file2 = data_file;
         let dbx3 = dbx2;
         radios_convert_go(&config2, &data_file2, Some(bgtask), &dbx3).await?;
         Ok::<(), AppError>(())
-    })());
+    });
 
     Ok(Json(bgtask_id))
 }
@@ -378,7 +378,7 @@ pub async fn radios_convert_go2(
     bgtask_log(m_bgtask_id, "Starting radios_convert_go2", dbx).await?;
 
     crate::kml::oneoff_radio_per_day_per_abonent(
-        &config,
+        config,
         &crate::OneoffRadioPerDayPerAbonentPs {
             input: data_file.to_path_buf().to_string_lossy().to_string(),
         },
@@ -445,7 +445,7 @@ pub async fn radios_download_result_csv(
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
     let page_part = match req.csv_page {
         None => "".to_string(),
-        Some(page) => format!("-page-{}", page),
+        Some(page) => format!("-page-{page}"),
     };
     let res_file = PathBuf::from(env.config.storage_dir.clone())
         .join(format!("radios-{}-radio{page_part}.csv", req.bgtask_id));
@@ -638,7 +638,7 @@ pub async fn import_map(
             )
             .await?;
             crate::zip::unzip(&kmz_file)?;
-            bgtask_log(Some(bgid), &format!("> unzip done"), &db).await?;
+            bgtask_log(Some(bgid), "> unzip done", &db).await?;
             crate::utils::backup_tmp_dir(tmp_dir.path())?;
             let mut doc_kml = tmp_dir
                 .path()
@@ -649,7 +649,7 @@ pub async fn import_map(
             }
             if !doc_kml.exists() {
                 let entries: Vec<std::fs::DirEntry> =
-                    std::fs::read_dir(&tmp_dir.path())?
+                    std::fs::read_dir(tmp_dir.path())?
                         .filter_map(|x| x.ok())
                         .collect();
                 for entry in entries {
@@ -669,7 +669,7 @@ pub async fn import_map(
             )
             .await?;
 
-            let geojson_name = format!("enemy-units-{}.geojson", id);
+            let geojson_name = format!("enemy-units-{id}.geojson");
             let raw_kmz_output = PathBuf::from(config.storage_dir.clone())
                 .join(geojson_name.clone())
                 .with_extension("kmz");
@@ -721,7 +721,7 @@ pub async fn import_map(
 
             finish_bgtask(Some(bgid), &db, &res).await?;
             Ok::<(), AppError>(())
-        })(dbx.clone(), bgtask_id.clone(), convert.id, config);
+        })(dbx.clone(), bgtask_id, convert.id, config);
 
         println!("> task finished");
         let mut convert_active = convert.into_active_model();
@@ -764,7 +764,7 @@ fn copy_kmz_contents(
             collector.append(paths);
         } else {
             let from = entry.path();
-            let extension = from.extension().map(|e| e.to_str()).flatten();
+            let extension = from.extension().and_then(|e| e.to_str());
             match extension {
                 Some("geojson") => {} //ignore
                 Some("kmz") => {}     //ignore
@@ -872,7 +872,7 @@ pub async fn kmz_to_geojson(
     if !doc_kml.exists() {
         // read the first kml file in the directory
         let entries: Vec<std::fs::DirEntry> =
-            std::fs::read_dir(&tmp_dir.path())?
+            std::fs::read_dir(tmp_dir.path())?
                 .filter_map(|x| x.ok())
                 .collect();
         for entry in entries {
@@ -1010,13 +1010,13 @@ pub fn delta_objs_to_kmz(
             let m_objd = obj_detail.get(&obj.id);
             // let objd: &ObjectRsp = objd;
             let mut description = m_objd
-                .map(|x| x.comments.clone().unwrap_or(vec![]).join("<br>\n"))
+                .map(|x| x.comments.clone().unwrap_or_default().join("<br>\n"))
                 .unwrap_or("".to_string());
             for img in obj_attachments.get(&obj.id).unwrap_or(&vec![]).iter() {
                 description += &format!("<img src=\"{img}\" width=600><br>\n");
             }
             // if it's a placemark
-            if let (Some(ref lng), Some(ref lat)) = (
+            if let (Some(lng), Some(lat)) = (
                 obj.geometry.absolute_point_longitude_coordinate.as_ref(),
                 obj.geometry.absolute_point_latitude_coordinate.as_ref(),
             ) {
@@ -1176,7 +1176,7 @@ pub fn delta_objs_to_kmz(
 fn get_kmz_line_styles() -> Vec<Style> {
     let mut styles = vec![];
     styles.push(Style {
-        id: Some(format!("normal-line-friendly")),
+        id: Some("normal-line-friendly".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1191,7 +1191,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("normal-line-neutral")),
+        id: Some("normal-line-neutral".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1206,7 +1206,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("normal-line-unknown")),
+        id: Some("normal-line-unknown".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1221,7 +1221,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("normal-line-hostile")),
+        id: Some("normal-line-hostile".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1236,7 +1236,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("highlight-line-friendly")),
+        id: Some("highlight-line-friendly".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1251,7 +1251,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("highlight-line-neutral")),
+        id: Some("highlight-line-neutral".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1266,7 +1266,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("highlight-line-unknown")),
+        id: Some("highlight-line-unknown".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1281,7 +1281,7 @@ fn get_kmz_line_styles() -> Vec<Style> {
         poly_style: None,
     });
     styles.push(Style {
-        id: Some(format!("highlight-line-hostile")),
+        id: Some("highlight-line-hostile".to_string()),
         icon_style: None,
         label_style: None,
         balloon_style: None,
@@ -1295,20 +1295,20 @@ fn get_kmz_line_styles() -> Vec<Style> {
         }),
         poly_style: None,
     });
-    return styles;
+    styles
 }
 
 fn get_kmz_line_style_maps() -> Vec<StyleMap> {
     let mut style_maps = vec![];
     style_maps.push(StyleMap {
-        id: Some(format!("map-line-friendly")),
+        id: Some("map-line-friendly".to_string()),
         pairs: vec![
             Pair {
                 key: Key {
                     body: "normal".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#normal-line-friendly"),
+                    body: "#normal-line-friendly".to_string(),
                 },
             },
             Pair {
@@ -1316,20 +1316,20 @@ fn get_kmz_line_style_maps() -> Vec<StyleMap> {
                     body: "highlight".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#highlight-line-friendly"),
+                    body: "#highlight-line-friendly".to_string(),
                 },
             },
         ],
     });
     style_maps.push(StyleMap {
-        id: Some(format!("map-line-neutral")),
+        id: Some("map-line-neutral".to_string()),
         pairs: vec![
             Pair {
                 key: Key {
                     body: "normal".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#normal-line-neutral"),
+                    body: "#normal-line-neutral".to_string(),
                 },
             },
             Pair {
@@ -1337,20 +1337,20 @@ fn get_kmz_line_style_maps() -> Vec<StyleMap> {
                     body: "highlight".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#highlight-line-neutral"),
+                    body: "#highlight-line-neutral".to_string(),
                 },
             },
         ],
     });
     style_maps.push(StyleMap {
-        id: Some(format!("map-line-unknown")),
+        id: Some("map-line-unknown".to_string()),
         pairs: vec![
             Pair {
                 key: Key {
                     body: "normal".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#normal-line-unknown"),
+                    body: "#normal-line-unknown".to_string(),
                 },
             },
             Pair {
@@ -1358,20 +1358,20 @@ fn get_kmz_line_style_maps() -> Vec<StyleMap> {
                     body: "highlight".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#highlight-line-unknown"),
+                    body: "#highlight-line-unknown".to_string(),
                 },
             },
         ],
     });
     style_maps.push(StyleMap {
-        id: Some(format!("map-line-hostile")),
+        id: Some("map-line-hostile".to_string()),
         pairs: vec![
             Pair {
                 key: Key {
                     body: "normal".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#normal-line-hostile"),
+                    body: "#normal-line-hostile".to_string(),
                 },
             },
             Pair {
@@ -1379,12 +1379,12 @@ fn get_kmz_line_style_maps() -> Vec<StyleMap> {
                     body: "highlight".to_string(),
                 },
                 style_url: StyleUrl {
-                    body: format!("#highlight-line-hostile"),
+                    body: "#highlight-line-hostile".to_string(),
                 },
             },
         ],
     });
-    return style_maps;
+    style_maps
 }
 
 #[derive(
@@ -1450,6 +1450,6 @@ mod tests {
         // parse data/kml_example_01.kml
         let input = std::fs::read_to_string("data/kml_example_01.kml").unwrap();
         let kml: Kml = quick_xml::de::from_str(&input).unwrap();
-        println!("> kml: {:?}", kml);
+        println!("> kml: {kml:?}");
     }
 }

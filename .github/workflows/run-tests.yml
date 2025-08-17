@@ -5,14 +5,68 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  test:
-    # Only run this job if the repository is echoua/echo
+  frontend-tests:
     if: github.repository == 'echoua/echo'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
 
-      - name: Run tests
-        run: bash deploy/run_tests.sh
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: wdintel-web/node_modules
+          key: npm-${{ runner.os }}-${{ hashFiles('wdintel-web/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
+
+      - name: Run frontend tests
+        run: just test-fe
+
+  backend-tests:
+    if: github.repository == 'echoua/echo'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: wdintel-rs/wdintel-py/.venv
+          key: python-${{ runner.os }}-${{ hashFiles('wdintel-rs/wdintel-py/requirements.txt') }}
+          restore-keys: |
+            python-${{ runner.os }}-
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: wdintel-rs/target/
+          key: cargo-build-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
+          restore-keys: |
+            cargo-build-${{ runner.os }}-
+
+      - name: Cache Spacy models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/spacy
+          key: spacy-models-${{ runner.os }}
+          restore-keys: |
+            spacy-models-${{ runner.os }}
+
+      - name: Run backend tests
+        env:
+          GITHUB_ACTIONS: true
+        run: just ci-test-be

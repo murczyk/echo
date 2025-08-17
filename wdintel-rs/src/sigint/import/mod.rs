@@ -827,7 +827,7 @@ where
     if !is_ok && dry_run {
         warn!("Following import warnings occurred:");
         for err in import_warnings {
-            warn!("- {}", err);
+            warn!("- {err}");
         }
     };
 
@@ -930,9 +930,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1064,9 +1062,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1134,9 +1130,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1185,7 +1179,7 @@ where
 
     for new_rec in new_records {
         // patch merged_to attribute
-        let Some(merged_into) = new_rec.merged_to.clone() else {
+        let Some(merged_into) = new_rec.merged_to else {
             continue;
         };
         let mut model = new_rec.into_active_model();
@@ -1218,9 +1212,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1310,9 +1302,7 @@ where
         };
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1394,8 +1384,7 @@ where
                     modulation_ids_map.get(&modulation_id).cloned()
                 else {
                     import_warnings.push(format!(
-                        "modulation with id {} not found",
-                        modulation_id
+                        "modulation with id {modulation_id} not found"
                     ));
                     continue;
                 };
@@ -1404,9 +1393,7 @@ where
         };
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id as i64)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1482,9 +1469,7 @@ where
         };
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1565,9 +1550,7 @@ where
         };
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1643,9 +1626,7 @@ where
         };
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1729,9 +1710,7 @@ where
         };
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&(id)))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
@@ -1792,9 +1771,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&id))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
         }
@@ -1863,9 +1840,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&id))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
         }
@@ -1934,9 +1909,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&id))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
         }
@@ -2004,9 +1977,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&id))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
         }
@@ -2075,9 +2046,7 @@ where
     for rec in recs {
         let id = rec
             .mothership_id
-            .clone()
-            .map(|id| existing_record_ids.get(&id))
-            .flatten();
+            .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
         }

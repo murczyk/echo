@@ -51,7 +51,7 @@ pub async fn login(
             Ok((access_token, refresh_token))
         }
         Err(RequestTokenError::Parse(err, data)) => {
-            let data = from_utf8(&*data).context(h!())?;
+            let data = from_utf8(&data).context(h!())?;
             error!(
                 "failed to obtain token: {}; received: {} {}",
                 err,
@@ -79,7 +79,7 @@ pub async fn build_auth_url(
     let res = String::from(url_builder.url().0.as_str());
     let claims = urlencoding::encode(&api_config.claims_json);
     let res = format!("{res}&claims={claims}");
-    debug!("auth url: {}", res);
+    debug!("auth url: {res}");
     Ok(res)
 }
 
@@ -104,7 +104,7 @@ pub fn build_clients(
     } else {
         config.redirect_url.clone()
     };
-    debug!("redirect url: {}", redirect_url);
+    debug!("redirect url: {redirect_url}");
     let client: Oauth2Cli = BasicClient::new(client_id)
         .set_client_secret(client_secret)
         .set_auth_uri(auth_url)
@@ -114,7 +114,7 @@ pub fn build_clients(
         );
 
     let referer_url = format!("https://{}/login", main_config.public_host);
-    debug!("referer url: {}", referer_url);
+    debug!("referer url: {referer_url}");
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("Referer", referer_url.parse().context(h!())?);
     // headers.insert("Referer", current_url_str.parse().unwrap());

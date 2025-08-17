@@ -408,7 +408,7 @@ fn mk_conn_string(config: &Config) -> String {
         .pg_host
         .clone()
         .unwrap_or(DEFAULT_PG_HOST.to_string());
-    let pg_port = config.pg_port.clone().unwrap_or(DEFAULT_PG_PORT);
+    let pg_port = config.pg_port.unwrap_or(DEFAULT_PG_PORT);
     let pg_user = config
         .pg_user
         .clone()
@@ -422,8 +422,7 @@ fn mk_conn_string(config: &Config) -> String {
         .clone()
         .unwrap_or(DEFAULT_PG_DBNAME.to_string());
     let conn_string = format!(
-        "postgresql://{}:{}@{}:{}/{}",
-        pg_user, pg_password, pg_host, pg_port, pg_dbname,
+        "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
     );
     conn_string
 }
@@ -437,7 +436,7 @@ pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {
         Some(port) => *port,
         None => REDIS_PORT,
     };
-    let redis_url = format!("redis://{}:{}/", host, port);
+    let redis_url = format!("redis://{host}:{port}/");
     Ok(redis_url)
 }
 
@@ -479,7 +478,8 @@ async fn main() -> Result<(), AppError> {
 
     match args.action {
         Cmd::Server(ps) => {
-            Ok(crate::server::main_server(mode, ps).await.unwrap())
+            let _: () = crate::server::main_server(mode, ps).await.unwrap();
+            Ok(())
         }
         Cmd::OneoffEnsureTagsOrdering => {
             crate::tags::ordering::oneoff_ensure_tags_ordering(mode)
@@ -528,59 +528,84 @@ async fn main() -> Result<(), AppError> {
             let _ = crate::delta::csv::csv_to_kmz(mode, &ps).unwrap();
             Ok(())
         }
-        Cmd::OneoffReprocessCallsignTokens(ps) => Ok(
+        Cmd::OneoffReprocessCallsignTokens(ps) => {
             crate::rer_importer::callsigns::oneoff_reprocess_callsign_tokens(
                 mode, &ps,
             )
-            .unwrap(),
-        ),
+            .unwrap();
+            Ok(
+                (),
+            )
+        },
         Cmd::OneoffReprocessCallsigns(ps) => {
-            Ok(crate::rer_importer::callsigns::oneoff_reprocess_callsigns(
+            crate::rer_importer::callsigns::oneoff_reprocess_callsigns(
                 mode, &ps,
             )
-            .unwrap())
+            .unwrap();
+            Ok(())
         }
         Cmd::OneoffGenDatasetCallsigns => {
-            Ok(crate::ml::oneoff_gen_dataset_callsigns(mode).unwrap())
+            crate::ml::oneoff_gen_dataset_callsigns(mode).unwrap();
+            Ok(())
         }
         Cmd::OneoffNominalizeFreq => {
-            Ok(crate::rer_importer::oneoff_nominalize_freq(mode).unwrap())
+            crate::rer_importer::oneoff_nominalize_freq(mode).unwrap();
+            Ok(())
         }
         Cmd::OneoffRoundFreq => {
-            Ok(crate::rer_importer::oneoff_round_freq(mode).unwrap())
+            crate::rer_importer::oneoff_round_freq(mode).unwrap();
+            Ok(())
         }
         Cmd::OneoffRegisterUser(ps) => {
-            Ok(crate::users::oneoff_register_user(mode, &ps).unwrap())
+            crate::users::oneoff_register_user(mode, &ps).unwrap();
+            Ok(())
         }
         Cmd::OneoffRegisterDeltaUser(ps) => {
-            Ok(crate::users::oneoff_register_delta_user(mode, &ps).unwrap())
+            crate::users::oneoff_register_delta_user(mode, &ps).unwrap();
+            Ok(())
         }
-        Cmd::OneoffRerCsvImport(ps) => Ok(
+        Cmd::OneoffRerCsvImport(ps) => {
             crate::rer_importer::import_csv::oneoff_rer_csv_import(mode, &ps)
-                .unwrap(),
-        ),
-        Cmd::OneoffFillCompFreq(ps) => Ok(
+            .unwrap();
+            Ok(
+                (),
+            )
+        },
+        Cmd::OneoffFillCompFreq(ps) => {
             crate::rer_importer::reports::oneoff_fill_comp_freq(mode, &ps)
-                .unwrap(),
-        ),
+            .unwrap();
+            Ok(
+                (),
+            )
+        },
         Cmd::OneoffBatchUskToWgs(ps) => {
-            Ok(oneoff::oneoff_batch_usk_to_wgs(mode, &ps).unwrap())
+            oneoff::oneoff_batch_usk_to_wgs(mode, &ps).unwrap();
+            Ok(())
         }
         Cmd::ExportUnit(ps) => {
-            Ok(crate::rer_importer::unit::export_unit(mode, &ps).unwrap())
+            crate::rer_importer::unit::export_unit(mode, &ps).unwrap();
+            Ok(())
         }
         Cmd::ImportUnit(ps) => {
-            Ok(crate::rer_importer::unit::import_unit(mode, &ps).unwrap())
+            crate::rer_importer::unit::import_unit(mode, &ps).unwrap();
+            Ok(())
         }
-        Cmd::OneoffMergeAllNetworks => Ok(
+        Cmd::OneoffMergeAllNetworks => {
             crate::sigint::network::oneoff_merge_all_possible_networks(mode)
-                .unwrap(),
-        ),
+            .unwrap();
+            Ok(
+                (),
+            )
+        },
         Cmd::OneoffMergeTwoNetworks(ps) => {
-            Ok(crate::sigint::network::oneoff_merge_two_networks(mode, &ps)
-                .unwrap())
+            crate::sigint::network::oneoff_merge_two_networks(mode, &ps)
+            .unwrap();
+            Ok(())
         }
-        Cmd::OneoffInstall(ps) => Ok(crate::install::mount_tmp(&ps).unwrap()),
+        Cmd::OneoffInstall(ps) => {
+            crate::install::mount_tmp(&ps).unwrap();
+            Ok(())
+        },
         Cmd::OneoffReprocessUnitsSearchIndex => {
             crate::sigint::unit::oneoff_reprocess_units_search_index(mode)
         }

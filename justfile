@@ -55,7 +55,7 @@ dev-back-sudo:
 dev-py:
     #!/bin/bash
     set -euxo pipefail
-    echo "~/Downloads/venv doesn't exist"
+    echo "Setting up Python environment..."
     # check if wdintel-rs/wdintel-py/.venv doesn't exist and create it
     if ! test -d "wdintel-rs/wdintel-py/.venv"; then
         echo "Creating wdintel-rs/wdintel-py/.venv"
@@ -69,8 +69,26 @@ dev-py:
         done
     fi
     source wdintel-rs/wdintel-py/.venv/bin/activate
-    pip install -r wdintel-rs/wdintel-py/requirements.txt
-    python3 -m spacy download ru_core_news_md
+
+    # Check if requirements are already installed by comparing timestamps
+    REQUIREMENTS_FILE="wdintel-rs/wdintel-py/requirements.txt"
+    INSTALLED_MARKER="wdintel-rs/wdintel-py/.venv/.requirements_installed"
+
+    if [ ! -f "$INSTALLED_MARKER" ] || [ "$REQUIREMENTS_FILE" -nt "$INSTALLED_MARKER" ]; then
+        echo "Installing Python dependencies..."
+        pip install -r "$REQUIREMENTS_FILE"
+        touch "$INSTALLED_MARKER"
+    else
+        echo "Python dependencies already up to date, skipping installation"
+    fi
+
+    # Check if spacy model is already downloaded
+    if ! python3 -c "import spacy; spacy.load('ru_core_news_md')" 2>/dev/null; then
+        echo "Downloading spacy model..."
+        python3 -m spacy download ru_core_news_md
+    else
+        echo "Spacy model already downloaded, skipping"
+    fi
 
     FLASK="$PWD/wdintel-rs/wdintel-py/.venv/bin/flask"
     STORAGE="$HOME/Downloads/storage"
@@ -92,16 +110,59 @@ gen-elm:
     elm-format --yes wdintel-web/src/Bindings.elm
 
 test-fe:
-    (cd wdintel-web && npm ci && npx elm-land build && elm-test-rs)
+    #!/bin/bash
+    set -euxo pipefail
+    cd wdintel-web
 
-# cargo install cargo-nextest
+    # Check if node_modules exists and package-lock.json hasn't changed
+    if [ ! -d "node_modules" ] || [ "package-lock.json" -nt "node_modules/.npm_installed" ]; then
+        echo "Installing npm dependencies..."
+        npm ci
+        touch "node_modules/.npm_installed"
+    else
+        echo "npm dependencies already up to date, skipping installation"
+    fi
+
+    npx elm-land build && elm-test-rs
+
 test-be:
     #!/bin/bash
     set -euxo pipefail
-    # (cd wdintel-rs && cargo test)
-    (cd wdintel-rs && cargo nextest run)
+    cd wdintel-rs
+
+    # Use incremental compilation for faster builds
+    export CARGO_INCREMENTAL=1
+    export RUSTC_WRAPPER=""
+
+    # Check if we should use cached build
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        echo "Running Rust tests in CI with optimizations..."
+        cargo test --release --locked
+    else
+        echo "Running Rust tests locally..."
+        cargo test --release
+    fi
 
 test: test-fe test-be
+
+# CI commands
+ci-setup-cache clean="false":
+    bash deploy/setup_ci_cache.sh {{clean}}
+
+ci-save-cache clean="false":
+    bash deploy/save_ci_cache.sh {{clean}}
+
+ci-setup-cache-frontend:
+    bash deploy/setup_ci_cache_frontend.sh
+
+ci-save-cache-frontend:
+    bash deploy/save_ci_cache_frontend.sh
+
+ci-test-be:
+    bash deploy/run_backend_tests.sh
+
+clean-deps:
+    bash deploy/clean_deps.sh
 
 lint:
     ( cd wdintel-rs && cargo clippy)

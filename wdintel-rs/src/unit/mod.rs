@@ -38,7 +38,7 @@ where
 pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
     units_list
         .into_iter()
-        .reduce(|a, b| format!("{}, {}", a, b))
+        .reduce(|a, b| format!("{a}, {b}"))
 }
 
 async fn parse_units<'a, 'async_trait, C>(
@@ -63,13 +63,11 @@ where
     let mut divisions = collect_divisions(text, dbx).await.context(h!())?;
     let mut armies = collect_armies(text, dbx).await.context(h!())?;
 
-    let mut size = vec![
-        companies.len(),
+    let mut size = [companies.len(),
         battalions.len(),
         regiments.len(),
         armies.len(),
-        divisions.len(),
-    ]
+        divisions.len()]
     .iter()
     .max()
     .cloned()
@@ -77,7 +75,7 @@ where
 
     let mut units_info = BTreeMap::new();
     while size > 0 {
-        size = size - 1;
+        size -= 1;
         let mut collector = BTreeMap::new();
         if let Some(value) = companies.pop() {
             collector.insert(value, UnitType::COMPANY);
@@ -122,8 +120,8 @@ fn join_results(
                                 .get(&value0)
                                 .cloned()
                                 .filter(|t| {
-                                    (t.clone() as i32)
-                                        == unit_type0.clone() as i32
+                                    (*t as i32)
+                                        == unit_type0 as i32
                                 })
                                 .is_some()
                         },
@@ -151,7 +149,7 @@ where
     let companies_re =
         COMPANIES_RE.get_or_init(|| regex_from_data(data)).clone();
     let mut companies = vec![];
-    for cap in companies_re.captures_iter(&*text) {
+    for cap in companies_re.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             companies.push(name.as_str().to_string());
         }
@@ -173,7 +171,7 @@ where
     let battalions_re =
         BATTALIONS_RE.get_or_init(|| regex_from_data(data)).clone();
     let mut battalions = vec![];
-    for cap in battalions_re.captures_iter(&*text) {
+    for cap in battalions_re.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             battalions.push(name.as_str().to_string());
         }
@@ -194,7 +192,7 @@ where
     };
     let armies_re = ARMIES_RE.get_or_init(|| regex_from_data(data)).clone();
     let mut armies = vec![];
-    for cap in armies_re.captures_iter(&*text) {
+    for cap in armies_re.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             armies.push(name.as_str().to_string());
         }
@@ -216,7 +214,7 @@ where
     let divisions_re =
         DIVISIONS_RE.get_or_init(|| regex_from_data(data)).clone();
     let mut divisions = vec![];
-    for cap in divisions_re.captures_iter(&*text) {
+    for cap in divisions_re.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             divisions.push(name.as_str().to_string());
         }
@@ -238,7 +236,7 @@ where
     let regiments_re =
         REGIMENTS_RE.get_or_init(|| regex_from_data(data)).clone();
     let mut regiments = vec![];
-    for cap in regiments_re.captures_iter(&*text) {
+    for cap in regiments_re.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             regiments.push(name.as_str().to_string());
         }
@@ -260,7 +258,7 @@ where
     let names_re = NAMES_RE.get_or_init(|| regex_from_data(unit_names)).clone();
 
     let mut units_info = vec![];
-    for cap in names_re.captures_iter(&*text) {
+    for cap in names_re.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             units_info.push(name.as_str().to_string());
         }
@@ -282,7 +280,7 @@ pub fn parse_library_unit(text: &String) -> Vec<String> {
     let mut result = vec![];
     let mut last_unit_type: Option<UnitType> = None;
     for info in units_info {
-        let init_new = if let Some(unit_type) = info.unit_type.clone() {
+        let init_new = if let Some(unit_type) = info.unit_type {
             match last_unit_type {
                 Some(last) => unit_type <= last,
                 None => false,
@@ -318,8 +316,8 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
         .build()
         .expect("Invalid Regex");
         static ref UNIT_STANDALONE_RE: Regex = RegexBuilder::new(
-            &*r#"\b(?<name>$s1)\b"#
-                .replace("$s1", &*list_standalone().join("|"))
+            &r#"\b(?<name>$s1)\b"#
+                .replace("$s1", &list_standalone().join("|"))
         )
         .case_insensitive(true)
         .build()
@@ -333,7 +331,7 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
 
     let mut units_info = vec![];
 
-    for cap in UNIT_STANDALONE_RE.captures_iter(&*text) {
+    for cap in UNIT_STANDALONE_RE.captures_iter(text) {
         if let Some(name) = cap.name("name") {
             let idx = name.clone().start();
             let name = name.as_str().to_string();
@@ -348,7 +346,7 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
         }
     }
 
-    for cap in UNIT_RE.captures_iter(&*text) {
+    for cap in UNIT_RE.captures_iter(text) {
         if let (Some(number), Some(name)) =
             (cap.name("number"), cap.name("name"))
         {
@@ -373,7 +371,7 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
                 if list_divisions().contains(&cropped_name) {
                     unit_type = Some(UnitType::DIVISION);
                 }
-                if let Some(_) = unit_type {
+                if unit_type.is_some() {
                     units_info.push(UnitInfo {
                         idx,
                         unit_type,
@@ -408,8 +406,8 @@ fn crop_prefix(name: &String, regex: &Regex) -> String {
 }
 
 fn regex_from_data(data: Vec<String>) -> Regex {
-    let expression = "^(?<name>$s)".replace("$s", &*data.join("|"));
-    RegexBuilder::new(&*expression)
+    let expression = "^(?<name>$s)".replace("$s", &data.join("|"));
+    RegexBuilder::new(&expression)
         .case_insensitive(true)
         .build()
         .expect("Invalid Regex")

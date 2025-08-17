@@ -42,11 +42,11 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
         .map(|cap| {
             let value = cap[1].to_string();
             if !value.starts_with('%') && !value.ends_with('%') {
-                format!("%{}%", value)
+                format!("%{value}%")
             } else if !value.starts_with('%') {
-                format!("%{}", value)
+                format!("%{value}")
             } else if !value.ends_with('%') {
-                format!("{}%", value)
+                format!("{value}%")
             } else {
                 value
             }
@@ -62,11 +62,11 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
         .map(|cap| {
             let value = cap[1].to_string();
             if !value.starts_with('%') && !value.ends_with('%') {
-                format!("%{}%", value)
+                format!("%{value}%")
             } else if !value.starts_with('%') {
-                format!("%{}", value)
+                format!("%{value}")
             } else if !value.ends_with('%') {
-                format!("{}%", value)
+                format!("{value}%")
             } else {
                 value
             }

@@ -32,7 +32,7 @@ async fn get_inbox_messages_report(
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMessage>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let login = user.id().context(h!())?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
@@ -120,7 +120,7 @@ async fn get_inbox_messages_report(
                 }),
         )
     }
-    q = crate::rer_importer::inbox::query::get_order_by(&env, &req, q.clone())
+    q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())
         .await?;
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -324,7 +324,7 @@ pub async fn report_xlsx_kind_interception(
     };
 
     let mut i = 1;
-    for m in get_inbox_messages_report(user, &env, &req.req)
+    for m in get_inbox_messages_report(user, env, &req.req)
         .await
         .context(h!())?
     {
@@ -341,12 +341,12 @@ pub async fn report_xlsx_kind_interception(
 
         // Write data using rust_xlsxwriter
         sheet1
-            .write_string(i, 0, &format!("{}", &date.format("%m/%d/%Y")))
+            .write_string(i, 0, format!("{}", &date.format("%m/%d/%Y")))
             .context(h!())?;
-        sheet1.write_string(i, 1, &time.to_string()).context(h!())?;
+        sheet1.write_string(i, 1, time.to_string()).context(h!())?;
         sheet1.write_string(i, 2, &freq).context(h!())?;
         sheet1
-            .write_string(i, 3, &m.unit.clone().unwrap_or("".to_string()))
+            .write_string(i, 3, m.unit.clone().unwrap_or("".to_string()))
             .context(h!())?;
 
         let (from, to) = process_callsigns(
@@ -355,24 +355,24 @@ pub async fn report_xlsx_kind_interception(
                 .unwrap_or(json!([]))
                 .as_array()
                 .unwrap_or(&vec![])
-                .into_iter()
+                .iter()
                 .map(|x| x.as_str().unwrap_or("").to_string())
                 .collect::<Vec<String>>(),
         );
         sheet1
-            .write_string(i, 4, &from.to_uppercase())
+            .write_string(i, 4, from.to_uppercase())
             .context(h!())?;
         sheet1
-            .write_string(i, 5, &to.to_uppercase())
+            .write_string(i, 5, to.to_uppercase())
             .context(h!())?;
         sheet1
-            .write_string(i, 6, &m.body.clone().unwrap_or("".to_string()))
+            .write_string(i, 6, m.body.clone().unwrap_or("".to_string()))
             .context(h!())?;
         sheet1
-            .write_string(i, 7, &m.comment.clone().unwrap_or("".to_string()))
+            .write_string(i, 7, m.comment.clone().unwrap_or("".to_string()))
             .context(h!())?;
         sheet1
-            .write_string(i, 8, &m.coords.clone().unwrap_or("".to_string()))
+            .write_string(i, 8, m.coords.clone().unwrap_or("".to_string()))
             .context(h!())?;
 
         let mes_tags = m
@@ -381,14 +381,14 @@ pub async fn report_xlsx_kind_interception(
             .unwrap_or(json!([]))
             .as_array()
             .unwrap_or(&vec![])
-            .into_iter()
+            .iter()
             .filter_map(|x| x.as_i64())
             .filter_map(|x| all_tags.get(&x))
             .map(|s| s.to_string())
             .join(",");
         sheet1.write_string(i, 9, &mes_tags).context(h!())?;
         sheet1
-            .write_string(i, 10, m.important.clone().map_or("", |_| "Так"))
+            .write_string(i, 10, m.important.map_or("", |_| "Так"))
             .context(h!())?;
         i += 1;
     }

@@ -48,7 +48,7 @@ pub async fn find_known_callsigns(
     body: &str,
 ) -> Result<Vec<CNCallsign>, AppError> {
     let body_orig = body;
-    let res = extract_callsigns(&body)?;
+    let res = extract_callsigns(body)?;
     // let mut body = body.to_string();
     // let first_line: &str = body.lines().nth(0).unwrap_or("");
     // let m_freq = crate::rer_importer::frequency::extract_freq(first_line)?;
@@ -113,7 +113,7 @@ pub async fn find_known_callsigns(
 
     // re-highlight to capture more in body
     let callsigns: Vec<String> = res.iter().map(|x| x.etalon.clone()).collect();
-    let res = highlight_callsigns(rq, &body_orig, &callsigns).await?;
+    let res = highlight_callsigns(rq, body_orig, &callsigns).await?;
     let res = crate::utils::uniq_via_btreeset(&res);
     Ok(res)
 }
@@ -148,7 +148,7 @@ pub async fn highlight_callsigns(
     callsigns: &Vec<String>,
 ) -> Result<Vec<CNCallsign>, AppError> {
     let mut res = vec![];
-    let tokens = crate::nlp::tokenize_words(rq, &body).await?;
+    let tokens = crate::nlp::tokenize_words(rq, body).await?;
     // println!("> tokens: {tokens:?}");
     let mut callsign_forms = BTreeMap::new();
     for callsign in callsigns.iter() {
@@ -247,7 +247,7 @@ fn extract_kharkiv_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
             // Extract the matched part of the line
             let matched_text = line_match.as_str();
             for capture in CALLSIGN_REGEX.captures_iter(matched_text) {
-                if let Some(_) = capture.name("callsign") {
+                if capture.name("callsign").is_some() {
                     add_callsign(
                         &capture, "callsign", line, msg_pos, true, &mut res,
                     );
@@ -276,7 +276,7 @@ fn extract_kazhanchik_callsigns(
     }
 
     // remove freq line
-    if lines.len() > 0 {
+    if !lines.is_empty() {
         let line0 = &lines[0];
         if crate::rer_importer::frequency::extract_freq(line0)?.is_some() {
             skip_lines += 1;
@@ -284,7 +284,7 @@ fn extract_kazhanchik_callsigns(
             msg_pos += cline_len(line0) + 1;
         }
     }
-    if lines.len() > 0 {
+    if !lines.is_empty() {
         if let Some(line0) = &lines.get(skip_lines) {
             if is_unit_line(line0) {
                 skip_lines += 1;
@@ -327,7 +327,7 @@ fn extract_kazhanchik_callsigns(
             // Extract the matched part of the line
             let matched_text = line_match.as_str();
             for capture in CALLSIGN_REGEX.captures_iter(matched_text) {
-                if let Some(_) = capture.name("callsign") {
+                if capture.name("callsign").is_some() {
                     add_callsign(
                         &capture, "callsign", line, msg_pos, true, &mut res,
                     );
@@ -567,7 +567,7 @@ fn extract_digital_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     }
 
     // remove freq line
-    if lines.len() > 0 {
+    if !lines.is_empty() {
         let line0 = &lines[0];
         if crate::rer_importer::frequency::extract_freq(line0)?.is_some() {
             skip_lines += 1;
@@ -575,7 +575,7 @@ fn extract_digital_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
             msg_pos += cline_len(line0) + 1;
         }
     }
-    if lines.len() > 0 {
+    if !lines.is_empty() {
         if let Some(line0) = &lines.get(skip_lines) {
             if is_unit_line(line0) {
                 skip_lines += 1;
@@ -601,7 +601,7 @@ fn extract_digital_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
 
     for line in lines.iter() {
         for capture in RE_CALLSIGN.captures_iter(line) {
-            if let Some(_) = capture.name("callsign") {
+            if capture.name("callsign").is_some() {
                 add_callsign(
                     &capture, "callsign", line, msg_pos, true, &mut res,
                 );
@@ -629,7 +629,7 @@ fn extract_non_caps_callsigns(
     let mut msg_pos: usize = lines
         .iter()
         .take(skip_lines)
-        .map(|line| cline_len(&line))
+        .map(|line| cline_len(line))
         .sum::<usize>()
         + 1;
 
@@ -811,7 +811,7 @@ pub async fn oneoff_reprocess_callsign_tokens(
 
         println!("> {}: processing {} items", start_dt, inbox_items.len());
 
-        for (_i, (inbox_item, m_message)) in inbox_items.iter().enumerate() {
+        for (inbox_item, m_message) in inbox_items.iter() {
             // if i > 0 && i % 100 == 0 {
             //     println!("> i={i}");
             // }
@@ -876,9 +876,9 @@ pub async fn oneoff_reprocess_callsigns(
 
         let pb = m.add(ProgressBar::new(inbox_items.len() as u64));
         pb.set_style(crate::utils::get_pb_style()?);
-        pb.set_prefix(format!("[{} / {}]", start_dt, end_dt));
+        pb.set_prefix(format!("[{start_dt} / {end_dt}]"));
 
-        for (_i, (inbox_item, m_message)) in inbox_items.iter().enumerate() {
+        for (inbox_item, m_message) in inbox_items.iter() {
             pb.inc(1);
             let Some(message) = m_message else {
                 continue;
@@ -922,8 +922,8 @@ pub async fn callsigns_graph(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let req2 = AnalysisStatsReq {
-        since_date_inclusive_ms: req.since_date_inclusive_ms.clone(),
-        till_date_noninclusive_ms: req.till_date_noninclusive_ms.clone(),
+        since_date_inclusive_ms: req.since_date_inclusive_ms,
+        till_date_noninclusive_ms: req.till_date_noninclusive_ms,
         selected_groups: req.selected_groups.clone(),
         selected_senders: req.selected_senders.clone(),
         selected_freqs: req.selected_freqs.clone(),
@@ -931,15 +931,15 @@ pub async fn callsigns_graph(
         selected_callsigns: req.selected_callsigns.clone(),
         selected_units: req.selected_units.clone(),
         selected_locations: req.selected_locations.clone(),
-        or_with_extended_form: req.or_with_extended_form.clone(),
-        or_bookmarked: req.or_bookmarked.clone(),
-        or_important: req.or_important.clone(),
-        or_with_coords: req.or_with_coords.clone(),
+        or_with_extended_form: req.or_with_extended_form,
+        or_bookmarked: req.or_bookmarked,
+        or_important: req.or_important,
+        or_with_coords: req.or_with_coords,
         search: req.search.clone(),
         selected_tags: req.selected_tags.clone(),
-        include_peleng_locations: req.include_peleng_locations.clone(),
-        units_exact_match_only: req.units_exact_match_only.clone(),
-        filter_tags_option: req.filter_tags_option.clone(),
+        include_peleng_locations: req.include_peleng_locations,
+        units_exact_match_only: req.units_exact_match_only,
+        filter_tags_option: req.filter_tags_option,
     };
 
     let summary_table: SummaryTableFreq =
@@ -1197,7 +1197,7 @@ mod tests {
 "узнай,  ему довели информацию что документы его у Иваныча должны быть ?""#;
         let res = find_known_callsigns(&rq, body).await.unwrap();
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
-        assert_eq!(ress.contains(&"1-й".to_string()), false)
+        assert!(!ress.contains(&"1-й".to_string()))
     }
 
     #[ignore]

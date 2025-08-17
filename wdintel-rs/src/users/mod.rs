@@ -77,11 +77,11 @@ pub async fn has_any_role(
             "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
             role => {
                 return Err(AppError::BL {
-                    msg: format!("impossible! unknown role {}", role),
+                    msg: format!("impossible! unknown role {role}"),
                 })
             }
         };
-        is_any_good = is_any_good | is_good;
+        is_any_good |= is_good;
     }
     if !is_any_good {
         return Err(AppError::Forbidden(format!(
@@ -126,7 +126,7 @@ pub async fn update_login(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let delta_id = match login_obj.delta_login_id.clone() {
+    let delta_id = match login_obj.delta_login_id {
         None => {
             if let Some(d_login) = &req.delta_login {
                 let result = delta_login::ActiveModel {
@@ -149,7 +149,7 @@ pub async fn update_login(
                 .filter(delta_login::Column::Id.eq(id))
                 .one(&env.dbx)
                 .await
-                .context(format!("delta_id: {}", id))
+                .context(format!("delta_id: {id}"))
                 .context(h!())?
                 .context(h!())?;
             match &req.delta_login {
@@ -211,16 +211,16 @@ pub async fn update_login(
             salt,
             &config,
         )?;
-        login_obj.password = Set(Some(format!("{}", hash)));
+        login_obj.password = Set(Some(hash.to_string()));
     }
     if req.roles.is_some() {
         login_obj.roles =
             Set(serde_json::to_value(req.roles.clone()).context(h!())?);
     }
     if req.sigint_zone_id.is_some() {
-        login_obj.sigint_zone_id = Set(req.sigint_zone_id.clone());
+        login_obj.sigint_zone_id = Set(req.sigint_zone_id);
     }
-    login_obj.organism_id = Set(req.organism_id.clone());
+    login_obj.organism_id = Set(req.organism_id);
     if req.deactivation_reason.is_some() {
         login_obj.deactivation_reason = Set(req
             .deactivation_reason
@@ -301,11 +301,11 @@ pub async fn create_login(
     let login_obj = login::ActiveModel {
         delta_login_id: NotSet,
         login: Set(req.login.trim().to_string()),
-        password: Set(Some(format!("{}", hash))),
+        password: Set(Some(hash.to_string())),
         roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
         created_at: NotSet,
-        sigint_zone_id: Set(req.sigint_zone_id.clone()),
-        organism_id: Set(req.organism_id.clone()),
+        sigint_zone_id: Set(req.sigint_zone_id),
+        organism_id: Set(req.organism_id),
         deleted: Set(false),
         last_active_at: Set(Some(Utc::now().naive_utc())),
         deactivation_reason: NotSet,
@@ -371,8 +371,8 @@ pub async fn create_delta_login(
 
     let login = req.login.clone();
     let roles = req.roles.clone();
-    let sigint_zone = req.sigint_zone_id.clone();
-    let organism_id = req.organism_id.clone();
+    let sigint_zone = req.sigint_zone_id;
+    let organism_id = req.organism_id;
 
     let result =
         register_delta_user(&env.dbx, login, roles, sigint_zone, organism_id)
@@ -500,8 +500,8 @@ async fn api_user(
         delta_login,
         name: username.clone(),
         roles: serde_json::from_value(login_obj.roles).context(h!())?,
-        sigint_zone_id: login_obj.sigint_zone_id.clone(),
-        organism_id: login_obj.organism_id.clone(),
+        sigint_zone_id: login_obj.sigint_zone_id,
+        organism_id: login_obj.organism_id,
     }))
 }
 
@@ -538,8 +538,8 @@ async fn api_user_info(
         delta_login,
         name: username.clone(),
         roles: serde_json::from_value(login_obj.roles).context(h!())?,
-        sigint_zone_id: login_obj.sigint_zone_id.clone(),
-        organism_id: login_obj.organism_id.clone(),
+        sigint_zone_id: login_obj.sigint_zone_id,
+        organism_id: login_obj.organism_id,
     }))
 }
 
@@ -602,7 +602,7 @@ pub async fn user_login(
         )])));
     };
 
-    Identity::login(&http_req.extensions(), user_id.clone().into())
+    Identity::login(&http_req.extensions(), user_id.clone())
         .context(h!())?;
 
     let session_id = Uuid::now_v7();
@@ -648,7 +648,7 @@ pub async fn settings_save(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
     let mut login_obj: login::ActiveModel = login_obj.into();
-    login_obj.sigint_zone_id = Set(req.sigint_zone_id.clone());
+    login_obj.sigint_zone_id = Set(req.sigint_zone_id);
     login_obj.update(&env.dbx).await.context(h!())?;
     Ok(Json(()))
 }
@@ -666,7 +666,7 @@ pub async fn register_user(
     let salt = salt_s.as_bytes();
     let config = argon2::Config::original();
     let hash = argon2::hash_encoded(password.as_bytes(), salt, &config)?;
-    let hash_s = format!("{}", hash);
+    let hash_s = hash.to_string();
     login::ActiveModel {
         login: Set(user.to_string()),
         password: Set(Some(hash_s.clone())),
@@ -789,7 +789,7 @@ where
     let zone_id: i64 = login_obj
         .sigint_zone_id
         .context(h!())
-        .context(format!("Zone must be set for user: {}", login))?;
+        .context(format!("Zone must be set for user: {login}"))?;
 
     let mut organism_groups_obj = vec![];
     if let Some(organism_id) = login_obj.organism_id {
@@ -958,7 +958,7 @@ pub async fn validate_login(
         .into_iter()
         .next()
     else {
-        println!("user not found: {}", login);
+        println!("user not found: {login}");
         return Err(AppError::Unauthenticated);
     };
     if let Some(organism) = organisms.into_iter().next() {
@@ -971,17 +971,17 @@ pub async fn validate_login(
     if login_obj.deleted {
         let msg = match login_obj.deactivation_reason {
             Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive) => {
-                format!("Користувача \"{}\" було заблоковано як не автивного більше {} днів. Зверніться до адміністратора", login, INACTIVE_USERS_DEACTIVATE_AFTER_DAYS)
+                format!("Користувача \"{login}\" було заблоковано як не автивного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора")
             }
             Some(sea_orm_active_enums::DeactivationReasonEnum::Admin) => {
-                format!("Користувач \"{}\" заблокований адміністратором", login)
+                format!("Користувач \"{login}\" заблокований адміністратором")
             }
-            _ => format!("Користувача було видалено: {}", login),
+            _ => format!("Користувача було видалено: {login}"),
         };
-        warn!("{}", msg);
+        warn!("{msg}");
         return Err(AppError::Form(BTreeMap::from_iter([(
             "login".to_string(),
-            format!("{}", msg),
+            msg.to_string(),
         )])));
     }
 
@@ -1010,8 +1010,7 @@ async fn register_delta_user(
     if !existing_delta_logins.is_empty() {
         let existing_logins = existing_delta_logins.into_iter().join(", ");
         let msg = format!(
-            "delta login {} is already in use by user(s) {}",
-            login, existing_logins
+            "delta login {login} is already in use by user(s) {existing_logins}"
         );
         return Err(AppError::BL { msg });
     }
@@ -1142,7 +1141,7 @@ async fn inactive_users_worker_1(
             Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
         model.update(dbx).await.context(h!())?;
 
-        info!("> Deactivating user {} due to inactivity", login_name);
+        info!("> Deactivating user {login_name} due to inactivity");
     }
     debug!("inactive_users_worker completed");
     Ok(())

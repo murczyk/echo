@@ -113,7 +113,7 @@ pub async fn collect_inbox_item_pelengs(
     for peleng in sigint_pelengs.into_iter().flat_map(|s| s.into_iter()) {
         pelengs_map
             .entry(peleng.source_inbox_item_id)
-            .or_insert(vec![])
+            .or_default()
             .push(peleng);
     }
     Ok(pelengs_map)

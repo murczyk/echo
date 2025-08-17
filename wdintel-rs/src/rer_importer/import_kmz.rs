@@ -37,7 +37,7 @@ pub async fn rer_delta_kmz_import(
     if !doc_kml.exists() {
         // read the first kml file in the directory
         let entries: Vec<std::fs::DirEntry> =
-            std::fs::read_dir(&tmp_dir.path())?
+            std::fs::read_dir(tmp_dir.path())?
                 .filter_map(|x| x.ok())
                 .collect();
         for entry in entries {
@@ -68,21 +68,25 @@ pub async fn rer_delta_kmz_import(
     let dbx2 = env.dbx.clone();
     let config2 = env.config.clone();
     let rq2 = env.rq.clone();
-    let bgtask_id2 = Box::new(bgtask_id.clone());
+    let redis2 = env.redis.clone();
+    let settlements2 = env.settlements.clone();
+    let bgtask_id2 = Box::new(bgtask_id);
     let file_name = kmz_file.file_name().unwrap().to_string_lossy().to_string();
-    tokio::spawn((async move || {
+    tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
         let config3 = config2;
         let rq3 = rq2;
+        let mut redis3 = redis2;
+        let settlements3 = settlements2;
         // crazy hacks due to bug in nightly. remove asap
         // possibly https://github.com/rust-lang/rust/issues/119757
         let bgtask_id3 = bgtask_id2;
         let res = rer_delta_kmz_import_go(
-            env.settlements.clone(),
+            settlements3,
             &dbx3,
             &config3,
-            &mut env.redis.clone(),
+            &mut redis3,
             &rq3,
             file_name,
             doc_kml,
@@ -93,7 +97,7 @@ pub async fn rer_delta_kmz_import(
 
         let res2 = finish_bgtask(Some(*bgtask_id3), &dbx3, &res).await;
         res2
-    })());
+    });
 
     Ok(Json(bgtask_id))
 }
@@ -121,22 +125,20 @@ pub async fn rer_delta_kmz_import_go(
     bgtask_log(
         bgtask_id,
         &format!(
-            "> rer_delta_kmz_import_go starting; kmz_file: {}",
-            file_name,
+            "> rer_delta_kmz_import_go starting; kmz_file: {file_name}",
         ),
-        &dbx,
+        dbx,
     )
     .await?;
 
     let filename = original_path
         .file_name()
-        .map(|x| x.to_str())
-        .flatten()
+        .and_then(|x| x.to_str())
         .unwrap_or("");
     let input: String = std::fs::read_to_string(doc_kml)?;
 
-    let recs = parse_delta_kmz(&input, &filename)?;
-    bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), &dbx)
+    let recs = parse_delta_kmz(&input, filename)?;
+    bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), dbx)
         .await?;
 
     // hardcode
@@ -172,12 +174,12 @@ pub async fn rer_delta_kmz_import_go(
     let source_uuid = signal_profile.uuid;
 
     for rec in recs {
-        bgtask_log(bgtask_id, &format!("> rec: {:?}", rec), &dbx).await?;
+        bgtask_log(bgtask_id, &format!("> rec: {rec:?}"), dbx).await?;
 
         let timestamp = Utc::now().naive_utc();
         let body: String = format!(
             "{} F={}(МГц)\n\n{:.6} {:.6}\n\n{}",
-            rec.time.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            rec.time.format("%Y-%m-%dT%H:%M:%S"),
             rec.freq.replace(".", ","),
             rec.lat,
             rec.lon,
@@ -193,7 +195,7 @@ pub async fn rer_delta_kmz_import_go(
             created_at: NotSet,
             group_master_key: Set(Some(group_id.to_string())),
             timestamp: Set(Some(timestamp)),
-            sender: Set(Some(format!("{}", source_uuid))),
+            sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
@@ -207,8 +209,8 @@ pub async fn rer_delta_kmz_import_go(
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             dbx,
-            &rq,
-            &config,
+            rq,
+            config,
             redis,
             db_message_id,
             None,
@@ -238,7 +240,7 @@ pub fn parse_delta_kmz(
         )
         .unwrap();
     }
-    println!("file name is '{}'", filename);
+    println!("file name is '{filename}'");
     let fallback_datetime = extract_datetime(&filename, &FILENAME_RE);
 
     let placemarks = crate::kml::gather_all_placemarks(
@@ -264,7 +266,7 @@ pub fn parse_delta_kmz(
 
             let description = pm.description.as_ref().unwrap();
 
-            let time_str = match RE.captures(&description) {
+            let time_str = match RE.captures(description) {
                 None => None,
                 Some(cap) => m_cap_s(&cap, "time")
             };
@@ -305,7 +307,7 @@ pub fn parse_delta_kmz(
 }
 
 fn extract_datetime(filepath: &&str, regex: &Regex) -> Option<NaiveDateTime> {
-    let Some(captures) = regex.captures(&filepath) else {
+    let Some(captures) = regex.captures(filepath) else {
         return None;
     };
     let _filename_prefix = captures.get(1).unwrap().as_str().to_string();
@@ -318,10 +320,7 @@ fn extract_datetime(filepath: &&str, regex: &Regex) -> Option<NaiveDateTime> {
     let year = if year_str.len() == 2 {
         let current_year = 2000; // Adjust this if needed
         let m_year = year_str.parse::<u32>().ok();
-        match m_year {
-            Some(y) => Some(current_year / 100 * 100 + y),
-            None => None,
-        }
+        m_year.map(|y| current_year / 100 * 100 + y)
     } else {
         year_str.parse().ok()
     };
@@ -347,7 +346,7 @@ mod tests {
     #[test]
     fn parse_delta_kmz_01() {
         let res = parse_delta_kmz(
-            &r#"<?xml version="1.0" encoding="UTF-8"?>
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
 <name>name</name>

@@ -36,7 +36,7 @@ where
         // Write file or directory explicitly
         // Some unzip tools unzip files with directory paths correctly, some do not!
         if path.is_file() {
-            debug!("adding {:?} as {:?} ...", path, name);
+            debug!("adding {path:?} as {name:?} ...");
 
             #[allow(deprecated)]
             zip.start_file_from_path(name, options.clone())
@@ -44,12 +44,12 @@ where
             let mut f = File::open(path).context(here!())?;
 
             f.read_to_end(&mut buffer).context(here!())?;
-            zip.write_all(&*buffer).context(here!())?;
+            zip.write_all(&buffer).context(here!())?;
             buffer.clear();
         } else if !name.as_os_str().is_empty() {
             // Only if not root! Avoids path spec / warning
             // and mapname conversion failed error on unzip
-            debug!("adding dir {:?} as {:?} ...", path, name);
+            debug!("adding dir {path:?} as {name:?} ...");
             #[allow(deprecated)]
             zip.add_directory_from_path(name, options.clone())
                 .context(here!())?;
@@ -61,7 +61,7 @@ where
 
 pub fn unzip(fname: &Path) -> Result<(), AppError> {
     zip_extract::extract(
-        fs::File::open(&fname)?,
+        fs::File::open(fname)?,
         fname.parent().ok_or(AppError::BL {
             msg: "No parent dir".to_string(),
         })?,

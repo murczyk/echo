@@ -29,7 +29,7 @@ pub struct ZoneDatasourceGroup {
     pub allowed_users: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
-    pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
 }
 
 #[derive(
@@ -48,7 +48,9 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub user_logins: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    /// Deprecated
     pub area_of_responsibility_id: Option<i64>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
 }
 
 #[derive(

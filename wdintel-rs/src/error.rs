@@ -202,7 +202,7 @@ impl actix_web::error::ResponseError for AppError {
             AppError::Forbidden(msg) => actix_web::HttpResponseBuilder::new(
                 actix_web::http::StatusCode::FORBIDDEN,
             )
-            .body(format!("Forbidden: {}", msg)),
+            .body(format!("Forbidden: {msg}")),
             AppError::Form(es) => {
                 println!("Form errors: {es:?}");
                 actix_web::HttpResponseBuilder::new(

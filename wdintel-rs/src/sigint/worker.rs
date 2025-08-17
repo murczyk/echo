@@ -3,7 +3,7 @@ use log::*;
 
 #[tokio::main]
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
-    let config = crate::config::read_config(mode.clone())?;
+    let config = crate::config::read_config(mode)?;
 
     crate::migration::run_migration_1(mode)
         .await
@@ -121,10 +121,10 @@ async fn receive_thread_signal_restapi(
     loop {
         // println!("> receiving messages...");
         let mut messages =
-            crate::sigint::restapi::receive_messages(config, &rq, &dbx)
+            crate::sigint::restapi::receive_messages(config, &rq, dbx)
                 .await
                 .context(h!())?;
-        if messages.len() > 0 {
+        if !messages.is_empty() {
             println!("> received {} messages", messages.len());
         }
         // todo: check if this is needed
@@ -140,7 +140,7 @@ async fn receive_thread_signal_restapi(
                 process_incoming_message_restapi(
                     settlements.clone(),
                     config,
-                    &dbx,
+                    dbx,
                     redis,
                     &rq,
                     datasource_id,
@@ -153,10 +153,10 @@ async fn receive_thread_signal_restapi(
         }
 
         if messages_len > 0 {
-            println!("> received {} messages done", messages_len);
+            println!("> received {messages_len} messages done");
         }
 
-        if std::time::SystemTime::now().duration_since(last_sync_t.clone())?
+        if std::time::SystemTime::now().duration_since(last_sync_t)?
             > std::time::Duration::from_secs(SYNC_SECS)
         {
             println!("> syncing accumulated group names and profiles");
@@ -169,7 +169,7 @@ async fn receive_thread_signal_restapi(
                     name: group.name.clone(),
                 });
             }
-            do_sync_state_nofail(&dbx, datasource_id, &mut sync_state).await;
+            do_sync_state_nofail(dbx, datasource_id, &mut sync_state).await;
             last_sync_t = std::time::SystemTime::now();
             println!("> syncing accumulated group names and profiles done");
         }
@@ -292,11 +292,11 @@ pub async fn process_incoming_message_restapi(
 
     if let Some(ref exception) = message.exception {
         let exc_message = exception.message.clone();
-        warn!("Exception: {}", exc_message);
+        warn!("Exception: {exc_message}");
 
         if exc_message.starts_with("Untrusted identity: ") {
             if let Some(ref source_number) = message.envelope.source_number {
-                info!("Trusting identity phone number: {}", source_number);
+                info!("Trusting identity phone number: {source_number}");
                 if let Err(e) = crate::sigint::restapi::trust_identity(
                     config,
                     rq,
@@ -308,7 +308,7 @@ pub async fn process_incoming_message_restapi(
                 }
             }
             if let Some(ref source_uuid) = message.envelope.source_uuid {
-                info!("Trusting identity uuid: {}", source_uuid);
+                info!("Trusting identity uuid: {source_uuid}");
                 if let Err(e) = crate::sigint::restapi::trust_identity(
                     config,
                     rq,
@@ -336,7 +336,7 @@ pub async fn process_incoming_message_restapi(
             .map(|x| x.naive_utc());
     if let Some(timestamp2) = timestamp {
         if timestamp2.year() < 2022 {
-            warn!("Warning! Signal message.envelope.timestamp is too early: {}; See https://github.com/k-bx/echo/issues/35 , think of an action", timestamp2);
+            warn!("Warning! Signal message.envelope.timestamp is too early: {timestamp2}; See https://github.com/k-bx/echo/issues/35 , think of an action");
         }
         let now = Utc::now().naive_utc();
         if now < timestamp2 {
@@ -371,7 +371,7 @@ pub async fn process_incoming_message_restapi(
             created_at: NotSet,
             group_master_key: Set(Some(group_info.group_id.clone())),
             timestamp: Set(timestamp),
-            sender: Set(Some(format!("{}", source_uuid.clone()))),
+            sender: Set(Some(source_uuid.clone().to_string())),
             duplicate_of: Set(m_duplicate_id),
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
@@ -388,7 +388,7 @@ pub async fn process_incoming_message_restapi(
             for attachment in attachments.iter() {
                 save_attachment_restapi(
                     config,
-                    &dbx,
+                    dbx,
                     attachment,
                     Some(db_message_id),
                 )
@@ -400,7 +400,7 @@ pub async fn process_incoming_message_restapi(
             for attachment in quote.attachments.iter() {
                 save_attachment_restapi(
                     config,
-                    &dbx,
+                    dbx,
                     attachment,
                     Some(db_message_id),
                 )
@@ -414,8 +414,8 @@ pub async fn process_incoming_message_restapi(
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             dbx,
-            &rq,
-            &config,
+            rq,
+            config,
             redis,
             db_message_id,
             None,

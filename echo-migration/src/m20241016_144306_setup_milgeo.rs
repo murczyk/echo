@@ -66,13 +66,13 @@ impl MigrationTrait for Migration {
     }
 }
 fn run_from_file(filename: &'static str) -> String {
-    let path = format!("./src/{}", filename);
+    let path = format!("./src/{filename}");
     let mut file = Path::new(&path);
-    let path = format!("/usr/share/echo/migration/{}", filename);
+    let path = format!("/usr/share/echo/migration/{filename}");
     if !file.exists() {
         file = Path::new(&path);
     }
-    let path = format!("/fast/kon/workspace/echo/migration/src/{}", filename);
+    let path = format!("/fast/kon/workspace/echo/migration/src/{filename}");
     if !file.exists() {
         file = Path::new(&path);
     }
@@ -84,6 +84,6 @@ fn run_from_file(filename: &'static str) -> String {
     if !file.exists() {
         file = path.deref();
     }
-    let sql = std::fs::read_to_string(file).expect("Unable to read SQL file");
-    sql
+    
+    std::fs::read_to_string(file).expect("Unable to read SQL file")
 }

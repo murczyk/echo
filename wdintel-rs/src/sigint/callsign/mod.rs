@@ -224,7 +224,7 @@ pub async fn get_callsigns_with_units_from_inbox(
     // Build the IN clause for the query
     let callsigns_in_clause = sanitizied_callsigns
         .iter()
-        .map(|callsign| format!("'{}'", callsign))
+        .map(|callsign| format!("'{callsign}'"))
         .collect::<Vec<String>>()
         .join(", ");
 
@@ -244,10 +244,9 @@ pub async fn get_callsigns_with_units_from_inbox(
           AND sii.datetime >= $2
           AND sii.datetime < $3
           AND sii.callsigns ? ANY($4)
-          AND cs.value IN ({})
+          AND cs.value IN ({callsigns_in_clause})
         ORDER BY sii.unit_v2, cs.value
-        "#,
-        callsigns_in_clause
+        "#
     );
 
     let groups =
@@ -276,7 +275,7 @@ pub async fn get_callsigns_with_units_from_inbox(
     for row in rows {
         callsign_units_map
             .entry(row.callsign)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(row.unit);
     }
 
@@ -515,7 +514,7 @@ pub async fn callsign_binds(
             one_callsign_id.to_string(),
             binds
                 .into_iter()
-                .map(|bind| render_callsign_bind(bind))
+                .map(render_callsign_bind)
                 .collect(),
         );
     }
@@ -781,7 +780,7 @@ pub fn render_callsign(
         callsign: callsign.callsign.clone(),
         position: callsign.position.clone(),
         unit_id: callsign.unit_id,
-        active: unit.map_or(true, |u| u.active),
+        active: unit.is_none_or(|u| u.active),
         source_id: callsign.source_id,
         comment: callsign.comment.clone(),
         created_at: callsign.created_at.and_utc().timestamp_millis(),

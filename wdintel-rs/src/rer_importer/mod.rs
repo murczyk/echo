@@ -5,8 +5,8 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
-use crate::sigint::area_of_responsibility::render_aor;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::messenger::group::collect_group_stats;
+use crate::sigint::area_of_responsibility::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};
@@ -252,9 +252,9 @@ async fn callsigns_alchemy(
             .expect("impossible! seed=71928")
             .clone();
         nodes.push(CallsignsAlchemyNode {
-            id: format!("node-{}", callsign),
+            id: format!("node-{callsign}"),
             cluster,
-            title: format!("{}", callsign),
+            title: callsign.to_string(),
             relatedness: "1.0".to_string(),
         });
     }
@@ -277,13 +277,13 @@ fn fill_edges(
     callsigns: Vec<String>,
 ) -> Result<Vec<CallsignAlchemyEdge>, AppError> {
     let mut res = vec![];
-    if callsigns.len() > 0 {
+    if !callsigns.is_empty() {
         let (c1, cs) = callsigns.split_at(1);
         let c1 = &c1[0];
         for c in cs.iter() {
             res.push(CallsignAlchemyEdge {
-                source: format!("node-{}", c1),
-                target: format!("node-{}", c),
+                source: format!("node-{c1}"),
+                target: format!("node-{c}"),
                 relatedness: "1.0".to_string(),
             });
         }
@@ -378,73 +378,6 @@ pub async fn signal_group_info_batch(
         .await
         .context(h!())?;
     Ok(Json(SignalGroupsRsp { data }))
-}
-
-/// Отримує список груп, які не прив'язані до жодного напрямку
-///
-/// # Повертає
-///
-/// Список неприв'язаних до напрямків груп у форматі Vec<[`OrphanSignalGroupEntry`]>,
-///
-#[post("/api/rer-importer/orphan-signal-groups")]
-pub async fn orphan_signal_groups(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Admin")
-        .await
-        .context(h!())?;
-
-    // Отримати всі master_key, які вже прив'язані
-    let assigned_keys: Vec<String> = sigint_zone_datasource::Entity::find()
-        .select_only()
-        .column(sigint_zone_datasource::Column::GroupMasterKey)
-        .into_tuple::<String>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
-
-    // Знайти всі signal_group, яких немає серед assigned_keys
-    // Сортувати за часом створення (найновіші першими)
-    let orphan_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_not_in(assigned_keys))
-        .order_by_desc(signal_group::Column::CreatedAt)
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
-
-    let keys: Vec<String> =
-        orphan_groups.iter().map(|b| b.master_key.clone()).collect();
-    let stats = collect_group_stats(keys.clone(), &env.dbx)
-        .await
-        .context(h!())?;
-    let group_aors = collect_group_aors(keys.clone(), &env.dbx)
-        .await
-        .context(h!())?;
-    let group_admin_data = collect_group_admin_data(keys, &env.dbx)
-        .await
-        .context(h!())?;
-    let data: Vec<OrphanSignalGroupEntry> = orphan_groups
-        .into_iter()
-        .filter_map(|g| {
-            let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
-            let group_admin_data =
-                group_admin_data.get(g.master_key.as_str()).cloned();
-            let aor = group_aors.get(g.master_key.as_str()).cloned();
-            g.name.clone().map(|name| OrphanSignalGroupEntry {
-                name,
-                master_key: g.master_key,
-                ignore_operativny: g.ignore_operativny,
-                datasource_id: g.datasource_id,
-                created_at: g.created_at.and_utc().timestamp_millis(),
-                group_stats: stats,
-                group_admin_data,
-                area_of_responsibility: aor,
-            })
-        })
-        .collect();
-
-    Ok(Json(data))
 }
 
 #[post("/api/rer-importer/signal-profile")]
@@ -577,9 +510,9 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     while let Some(item) = inbox_items.try_next().await.context(h!())? {
         pb.inc(1);
 
-        if let Some(ref freq) = item.freq.as_ref() {
-            let freq2 = self::frequency::etalon(&freq);
-            if &freq2 != *freq {
+        if let Some(freq) = item.freq.as_ref() {
+            let freq2 = self::frequency::etalon(freq);
+            if &freq2 != freq {
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
                 item.update(&dbx).await.context(h!())?;
@@ -641,12 +574,11 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                 callsigns,
             )?;
             let unit_new = result.unit.clone();
-            if unit_new.is_none() {
-                if unit_old.is_some() {
+            if unit_new.is_none()
+                && unit_old.is_some() {
                     continue;
                 }
-            }
-            println!("{:?} -> {:?}", unit_old, unit_new);
+            println!("{unit_old:?} -> {unit_new:?}");
             let mut item: sigint_inbox_item::ActiveModel = item.into();
             let location_v2 =
                 match (result.locality.clone(), result.locality_v2.clone()) {
@@ -775,7 +707,7 @@ pub async fn collect_groups(
                 .get(g.master_key.as_str())
                 .cloned()
                 .unwrap_or_default();
-            let aor = group_aors.get(g.master_key.as_str()).cloned();
+            let aors = group_aors.get(g.master_key.as_str()).cloned();
             let group_admin_data =
                 group_admin_data.get(g.master_key.as_str()).cloned();
             g.name.clone().map(|name| SignalGroupEntry {
@@ -783,66 +715,12 @@ pub async fn collect_groups(
                 master_key: g.master_key.clone(),
                 ignore_operativny: g.ignore_operativny,
                 group_stats: stats,
-                area_of_responsibility: aor,
                 admin_data: group_admin_data,
+                areas_of_responsibility: aors,
             })
         })
         .collect();
     Ok(data)
-}
-
-pub async fn collect_group_stats(
-    keys: Vec<String>,
-    txn: &DatabaseConnection,
-) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
-    let signal_message_counts_last_day =
-        count_group_messages(keys.clone(), txn, 1)
-            .await
-            .context(h!())?;
-    let signal_message_counts_last_week =
-        count_group_messages(keys.clone(), txn, 7)
-            .await
-            .context(h!())?;
-    let mut result = BTreeMap::new();
-    for k in keys {
-        let activity_last_day =
-            signal_message_counts_last_day.get(&k).cloned().unwrap_or(0);
-        let activity_last_week = signal_message_counts_last_week
-            .get(&k)
-            .cloned()
-            .unwrap_or(0);
-        result.insert(
-            k,
-            SignalGroupStats {
-                activity_last_day,
-                activity_last_week,
-            },
-        );
-    }
-    Ok(result)
-}
-
-pub async fn collect_group_aors<'a, 'async_trait, C>(
-    keys: Vec<String>,
-    txn: &'a C,
-) -> Result<BTreeMap<String, AreaOfResponsibility>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let mut result = BTreeMap::new();
-    let aors = area_of_responsibility::Entity::find()
-        .find_with_related(signal_group_aor::Entity)
-        .filter(signal_group_aor::Column::MasterKey.is_in(keys.clone()))
-        .all(txn)
-        .await
-        .context(h!())?;
-    for (aor, signal_aors) in aors {
-        for signal_aor in signal_aors.into_iter() {
-            let aor = render_aor(aor.clone());
-            result.insert(signal_aor.master_key, aor);
-        }
-    }
-    Ok(result)
 }
 
 pub async fn collect_group_admin_data<'a, 'async_trait, C>(
@@ -872,11 +750,14 @@ where
     Ok(result)
 }
 
-async fn count_group_messages(
+pub async fn count_group_messages<'a, 'async_trait, C>(
     keys: Vec<String>,
-    txn: &DatabaseConnection,
+    txn: &'a C,
     num_days: i64,
-) -> Result<BTreeMap<String, i64>, AppError> {
+) -> Result<BTreeMap<String, i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
     let signal_message_counts = signal_message::Entity::find()
         .join(

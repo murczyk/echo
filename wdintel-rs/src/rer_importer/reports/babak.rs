@@ -48,15 +48,15 @@ pub async fn report_docx_kind_babak(
         selected_callsigns: req.req.selected_callsigns.clone(),
         selected_units: req.req.selected_units.clone(),
         selected_locations: req.req.selected_locations.clone(),
-        or_with_extended_form: req.req.or_with_extended_form.clone(),
-        or_bookmarked: req.req.or_bookmarked.clone(),
-        or_important: req.req.or_important.clone(),
-        or_with_coords: req.req.or_with_coords.clone(),
+        or_with_extended_form: req.req.or_with_extended_form,
+        or_bookmarked: req.req.or_bookmarked,
+        or_important: req.req.or_important,
+        or_with_coords: req.req.or_with_coords,
         search: req.req.search.clone(),
         selected_tags: req.req.selected_tags.clone(),
-        include_peleng_locations: req.req.include_peleng_locations.clone(),
-        units_exact_match_only: req.req.units_exact_match_only.clone(),
-        filter_tags_option: req.req.filter_tags_option.clone(),
+        include_peleng_locations: req.req.include_peleng_locations,
+        units_exact_match_only: req.req.units_exact_match_only,
+        filter_tags_option: req.req.filter_tags_option,
     };
     let new_callsigns_res = bi_new_callsigns(user_id, env, &new_callsing_req)
         .await
@@ -64,7 +64,7 @@ pub async fn report_docx_kind_babak(
 
     let units_list = units
         .iter()
-        .filter_map(|unit| unit.unit.clone().map(|r| r))
+        .filter_map(|unit| unit.unit.clone())
         .filter(|r| r != "НВ")
         .collect::<Vec<String>>()
         .join(", ");
@@ -301,9 +301,7 @@ pub async fn report_docx_kind_babak(
             .clone()
             .into_iter()
             .filter(|c| c.comment.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>()
-            .len()
-            == 0
+            .collect::<Vec<_>>().is_empty()
         {
             continue;
         }
@@ -363,9 +361,7 @@ pub async fn report_docx_kind_babak(
             .clone()
             .into_iter()
             .filter(|c| c.comment.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>()
-            .len()
-            == 0
+            .collect::<Vec<_>>().is_empty()
         {
             continue;
         }
@@ -442,9 +438,7 @@ pub async fn report_docx_kind_babak(
             .clone()
             .into_iter()
             .filter(|c| c.text.is_some() && c.datetime.is_some())
-            .collect::<Vec<_>>()
-            .len()
-            == 0
+            .collect::<Vec<_>>().is_empty()
         {
             continue;
         }
@@ -517,7 +511,7 @@ pub async fn get_inbox_messages_report_unit(
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let mut q = signal_message::Entity::find()
         .select_only()
         // creare a unique id for each message, using either duplicate_of or sigint_inbox_item.id to filter out duplicates
@@ -846,7 +840,7 @@ pub async fn get_inbox_messages_report_unit(
     let query = &combined_query.to_string(PostgresQueryBuilder);
     let raw_query = query.strip_suffix("ON ").unwrap();
 
-    print!("{}", raw_query);
+    print!("{raw_query}");
 
     Ok(env
         .dbx

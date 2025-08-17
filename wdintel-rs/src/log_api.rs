@@ -12,7 +12,7 @@ pub struct Params {
 pub async fn log_error(req: HttpRequest) -> HttpResponse {
     let referer = match extract_referer_header(&req) {
         None => "".to_string(),
-        Some(referer) => format!(" at {}", referer),
+        Some(referer) => format!(" at {referer}"),
     };
     let params = web::Query::<Params>::from_query(req.query_string()).unwrap();
 

@@ -17,7 +17,7 @@ pub async fn rer_analysis_download_geojson(
         dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
 
     #[derive(FromQueryResult)]
     struct Res {
@@ -148,7 +148,7 @@ pub async fn rer_analysis_download_geojson(
             .context(h!())?
             .into_iter()
             .fold(HashMap::new(), |mut acc, row| {
-                let entry = acc.entry(row.freq).or_insert_with(Vec::new);
+                let entry = acc.entry(row.freq).or_default();
                 if entry.len() < 10 {
                     entry.push(row.callsign);
                 }
@@ -161,24 +161,24 @@ pub async fn rer_analysis_download_geojson(
         let Some(freq) = item.freq.clone() else {
             continue;
         };
-        let Some(lat) = item.lat.clone() else {
+        let Some(lat) = item.lat else {
             continue;
         };
-        let Some(lng) = item.lng.clone() else {
+        let Some(lng) = item.lng else {
             continue;
         };
 
         let mut comments = vec![];
 
         if let Some(network_name) = networks.get(&freq) {
-            comments.push(format!("Мережа: {}", network_name));
+            comments.push(format!("Мережа: {network_name}"));
         }
 
         let callsigns_s = callsigns
             .get(&freq)
             .map(|v| v.join(", "))
             .unwrap_or_default();
-        comments.push(format!("Позивні: {}", callsigns_s));
+        comments.push(format!("Позивні: {callsigns_s}"));
 
         let mut comments_one: String = comments.join("\n");
         comments_one.push_str(&format!("\n\nГрупа: {}", &item.group_name));
@@ -208,12 +208,10 @@ pub async fn rer_analysis_download_geojson(
         let key = (
             freq.clone(),
             datetime_utc,
-            format!("{:.6}", lng),
-            format!("{:.6}", lat),
+            format!("{lng:.6}"),
+            format!("{lat:.6}"),
         );
-        if !features.contains_key(&key) {
-            features.insert(key, feature);
-        }
+        features.entry(key).or_insert(feature);
     }
 
     let geojson = GeoJson {

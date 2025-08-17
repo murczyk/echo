@@ -10,8 +10,7 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
     if let Some(sleep_before_backup_mins) = config.sleep_before_backup_mins {
         if sleep_before_backup_mins > 0 {
             info!(
-                "sleeping for {} minutes before backup",
-                sleep_before_backup_mins
+                "sleeping for {sleep_before_backup_mins} minutes before backup"
             );
             tokio::time::sleep(tokio::time::Duration::from_secs(
                 sleep_before_backup_mins * 60,
@@ -68,8 +67,7 @@ pub async fn backup_to_b2(mode: Mode) -> Result<(), AppError> {
     if let Some(sleep_before_backup_mins) = config.sleep_before_backup_mins {
         if sleep_before_backup_mins > 0 {
             info!(
-                "sleeping for {} minutes before backup",
-                sleep_before_backup_mins
+                "sleeping for {sleep_before_backup_mins} minutes before backup"
             );
             tokio::time::sleep(tokio::time::Duration::from_secs(
                 sleep_before_backup_mins * 60,

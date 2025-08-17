@@ -64,7 +64,7 @@ pub async fn oneoff_reprocess_coords(
     mode: Mode,
     ps: &OneoffReprocessCoordsPs,
 ) -> Result<(), AppError> {
-    println!("> oneoff_reprocess_coords {:?}", ps);
+    println!("> oneoff_reprocess_coords {ps:?}");
     let dbx = crate::new_pg_pool_from_mode(mode).await?;
     let cutoff_ts = Utc::now().naive_utc()
         - chrono::TimeDelta::try_days(30).context(h!())?;
@@ -110,8 +110,8 @@ pub async fn oneoff_reprocess_coords(
             continue;
         };
         let mut coords_vec =
-            milgeo_rs::coordinates::rer_extract_coords(&body).await;
-        if coords_vec.len() > 0 {
+            milgeo_rs::coordinates::rer_extract_coords(body).await;
+        if !coords_vec.is_empty() {
             found += coords_vec.len();
         }
         crate::location::peleng::delete_inbox_pelengs(item_id, &dbx).await?;
@@ -127,11 +127,11 @@ pub async fn oneoff_reprocess_coords(
         };
 
         inbox_item.coords = Set(Some(coords.text.clone()));
-        inbox_item.lat = Set(Some(coords.lat.clone()));
-        inbox_item.lng = Set(Some(coords.lng.clone()));
+        inbox_item.lat = Set(Some(coords.lat));
+        inbox_item.lng = Set(Some(coords.lng));
         inbox_item.update(&dbx).await?;
     }
-    println!("> done! filled {} new coords", found);
+    println!("> done! filled {found} new coords");
     Ok(())
 }
 
@@ -257,16 +257,16 @@ pub async fn oneoff_sigint_import_mouse(
         for row in r.rows() {
             let row: &[calamine::Data] = row;
             // println!("row={:?}, row[0]={:?}", row, row[0]);
-            let Some(calamine::Data::String(row0)) = row.get(0) else {
+            let Some(calamine::Data::String(row0)) = row.first() else {
                 continue;
             };
-            if let Some(network_name) = extract_network_name(&row0)? {
+            if let Some(network_name) = extract_network_name(row0)? {
                 cur_network = network_name.clone();
-                println!("> network: {}", network_name);
+                println!("> network: {network_name}");
                 continue;
             }
             if let Some(freq) =
-                crate::rer_importer::frequency::extract_freq(&row0)?
+                crate::rer_importer::frequency::extract_freq(row0)?
             {
                 let freq = crate::rer_importer::frequency::etalon(&freq);
                 cur_freq = freq.clone();
@@ -321,7 +321,7 @@ pub async fn oneoff_sigint_import_mouse(
                         &cur_time,
                         &cur_from,
                         &cur_to,
-                        &msg,
+                        msg,
                         &config,
                     )
                     .await?;
@@ -350,7 +350,7 @@ async fn xlsx_import_process_one(
     config: &crate::config::Config,
 ) -> Result<(), AppError> {
     let timestamp = NaiveDateTime::parse_from_str(
-        &format!("{} {}", date, time),
+        &format!("{date} {time}"),
         "%Y-%m-%d %H:%M",
     )?;
     // like this:
@@ -385,10 +385,10 @@ async fn xlsx_import_process_one(
         created_at: NotSet,
         group_master_key: Set(Some(group_id.to_string())),
         timestamp: Set(Some(timestamp)),
-        sender: Set(Some(format!("{}", sender_uuid))),
+        sender: Set(Some(sender_uuid.to_string())),
         duplicate_of: NotSet,
         format: Set(Some(2)),
-        datasource_id: Set(Some(datasource_id as i64)),
+        datasource_id: Set(Some(datasource_id)),
         deleted: NotSet,
         external_id: NotSet,
     };
@@ -400,8 +400,8 @@ async fn xlsx_import_process_one(
     crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
         settlements.clone(),
         dbx,
-        &rq,
-        &config,
+        rq,
+        config,
         redis,
         db_message_id,
         None,
@@ -451,7 +451,7 @@ fn message_to_many(
     let Some(body) = data_message.message.as_ref() else {
         return Ok(vec![message.clone()]);
     };
-    let bodies = message_to_many_str(&body)?;
+    let bodies = message_to_many_str(body)?;
     let mut messages = vec![];
     for body in bodies {
         let mut message = message.clone();
@@ -483,7 +483,7 @@ fn message_to_many_str(body: &str) -> Result<Vec<String>, AppError> {
         if rest.is_empty() {
             continue;
         }
-        bodies.push(format!("{}\n\n{}", header, rest));
+        bodies.push(format!("{header}\n\n{rest}"));
     }
     Ok(bodies)
 }

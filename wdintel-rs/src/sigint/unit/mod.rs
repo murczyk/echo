@@ -594,7 +594,7 @@ pub async fn oneoff_reprocess_units_search_index(
     let update_query =
         "UPDATE sigint_unit SET search_tsv = to_tsvector('russian', name);";
 
-    sqlx::query(&update_query)
+    sqlx::query(update_query)
         .execute(pool)
         .await
         .context(h!())?;

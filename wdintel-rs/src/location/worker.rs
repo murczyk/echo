@@ -13,7 +13,7 @@ pub async fn process_location_v2_coords_worker(
     loop {
         if let Err(e) = run_process_coords_locations_worker(dbx, &mil_geo).await
         {
-            error!("process_location_v2_coords_worker error: {}", e);
+            error!("process_location_v2_coords_worker error: {e}");
         }
         // println!(
         //     "[process_location_v2_coords_worker] nothing to do, sleeping..."
@@ -77,7 +77,7 @@ pub async fn run_process_coords_locations_worker(
                 let mut existing_locations =
                     new_locations.clone().into_iter().collect::<BTreeSet<_>>();
                 if let (Some(freq), Some(datetime)) =
-                    (inbox_item.freq.clone(), inbox_item.datetime.clone())
+                    (inbox_item.freq.clone(), inbox_item.datetime)
                 {
                     push_frequency_locations(
                         &locations,

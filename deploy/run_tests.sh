@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "Running tests locally..."
+
 # launch dev server in background
 just dev-py &
 DEV_PID=$!
@@ -10,3 +12,5 @@ trap 'kill "$DEV_PID" 2>/dev/null || true' EXIT
 
 # run tests in foreground; on failure script exits non-zero and trap runs
 just test
+
+echo "All tests completed successfully!"

@@ -9,7 +9,7 @@ pub struct ParsePartialRes {
 
 /// Parses a partially-valid value like `[{"foo": "bar"}, Error: abc` into `Some([{"foo": "bar"}])`
 pub fn parse_partial(inp: &str) -> Result<ParsePartialRes, AppError> {
-    let res = serde_json::from_str(&inp);
+    let res = serde_json::from_str(inp);
     match res {
         Ok(v) => Ok(ParsePartialRes {
             value: v,

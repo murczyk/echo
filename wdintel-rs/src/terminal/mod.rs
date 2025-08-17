@@ -25,7 +25,7 @@ fn pdf_to_text(file: &Path) -> Result<String, AppError> {
     let orig_workdir = std::env::current_dir()?;
     let res = pdf_to_text_1(file);
     std::env::set_current_dir(orig_workdir)?;
-    Ok(res?)
+    res
 }
 
 fn pdf_to_text_1(file: &Path) -> Result<String, AppError> {
@@ -34,8 +34,8 @@ fn pdf_to_text_1(file: &Path) -> Result<String, AppError> {
     println!("> tmp_dir: {}", tmp_dir.path().display());
     let input_pdf = tmp_dir.path().join("input.pdf");
     println!("> input_pdf: {}", input_pdf.display());
-    std::fs::copy(&file, &input_pdf)?;
-    std::env::set_current_dir(&tmp_dir.path())?;
+    std::fs::copy(file, &input_pdf)?;
+    std::env::set_current_dir(tmp_dir.path())?;
     let output_txt = tmp_dir.path().join("output.txt");
     println!("> output_txt: {}", output_txt.display());
     let _output = Command::new("pdftotext")
@@ -56,17 +56,17 @@ fn pdf_to_html(tmp_dir: &Path) -> Result<String, AppError> {
         println!("> error doing pdf_to_html: {e:?} {}", h!());
     }
     std::env::set_current_dir(orig_workdir).context(h!())?;
-    Ok(res?)
+    res
 }
 
 fn pdf_to_html_1(tmp_dir: &Path) -> Result<String, AppError> {
-    std::env::set_current_dir(&tmp_dir).context(h!())?;
+    std::env::set_current_dir(tmp_dir).context(h!())?;
     println!("> pdf_to_html_1");
     let output_html = tmp_dir.join("output.html");
     println!("> tmp_dir: {}", tmp_dir.display());
     let _output = Command::new("pdf2htmlEX")
-        .arg("--embed-image=0".to_string())
-        .arg("--tounicode=1".to_string())
+        .arg("--embed-image=0")
+        .arg("--tounicode=1")
         .arg("input.pdf")
         .arg("output.html")
         .output()
@@ -84,8 +84,8 @@ fn pdf_to_html_1(tmp_dir: &Path) -> Result<String, AppError> {
 
 pub fn oneoff_terminal_pdf_extract() -> Result<(), AppError> {
     let file = Path::new("data/report_2022-11-01_22-02-38_01112022-Ж1.pdf");
-    let txt = pdf_to_text(&file)?;
-    println!("> txt: {}", txt);
+    let txt = pdf_to_text(file)?;
+    println!("> txt: {txt}");
     Ok(())
 }
 
@@ -125,7 +125,7 @@ pub fn extract_items(inp: &str) -> Result<Vec<ReportItem>, AppError> {
             Regex::new(r"(?m)^\s*(?P<num>\d+)\)\. ?(?P<title>.*)(.|\n)*?\n\s*Опис: ?(?P<description>(.|\n)*?)\nТип: (?P<category_short>(.|\n)*?) - (.|\n)*?WGS-84: (?P<lat>[\d.]+), (?P<lng>[\d.]+)").unwrap();
     }
 
-    for caps in RE.captures_iter(&inp) {
+    for caps in RE.captures_iter(inp) {
         let num = caps
             .name("num")
             .ok_or("no num")?
@@ -338,9 +338,7 @@ pub fn oneoff_test_opencv() -> Result<(), AppError> {
 #[cfg(not(feature = "opencv"))]
 pub fn cut_out_photo(_in_path: &str, _out_path: &str) -> Result<(), AppError> {
     log::warn!(
-        "opencv feature disabled; cut_out_photo({}, {}) is a no-op",
-        _in_path,
-        _out_path
+        "opencv feature disabled; cut_out_photo({_in_path}, {_out_path}) is a no-op"
     );
     Ok(())
 }
@@ -368,10 +366,10 @@ async fn parse_terminal_pdf(
             aws_sdk_s3::presigning::PresigningConfig::expires_in(
                 Duration::from_secs(60 * 60 * 24),
             )
-            .map_err(|e| Box::new(e))?,
+            .map_err(Box::new)?,
         )
         .await
-        .map_err(|e| Box::new(e))?;
+        .map_err(Box::new)?;
 
     println!("> presigned uri: {}", presigned_req.uri());
 
@@ -455,7 +453,7 @@ pub fn oneoff_parse_html() -> Result<(), AppError> {
         "data/report_2022-11-01_22-02-38_01112022-Ж1/index.html",
     )?;
     let images_per_num = get_images_per_num(&html, &items)?;
-    println!("> gathered images: {:?}", images_per_num);
+    println!("> gathered images: {images_per_num:?}");
     Ok(())
 }
 
@@ -483,14 +481,14 @@ pub async fn upload_screenshot(
         .map(|x| x.to_string())
         .unwrap_or("image/jpeg".to_string());
     let ext = (if field.name().context(h!())?.ends_with(".png")
-        || format!("{}", content_type).contains("png")
+        || content_type.to_string().contains("png")
     {
         "png"
     } else {
         "jpg"
     })
     .to_string();
-    let filename = format!("report2kmz/{}.{}", uuid, ext);
+    let filename = format!("report2kmz/{uuid}.{ext}");
     crate::aws::s3_put_object(
         b2_cli,
         "wildducks-online-public",
@@ -537,28 +535,27 @@ pub async fn upload_pdf(
     println!("> extracted items: {}", items.len());
     println!("> beginning pdf_to_html");
     let html: String =
-        tokio::task::spawn_blocking(move || pdf_to_html(&tmp_dir2.path()))
+        tokio::task::spawn_blocking(move || pdf_to_html(tmp_dir2.path()))
             .await??;
     println!("> done doing pdf_to_html");
     println!("> getting images_per_num");
     let images_per_num = get_images_per_num(&html, &items)?;
-    println!("> gathered images: {:?}", images_per_num);
+    println!("> gathered images: {images_per_num:?}");
     println!("> stripping images now");
     let mut images_per_num2 = BTreeMap::new();
 
-    crate::utils::backup_tmp_dir(&tmp_dir.path())?;
+    crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     for (num, images) in images_per_num.iter() {
         let mut images2 = vec![];
         for image_name in images.iter() {
             let image =
                 format!("{}", tmp_dir.path().join(image_name).display());
-            println!("> processing {}", image);
-            let im_out = format!("{}-cropped.png", image);
+            println!("> processing {image}");
+            let im_out = format!("{image}-cropped.png");
             if let Err(e) = cut_out_photo(&image, &im_out) {
                 println!(
-                    "> error while cropping {}, skipping. error: {:?}",
-                    image, e
+                    "> error while cropping {image}, skipping. error: {e:?}"
                 );
             };
             images2.push(im_out.clone());
@@ -571,18 +568,18 @@ pub async fn upload_pdf(
         let mut urls = vec![];
         for image in images.iter() {
             let uuid = Uuid::new_v4().to_string();
-            let filename = format!("report2kmz/{}.png", uuid);
+            let filename = format!("report2kmz/{uuid}.png");
             let mut upload_futures = vec![];
             if Path::new(image).exists() {
                 let img_bytes = std::fs::read(image)?;
                 let upload = async || {
-                    println!("> uploading {}", image);
+                    println!("> uploading {image}");
                     crate::aws::s3_put_object(
                         b2_cli,
                         "wildducks-online-public",
                         &filename,
                         img_bytes,
-                        &format!("{}", "image/png".to_string()),
+                        "image/png",
                     )
                     .await?;
                     let url = format!(
@@ -634,7 +631,7 @@ pub async fn oneoff_test_full_circle() -> Result<(), AppError> {
     let input_pdf = tmp_dir.path().join("input.pdf");
 
     std::fs::copy(
-        &Path::new(
+        Path::new(
             "data/2022-12-21-report_2022-12-21_00-37-05_20122022-В1.pdf",
         ),
         &input_pdf,
@@ -647,28 +644,27 @@ pub async fn oneoff_test_full_circle() -> Result<(), AppError> {
     println!("> extracted items: {}", items.len());
     println!("> beginning pdf_to_html");
     let html: String =
-        tokio::task::spawn_blocking(move || pdf_to_html(&tmp_dir2.path()))
+        tokio::task::spawn_blocking(move || pdf_to_html(tmp_dir2.path()))
             .await??;
     println!("> done doing pdf_to_html");
     println!("> getting images_per_num");
     let images_per_num = get_images_per_num(&html, &items)?;
-    println!("> gathered images: {:?}", images_per_num);
+    println!("> gathered images: {images_per_num:?}");
     println!("> stripping images now");
     let mut images_per_num2 = BTreeMap::new();
 
-    crate::utils::backup_tmp_dir(&tmp_dir.path())?;
+    crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     for (num, images) in images_per_num.iter() {
         let mut images2 = vec![];
         for image_name in images.iter() {
             let image =
                 format!("{}", tmp_dir.path().join(image_name).display());
-            println!("> processing {}", image);
-            let im_out = format!("{}-cropped.png", image);
+            println!("> processing {image}");
+            let im_out = format!("{image}-cropped.png");
             if let Err(e) = cut_out_photo(&image, &im_out) {
                 println!(
-                    "> error while cropping {}, skipping. error: {:?}",
-                    image, e
+                    "> error while cropping {image}, skipping. error: {e:?}"
                 );
             };
             images2.push(im_out.clone());
@@ -701,18 +697,18 @@ pub fn map_utf8(u: u32) -> (i64, Vec<u8>) {
         buf.push(0x80 + (u & 0x3f) as u8);
         return (4, buf);
     }
-    return (0, buf);
+    (0, buf)
 }
 
 pub fn as_u32_be(array: &[u8; 4]) -> u32 {
     ((array[0] as u32) << 24)
         + ((array[1] as u32) << 16)
         + ((array[2] as u32) << 8)
-        + ((array[3] as u32) << 0)
+        + ((array[3] as u32))
 }
 
 pub fn as_u32_le(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32) << 0)
+    ((array[0] as u32))
         + ((array[1] as u32) << 8)
         + ((array[2] as u32) << 16)
         + ((array[3] as u32) << 24)
@@ -990,7 +986,7 @@ WGS-84: 47.161249, 33.718252
         .unwrap();
         let report_items = extract_items(&txt).unwrap();
         let nums: Vec<u64> = report_items.iter().map(|x| x.num).collect();
-        println!("{:?}", nums);
+        println!("{nums:?}");
         assert_eq!(report_items.len(), 22);
     }
 
@@ -999,11 +995,11 @@ WGS-84: 47.161249, 33.718252
     #[serial]
     fn extract_items_ex02_len() {
         let workdir = std::env::current_dir().unwrap();
-        println!("> workdir: {:?}", workdir);
+        println!("> workdir: {workdir:?}");
         let txt = pdf_to_text(Path::new("data/19.36 07.11.2022.pdf")).unwrap();
         let report_items = extract_items(&txt).unwrap();
         let nums: Vec<u64> = report_items.iter().map(|x| x.num).collect();
-        println!("{:?}", nums);
+        println!("{nums:?}");
         assert_eq!(report_items.len(), 136);
     }
 
@@ -1117,7 +1113,7 @@ WGS-84: 47.757013, 37.233638
             .unwrap();
         let items = extract_items(&txt).unwrap();
         let nums: Vec<u64> = items.iter().map(|x| x.num).collect();
-        println!("{:?}", nums);
+        println!("{nums:?}");
         println!("> item 0 desc: \n{}", items[0].description);
         assert_eq!(items.len(), 14);
     }
@@ -1141,7 +1137,7 @@ WGS-84: 47.757013, 37.233638
         .unwrap();
         let items = extract_items(&txt).unwrap();
         let nums: Vec<u64> = items.iter().map(|x| x.num).collect();
-        println!("{:?}", nums);
+        println!("{nums:?}");
         println!("> item 0 desc: \n{}", items[0].description);
         assert_eq!(items.len(), 64);
     }
@@ -1153,7 +1149,7 @@ WGS-84: 47.757013, 37.233638
         let input_pdf =
             Path::new("data/report_2023-02-17_00-23-20_16022023-Ж1-orig.pdf");
         let txt: String =
-            tokio::task::spawn_blocking(move || pdf_to_text(&input_pdf))
+            tokio::task::spawn_blocking(move || pdf_to_text(input_pdf))
                 .await
                 .unwrap()
                 .unwrap();

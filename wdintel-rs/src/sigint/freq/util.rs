@@ -9,11 +9,11 @@ pub fn filter_by_active_ts(
 ) -> SimpleExpr {
     let no_active_to = sigint_network_freq::Column::ActiveTo.is_null();
     let active_to_ok =
-        sigint_network_freq::Column::ActiveTo.gte(dt_since.clone());
+        sigint_network_freq::Column::ActiveTo.gte(dt_since);
     let filter_active_to = no_active_to.or(active_to_ok);
     let filter_from =
-        sigint_network_freq::Column::ActiveFrom.lte(dt_till.clone());
+        sigint_network_freq::Column::ActiveFrom.lte(dt_till);
 
-    let filter_active_ts = filter_active_to.and(filter_from);
-    filter_active_ts
+    
+    filter_active_to.and(filter_from)
 }

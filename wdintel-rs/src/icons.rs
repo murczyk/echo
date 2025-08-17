@@ -115,7 +115,7 @@ pub fn convert_tsup_icon(tsup_icon: &str) -> Result<String, AppError> {
     } else if RE_HELICOPTER.is_match(tsup_icon) {
         Ok("Гелікоптер.png".to_string())
     } else {
-        println!("warning: icon not converted: {}", tsup_icon);
+        println!("warning: icon not converted: {tsup_icon}");
         Ok("00_Загально.png".to_string())
     }
 }
@@ -283,7 +283,7 @@ pub fn list_all_app6d_icons(
                 .unwrap();
     }
     let mut res = vec![];
-    let icon_path = get_icon_path(&config);
+    let icon_path = get_icon_path(config);
     for f in std::fs::read_dir(icon_path)? {
         let f = f?;
         let f = f
@@ -325,7 +325,7 @@ pub fn parse_app6d(s: &str) -> Result<App6d, AppError> {
             Regex::new(r"(?P<g1>\d\d)(?P<g2>\d)(?P<g3>\d)(?P<g4>\d\d)(?P<g5>\d)(?P<g6>\d)(?P<g7>\d\d)(?P<g8>\d\d\d\d\d\d)(?P<g9>\d\d)(?P<g10>\d\d)")
             .unwrap();
     }
-    let cs = RE_APP6D.captures(&s).ok_or("failed parsing app6d")?;
+    let cs = RE_APP6D.captures(s).ok_or("failed parsing app6d")?;
     let g1: String = cs.name("g1").ok_or("No match g1")?.as_str().to_string();
     let g2: String = cs.name("g2").ok_or("No match g2")?.as_str().to_string();
     let g3: String = cs.name("g3").ok_or("No match g3")?.as_str().to_string();
@@ -596,7 +596,7 @@ pub fn app6d_to_category(app6d: &str) -> Result<String, AppError> {
     } else if app6d == "10061040001303010000" {
         Ok("САУ".to_string())
     } else {
-        println!("> warning: unknown app6d_to_category category: {}", app6d);
+        println!("> warning: unknown app6d_to_category category: {app6d}");
         Ok("".to_string())
     }
 }

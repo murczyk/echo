@@ -14,7 +14,7 @@ use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-const FMT_DATE: &'static str = "%d.%m.%Y";
+const FMT_DATE: &str = "%d.%m.%Y";
 
 #[derive(Debug)]
 pub enum ReportAggregation {
@@ -23,6 +23,7 @@ pub enum ReportAggregation {
 }
 
 #[derive(Clone, Debug)]
+#[derive(Default)]
 struct SenderStats {
     overall: u64,
     per_day: BTreeMap<String, u64>,
@@ -36,14 +37,6 @@ struct MessageStatRecord {
     post: Option<String>,
 }
 
-impl Default for SenderStats {
-    fn default() -> Self {
-        SenderStats {
-            overall: 0,
-            per_day: BTreeMap::new(),
-        }
-    }
-}
 
 pub async fn report_xlsx_kind_senders(
     aggregation_kind: ReportAggregation,
@@ -95,8 +88,7 @@ pub async fn report_xlsx_kind_senders(
     let mut dates_with_data = BTreeMap::new();
     for msg in messages {
         let sender_name = extract_sender(&msg, &aggregation_kind)
-            .map(|s| senders.get(&s))
-            .flatten()
+            .and_then(|s| senders.get(&s))
             .cloned()
             .unwrap_or("невідомий відправник".to_string());
         let mut stats =
@@ -112,7 +104,7 @@ pub async fn report_xlsx_kind_senders(
 
     let dates_with_data = dates_with_data
         .into_iter()
-        .sorted_by_key(|(_, date)| date.clone())
+        .sorted_by_key(|(_, date)| *date)
         .map(|(date_txt, _)| date_txt)
         .collect_vec();
 
@@ -149,7 +141,7 @@ async fn map_senders(
             .filter_map(|g| {
                 let name_vec = vec![g.given_name, g.family_name]
                     .into_iter()
-                    .filter_map(|x| x)
+                    .flatten()
                     .filter(|x| !x.trim().is_empty())
                     .collect_vec();
                 if name_vec.is_empty() {

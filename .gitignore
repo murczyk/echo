@@ -1,3 +1,4 @@
+target
 GOOGLE_MAPS_KEY
 map.html
 .ipynb_checkpoints
@@ -17,7 +18,6 @@ docs/public
 dosc/static/processed_images
 docs/echo-docs/target
 wdintel-rs/version.txt
-
 deploy/kibana/env-*
 deploy/vector/env-*
 deploy/vector/kibana/sink-hammer.yaml

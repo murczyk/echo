@@ -26,16 +26,16 @@ pub async fn oneoff_reprocess_search_index(
 
     let (where_clause, limit_clause) = match (start_dt, end_dt) {
         (Some(_), Some(_)) => (
-            format!("WHERE created_at >= $1 AND created_at < $2"),
+            "WHERE created_at >= $1 AND created_at < $2".to_string(),
             "LIMIT $3".to_string(),
         ),
         (Some(_), None) => {
-            (format!("WHERE created_at >= $1"), "LIMIT $2".to_string())
+            ("WHERE created_at >= $1".to_string(), "LIMIT $2".to_string())
         }
         (None, Some(_)) => {
-            (format!("WHERE created_at < $1"), "LIMIT $2".to_string())
+            ("WHERE created_at < $1".to_string(), "LIMIT $2".to_string())
         }
-        (None, None) => (format!("WHERE 1=1"), "".to_string()), // No filtering, select all documents
+        (None, None) => ("WHERE 1=1".to_string(), "".to_string()), // No filtering, select all documents
     };
 
     let full_delete_query =

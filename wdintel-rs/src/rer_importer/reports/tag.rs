@@ -25,7 +25,7 @@ pub async fn report_docx_kind_tag(
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&txn, user).await?;
     let mut messages = crate::rer_importer::inbox::get_inbox_messages(
-        &login, &logins, &env, &req.req,
+        &login, &logins, env, &req.req,
     )
     .await
     .context(h!())?;
@@ -191,7 +191,7 @@ pub async fn report_docx_kind_tag(
             .context(h!())?;
         if let Some(extended_form) = m_comment.map(|c| c.comment) {
             let extended_form = if important_ids.contains(&message_id) {
-                format!("⚠️ {}", extended_form)
+                format!("⚠️ {extended_form}")
             } else {
                 extended_form.clone()
             };
@@ -209,7 +209,7 @@ pub async fn report_docx_kind_tag(
             ps.push(p)
         }
         let full_text = remove_non_recognized(
-            &message_full_text_nocomments(&msg, &inbox, &datasource)
+            &message_full_text_nocomments(&msg, &inbox, datasource)
                 .context(h!())?,
         );
         let m_comment = sigint_comment::Entity::find()
@@ -220,7 +220,7 @@ pub async fn report_docx_kind_tag(
             .context(h!())?;
         let full_text =
             if m_comment.is_none() && important_ids.contains(&message_id) {
-                format!("⚠️ {}", full_text)
+                format!("⚠️ {full_text}")
             } else {
                 full_text
             };
@@ -267,19 +267,16 @@ fn message_full_text_nocomments(
     datasource: &datasource::Model,
 ) -> Result<String, AppError> {
     if datasource.kind == "signal" || datasource.kind == "whatsapp" {
-        return Ok(format!(
-            "{}",
-            message.body.clone().unwrap_or("".to_string()),
-        ));
+        Ok(message.body.clone().unwrap_or("".to_string()).to_string())
     } else if datasource.kind == "api" {
         let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {
             (Some(date), Some(time)) => format!("{} ", date + " " + &time),
-            (Some(date), None) => format!("{} ", date),
-            (None, Some(time)) => format!("{} ", time),
+            (Some(date), None) => format!("{date} "),
+            (None, Some(time)) => format!("{time} "),
             (None, None) => "".to_string(),
         };
         let freq_part = match inbox.freq.clone() {
-            Some(freq) => format!("{} ", freq),
+            Some(freq) => format!("{freq} "),
             None => "".to_string(),
         };
         let unit_part = match inbox.freq {
@@ -294,13 +291,13 @@ fn message_full_text_nocomments(
             }
             None => "".to_string(),
         };
-        return Ok(format!(
+        Ok(format!(
             "{datetime_part}{freq_part}\n{unit_part}{location_part}\n{}",
             message.body.clone().unwrap_or("".to_string()),
-        ));
+        ))
     } else {
-        return Err(
+        Err(
             format!("Unknown datasource kind: {:?}", datasource.kind).into()
-        );
+        )
     }
 }

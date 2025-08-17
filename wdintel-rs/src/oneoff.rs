@@ -40,7 +40,7 @@ pub fn oneoff_batch_usk_to_wgs(
         wtr.serialize(wgs84)?;
     }
     wtr.flush()?;
-    println!("> written to {}", output);
+    println!("> written to {output}");
     Ok(())
 }
 

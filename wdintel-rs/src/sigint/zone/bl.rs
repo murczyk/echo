@@ -3,9 +3,10 @@ use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
 use sea_orm::*;
 
+#[derive(Debug)]
 pub struct BlSzdGroupUpdateRes {
     pub is_secret: bool,
-    pub aor: Option<area_of_responsibility::Model>,
+    pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
@@ -22,7 +23,7 @@ pub async fn bl_szd_group_update(
         req.short_note.clone(),
         req.long_note.clone(),
         szd.clone(),
-        &txn,
+        txn,
     )
     .await
     .context(h!())?;
@@ -63,17 +64,21 @@ pub async fn bl_szd_group_update(
         .context(h!())?
         .unwrap_or((None, None));
 
+    let aor_ids = match &req.area_of_responsibility_ids {
+        None => req.area_of_responsibility_id.map(|id| vec![id]),
+        Some(ids) => Some(ids.clone()),
+    };
     let aor = crate::messenger::bl::upsert_group_area_of_responsibility(
         txn,
         &szd.group_master_key,
-        req.area_of_responsibility_id.clone(),
+        aor_ids,
     )
     .await
     .context(h!())?;
 
     let res = BlSzdGroupUpdateRes {
         is_secret,
-        aor,
+        aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_users,
         short_note,
         long_note,
@@ -101,7 +106,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
         let m_group = group_admin_data::Entity::find()
             .filter(
                 group_admin_data::Column::GroupMasterKey
-                    .eq(&master_key.clone()),
+                    .eq(master_key.clone()),
             )
             .one(txn)
             .await
@@ -225,8 +230,12 @@ pub async fn bl_szd_groups_list(
         }
     }
 
-    let keys = res.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
-    let group_aors = crate::sigint::zone::collect_group_aors(keys.clone(), txn)
+    let keys = res.keys().cloned().collect::<Vec<_>>();
+    let group_aors =
+        crate::sigint::area_of_responsibility::bl::collect_group_aors(
+            keys.clone(),
+            txn,
+        )
         .await
         .context(h!())?;
 
@@ -237,9 +246,9 @@ pub async fn bl_szd_groups_list(
                 master_key,
                 (is_secret, szd_id, allowed_users, short_note, long_note),
             )| {
-                let aor = group_aors.get(&master_key).cloned();
+                let aors = group_aors.get(&master_key).cloned();
                 ZoneDatasourceGroup {
-                    area_of_responsibility: aor,
+                    areas_of_responsibility: aors,
                     sigint_zone_datasource_id: szd_id,
                     group_master_key: master_key,
                     is_group_secret: is_secret,

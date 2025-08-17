@@ -21,5 +21,5 @@ fn to_app_error<T>(e: T) -> AppError
 where
     T: std::fmt::Display + std::fmt::Debug,
 {
-    format!("Multipart error: {:?}", e).into()
+    format!("Multipart error: {e:?}").into()
 }

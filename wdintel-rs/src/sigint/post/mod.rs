@@ -169,7 +169,7 @@ pub async fn update_post(
     if req.description.is_some() {
         post_model.description = Set(req.description.clone());
     }
-    if let Some(deleted) = req.deleted.clone() {
+    if let Some(deleted) = req.deleted {
         post_model.deleted = Set(deleted);
     }
 
@@ -196,7 +196,7 @@ pub async fn delete_post(
         .context(h!())?;
 
     let post_obj = sigint_post::Entity::find()
-        .filter(sigint_post::Column::Id.eq(req.id.clone()))
+        .filter(sigint_post::Column::Id.eq(req.id))
         .one(&env.dbx)
         .await
         .context(h!())?

@@ -12,12 +12,12 @@ pub async fn healthcheck_worker(dbx: &DatabaseConnection, config: Config) {
     let mut last_notified_at = None;
     loop {
         debug!("starting healthcheck_worker");
-        match run_healthcheck_worker(&dbx, last_notified_at, &config).await {
+        match run_healthcheck_worker(dbx, last_notified_at, &config).await {
             Ok(Some(new_last_notified_at)) => {
                 last_notified_at = Some(new_last_notified_at)
             }
             Ok(None) => {}
-            Err(e) => error!("healthcheck_worker error: {}", e),
+            Err(e) => error!("healthcheck_worker error: {e}"),
         };
         debug!("[healthcheck_worker] nothing to do, sleeping...");
         tokio::time::sleep(tokio::time::Duration::from_secs(RESTART_TIME))
@@ -51,7 +51,7 @@ pub async fn run_healthcheck_worker(
         .context(h!())?;
     if timeouts > 4 {
         let content = format!("Почалися таймаути на спробах отримати повідомлення, переприв'яжіть Signal на сервері {}", &config.public_host);
-        crate::server::discord::discord_notify(&*content)
+        crate::server::discord::discord_notify(&content)
             .await
             .context(h!())?;
         Ok(Some(Utc::now().naive_utc()))

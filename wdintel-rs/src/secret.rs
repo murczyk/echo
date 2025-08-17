@@ -39,9 +39,9 @@ pub async fn secret_worker(config: VaultConfig) {
     loop {
         info!("> starting secret_worker");
         match fetch_config(&config).await {
-            Ok(_) => return (),
+            Ok(_) => return ,
             Err(e) => {
-                info!("retry scheduled, unable to load config: {}", e);
+                info!("retry scheduled, unable to load config: {e}");
             }
         }
         tokio::time::sleep(Duration::from_secs(RETRY_TIME)).await;
@@ -49,13 +49,13 @@ pub async fn secret_worker(config: VaultConfig) {
 }
 
 async fn fetch_config(secret_config: &VaultConfig) -> anyhow::Result<()> {
-    if let Some(_) = SECRET.get() {
+    if SECRET.get().is_some() {
         return Ok(());
     };
     let mut attempt_count = 1;
     loop {
-        info!("attempting lo fetch secret config: {}/3", attempt_count);
-        match do_fetch_config(&secret_config).await {
+        info!("attempting lo fetch secret config: {attempt_count}/3");
+        match do_fetch_config(secret_config).await {
             Ok(res) => match SECRET.set(res.clone()) {
                 Ok(_) => return Ok(()),
                 _ => bail!("unable to set value for a secret"),
@@ -64,7 +64,7 @@ async fn fetch_config(secret_config: &VaultConfig) -> anyhow::Result<()> {
                 if attempt_count > 3 {
                     bail!(e)
                 }
-                debug!("attempt to fetch secret cnfig failed: {:?}", e);
+                debug!("attempt to fetch secret cnfig failed: {e:?}");
                 attempt_count += 1;
                 // minimum between sleep_duration * 5 and MAX_SLEEP_SECONDS
                 let sleep_duration = std::cmp::min(

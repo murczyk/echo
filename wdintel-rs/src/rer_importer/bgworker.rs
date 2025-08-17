@@ -33,7 +33,7 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
             settlements.clone(),
             txn,
             rq,
-            &config,
+            config,
             message_id,
             &mut cache,
             redis,
@@ -98,17 +98,14 @@ where
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
-                DateTime::from_naive_utc_and_offset(timestamp.clone(), Utc);
+                DateTime::from_naive_utc_and_offset(*timestamp, Utc);
             m_dt = Some(dt2.with_timezone(&Kyiv));
         };
     }
     let date_v = m_dt
         .map(|dt| format!("{}-{:02}-{:02}", dt.year(), dt.month(), dt.day()));
     let time_v = m_dt.map(|dt| format!("{:02}:{:02}", dt.hour(), dt.minute()));
-    let freq = match super::frequency::extract_freq(&body)? {
-        None => None,
-        Some(v) => Some(crate::rer_importer::frequency::etalon(&v)),
-    };
+    let freq = super::frequency::extract_freq(&body)?.map(|v| crate::rer_importer::frequency::etalon(&v));
     let coords_vec = milgeo_rs::coordinates::rer_extract_coords(&body).await;
     let mut other_coords = coords_vec.clone();
     let coords = pop_vector(&mut other_coords);
@@ -148,12 +145,12 @@ where
         match (unit_and_loc.locality, unit_and_loc.locality_v2) {
             (Some(_), Some(locations)) => locations,
             (Some(location), None) => {
-                let locations = crate::location::parse_location(
+                
+                crate::location::parse_location(
                     settlements.clone(),
                     location,
                 )
-                .context(h!())?;
-                locations
+                .context(h!())?
             }
             _ => vec![],
         };
@@ -336,9 +333,9 @@ where
     let Some(unit) = unit else {
         return Ok(None);
     };
-    let mut cached_m_unit = cache.get(&unit).cloned();
+    let mut cached_m_unit = cache.get(unit).cloned();
     if cached_m_unit.is_none() {
-        let parsed_unit = crate::unit::parse_unit(&unit, txn)
+        let parsed_unit = crate::unit::parse_unit(unit, txn)
             .await
             .context(h!())?
             .unwrap_or("".to_string());

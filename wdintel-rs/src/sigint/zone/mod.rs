@@ -1,7 +1,7 @@
 use self::bl::*;
 use super::types::*;
 use crate::entities::*;
-use crate::rer_importer::collect_group_aors;
+use crate::sigint::area_of_responsibility::bl::collect_group_aors;
 use crate::sigint::area_of_responsibility::render_aor;
 use crate::types::*;
 use actix_web::post;
@@ -101,7 +101,9 @@ pub async fn zones_datasources_group_update(
         sigint_zone_datasource_id: szd.id,
         group_master_key: szd.group_master_key,
         is_group_secret: rsp.is_secret,
-        area_of_responsibility: rsp.aor.map(|aor| render_aor(aor)),
+        areas_of_responsibility: rsp
+            .aor
+            .map(|aors| aors.into_iter().map(render_aor).collect()),
         allowed_users: rsp.allowed_users,
         short_note: rsp.short_note,
         long_note: rsp.long_note,
@@ -176,7 +178,7 @@ pub async fn zones_datasources_group_add(
         .unwrap_or((None, None));
 
     let group_master_key = szd.group_master_key.clone();
-    let area_of_responsibility =
+    let areas_of_responsibility =
         collect_group_aors(vec![group_master_key.clone()], &env.dbx)
             .await
             .context(h!())?
@@ -192,7 +194,7 @@ pub async fn zones_datasources_group_add(
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
             is_group_secret: req.is_secret,
-            area_of_responsibility,
+            areas_of_responsibility,
             group_master_key,
             allowed_users,
             short_note,

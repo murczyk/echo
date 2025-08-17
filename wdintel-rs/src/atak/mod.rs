@@ -184,7 +184,7 @@ fn folder_to_data_package_zip(
         quick_xml::se::to_string(&manifest).context(h!())?,
     )?;
     for cot in cots.iter() {
-        std::fs::create_dir(&base_path.join(&cot.uid))?;
+        std::fs::create_dir(base_path.join(&cot.uid))?;
         let cot_content = format!(
             r###"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
 {}
@@ -406,8 +406,8 @@ mod tests {
             start: "2022-10-29T13:41:26.948Z".to_string(),
             stale: "2023-10-29T13:41:26.948Z".to_string(),
             how: "h-g-i-g-o".to_string(),
-            point: point,
-            detail: detail,
+            point,
+            detail,
         };
         let cot_content = quick_xml::se::to_string(&cot).unwrap();
         assert_eq!(

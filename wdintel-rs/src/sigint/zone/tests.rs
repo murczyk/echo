@@ -26,8 +26,7 @@ async fn test_bl_szd_group_update_01() {
         .unwrap();
     assert!(
         signal_group_aors.is_empty(),
-        "Expected no group AORs, found: {:?}",
-        signal_group_aors
+        "Expected no group AORs, found: {signal_group_aors:?}"
     );
     let aor = mk_aor(
         &txn,
@@ -43,11 +42,12 @@ async fn test_bl_szd_group_update_01() {
         user_logins: vec![],
         short_note: None,
         long_note: None,
-        area_of_responsibility_id: Some(aor.id),
+        area_of_responsibility_id: None,
+        area_of_responsibility_ids: Some(vec![aor.id]),
     };
     let res = bl_szd_group_update(&req, &szd, &txn).await.unwrap();
 
-    assert_eq!(res.aor.is_some(), true);
+    assert!(res.aor.is_some());
     let signal_group_aors = signal_group_aor::Entity::find()
         .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
         .all(&txn)
@@ -172,12 +172,12 @@ async fn test_bl_szd_groups_list_01() {
     // Verify each group has an AOR assigned
     for group in &res.groups {
         assert!(
-            group.area_of_responsibility.is_some(),
+            group.areas_of_responsibility.is_some(),
             "Group {} should have an AOR assigned",
             group.group_master_key
         );
         assert_eq!(
-            group.area_of_responsibility.as_ref().unwrap().id,
+            group.areas_of_responsibility.as_ref().unwrap()[0].id,
             aor.id,
             "Group {} should be assigned to the correct AOR",
             group.group_master_key

@@ -74,7 +74,7 @@ where
 
     trace!(
         ">find and highlight signals query: {}",
-        q.build(DbBackend::Postgres).to_string()
+        q.build(DbBackend::Postgres)
     );
 
     let signals = q.into_model::<SignalRes>().all(txn).await.context(h!())?;
@@ -110,7 +110,7 @@ fn extract_highlighted_tokens(
         }
     }
 
-    trace!(">extracted signals: {:?}", res);
+    trace!(">extracted signals: {res:?}");
 
     Ok(res)
 }

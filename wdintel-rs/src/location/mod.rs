@@ -109,13 +109,13 @@ fn find_locations_by_name(
     let config: &SettlementsData = &settlements_lock;
     let (_, _, _, settlements) = config;
     let mut matches: Vec<SettlementDetails> = Vec::new();
-    for (_, s) in settlements {
+    for s in settlements.values() {
         if s.name.contains(&query.to_uppercase()) {
             matches.push(s.clone());
         }
     }
     if let Some(region) = m_region {
-        if matches.len() > 0 {
+        if !matches.is_empty() {
             let mut filtered = vec![];
             for m in matches {
                 if m.region.eq(&region) {
@@ -136,13 +136,11 @@ fn find_locations_by_name(
                     if min_distance < 0.0 || min_distance / new_distance > 5.0 {
                         min_distance = new_distance;
                         new_result = vec![m];
+                    } else if new_distance < min_distance {
+                        min_distance = new_distance;
+                        new_result.insert(0, m);
                     } else {
-                        if new_distance < min_distance {
-                            min_distance = new_distance;
-                            new_result.insert(0, m);
-                        } else {
-                            new_result.push(m);
-                        }
+                        new_result.push(m);
                     }
                 }
             }
@@ -164,7 +162,7 @@ pub fn parse_location(
         static ref JUNK_CHAR_RE: Regex =
             Regex::new(r#"[ \(\)\.\-\,\/\:";!\?\*\%\$@0-9]"#).unwrap();
         static ref JUNK_WORD_RE: Regex = Regex::new(
-            &*r#"\W($s1)"#.replace("$s1", &*collect_blacklist().join("|"))
+            &r#"\W($s1)"#.replace("$s1", &collect_blacklist().join("|"))
         )
         .unwrap();
     }
@@ -176,13 +174,12 @@ pub fn parse_location(
         .replace("Р-Н. ", "РАЙОН ")
         .replace("Р-Н ", "РАЙОН ")
         .replace("ОБ-ТЬ", "ОБЛАСТЬ");
-    let location = JUNK_CHAR_RE.replace_all(&*location, " ").to_string();
-    let location = JUNK_WORD_RE.replace_all(&*location, " ").to_string();
+    let location = JUNK_CHAR_RE.replace_all(&location, " ").to_string();
+    let location = JUNK_WORD_RE.replace_all(&location, " ").to_string();
     let location = trim(location);
     let location = try_process_nearest_location(location);
     let words = location
         .split_whitespace()
-        .into_iter()
         .map(|x| x.to_string())
         .collect_vec();
     let result =
@@ -199,7 +196,6 @@ pub fn parse_location(
 fn try_process_nearest_location(location: String) -> String {
     let mut words = location
         .split_whitespace()
-        .into_iter()
         .map(|x| x.to_string().to_uppercase())
         .collect_vec();
     let mut has_nearest_word = false;
@@ -261,7 +257,7 @@ fn find_matching_settlements(
     let mut i = 0;
     while i + 2 < words.len() {
         i = handle_three_words_group(
-            &regions,
+            regions,
             trie,
             &mut result,
             &mut cache,
@@ -276,7 +272,7 @@ fn find_matching_settlements(
             result.insert(row, coords);
         }
     } else {
-        handle_two_words_group(&regions, trie, &mut result, &mut cache, i)
+        handle_two_words_group(regions, trie, &mut result, &mut cache, i)
             .context(h!())?;
     }
     let mut result = result.into_iter().collect_vec();
@@ -297,7 +293,7 @@ fn handle_two_words_group(
 ) -> anyhow::Result<()> {
     let (word0, res0) = cache.get(i).context(h!())?;
     let (word1, res1) = cache.get(i + 1).context(h!())?;
-    let query = &format!("{} {}", word0, word1);
+    let query = &format!("{word0} {word1}");
     let joined_res = match_settlement(query, trie);
     let is_region =
         joined_res.data.iter().any(|(row, _)| regions.contains(row));
@@ -325,7 +321,7 @@ fn handle_three_words_group(
     let (word0, res0) = cache.get(i).context(h!())?;
     let (word1, _) = cache.get(i + 1).context(h!())?;
     let mut i = i + 1;
-    let joined0 = format!("{} {}", word0, word1);
+    let joined0 = format!("{word0} {word1}");
     let joined_res = match_settlement(&joined0, trie);
     let data = if !joined_res.data.is_empty() {
         i += 1;
@@ -369,7 +365,7 @@ pub fn load_from_file(
     let mut settlements = BTreeMap::new();
 
     for source in settlements_paths {
-        info!("[{}] loading source", &source);
+        // info!("[{}] loading source", &source);
         // let path = format!("{}/{}", dir, source.clone());
         let path = root_dir.join(source.clone());
         let text = match path.exists() {
@@ -384,9 +380,9 @@ pub fn load_from_file(
                     .context(h!())?
             }
         };
-        trace!("[{}] loaded source successfully", &source);
+        // trace!("[{}] loaded source successfully", &source);
         let data: BTreeMap<String, Vec<SettlementFileRow>> =
-            serde_json::from_str(&*text).context(h!())?;
+            serde_json::from_str(&text).context(h!())?;
 
         for (region, rows) in data {
             region_names.insert(region.clone());
@@ -407,14 +403,14 @@ pub fn load_from_file(
                 if let Some(id) = &d.id {
                     settlements.insert(*id, details.clone());
                 }
-                trie.insert(&*name.clone(), details);
+                trie.insert(&name.clone(), details);
             }
             let region = region.to_uppercase();
             let region_trimmed = region.clone().replace("ОБЛАСТЬ", "ОБЛ");
             regions.push(region.clone());
             regions.push(region_trimmed.clone());
             trie.insert(
-                &*region,
+                &region,
                 SettlementDetails {
                     name: region.clone(),
                     id: None,
@@ -425,7 +421,7 @@ pub fn load_from_file(
             );
             let key = region_trimmed.clone();
             trie.insert(
-                &*key,
+                &key,
                 SettlementDetails {
                     name: region_trimmed,
                     id: None,
@@ -526,12 +522,12 @@ fn deduplicate_settlement_names(
         BTreeMap::new();
 
     for rec in result {
-        let Some(id) = rec.id.clone() else {
+        let Some(id) = rec.id else {
             continue;
         };
         aggregated_result
             .entry(id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(rec);
     }
     let mut result = vec![];
@@ -563,7 +559,7 @@ mod tests {
 
     #[test]
     pub fn test1() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -575,7 +571,7 @@ mod tests {
 
     #[test]
     pub fn test2() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -591,7 +587,7 @@ mod tests {
 
     #[test]
     pub fn test3() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -604,7 +600,7 @@ mod tests {
 
     #[test]
     pub fn test4() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -618,7 +614,7 @@ mod tests {
 
     #[test]
     pub fn test5() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -630,7 +626,7 @@ mod tests {
 
     #[test]
     pub fn test6() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -646,7 +642,7 @@ mod tests {
 
     #[test]
     pub fn test8() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -659,7 +655,7 @@ mod tests {
 
     #[test]
     pub fn test9() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -675,7 +671,7 @@ mod tests {
 
     #[test]
     pub fn test10() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -691,13 +687,13 @@ mod tests {
 
     #[test]
     pub fn test11() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         println!(
             "> config.settlement_paths() = {:?}",
             config.settlement_paths()
         );
         let man = std::env!("CARGO_MANIFEST_DIR");
-        println!("> man: {}", man);
+        println!("> man: {man}");
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -713,7 +709,7 @@ mod tests {
 
     #[test]
     pub fn test12() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -729,7 +725,7 @@ mod tests {
 
     #[test]
     pub fn test13() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -743,7 +739,7 @@ mod tests {
 
     #[test]
     pub fn test14() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -757,7 +753,7 @@ mod tests {
 
     #[test]
     pub fn test15() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -770,7 +766,7 @@ mod tests {
 
     #[test]
     pub fn test16() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -786,7 +782,7 @@ mod tests {
 
     #[test]
     pub fn test17() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -802,7 +798,7 @@ mod tests {
 
     #[test]
     pub fn test18() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -818,7 +814,7 @@ mod tests {
 
     #[test]
     pub fn test19() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -834,7 +830,7 @@ mod tests {
 
     #[test]
     pub fn test20() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -850,7 +846,7 @@ mod tests {
 
     #[test]
     pub fn test21() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -868,7 +864,7 @@ mod tests {
 
     #[test]
     pub fn test22() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -881,7 +877,7 @@ mod tests {
 
     #[test]
     pub fn test23() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -893,7 +889,7 @@ mod tests {
 
     #[test]
     pub fn test24() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -909,7 +905,7 @@ mod tests {
 
     #[test]
     pub fn test_pidar1() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -921,7 +917,7 @@ mod tests {
 
     #[test]
     pub fn test_pidar2() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -936,7 +932,7 @@ mod tests {
 
     #[test]
     pub fn test_pidar3() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -952,7 +948,7 @@ mod tests {
 
     #[test]
     pub fn test_failure() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -964,7 +960,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp1() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -977,7 +973,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp2() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -991,7 +987,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp3() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1005,7 +1001,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp4() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1019,7 +1015,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp5() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1032,7 +1028,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp6() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
@@ -1048,7 +1044,7 @@ mod tests {
 
     #[test]
     pub fn test_regexp7() {
-        let config = crate::config::read_config(Mode::Debug).unwrap();
+        let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(config.settlement_paths().unwrap())
                 .unwrap(),
