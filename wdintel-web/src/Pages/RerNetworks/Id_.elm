@@ -169,6 +169,18 @@ type alias CallsignResModified =
     , isReported : Bool
     }
 
+-- Нова структура для рядка таблиці позивних
+type alias CallsignTableRow =
+    { callsign : String
+    , messageCount : Int
+    , lastDatetime : Maybe Int
+    , position : String
+    , unitName : String
+    , comment : String
+    , createdAt : Int
+    , sourceName : String
+    }
+
 
 type FreqActivityFilter
     = AllFreqs
@@ -208,6 +220,7 @@ type alias Model =
     , reportIncludeConfirmation : Bool
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
+    , callsignsTableState : Table.State
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , modulations : RemoteData ApiError (List B.ModulationRec)
@@ -291,6 +304,7 @@ init route shared () =
       , reportIncludeConfirmation = True
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
+      , callsignsTableState = Table.initialSort "Позивний"
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
       , modulations = NotAsked
@@ -424,6 +438,7 @@ type Msg
     | ReportIncludeSigintSignsCheckedByUser Bool
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
+    | SetCallsignsTableState Table.State
     | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
@@ -1245,6 +1260,9 @@ update shared msg model =
         SetFreqsTableState newState ->
             ( { model | freqsTableState = newState }, E.none )
 
+        SetCallsignsTableState newState ->
+            ( { model | callsignsTableState = newState }, E.none )
+
         OpenFreqEditSidebar freqId updateReq ->
             let
                 -- Оновлюємо селекти з даними з частоти
@@ -1952,6 +1970,126 @@ freqsTableConfig shared model user =
                     else
                         []
                    )
+        , customizations = customizations
+        }
+
+
+callsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config CallsignTableRow Msg
+callsignsTableConfig shared model user =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
+        { toId = .callsign
+        , toMsg = SetCallsignsTableState
+        , columns =
+            [ Table.veryCustomColumn
+                { name = "Позивний"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex items-center flex-wrap" ]
+                                [ text <| String.toUpper row.callsign
+                                , a
+                                    [ href (createAnalysisUrl shared model row.callsign)
+                                    , target "_blank"
+                                    , title "Відкрити позивний в аналізі"
+                                    , class "ml-2"
+                                    ]
+                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
+                                ]
+                            ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .callsign
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Останній раз в етері"
+                , viewData =
+                    \row ->
+                        case row.lastDatetime of
+                            Just lastDatetime ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
+                                }
+
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.stringColumn "Посада" .position |> Table.withColumnWidth "25%"
+            , Table.stringColumn "Підрозділ" .unitName |> Table.withColumnWidth "16%"
+            , Table.stringColumn "Коментар" .comment |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Дата прив'язки"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.stringColumn "Джерело" .sourceName |> Table.withColumnWidth "10%"
+            ]
         , customizations = customizations
         }
 
@@ -3138,76 +3276,11 @@ contentBlock user shared network model =
                                                 Just callsign.callsign
                                     )
                       in
-                      table [ class "table-fixed w-full" ]
-                        [ thead [ class "text-[13px]/[110%] font-medium sticky bg-w dark:bg-[#1C1C21]", style "inset-block-start" "0" ]
-                            [ tr [ class "" ]
-                                [ th [ class "w-[12%]" ] [ text "Позивний" ]
-                                , th [ class "w-[8%]" ]
-                                    [ Html.node
-                                        "sl-tooltip"
-                                        [ attribute "content" "Кількість перехоплень з позивним"
-                                        , attribute "placement" "right"
-                                        , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
-                                        ]
-                                        [ text "К-сть"
-                                        , sup [ class "ml-[2px]" ]
-                                            [ i
-                                                [ class "bi-question-circle" ]
-                                                []
-                                            ]
-                                        ]
-                                    ]
-                                , th [ class "w-[12%]" ] [ text "Останній раз в етері" ]
-                                , th [ class "w-[25%]" ] [ text "Посада" ]
-                                , th [ class "w-[16%]" ] [ text "Підрозділ" ]
-                                , th [ class "w-[20%]" ] [ text "Коментар" ]
-                                , th [ class "w-[12%]" ] [ text "Дата прив'язки" ]
-                                , th [ class "w-[10%]" ] [ text "Джерело" ]
-                                ]
-                            ]
-                        , tbody []
-                            (List.map
-                                (\row ->
-                                    tr [ class "" ]
-                                        [ td []
-                                            [ div [ class "flex items-center flex-wrap" ]
-                                                [ text <| String.toUpper row.callsign
-                                                , a
-                                                    [ href (createAnalysisUrl shared model row.callsign)
-                                                    , target "_blank"
-                                                    , title "Відкрити позивний в аналізі"
-                                                    , class "ml-2"
-                                                    ]
-                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
-                                                ]
-                                            ]
-                                        , td [] [ text <| String.fromInt row.messageCount ]
-                                        , td []
-                                            [ case row.lastDatetime of
-                                                Just lastDatetime ->
-                                                    text <|
-                                                        Le.Time.renderDateF6 shared.timeZone
-                                                            (Time.millisToPosix lastDatetime)
-
-                                                Nothing ->
-                                                    text ""
-                                            ]
-                                        , td [] [ text row.position ]
-                                        , td [] [ text row.unitName ]
-                                        , td [] [ text row.comment ]
-                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
-                                        , td [] [ text row.sourceName ]
-                                        ]
-                                )
-                                callsignsTableRows
-                            )
-                        , tfoot []
-                            [ tr []
-                                [ td [ colspan 7 ]
-                                    [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                                    , div [ class "flex flex-wrap gap-[4px] text-[13px]" ] (List.map (\c -> span [] [ text <| String.toUpper c ]) callsignsUnknown)
-                                    ]
-                                ]
+                      div [ class "table-responsive-modern" ]
+                        [ Table.view (callsignsTableConfig shared model user) model.callsignsTableState callsignsTableRows
+                        , div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                            [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
+                            , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c -> span [] [ text <| String.toUpper c ]) callsignsUnknown)
                             ]
                         ]
                     ]
