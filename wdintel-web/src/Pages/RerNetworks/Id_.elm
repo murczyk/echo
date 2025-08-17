@@ -145,6 +145,7 @@ createAnalysisQueryState shared model callsign =
     , search = ""
     , tags = []
     , unitsExactMatchOnly = True
+    , adjacentFreqsRange = 0
     }
 
 

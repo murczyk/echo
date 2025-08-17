@@ -607,6 +607,7 @@ leftColumn ( messageId, message ) ps model =
                                         , search = ""
                                         , tags = []
                                         , unitsExactMatchOnly = True
+                                        , adjacentFreqsRange = 0
                                         }
                                     )
 
@@ -786,17 +787,22 @@ rightColumn ( messageId, message ) ps model =
                                 if List.isEmpty ps.messageNetworkIds then
                                     if isStrict then
                                         text "Не встановлена"
+
                                     else
                                         text <| " " ++ (message.unit |> def "Не встановлена")
+
                                 else
                                     div [] <|
-                                        List.map (\networkId ->
-                                            case Dict.get networkId ps.networks of
-                                                Just network ->
-                                                    Le.Block.Unit.boldMasterUnit ps.masterUnits network
-                                                _ ->
-                                                    text "Невідома мережа"
-                                        ) ps.messageNetworkIds
+                                        List.map
+                                            (\networkId ->
+                                                case Dict.get networkId ps.networks of
+                                                    Just network ->
+                                                        Le.Block.Unit.boldMasterUnit ps.masterUnits network
+
+                                                    _ ->
+                                                        text "Невідома мережа"
+                                            )
+                                            ps.messageNetworkIds
 
                     metaFields =
                         let

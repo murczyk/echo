@@ -813,6 +813,7 @@ pub struct RerAnalysisQueryState {
     pub tags: Vec<i64>,
     pub include_peleng_locations: bool,
     pub units_exact_match_only: bool,
+    pub adjacent_freqs_range: f64,
 }
 
 #[derive(

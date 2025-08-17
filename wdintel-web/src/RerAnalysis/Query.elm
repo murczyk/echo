@@ -27,6 +27,7 @@ emptyQueryState =
     , search = ""
     , tags = []
     , unitsExactMatchOnly = True
+    , adjacentFreqsRange = 0
     }
 
 
@@ -50,6 +51,7 @@ modelQueryState model =
     , search = model.searchInput
     , tags = model.tagsSelected
     , unitsExactMatchOnly = model.unitsExactMatchOnly
+    , adjacentFreqsRange = model.adjacentFreqsRangeSelect.selected
     }
 
 
@@ -70,6 +72,11 @@ updModelFromQueryState model ms =
         , orBookmarked = ms.orBookmarked
         , searchInput = ms.search
         , unitsExactMatchOnly = ms.unitsExactMatchOnly
+        , adjacentFreqsRangeSelect = 
+            let
+                current = model.adjacentFreqsRangeSelect
+            in
+            { current | selected = ms.adjacentFreqsRange }
     }
 
 

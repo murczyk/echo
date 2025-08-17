@@ -1643,6 +1643,7 @@ freqsTableConfig shared model user =
                                     , search = ""
                                     , tags = []
                                     , unitsExactMatchOnly = True
+                                    , adjacentFreqsRange = 0
                                     }
                                 )
 

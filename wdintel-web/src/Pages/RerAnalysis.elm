@@ -194,7 +194,7 @@ init route _ =
                     Query.updModelFromQueryState model state
 
                 Nothing ->
-                    { model | unitsExactMatchOnly = True }
+                    model
 
         m3 =
             case Dict.get "showMap" route.query of
@@ -2785,7 +2785,7 @@ update user shared route msg model =
                                             Utils.findAllAdjacentFreqs (RD.withDefault [] model.freqs |> List.map .freq) model.freqsSelected a2.selected
                                     }
                             in
-                            loadCoreStats m3
+                            loadCoreStatsAndPushUrl m3
 
                         _ ->
                             ( m2, E.none )
