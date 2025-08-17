@@ -13,60 +13,72 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
-
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
         with:
-          path: wdintel-web/node_modules
-          key: npm-${{ runner.os }}-${{ hashFiles('wdintel-web/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-
+          lfs: true
+
+      - name: Setup Git LFS and debug
+        run: |
+          echo "Checking Git LFS status..."
+          git lfs install
+          git lfs pull
+          echo "Checking LFS file: deploy/wd_test-2025-08-17-07-43.pgrestore"
+          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
+          file deploy/wd_test-2025-08-17-07-43.pgrestore
+          echo "First 50 bytes:"
+          head -c 50 deploy/wd_test-2025-08-17-07-43.pgrestore | hexdump -C
+
+      - name: Restore npm cache
+        run: ./scripts/cache/restore-npm.sh || true
 
       - name: Run frontend tests
         run: just test-fe
+
+      - name: Save npm cache
+        if: always()
+        run: ./scripts/cache/save-npm.sh
 
   backend-tests:
     if: github.repository == 'echoua/echo'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
-
-      - name: Cache Python dependencies
-        uses: actions/cache@v4
         with:
-          path: wdintel-rs/wdintel-py/.venv
-          key: python-${{ runner.os }}-${{ hashFiles('wdintel-rs/wdintel-py/requirements.txt') }}
-          restore-keys: |
-            python-${{ runner.os }}-
+          lfs: true
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-
+      - name: Setup Git LFS and debug
+        run: |
+          echo "Checking Git LFS status..."
+          git lfs install
+          git lfs pull
+          echo "Checking LFS file: deploy/wd_test-2025-08-17-07-43.pgrestore"
+          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
+          file deploy/wd_test-2025-08-17-07-43.pgrestore
+          echo "First 50 bytes:"
+          head -c 50 deploy/wd_test-2025-08-17-07-43.pgrestore | hexdump -C
 
-      - name: Cache Cargo build
-        uses: actions/cache@v4
-        with:
-          path: wdintel-rs/target/
-          key: cargo-build-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
-          restore-keys: |
-            cargo-build-${{ runner.os }}-
+      - name: Restore Python cache
+        run: ./scripts/cache/restore-python.sh || true
 
-      - name: Cache Spacy models
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/spacy
-          key: spacy-models-${{ runner.os }}
-          restore-keys: |
-            spacy-models-${{ runner.os }}
+      - name: Restore Cargo cache
+        run: ./scripts/cache/restore-cargo.sh || true
+
+      - name: Restore Spacy cache
+        run: ./scripts/cache/restore-spacy.sh || true
 
       - name: Run backend tests
         env:
           GITHUB_ACTIONS: true
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: just ci-test-be
+
+      - name: Save Python cache
+        if: always()
+        run: ./scripts/cache/save-python.sh
+
+      - name: Save Cargo cache
+        if: always()
+        run: ./scripts/cache/save-cargo.sh
+
+      - name: Save Spacy cache
+        if: always()
+        run: ./scripts/cache/save-spacy.sh
