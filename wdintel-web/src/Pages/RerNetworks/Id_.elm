@@ -392,9 +392,6 @@ type Msg
     | FreqsEditStartedByUser
     | FreqsEditSavedByUser
     | FreqsEditCanceledByUser
-    | CallsignsEditStartedByUser
-    | CallsignsEditSavedByUser
-    | CallsignsEditCanceledByUser
     | FreqUpdatedByApi (Result ApiError B.Network)
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
@@ -416,8 +413,6 @@ type Msg
     | DescriptionEditedByUser Int String
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
-    | CallsignReportingStatusToggledByUser CallsignResModified Bool
-    | CallsignReportingStatusUpdatedByApi (Result ApiError Bool)
     | ReportModalOpenedByUser
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
@@ -1171,68 +1166,7 @@ update shared msg model =
             , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
             )
 
-        CallsignReportingStatusToggledByUser callsign isChecked ->
-            ( { model
-                | callsignsEditingState =
-                    case model.callsignsEditingState of
-                        Readonly ->
-                            model.callsignsEditingState
 
-                        Editing editingDict ->
-                            Editing (Dict.insert callsign.callsign isChecked editingDict)
-              }
-            , E.none
-            )
-
-        CallsignReportingStatusUpdatedByApi (Err e) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення статусу позивного" e
-            )
-
-        CallsignReportingStatusUpdatedByApi (Ok res) ->
-            case ( model.network, model.callsigns, model.callsignsEditingState ) of
-                ( Success network, Success callsigns, Editing editingDict ) ->
-                    let
-                        updatedCallsigns =
-                            List.map
-                                (\c ->
-                                    case Dict.get c.callsign editingDict of
-                                        Just newIsReported ->
-                                            { c | isReported = newIsReported }
-
-                                        Nothing ->
-                                            c
-                                )
-                                callsigns
-                    in
-                    ( { model | callsignsEditingState = Readonly, callsigns = Success updatedCallsigns }, E.none )
-
-                ( Success network, Success callsigns, _ ) ->
-                    ( { model | callsignsEditingState = Readonly }, E.none )
-
-                _ ->
-                    ( model, E.none )
-
-        CallsignsEditStartedByUser ->
-            ( { model | callsignsEditingState = Editing Dict.empty }, E.none )
-
-        CallsignsEditSavedByUser ->
-            case ( model.network, model.callsignsEditingState ) of
-                ( Success network, Editing editingDict ) ->
-                    ( model
-                    , E.updateCallsignReportingBatch CallsignReportingStatusUpdatedByApi
-                        { networkId = network.id
-                        , items =
-                            Dict.toList editingDict
-                                |> List.map (\( callsign, isReported ) -> { callsign = callsign, isReported = isReported })
-                        }
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        CallsignsEditCanceledByUser ->
-            ( { model | callsignsEditingState = Readonly }, E.none )
 
         ReportModalOpenedByUser ->
             ( { model | reportModalOpened = True }, E.none )
@@ -3038,19 +2972,7 @@ contentBlock user shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні" ]
-            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "CallsignsEditor" user then
-                case model.callsignsEditingState of
-                    Readonly ->
-                        i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick CallsignsEditStartedByUser ] []
 
-                    Editing _ ->
-                        div [ class "flex gap-[8px]" ]
-                            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick CallsignsEditCanceledByUser ] []
-                            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick CallsignsEditSavedByUser ] []
-                            ]
-
-              else
-                text ""
             ]
         , case model.callsigns of
             Success callsigns ->
@@ -3092,15 +3014,7 @@ contentBlock user shared network model =
                                                 Nothing ->
                                                     text ""
                                             ]
-                                        , td [ rowspan rowCount ]
-                                            [ --Toggle.new { onToggle = CallsignReportingStatusToggledByUser callsign, label = "" }
-                                              --|> Toggle.view callsign.isReported
-                                              if callsign.isReported then
-                                                i [ class "bi bi-check" ] []
 
-                                              else
-                                                text ""
-                                            ]
                                         , td [] [ text x.position ]
                                         , td [] [ text x.unitName ]
                                         , td [] [ text x.comment ]
@@ -3163,9 +3077,7 @@ contentBlock user shared network model =
                                                 Nothing ->
                                                     text ""
                                             ]
-                                        , td [ rowspan rowCount ]
-                                            [ Checkbox.new { isChecked = isReported, onToggle = CallsignReportingStatusToggledByUser callsign } |> Checkbox.view
-                                            ]
+
                                         , td [] [ text x.position ]
                                         , td [] [ text x.unitName ]
                                         , td [] [ text x.comment ]
