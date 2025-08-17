@@ -195,7 +195,7 @@ fn contour_to_rect(
         })
     } else {
         Err(AppError::BL {
-            msg: format!("failed extracting rect from contour {:?}", contour),
+            msg: format!("failed extracting rect from contour {contour:?}"),
         })
     }
 }
@@ -267,33 +267,9 @@ pub fn cut_out_photo(in_path: &str, out_path: &str) -> Result<(), AppError> {
     for (i, img_contour_pair) in cont_and_area.iter().enumerate() {
         let img_contour = img_contour_pair.0.clone();
         let area = img_contour_pair.1;
-        if false && area > 200.0 {
-            println!("> area: {:?}", area);
-
-            let min_x: i32 = img_contour.iter().map(|v| v.x).min().unwrap_or(0);
-            let max_x: i32 = img_contour.iter().map(|v| v.x).max().unwrap_or(0);
-            let min_y: i32 = img_contour.iter().map(|v| v.y).min().unwrap_or(0);
-            let max_y: i32 = img_contour.iter().map(|v| v.y).max().unwrap_or(0);
-            let im4 = opencv::core::Mat::roi(
-                &im,
-                opencv::core::Rect {
-                    x: min_x,
-                    y: min_y,
-                    width: max_x - min_x,
-                    height: max_y - min_y,
-                },
-            )
-            .context(h!())?;
-            opencv::imgcodecs::imwrite(
-                &format!("{}-cropped-{}.png", out_path, i),
-                &im4,
-                &opencv::core::Vector::default(),
-            )
-            .context(h!())?;
-        }
     }
     let img_contour = &cont_and_area
-        .get(0)
+        .first()
         .ok_or("couldn't find one contour that fits")?
         .0;
     // println!("second-largest contour: {:?}", img_contour);

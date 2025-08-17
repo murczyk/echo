@@ -37,12 +37,14 @@ pub mod test {
             return;
         }
 
-        let _guard = DB_INIT_MUTEX.lock().unwrap();
-        if DB_INIT.load(Ordering::Acquire) {
-            return;
-        }
+        let config = {
+            let _guard = DB_INIT_MUTEX.lock().unwrap();
+            if DB_INIT.load(Ordering::Acquire) {
+                return;
+            }
+            crate::config::read_config(Mode::Test).unwrap()
+        };
 
-        let config = crate::config::read_config(Mode::Test).unwrap();
         let conn_str = mk_conn_string(&config);
 
         if let Err(error) = sqlx::Postgres::create_database(&conn_str).await {
@@ -61,6 +63,11 @@ pub mod test {
         Migrator::install(&db).await.unwrap();
         Migrator::up(&db, None).await.unwrap();
 
+        {
+            let _guard = DB_INIT_MUTEX.lock().unwrap();
+            DB_INIT.store(true, Ordering::Release);
+        }
+
         // let m_user = user::Entity::find()
         //     .filter(user::Column::Username.eq(String::from("test")))
         //     .one(&db)
@@ -76,8 +83,6 @@ pub mod test {
         //     };
         //     let _ = user.save(&db).await.unwrap();
         // }
-
-        DB_INIT.store(true, Ordering::Release);
     }
 
     #[ctor]

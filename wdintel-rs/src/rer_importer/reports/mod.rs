@@ -215,7 +215,7 @@ async fn fill_comp_freq(
         .filter(sigint_inbox_item::Column::Datetime.lt(*end))
         .order_by_asc(signal_message::Column::Id);
     let count = q.clone().count(dbx).await?;
-    let pb = ProgressBar::new(count as u64);
+    let pb = ProgressBar::new(count);
     let mut stream = q.clone().stream(dbx).await?;
     let datasource_zones =
         crate::sigint::zone::get_datasources_zones(dbx).await?;
