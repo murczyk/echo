@@ -48,11 +48,49 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
-        sigint_network::Entity::delete_many()
+
+        // Delete entities that depend on sigint_network first
+        sigint_network_activity_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_aor::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_callsign::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_freq_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_freq::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_post::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_unit_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
         sigint_network_description::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_network::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;
