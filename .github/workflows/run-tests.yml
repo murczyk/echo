@@ -16,6 +16,17 @@ jobs:
         with:
           lfs: true
 
+      - name: Setup Git LFS and debug
+        run: |
+          echo "Checking Git LFS status..."
+          git lfs install
+          git lfs pull
+          echo "Checking LFS file: deploy/wd_test-2025-08-17-07-43.pgrestore"
+          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
+          file deploy/wd_test-2025-08-17-07-43.pgrestore
+          echo "First 50 bytes:"
+          head -c 50 deploy/wd_test-2025-08-17-07-43.pgrestore | hexdump -C
+
       - name: Restore npm cache
         run: ./scripts/cache/restore-npm.sh || true
 
@@ -33,6 +44,17 @@ jobs:
       - uses: actions/checkout@v3
         with:
           lfs: true
+
+      - name: Setup Git LFS and debug
+        run: |
+          echo "Checking Git LFS status..."
+          git lfs install
+          git lfs pull
+          echo "Checking LFS file: deploy/wd_test-2025-08-17-07-43.pgrestore"
+          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
+          file deploy/wd_test-2025-08-17-07-43.pgrestore
+          echo "First 50 bytes:"
+          head -c 50 deploy/wd_test-2025-08-17-07-43.pgrestore | hexdump -C
 
       - name: Restore Python cache
         run: ./scripts/cache/restore-python.sh || true
