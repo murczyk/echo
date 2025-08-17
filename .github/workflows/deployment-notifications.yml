@@ -63,14 +63,6 @@ jobs:
           workflow_name="${{ github.event.workflow_run.name }}"
           branch="${{ github.event.workflow_run.head_branch }}"
 
-          case "${{ github.event.workflow_run.conclusion }}" in
-            "success")
-              ./scripts/notifications/discord-notify.sh ci_success "" "✅ Workflow '$workflow_name' Completed" "Workflow completed successfully on branch \`$branch\`"
-              ;;
-            "failure")
-              ./scripts/notifications/discord-notify.sh ci_failure "" "❌ Workflow '$workflow_name' Failed" "Workflow failed on branch \`$branch\`"
-              ;;
-            "cancelled")
-              ./scripts/notifications/discord-notify.sh ci_cancelled "" "⏹️ Workflow '$workflow_name' Cancelled" "Workflow was cancelled on branch \`$branch\`"
-              ;;
-          esac
+          if [ "${{ github.event.workflow_run.conclusion }}" = "failure" ]; then
+            ./scripts/notifications/discord-notify.sh ci_failure "" "❌ Workflow '$workflow_name' Failed" "Workflow failed on branch \`$branch\`"
+          fi
