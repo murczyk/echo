@@ -9,9 +9,5 @@ name = "echo_migration"
 path = "src/lib.rs"
 
 [dependencies]
-async-std = { workspace = true }
-# # added due to failing build
-# ahash = "^0.8.10"
-# crc32c = "^0.6.5"
-
+tokio = { workspace = true }
 sea-orm-migration = { workspace = true }

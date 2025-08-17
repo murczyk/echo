@@ -95,7 +95,7 @@ serial_test = "3.2.0"
 
 [dependencies.echo-install-utils]
 git = "ssh://git@github.com/echoua/echo-install-utils.git"
-rev = "f5e4430d867aa0f759b734f7a1a17a1da9798f0e"
+rev = "d4771edd99807ce9abdee82c5409096f91ebf50c"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"

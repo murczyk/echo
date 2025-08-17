@@ -2353,15 +2353,14 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=5187fb3c3ecf9b936c4174
 
 [[package]]
 name = "echo-install-utils"
-version = "0.1.1-rc.202508131853"
-source = "git+ssh://git@github.com/echoua/echo-install-utils.git?rev=f5e4430d867aa0f759b734f7a1a17a1da9798f0e#f5e4430d867aa0f759b734f7a1a17a1da9798f0e"
+version = "0.1.1-rc.202508151302"
+source = "git+ssh://git@github.com/echoua/echo-install-utils.git?rev=d4771edd99807ce9abdee82c5409096f91ebf50c#d4771edd99807ce9abdee82c5409096f91ebf50c"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
  "cmd_lib",
  "dialoguer",
- "env_logger 0.11.8",
  "home",
  "network-interface",
  "regex",
@@ -2370,7 +2369,6 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
- "tailscale-localapi",
  "tempfile",
  "tokio",
  "toml 0.9.5",
@@ -2384,8 +2382,8 @@ dependencies = [
 name = "echo-migration"
 version = "0.1.0"
 dependencies = [
- "async-std",
  "sea-orm-migration",
+ "tokio",
 ]
 
 [[package]]
@@ -4351,15 +4349,6 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "ordered-float"
-version = "2.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "ordered-float"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bb71e1b3fa6ca1c61f383464aaf2bb0e2f8e772a1f01d486832464de363b951"
@@ -5905,7 +5894,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "inherent",
- "ordered-float 4.6.0",
+ "ordered-float",
  "rust_decimal",
  "sea-query-derive",
  "serde_json",
@@ -6057,28 +6046,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0e2c6ed6606019b4e29e69dbaba95b11854410e5347d525002456dbbb786b6"
 dependencies = [
  "serde_derive",
-]
-
-[[package]]
-name = "serde-aux"
-version = "4.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "207f67b28fe90fb596503a9bf0bf1ea5e831e21307658e177c5dfcdfc3ab8a0a"
-dependencies = [
- "chrono",
- "serde",
- "serde-value",
- "serde_json",
-]
-
-[[package]]
-name = "serde-value"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
-dependencies = [
- "ordered-float 2.10.1",
- "serde",
 ]
 
 [[package]]
@@ -6740,25 +6707,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "tailscale-localapi"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c0befa7b50f25c48fbcb09da1cf809ff26c497e421ce14f92e638b5896af426"
-dependencies = [
- "async-trait",
- "base64 0.21.7",
- "chrono",
- "http 0.2.12",
- "hyper 0.14.32",
- "rustls-pemfile",
- "serde",
- "serde-aux",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
 ]
 
 [[package]]

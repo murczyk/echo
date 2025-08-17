@@ -41,7 +41,6 @@ sea-orm-migration = { version = "1.1.14", features = [
     "runtime-tokio-rustls",
     "sqlx-postgres",
 ] }
-async-std = { version = "1.13.2", features = ["attributes", "tokio1"] }
 syn = "2.0.106"
 
 [profile.release]
