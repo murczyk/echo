@@ -529,7 +529,6 @@ fn deduplicate_settlement_names(
             result.push(rec);
         }
     }
-    let mut result = result;
     result.sort_by_key(|x| x.name.clone());
     result
 }

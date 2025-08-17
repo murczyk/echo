@@ -46,7 +46,7 @@ impl std::fmt::Display for Mode {
             Mode::Live => "live",
             Mode::Test => "test",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

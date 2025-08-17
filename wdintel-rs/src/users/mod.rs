@@ -876,7 +876,7 @@ pub async fn oneoff_register_user(
         &dbx,
         &ps.login,
         &ps.password,
-        &vec![ps.role.clone()],
+        &[ps.role.clone()],
         ps.sigint_zone,
         ps.organism_id,
     )

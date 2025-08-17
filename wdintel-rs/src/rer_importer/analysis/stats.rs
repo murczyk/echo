@@ -928,7 +928,7 @@ pub async fn fetch_locations(
         to_location_list(&location)
             .into_iter()
             .for_each(|location| {
-                let location = location;
+                // variable already named `location`; redundant rebind removed
                 locations.push(AnalysisStatsLocation { count, location });
             });
     }

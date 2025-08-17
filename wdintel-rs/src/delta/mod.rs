@@ -670,7 +670,7 @@ pub async fn import_map(
             )
             .await?;
 
-            let geojson_name = format!("enemy-units-{}.geojson", convert_id);
+            let geojson_name = format!("enemy-units-{convert_id}.geojson");
             let raw_kmz_output = PathBuf::from(config.storage_dir.clone())
                 .join(geojson_name.clone())
                 .with_extension("kmz");

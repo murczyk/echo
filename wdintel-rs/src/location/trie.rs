@@ -43,11 +43,11 @@ impl<D: Default + Clone> Trie<D> {
     // max_distance arg is Levenshtein distance, if 0 - performs exact search
     pub fn find_matches(
         &self,
-        word: &String,
+        word: &str,
         max_distance: Option<usize>,
     ) -> Result<D> {
-        let query = word.clone();
-        let mut word = word.clone();
+        let query = word.to_owned();
+        let mut word = word.to_owned();
         let max_distance = max_distance.unwrap_or(0);
         let mut result = Result {
             distance: max_distance,
@@ -59,7 +59,7 @@ impl<D: Default + Clone> Trie<D> {
             &self.root,
             &mut word,
             &mut String::from(""),
-            &mut String::from(""),
+            &String::from(""),
             &mut result,
         );
         if result.distance > max_distance {

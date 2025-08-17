@@ -5,8 +5,7 @@ pub fn format_location(location: &str) -> String {
 }
 
 pub fn to_location_list(text: &str) -> Vec<String> {
-    text.to_owned()
-        .split("|")
+    text.split("|")
         .map(|s| String::from(s.trim()))
         .filter(|l| !l.is_empty())
         .collect()
