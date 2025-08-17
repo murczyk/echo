@@ -14,16 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: wdintel-web/node_modules
-          key: npm-${{ runner.os }}-${{ hashFiles('wdintel-web/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-
+      - name: Restore npm cache
+        run: ./scripts/cache/restore-npm.sh || true
 
       - name: Run frontend tests
         run: just test-fe
+
+      - name: Save npm cache
+        if: always()
+        run: ./scripts/cache/save-npm.sh
 
   backend-tests:
     if: github.repository == 'echoua/echo'
@@ -31,43 +30,29 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache Python dependencies
-        uses: actions/cache@v4
-        with:
-          path: wdintel-rs/wdintel-py/.venv
-          key: python-${{ runner.os }}-${{ hashFiles('wdintel-rs/wdintel-py/requirements.txt') }}
-          restore-keys: |
-            python-${{ runner.os }}-
+      - name: Restore Python cache
+        run: ./scripts/cache/restore-python.sh || true
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-${{ runner.os }}-
+      - name: Restore Cargo cache
+        run: ./scripts/cache/restore-cargo.sh || true
 
-      - name: Cache Cargo build
-        uses: actions/cache@v4
-        with:
-          path: wdintel-rs/target/
-          key: cargo-build-${{ runner.os }}-${{ hashFiles('wdintel-rs/Cargo.lock') }}
-          restore-keys: |
-            cargo-build-${{ runner.os }}-
-
-      - name: Cache Spacy models
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/spacy
-          key: spacy-models-${{ runner.os }}
-          restore-keys: |
-            spacy-models-${{ runner.os }}
+      - name: Restore Spacy cache
+        run: ./scripts/cache/restore-spacy.sh || true
 
       - name: Run backend tests
         env:
           GITHUB_ACTIONS: true
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: just ci-test-be
+
+      - name: Save Python cache
+        if: always()
+        run: ./scripts/cache/save-python.sh
+
+      - name: Save Cargo cache
+        if: always()
+        run: ./scripts/cache/save-cargo.sh
+
+      - name: Save Spacy cache
+        if: always()
+        run: ./scripts/cache/save-spacy.sh
