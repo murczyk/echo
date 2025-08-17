@@ -384,6 +384,27 @@ async fn collect_report(
         .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
         .collect::<HashMap<_, _>>();
 
+    let message_ids = messages
+        .iter()
+        .map(|(id, _)| *id)
+        .collect_vec()
+        .chunks(20000)
+        .map(|slice| slice.to_vec())
+        .collect_vec();
+
+    let mut comments = BTreeMap::new();
+    for ids in message_ids {
+        sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.is_in(ids))
+            .all(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .for_each(|c| {
+                comments.insert(c.signal_message_id, c.comment);
+            });
+    }
+
     for (k, v) in all_networks {
         networks.insert(k, v);
     }
@@ -442,6 +463,7 @@ async fn collect_report(
         .map(|c| ((c.network_id, c.callsign.clone()), c))
         .collect::<HashMap<_, _>>();
 
+    let mut network_comments_map = HashMap::new();
     let mut linked_callsigns_map = HashMap::new();
     let mut unlinked_callsigns_map = HashMap::new();
     let mut seances_map = HashMap::new();
@@ -528,6 +550,11 @@ async fn collect_report(
         }
         linked_callsigns_map.insert(network_key.clone(), linked_callsigns);
         unlinked_callsigns_map.insert(network_key, data);
+        if let Some(comment) = comments.remove(&_id) {
+            let mut list = network_comments_map.remove(&summary.id).unwrap_or(vec![]);
+            list.push(comment);
+            network_comments_map.insert(summary.id, list);
+        }
     }
 
     let mut identified_qty = 0;
@@ -536,6 +563,7 @@ async fn collect_report(
     let mut all_undefined_networks = vec![];
     let mut skipped_callsigns = HashSet::<String>::new();
     for id in network_ids {
+        let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
         let keys = seances_map
             .keys()
             .filter(|&(_, id_val, _)| id == *id_val)
