@@ -15,7 +15,7 @@ use sea_orm::*;
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-pub mod area_of_responsibility;
+pub mod aor;
 pub mod callsign;
 pub mod etalonka;
 pub mod freq;

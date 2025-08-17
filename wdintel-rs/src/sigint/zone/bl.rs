@@ -231,12 +231,9 @@ pub async fn bl_szd_groups_list(
 
     let keys = res.keys().cloned().collect::<Vec<_>>();
     let group_aors =
-        crate::sigint::area_of_responsibility::bl::collect_group_aors(
-            keys.clone(),
-            txn,
-        )
-        .await
-        .context(h!())?;
+        crate::sigint::aor::bl::collect_group_aors(keys.clone(), txn)
+            .await
+            .context(h!())?;
 
     let groups = res
         .into_iter()

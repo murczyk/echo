@@ -1,6 +1,6 @@
 use crate::types::*;
 
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::sigint::aor::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
 #[derive(

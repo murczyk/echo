@@ -6,7 +6,7 @@ use crate::entities::*;
 use crate::error::ContextAndError;
 use crate::messenger::group::collect_group_stats;
 use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
-use crate::sigint::area_of_responsibility::render_aor;
+use crate::sigint::aor::render_aor;
 use crate::types::AppError;
 use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::{

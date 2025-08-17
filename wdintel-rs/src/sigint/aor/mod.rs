@@ -9,6 +9,7 @@ use sea_orm::*;
 
 pub mod bl;
 pub mod types;
+pub mod worker;
 
 #[post("/api/sigint/aor")]
 pub async fn aor_list(

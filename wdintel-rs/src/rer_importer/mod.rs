@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
 use crate::messenger::group::collect_group_stats;
-use crate::sigint::area_of_responsibility::bl::collect_group_aors;
+use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest, HttpResponse};

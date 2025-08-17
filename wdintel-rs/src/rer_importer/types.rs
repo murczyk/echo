@@ -1,5 +1,5 @@
 use crate::location::SettlementDetails;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::sigint::aor::types::AreaOfResponsibility;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::FromQueryResult;

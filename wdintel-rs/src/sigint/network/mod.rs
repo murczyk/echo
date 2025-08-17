@@ -3182,9 +3182,7 @@ where
             .await
             .context(h!())?
             .context(h!())?,
-        None => sigint::area_of_responsibility::load_default_aor(dbx)
-            .await
-            .context(h!())?,
+        None => sigint::aor::load_default_aor(dbx).await.context(h!())?,
     };
     sigint_network_aor::Entity::delete_many()
         .filter(sigint_network_aor::Column::NetworkId.eq(network.id))
@@ -3209,9 +3207,7 @@ async fn save_network_aors(
     let mut aor_ids = areas_of_responsibility_ids;
     if aor_ids.is_empty() {
         let default_area =
-            sigint::area_of_responsibility::load_default_aor(txn)
-                .await
-                .context(h!())?;
+            sigint::aor::load_default_aor(txn).await.context(h!())?;
         aor_ids.push(default_area.id);
     }
 
