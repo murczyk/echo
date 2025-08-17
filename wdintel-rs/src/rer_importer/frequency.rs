@@ -26,8 +26,7 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
                 break '_if;
             };
             return Ok(Some(etalon(&format!(
-                "{}.{}{}",
-                part_a, part_b, part_c
+                "{part_a}.{part_b}{part_c}"
             ))));
         }
     }
@@ -45,7 +44,7 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
             let Some(part_b) = m_cap_s(&capts, "freq_b") else {
                 break '_if;
             };
-            return Ok(Some(etalon(&format!("{}.{}", part_a, part_b))));
+            return Ok(Some(etalon(&format!("{part_a}.{part_b}"))));
         }
     }
     '_if: {
@@ -64,7 +63,7 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
             let Some(b) = m_cap_s(&capts, "freq_b") else {
                 continue;
             };
-            let main_band = a >= 110 && a < 530;
+            let main_band = (110..530).contains(&a);
             let special_1 = a == 900;
             let special_2 = a == 700;
             let special_3 = a == 0;
@@ -72,7 +71,7 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
                 val_a = String::from("000");
             }
             if main_band || special_1 || special_2 || special_3 {
-                return Ok(Some(etalon(&format!("{}.{}", val_a, b))));
+                return Ok(Some(etalon(&format!("{val_a}.{b}"))));
             } else {
                 continue;
             }
@@ -96,7 +95,7 @@ pub fn etalon(freq: &str) -> String {
             };
             let zeroes =
                 "0".repeat(4 - if part_b.len() < 4 { part_b.len() } else { 4 });
-            let mut part_b = format!("{}{}", part_b, zeroes);
+            let mut part_b = format!("{part_b}{zeroes}");
             if part_b.len() > 4 {
                 let to_cut = part_b.len() - 4;
                 let all_zeroes: bool = part_b
@@ -108,7 +107,7 @@ pub fn etalon(freq: &str) -> String {
                         part_b.substring(0, part_b.len() - to_cut).to_string();
                 }
             }
-            return format!("{}.{}", part_a, part_b);
+            return format!("{part_a}.{part_b}");
         }
     }
     freq.to_string()

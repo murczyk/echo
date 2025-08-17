@@ -45,12 +45,12 @@ pub mod test {
         let config = crate::config::read_config(Mode::Test).unwrap();
         let conn_str = mk_conn_string(&config);
 
-        if let Err(error) = sqlx::Postgres::create_database(&*conn_str).await {
-            let error_msg = format!("{:?}", error);
+        if let Err(error) = sqlx::Postgres::create_database(&conn_str).await {
+            let error_msg = format!("{error:?}");
             if error_msg.contains("42P04") {
                 println!("test DB already exists, skipping...");
             } else {
-                panic!("failed to create test DB: {}", error_msg);
+                panic!("failed to create test DB: {error_msg}");
             }
         }
 

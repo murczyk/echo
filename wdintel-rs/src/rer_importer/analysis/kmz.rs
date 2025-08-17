@@ -92,8 +92,7 @@ pub async fn rer_analysis_download_kmz(
             .one(&env.dbx)
             .await?;
         let icon_href = format!(
-            "https://f000.backblazeb2.com/file/wildducks-online-public/icons/{}.png",
-            sidc,
+            "https://f000.backblazeb2.com/file/wildducks-online-public/icons/{sidc}.png",
         );
         nodes.push(Node::Placemark(Placemark {
             name: Some(freq.clone()),
@@ -131,7 +130,7 @@ pub async fn rer_analysis_download_kmz(
             // }),
             point: Some(Point {
                 draw_order: None,
-                coordinates: Some(format!("{},{},0", lng, lat)),
+                coordinates: Some(format!("{lng},{lat},0")),
             }),
             line_string: None,
             multi_geometry: None,

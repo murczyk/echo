@@ -77,7 +77,7 @@ fn build_groups_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let groups_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -205,7 +205,7 @@ fn build_senders_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let senders_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -323,7 +323,7 @@ fn build_posts_query(
     dt_till: NaiveDateTime,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let post_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -459,7 +459,7 @@ async fn get_new_freqs(
 
     trace!(
         "> get_new_freqs query: {}",
-        query.build(DbBackend::Postgres).to_string()
+        query.build(DbBackend::Postgres)
     );
 
     let new_freqs = query.into_tuple::<String>().all(db).await.context(h!())?;
@@ -493,7 +493,7 @@ fn build_freqs_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let freqs_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -614,7 +614,7 @@ fn build_callsigns_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let callsigns_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -728,7 +728,7 @@ fn build_tags_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let tags_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -836,7 +836,7 @@ fn build_units_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let units_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -928,7 +928,7 @@ pub async fn fetch_locations(
         to_location_list(&location)
             .into_iter()
             .for_each(|location| {
-                let location = String::from(location);
+                let location = location;
                 locations.push(AnalysisStatsLocation { count, location });
             });
     }
@@ -1030,7 +1030,7 @@ pub async fn fetch_counts(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
 
     let instant = std::time::Instant::now();
 

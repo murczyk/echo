@@ -47,7 +47,7 @@ pub fn extract_unit(
         }
 
         let is_unit_and_loc_line =
-            is_unit_and_loc_line(&line, l, &*ltrim.to_lowercase())
+            is_unit_and_loc_line(&line, l, &ltrim.to_lowercase())
                 .context(h!())?;
         if is_unit_and_loc_line {
             let (unit, locality) =
@@ -55,8 +55,8 @@ pub fn extract_unit(
                     .context(h!())?;
 
             let locality = locality
-                .map(|x| x.trim_matches(&['-', ' ']).trim().to_string())
-                .and_then(|x| if x.len() > 0 { Some(x) } else { None });
+                .map(|x| x.trim_matches(['-', ' ']).trim().to_string())
+                .and_then(|x| if !x.is_empty() { Some(x) } else { None });
 
             let (mut locality, mut locality_v2) =
                 extract_locality(settlements.clone(), line, locality)
@@ -136,12 +136,12 @@ fn extract_locality(
             .context(h!())?;
         locality_v2 = Some(data);
     }
-    if locality_v2.clone().filter(|x| x.len() > 0).is_none() {
+    if locality_v2.clone().filter(|x| !x.is_empty()).is_none() {
         locality_v2 = Some(
             crate::location::parse_location(settlements.clone(), line.clone())
                 .context(h!())?,
         );
-        if locality_v2.clone().filter(|x| x.len() > 0).is_some() {
+        if locality_v2.clone().filter(|x| !x.is_empty()).is_some() {
             locality = Some(line.clone());
         }
     }
@@ -158,7 +158,7 @@ fn capture_unit_and_locality(
     '_if: {
         // cutoff 54191: 09:11    F= 455.4875
         let ms: Vec<_> = line.match_indices("УКХ").collect();
-        if ms.len() > 0 {
+        if !ms.is_empty() {
             let match_index = ms[0].0;
             line = byte_substr(&line, match_index, line.len())?;
         }
@@ -180,7 +180,7 @@ fn capture_unit_and_locality(
                 break '_if;
             };
             locality = m_cap_s(&capts, "locality");
-            if line.len() > 0 {
+            if !line.is_empty() {
                 line = unit;
             }
             break '_capt;
@@ -460,7 +460,7 @@ fn capture_unit_and_locality(
                 break '_if;
             };
             let ms: Vec<_> = line.match_indices(&timestamp).collect();
-            if ms.len() > 0 {
+            if !ms.is_empty() {
                 let match_index = ms[0].0;
                 line = byte_substr(&line, 0, match_index)?;
             }
@@ -484,7 +484,7 @@ fn capture_unit_and_locality(
             if RE_THREE_CAPS.captures(&junk).is_some() {
                 break '_if;
             };
-            if ms.len() > 0 {
+            if !ms.is_empty() {
                 let match_index = ms[0].0;
                 line = byte_substr(&line, 0, match_index)?;
             }
@@ -517,7 +517,7 @@ fn maybe_single_locality(
             line_trimmed.split(" ").collect_vec().into_iter().next()
         {
             if PREFIX_RE.is_match(first_word) {
-                return Some(String::from(line)); // zaporizhzhya style of location string
+                return Some(line); // zaporizhzhya style of location string
             }
         }
     }
@@ -549,12 +549,12 @@ fn is_unit_and_loc_line(
 ) -> Result<bool, AppError> {
     Ok(l.contains("управління")
         || ltrim.starts_with("укх")
-        || (l.contains("укх") && !has_date(&line)?)
+        || (l.contains("укх") && !has_date(line)?)
         || l.contains("мсб")
         || l.contains("омсбр")
         || l.contains("загін")
         || ltrim.starts_with("dmr")
-        || (l.contains("dmr") && !has_date(&line)?)
+        || (l.contains("dmr") && !has_date(line)?)
         || l.contains("укх радіомережа")
         || l.contains("укх р/м")
         || has_unit(line))
@@ -569,7 +569,7 @@ fn try_process_kharkiv_style_unit_and_locality(
         && lines[0].trim().starts_with("УКХ")
     {
         let mut new_slice =
-            vec![vec![lines[0].clone(), lines[1].clone()].join(" ")];
+            vec![[lines[0].clone(), lines[1].clone()].join(" ")];
         new_slice.extend(lines);
         lines = new_slice;
     }
@@ -580,7 +580,7 @@ fn try_process_kharkiv_style_unit_and_locality(
 fn try_remove_commintify_header(lines: Vec<String>) -> Vec<String> {
     let mut lines = lines;
     let mut trim = None;
-    if lines.len() > 0 && lines[0].trim().starts_with("Отримано з поста")
+    if !lines.is_empty() && lines[0].trim().starts_with("Отримано з поста")
     {
         trim = Some(0)
     }
@@ -673,19 +673,17 @@ pub fn try_extract_comm_operator(body: &str) -> Option<String> {
     let range = 0..lines.len() as i32;
 
     for (index, line) in lines.iter().enumerate() {
-        if line.starts_with("--------------------------------------") {
-            if range.contains(&(index as i32 - 1)) {
+        if line.starts_with("--------------------------------------")
+            && range.contains(&(index as i32 - 1)) {
                 if let Some(minus_one) = lines.get(index - 1) {
-                    if minus_one.starts_with("Отримано з поста") {
-                        if range.contains(&(index as i32 - 2)) {
+                    if minus_one.starts_with("Отримано з поста")
+                        && range.contains(&(index as i32 - 2)) {
                             if let Some(minus_two) = lines.get(index - 2) {
                                 return Some(minus_two.to_string());
                             }
                         }
-                    }
                 }
             }
-        }
     }
 
     None
@@ -2211,8 +2209,8 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 — 505 Дед, 505 Дед, 505 Сын и 505 с Отца на грядке.
         "#;
         assert_eq!(
-            try_extract_comm_operator(&body).as_deref(),
-            Some("Zenit").as_deref()
+            try_extract_comm_operator(body).as_deref(),
+            Some("Zenit")
         );
     }
 
@@ -2251,7 +2249,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
         for (input, expected) in inputs {
             assert_eq!(
                 try_extract_comm_operator(input).as_deref(),
-                Some(expected).as_deref()
+                Some(expected)
             );
         }
     }

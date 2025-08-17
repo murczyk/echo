@@ -108,14 +108,14 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn secret_config(self: &Self) -> Option<SecretConfig> {
+    pub fn secret_config(&self) -> Option<SecretConfig> {
         match &self.secret_config {
             Some(config) => Some(config.clone()),
             None => crate::secret::SECRET.get().cloned(),
         }
     }
 
-    pub fn settlement_paths(self: &Self) -> Result<Vec<String>> {
+    pub fn settlement_paths(&self) -> Result<Vec<String>> {
         get_settlement_paths(self.settlements_sources.clone())
     }
 }
@@ -199,7 +199,7 @@ where
 
 pub fn m_unit_to_unidenfitied(unit: Option<String>) -> String {
     let res = unit.unwrap_or("Не визначено".to_string());
-    if res == "" {
+    if res.is_empty() {
         return "Не визначено".to_string();
     }
     res
@@ -215,7 +215,7 @@ pub fn location_is_empty(s: &String) -> bool {
 
 pub fn m_location_to_unidenfitied(location: Option<String>) -> String {
     let res = location.unwrap_or("--Не визначено--".to_string());
-    if res == "" {
+    if res.is_empty() {
         return "--Не визначено--".to_string();
     }
     res

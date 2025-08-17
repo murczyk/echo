@@ -77,7 +77,7 @@ impl<K: Eq + Hash + Clone, V> TopKCache<K, V> {
     }
 
     pub fn get(&mut self, key: &K) -> Option<&V> {
-        let value = self.cache.get(&key);
+        let value = self.cache.get(key);
         if value.is_some() {
             let count = self.frequency.entry(key.clone()).or_insert(0);
             *count += 1;

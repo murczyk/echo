@@ -82,7 +82,7 @@ pub async fn delete_aor(
         .context(h!())?;
 
     let aor_obj = area_of_responsibility::Entity::find()
-        .filter(area_of_responsibility::Column::Id.eq(req.id.clone()))
+        .filter(area_of_responsibility::Column::Id.eq(req.id))
         .one(&env.dbx)
         .await
         .context(h!())?
@@ -166,7 +166,8 @@ pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
             }
             _ => None,
         };
-    let aor = AreaOfResponsibility {
+    
+    AreaOfResponsibility {
         id: aor.id,
         name: aor.name,
         description: aor.description,
@@ -176,8 +177,7 @@ pub fn render_aor(aor: area_of_responsibility::Model) -> AreaOfResponsibility {
         is_top_level: aor.is_top_level,
         left_coordinates,
         right_coordinates,
-    };
-    aor
+    }
 }
 
 async fn from_coordinates(
@@ -208,8 +208,7 @@ async fn find_settlement(
             .await
             .context(h!())?
             .get(&1)
-            .map(|l| l.into_iter().next())
-            .flatten()
+            .and_then(|l| l.iter().next())
             .cloned()
             .map(|x| x.settlement_name);
     Ok(settlement_name)

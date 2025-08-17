@@ -53,6 +53,7 @@ pub struct NetworkEtalonkaResult {
 }
 
 #[derive(Debug, FromQueryResult)]
+#[derive(Default)]
 pub struct FreqStatsRes {
     pub freq: String,
     pub name: String,
@@ -205,22 +206,6 @@ pub struct FreqActivityHistoryRec {
     pub active_to: Option<i64>,
 }
 
-impl Default for FreqStatsRes {
-    fn default() -> Self {
-        FreqStatsRes {
-            freq: String::new(),
-            name: String::new(),
-            unit: None,
-            kind: None,
-            kind_updated: None,
-            location: None,
-            radio_station: None,
-            confirmation: None,
-            first_time: None,
-            message_count: 0,
-        }
-    }
-}
 
 impl Ord for KnownCallsignShortRes {
     fn cmp(&self, other: &Self) -> Ordering {

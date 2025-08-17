@@ -28,19 +28,19 @@ pub async fn list_signals(
         .apply_if(req.filter_text.as_ref(), |q, text| {
             q.filter(
                 Expr::col(sigint_signal::Column::Text)
-                    .ilike(format!("%{}%", text)),
+                    .ilike(format!("%{text}%")),
             )
         })
         .apply_if(req.filter_meaning.as_ref(), |q, meaning| {
             q.filter(
                 Expr::col(sigint_signal::Column::Meaning)
-                    .ilike(format!("%{}%", meaning)),
+                    .ilike(format!("%{meaning}%")),
             )
         })
         .apply_if(req.filter_unit.as_ref(), |q, unit| {
             q.filter(
                 Expr::col(sigint_unit::Column::Name)
-                    .ilike(format!("%{}%", unit)),
+                    .ilike(format!("%{unit}%")),
             )
         });
     let q = req.sort_by.iter().fold(q, |q, sort_by| match sort_by {
@@ -277,8 +277,8 @@ pub fn render_signal(
         id: signal.id,
         text: signal.text.clone(),
         meaning: signal.meaning.clone(),
-        unit: signal.unit.clone(),
-        active: unit.map_or(true, |u| u.active),
+        unit: signal.unit,
+        active: unit.is_none_or(|u| u.active),
         coordinates: signal.coordinates.clone(),
         created_at: signal.created_at.and_utc().timestamp_millis(),
     }

@@ -23,7 +23,7 @@ pub async fn bl_szd_group_update(
         req.short_note.clone(),
         req.long_note.clone(),
         szd.clone(),
-        &txn,
+        txn,
     )
     .await
     .context(h!())?;
@@ -106,7 +106,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
         let m_group = group_admin_data::Entity::find()
             .filter(
                 group_admin_data::Column::GroupMasterKey
-                    .eq(&master_key.clone()),
+                    .eq(master_key.clone()),
             )
             .one(txn)
             .await
@@ -230,7 +230,7 @@ pub async fn bl_szd_groups_list(
         }
     }
 
-    let keys = res.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+    let keys = res.keys().cloned().collect::<Vec<_>>();
     let group_aors =
         crate::sigint::area_of_responsibility::bl::collect_group_aors(
             keys.clone(),

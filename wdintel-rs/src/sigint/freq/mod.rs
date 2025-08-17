@@ -318,9 +318,7 @@ pub async fn list_groups_by_freqs_per_day(
             res.insert(freq.clone(), HashMap::new());
         }
         let freq_map = res.get_mut(&freq).unwrap();
-        if !freq_map.contains_key(&day) {
-            freq_map.insert(day, HashMap::new());
-        }
+        freq_map.entry(day).or_insert_with(HashMap::new);
         let day_map = freq_map.get_mut(&day).unwrap();
         day_map.insert(group.clone(), count);
     }
@@ -422,7 +420,7 @@ pub async fn list_freqs(
     let freqs_period = match &req.filter_callsigns {
         Some(filter_callsigns) => {
             if let Err(ref e) = validate_callsigns(filter_callsigns) {
-                println!("> error validating collsings for filter: {}", e);
+                println!("> error validating collsings for filter: {e}");
                 return Err(AppError::BL { msg: e.to_string() });
             }
 
@@ -477,8 +475,7 @@ pub async fn list_freqs(
             .await?;
 
             subquery = subquery.filter(Expr::cust(format!(
-                "\"sigint_inbox_item\".\"callsigns\" ?| {}",
-                callsings_postgres_array
+                "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
             )));
 
             subquery = subquery.group_by(sigint_inbox_item::Column::Freq);
@@ -509,8 +506,7 @@ pub async fn list_freqs(
                 )
                 .from(Alias::new("unique_callsigns"))
                 .and_where(Expr::cust(format!(
-                    "unique_callsigns.callsign = ANY({})",
-                    callsings_postgres_array
+                    "unique_callsigns.callsign = ANY({callsings_postgres_array})"
                 )))
                 .add_group_by(vec![Expr::cust("freq")])
                 .order_by_expr(Expr::cust("message_count"), Order::Desc)
@@ -584,7 +580,7 @@ pub async fn list_freqs(
     //     freqs_period.clone().count(&env.dbx).await?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
-    trace!("> freqs sql: {}", freqs_period);
+    trace!("> freqs sql: {freqs_period}");
 
     let freqs_period: Vec<(String, i64, Option<String>)> = env
         .dbx
@@ -609,7 +605,7 @@ pub async fn list_freqs(
     }
 
     let before_since = dt_since - chrono::Duration::days(PERIOD_DAYS);
-    let before_till = dt_since.clone();
+    let before_till = dt_since;
     let before_res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -676,7 +672,7 @@ pub async fn list_freqs(
         let is_new = !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
         let last_updated_by =
-            last_updated_network.map(|x| x.updated_by.clone()).flatten();
+            last_updated_network.and_then(|x| x.updated_by.clone());
         let last_updated_at = last_updated_network
             .map(|x| x.updated_at)
             .map(|t| t.and_utc().timestamp_millis());
@@ -733,7 +729,7 @@ pub async fn list_freqs_v2(
     let freqs_period = match &req.filter_callsigns {
         Some(filter_callsigns) => {
             if let Err(ref e) = validate_callsigns(filter_callsigns) {
-                println!("> error validating collsings for filter: {}", e);
+                println!("> error validating collsings for filter: {e}");
                 return Err(AppError::BL { msg: e.to_string() });
             }
 
@@ -789,8 +785,7 @@ pub async fn list_freqs_v2(
             .await?;
 
             subquery = subquery.filter(Expr::cust(format!(
-                "\"sigint_inbox_item\".\"callsigns\" ?| {}",
-                callsings_postgres_array
+                "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
             )));
 
             subquery = subquery.group_by(sigint_inbox_item::Column::Freq);
@@ -821,8 +816,7 @@ pub async fn list_freqs_v2(
                 )
                 .from(Alias::new("unique_callsigns"))
                 .and_where(Expr::cust(format!(
-                    "unique_callsigns.callsign = ANY({})",
-                    callsings_postgres_array
+                    "unique_callsigns.callsign = ANY({callsings_postgres_array})"
                 )))
                 .add_group_by(vec![Expr::cust("freq"), Expr::cust("post_id")])
                 .order_by_expr(Expr::cust("message_count"), Order::Desc)
@@ -897,7 +891,7 @@ pub async fn list_freqs_v2(
     //     freqs_period.clone().count(&env.dbx).await?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
-    trace!("> freqs sql: {}", freqs_period);
+    trace!("> freqs sql: {freqs_period}");
 
     let freqs_period: Vec<(String, i64, Option<String>, Option<i64>)> = env
         .dbx
@@ -927,7 +921,7 @@ pub async fn list_freqs_v2(
     }
 
     let before_since = dt_since - chrono::Duration::days(PERIOD_DAYS);
-    let before_till = dt_since.clone();
+    let before_till = dt_since;
     let before_res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -968,11 +962,10 @@ pub async fn list_freqs_v2(
     }
     let mut last_freq = String::from("");
     for (freq, message_count, location_v2, post_id) in freqs_period {
-        if show_load_more {
-            if !last_freq.eq(&freq) {
+        if show_load_more
+            && !last_freq.eq(&freq) {
                 break;
             }
-        }
         if need_skip {
             if req.after_freq_nonincl == Some(freq) {
                 need_skip = false;
@@ -1000,7 +993,7 @@ pub async fn list_freqs_v2(
         let is_new = !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
         let last_updated_by =
-            last_updated_network.map(|x| x.updated_by.clone()).flatten();
+            last_updated_network.and_then(|x| x.updated_by.clone());
         let last_updated_at = last_updated_network
             .map(|x| x.updated_at)
             .map(|t| t.and_utc().timestamp_millis());
@@ -1054,7 +1047,7 @@ where
         signal_message::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups_noimport(
                 &env.dbx,
-                &user,
+                user,
                 &env.config,
             )
             .await?,
@@ -1082,11 +1075,11 @@ where
     if let Some(filter_freq) = filter_freq {
         q = q.filter(Expr::cust_with_values(
             "sigint_inbox_item.freq ilike $1",
-            vec![format!("{}%", filter_freq).as_str()],
+            vec![format!("{filter_freq}%").as_str()],
         ));
     };
 
-    let needs_unit_join = filter_unit.as_ref().map_or(false, |s| !s.is_empty())
+    let needs_unit_join = filter_unit.as_ref().is_some_and(|s| !s.is_empty())
         || filter_further_investigation.unwrap_or(false);
 
     if needs_unit_join {
@@ -1269,14 +1262,14 @@ pub async fn callsigns_for_filter(
     if let Some(freq) = &req.freq {
         callsigns_res = callsigns_res.filter(
             Expr::col(sigint_inbox_item::Column::Freq)
-                .ilike(format!("{}%", freq)),
+                .ilike(format!("{freq}%")),
         );
     };
 
     if let Some(unit) = &req.unit {
         callsigns_res = callsigns_res.filter(
             Expr::col(sigint_inbox_item::Column::UnitV2)
-                .ilike(format!("%{}%", unit)),
+                .ilike(format!("%{unit}%")),
         );
     };
 
@@ -1307,8 +1300,7 @@ fn validate_callsigns(callsigns: &Vec<String>) -> Result<(), String> {
     for callsign in callsigns {
         if !RE.is_match(callsign) {
             return Err(format!(
-                "Не коректний позивний: '{}'. Має містити лише кирилічні/латинські літери, цифри, '-', '_' або пробіл, та бути не довше 20 символів.",
-                callsign
+                "Не коректний позивний: '{callsign}'. Має містити лише кирилічні/латинські літери, цифри, '-', '_' або пробіл, та бути не довше 20 символів."
             ));
         }
     }
@@ -1445,8 +1437,7 @@ mod tests {
         let result = validate_callsigns(&callsigns);
         assert!(
             result.is_ok(),
-            "Expected all callsigns to be valid, got error: {:?}",
-            result
+            "Expected all callsigns to be valid, got error: {result:?}"
         );
     }
 

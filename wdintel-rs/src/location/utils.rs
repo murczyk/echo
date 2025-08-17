@@ -7,7 +7,6 @@ pub fn format_location(location: &String) -> String {
 pub fn to_location_list(text: &String) -> Vec<String> {
     text.clone()
         .split("|")
-        .into_iter()
         .map(|s| String::from(s.trim()))
         .filter(|l| !l.is_empty())
         .collect()

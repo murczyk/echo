@@ -121,10 +121,7 @@ pub fn check_status(
 }
 
 pub fn m_cap_s(capts: &regex::Captures, name: &str) -> Option<String> {
-    match capts.name(name) {
-        None => None,
-        Some(cap) => Some(cap.as_str().to_string()),
-    }
+    capts.name(name).map(|cap| cap.as_str().to_string())
 }
 
 pub fn parse_mongo_dt(inp: &str) -> Result<NaiveDateTime, AppError> {
@@ -147,7 +144,7 @@ where
 }
 
 pub fn pop_vector<T>(data: &mut Vec<T>) -> Option<T> {
-    if data.len() < 1 {
+    if data.is_empty() {
         None
     } else {
         Some(data.remove(0))
@@ -170,7 +167,7 @@ mod tests {
     #[test]
     fn parse_content_disposition_test01() {
         let res = actix_web::http::header::ContentDisposition::from_raw(&actix_web::http::header::HeaderValue::from_str(r###"form-data; name="attachment"; filename="attachment.png"; filename*=UTF-8''attachment.png"###).unwrap()).unwrap();
-        println!("> res: {:?}", res);
+        println!("> res: {res:?}");
 
         let bs = "attachment.png".as_bytes();
         assert_eq!(

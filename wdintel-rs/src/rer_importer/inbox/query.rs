@@ -46,7 +46,7 @@ pub(crate) async fn build_inbox_query(
     // }
     //
 
-    q = get_order_by(&env, &req, q.clone()).await?;
+    q = get_order_by(env, req, q.clone()).await?;
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
     }
@@ -77,11 +77,11 @@ pub(crate) async fn build_inbox_query(
         &req.or_with_coords,
         &req.or_with_extended_form,
         &req.filter_tags_option,
-        &login,
+        login,
         true,
     )?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let mut q = filter_selected_locations(
         q,
         &req.selected_locations,
@@ -93,7 +93,7 @@ pub(crate) async fn build_inbox_query(
 
     trace!(
         "inbox items query sql: {}",
-        q.build(DbBackend::Postgres).to_string()
+        q.build(DbBackend::Postgres)
     );
     Ok(q)
 }
@@ -157,7 +157,7 @@ where
                             sigint_inbox_item::Column::Datetime
                                 .into_column_ref()
                                 .into(),
-                            Expr::cust("sigint_inbox_item.id").into(),
+                            Expr::cust("sigint_inbox_item.id"),
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
@@ -180,7 +180,7 @@ where
                             signal_message::Column::Timestamp
                                 .into_column_ref()
                                 .into(),
-                            Expr::cust("signal_message.id").into(),
+                            Expr::cust("signal_message.id"),
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
@@ -229,7 +229,7 @@ where
                             sigint_inbox_item::Column::Datetime
                                 .into_column_ref()
                                 .into(),
-                            Expr::cust("sigint_inbox_item.id").into(),
+                            Expr::cust("sigint_inbox_item.id"),
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .lt(SimpleExpr::Tuple(vec![
@@ -252,11 +252,11 @@ where
                             signal_message::Column::Timestamp
                                 .into_column_ref()
                                 .into(),
-                            Expr::cust("signal_message.id").into(),
+                            Expr::cust("signal_message.id"),
                             // signal_message::Column::Id.into_column_ref().into(),
                         ])
                         .lt(SimpleExpr::Tuple(vec![
-                            timestamp.into(),
+                            timestamp,
                             before_id_noninclusive.into(),
                         ])),
                     );
@@ -339,7 +339,7 @@ where
 
 fn to_ts_expr(ts: NaiveDateTime) -> SimpleExpr {
     let ts = ts.format("%Y-%m-%d %H:%M:%S%.9f");
-    let txt = format!("'{}'::timestamp at time zone 'UTC'", ts);
+    let txt = format!("'{ts}'::timestamp at time zone 'UTC'");
     Expr::cust(txt)
 }
 

@@ -87,7 +87,7 @@ pub async fn get_inbox_map_items(
             };
             deduplicated.insert(source_id, m);
         }
-        result = deduplicated.into_iter().map(|(_, m)| m).collect_vec();
+        result = deduplicated.into_values().collect_vec();
     }
     Ok(result)
 }
@@ -169,15 +169,15 @@ pub async fn aggregate_to_inbox_messages(
                     body.clone().to_lowercase(),
                     search.to_lowercase().clone(),
                     message.id
-                    ).fetch_one(dbx_raw).await.ok().map(|q| q.headline).flatten()
+                    ).fetch_one(dbx_raw).await.ok().and_then(|q| q.headline)
             }
         };
         let text_marked = crate::rer_importer::highlight::highlight(
             &body,
             Some(&no_headers_body),
-            &m_callsign_tokens.clone().unwrap_or(vec![]),
-            &m_keyword_tokens.clone().unwrap_or(vec![]),
-            &m_signal_tokens.clone().unwrap_or(vec![]),
+            &m_callsign_tokens.clone().unwrap_or_default(),
+            &m_keyword_tokens.clone().unwrap_or_default(),
+            &m_signal_tokens.clone().unwrap_or_default(),
             ts_headline,
             crate::rer_importer::highlight::HighlightOpts {
                 highlight_callsigns: req.highlight_callsigns,
@@ -224,7 +224,7 @@ pub async fn aggregate_to_inbox_messages(
                 text_marked: Some(text_marked),
                 post: message.post_name.clone(),
                 post_id: message.post_id,
-                datasource_id: message.datasource_id.clone(),
+                datasource_id: message.datasource_id,
                 location: location_v2,
                 tags: Some(from_m_val_vec(message.tags.clone())?),
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
@@ -407,7 +407,7 @@ fn match_network_ids_for_messages(
         let mut matched = Vec::new();
 
         for network_id in candidate_networks {
-            if let Some(net_bounds) = network_bounds_map.get(&network_id) {
+            if let Some(net_bounds) = network_bounds_map.get(network_id) {
                 for (gl, gr) in group_bounds {
                     for (nl, nr) in net_bounds {
                         if (gl >= nl && gl <= nr) || (gr >= nl && gr <= nr) {
@@ -440,7 +440,7 @@ pub async fn load_inbox_callsigns(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect_vec();
-    let data = crate::rer_importer::gdoc::load_callsigns(&env, callsigns)
+    let data = crate::rer_importer::gdoc::load_callsigns(env, callsigns)
         .await
         .context(h!())?;
     Ok(data)
@@ -577,8 +577,7 @@ pub async fn submit_upsert_inbox_item(
         message.text_marked = None;
         message.keyword_tokens = None;
         info!(
-            "upsert request id = {}; login = {}; new value: {:?}; old value: {:?}",
-            id, login, message, existing
+            "upsert request id = {id}; login = {login}; new value: {message:?}; old value: {existing:?}"
         );
     }
 
@@ -586,8 +585,7 @@ pub async fn submit_upsert_inbox_item(
         .coords
         .clone()
         .map(|c| parse_latlng_f64(&c.clone()[..]))
-        .map(|x| x.ok())
-        .flatten()
+        .and_then(|x| x.ok())
     {
         None => (None, None),
         Some((lat, lng)) => (Some(lat), Some(lng)),
@@ -595,7 +593,7 @@ pub async fn submit_upsert_inbox_item(
 
     let coords_s = match (lat, lng) {
         (Some(lat), Some(lng)) => {
-            let text = format!("{}, {}", lat, lng);
+            let text = format!("{lat}, {lng}");
             let mgrs: String =
                 Mgrs::from_latlon(&LatLon::create(lat, lng).context(h!())?, 6)
                     .to_string();
@@ -683,7 +681,7 @@ pub async fn submit_upsert_inbox_item(
             coords: Set(coords_s.map(|x| x.text)),
             callsigns: Set(Some(
                 serde_json::to_value(
-                    &message
+                    message
                         .callsigns
                         .iter()
                         .map(|x| x.to_lowercase().trim().to_string())

@@ -92,7 +92,7 @@ pub fn extract_ts_headline_keywords(
             // cursor += cline_len(part2_bold) + 4;
             cursor += cline_len(part2_bold);
             if let Some(part2_norm) = parts2.next() {
-                if part2_norm.len() > 0 {
+                if !part2_norm.is_empty() {
                     // res.push(CNHighlight {
                     //     text: part2_norm.to_string(),
                     //     begin: cursor,
@@ -207,7 +207,7 @@ pub fn highlight(
                 .extend(keywords2.iter().map(|x| Special::Keyword(x.clone())));
         }
     }
-    specials.sort_by(|a, b| a.begin().cmp(&b.begin()));
+    specials.sort_by_key(|a| a.begin());
     // println!("> specials: {specials:#?}");
 
     let mut msg_pos = 0;
@@ -270,7 +270,7 @@ pub fn highlight(
 
         msg_pos += cline_len(line) + 1;
     }
-    if res.len() > 0 {
+    if !res.is_empty() {
         res.remove(res.len() - 1);
     }
     // println!("> res: {res:?}");
@@ -360,7 +360,7 @@ mod tests {
             })
         );
         assert_eq!(res[1], ContentNode::CNNewlineC);
-        println!("{:#?}", res);
+        println!("{res:#?}");
         assert_eq!(
             res[4],
             ContentNode::CNCallsignC(CNCallsign {
@@ -530,7 +530,7 @@ mod tests {
             HighlightOpts::all(),
         )
         .unwrap();
-        println!("{:?}", res);
+        println!("{res:?}");
         assert_eq!(
             res,
             [
@@ -624,7 +624,7 @@ mod tests {
             HighlightOpts::all(),
         )
         .unwrap();
-        println!("{:?}", res);
+        println!("{res:?}");
         assert_eq!(
             res,
             [
@@ -693,7 +693,7 @@ mod tests {
             HighlightOpts::all(),
         )
         .unwrap();
-        println!("{:?}", res);
+        println!("{res:?}");
         assert_eq!(
             res,
             [
@@ -761,8 +761,8 @@ mod tests {
                 ContentNode::CNTextC(CNText { text: " -  ".to_string() }),
                 ContentNode::CNHighlightC(CNHighlight { text: "Кагана".to_string(), begin: 219, end: 225 }),
             ];
-        println!("> res:\n{:#?}", res);
-        println!("> expected:\n{:#?}", expected);
+        println!("> res:\n{res:#?}");
+        println!("> expected:\n{expected:#?}");
         assert_eq!(res, expected)
     }
 
@@ -862,8 +862,8 @@ mod tests {
             HighlightOpts::all(),
         )
         .unwrap();
-        println!("> res:\n{:#?}", res);
-        println!("> expected:\n{:#?}", expected);
+        println!("> res:\n{res:#?}");
+        println!("> expected:\n{expected:#?}");
         assert_eq!(res, expected)
     }
 
@@ -936,8 +936,8 @@ mod tests {
                 ContentNode::CNTextC(CNText { text: " -  ".to_string() }),
                 ContentNode::CNHighlightC(CNHighlight { text: "Франка".to_string(), begin: 219, end: 225 }),
             ];
-        println!("> res:\n{:#?}", res);
-        println!("> expected:\n{:#?}", expected);
+        println!("> res:\n{res:#?}");
+        println!("> expected:\n{expected:#?}");
         assert_eq!(res, expected)
     }
 
@@ -1021,8 +1021,8 @@ mod tests {
             HighlightOpts::all(),
         )
         .unwrap();
-        println!("> res:\n{:#?}", res);
-        println!("> expected:\n{:#?}", expected);
+        println!("> res:\n{res:#?}");
+        println!("> expected:\n{expected:#?}");
         assert_eq!(res, expected)
     }
 
@@ -1034,7 +1034,7 @@ mod tests {
 НВ (НВ)
 "-   Всё птичка в гнезде""#;
         let res = extract_keywords(body).unwrap();
-        println!("{:?}", res);
+        println!("{res:?}");
         assert_eq!(res.len(), 1);
         assert_eq!(
             res[0],

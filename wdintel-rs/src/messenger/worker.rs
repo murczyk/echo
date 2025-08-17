@@ -23,7 +23,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
     if let Err(e) =
         echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
     {
-        error!("failed to enable verbose logging: {:?}", e);
+        error!("failed to enable verbose logging: {e:?}");
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
@@ -331,7 +331,7 @@ async fn sync_inbox(
             // }
             if !config.read_from_legacy_data_sources.unwrap_or(true) {
                 if let Err(e) = receive_once(
-                    &m,
+                    m,
                     &txn,
                     &datasource,
                     redis,
@@ -341,7 +341,7 @@ async fn sync_inbox(
                 )
                 .await
                 {
-                    warn!("bot failed to process a message: {:?}", e);
+                    warn!("bot failed to process a message: {e:?}");
                 }
             }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
@@ -387,7 +387,7 @@ async fn receive_once(
         body: Set(Some(body.clone())),
         created_at: NotSet,
         group_master_key: Set(m.group_id.clone()),
-        timestamp: Set(Some(m.timestamp.clone())),
+        timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender.clone().map(|s| s.uuid)),
         duplicate_of: Set(m_duplicate_id),
         format: NotSet,
@@ -464,7 +464,7 @@ async fn sync_senders(
         .map(|s| (s.uuid.clone(), s))
         .collect::<BTreeMap<_, _>>();
     let sender_ids =
-        senders.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        senders.keys().cloned().collect::<Vec<_>>();
     let existing_senders = signal_profile::Entity::find()
         .filter(signal_profile::Column::Uuid.is_in(sender_ids))
         .select_only()

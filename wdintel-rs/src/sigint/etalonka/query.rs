@@ -304,7 +304,7 @@ pub async fn load_freqs(
             let row_callsigns: Option<serde_json::Value> =
                 row.try_get("", "callsigns").ok();
             let row_callsigns = row_callsigns
-                .map(|val| serde_json::from_value::<Vec<Vec<String>>>(val))
+                .map(serde_json::from_value::<Vec<Vec<String>>>)
                 .transpose()
                 .context(h!())?
                 .map(flatten_and_dedup);
@@ -428,7 +428,7 @@ pub async fn load_callsigns(
 
     // Step 1. Get all active callsigns for the given network
     let active_callsigns =
-        get_active_callsigns(&db, base_with.clone(), callsigns_select.clone())
+        get_active_callsigns(db, base_with.clone(), callsigns_select.clone())
             .await
             .context(h!())?;
 
@@ -487,7 +487,7 @@ pub async fn load_callsigns(
             CallsignRes {
                 callsign: callsign.clone(),
                 known_callsigns: (!short_known_callsigns.is_empty())
-                    .then(|| short_known_callsigns),
+                    .then_some(short_known_callsigns),
                 message_count: 0,
                 last_datetime: None,
                 freqs: None,
@@ -507,7 +507,7 @@ pub async fn load_callsigns(
         .collect();
 
     let known_callsigns_comm_info = get_communication_info_for_callsigns(
-        &db,
+        db,
         base_with.clone(),
         callsigns_select.clone(),
         &res_known_callsigns,
@@ -519,7 +519,7 @@ pub async fn load_callsigns(
     for c in &mut res {
         if let Some(comm_info) = known_callsigns_comm_info.get(&c.callsign) {
             c.message_count = comm_info.message_count;
-            c.last_datetime = comm_info.last_datetime.clone();
+            c.last_datetime = comm_info.last_datetime;
             c.freqs = comm_info.freqs.clone();
             c.network_names = comm_info.network_names.clone();
         }
@@ -948,7 +948,7 @@ pub async fn load_signals_per_network(
             .collect::<Vec<Signal>>();
 
         let network_signals = NetworkSignalsRes {
-            network_id: network_id,
+            network_id,
             unit_id,
             unit_name: unit_name.clone(),
             signals: unit_signals,
@@ -1108,9 +1108,9 @@ async fn get_map_image(
         .arg("--server-args=-screen 0 1024x768x24")
         .arg("geo-screenshot")
         .arg("--map-points")
-        .arg(format!("{}", json_string))
+        .arg(&json_string)
         .arg("--delay")
-        .arg(format!("{}", SCREENSHOT_DELAY_MILLIS))
+        .arg(format!("{SCREENSHOT_DELAY_MILLIS}"))
         .arg("--force-overview")
         .arg(temp_file_name)
         .spawn()
@@ -1132,10 +1132,10 @@ async fn get_map_image(
         let file = tokio::fs::File::open(temp_file_name)
             .await
             .map_err(|e| {
-                error!("Failed to open temp file {}: {e:#?}", temp_file_name);
+                error!("Failed to open temp file {temp_file_name}: {e:#?}");
                 e
             })
-            .context(format!("{}", temp_file_name))
+            .context(temp_file_name.to_string())
             .context(h!())?;
         let mut stream = ReaderStream::new(file);
 
@@ -1155,8 +1155,7 @@ async fn get_map_image(
 
         return Err(AppError::BL {
             msg: format!(
-                "geo-screenshot failed. Exit code: {:?}. Stdout: {}. Stderr: {}",
-                exit_code, stdout, stderr
+                "geo-screenshot failed. Exit code: {exit_code:?}. Stdout: {stdout}. Stderr: {stderr}"
             ),
         });
     }
@@ -1237,7 +1236,7 @@ pub async fn load_networks(
         if let Some(filter_freq) = &req.filter_freq {
             subquery = subquery.filter(Expr::cust_with_values(
                 "sigint_network_freq.freq ilike $1",
-                vec![format!("{}%", filter_freq).as_str()],
+                vec![format!("{filter_freq}%").as_str()],
             ));
         }
         if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
@@ -1290,7 +1289,7 @@ pub async fn load_networks(
             .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
             .to_string();
 
-        res.entry(key).or_insert_with(Vec::new).push(network);
+        res.entry(key).or_default().push(network);
     }
 
     Ok(res)
@@ -1371,7 +1370,7 @@ pub async fn load_networks_by_id(
             .unwrap_or(DEFAULT_EMPTY_UNIT_NAME)
             .to_string();
 
-        res.entry(key).or_insert_with(Vec::new).push(network);
+        res.entry(key).or_default().push(network);
     }
 
     Ok(res)

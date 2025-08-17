@@ -220,15 +220,12 @@ async fn load_full_message(
             break '_if;
         };
         let attachment = attachments
-            .iter()
-            .filter(|x| "text/x-signal-plain".eq(&x.content_type))
-            .next();
+            .iter().find(|x| "text/x-signal-plain".eq(&x.content_type));
         let Some(attachment) = attachment else {
             if let Some(text) = &msg.message {
                 if text.len() > 1000 {
                     warn!(
-                        "missing full text attachment on {}, found: {:?}",
-                        text, attachments
+                        "missing full text attachment on {text}, found: {attachments:?}"
                     );
                 }
             }
@@ -240,7 +237,7 @@ async fn load_full_message(
         let response = fetch_attachment_text(&filename, rq).await;
         let Ok(full_message) = &response else {
             if let Some(err) = response.err() {
-                error!("failed to fetch attachment: {}", err);
+                error!("failed to fetch attachment: {err}");
             }
             break '_if;
         };

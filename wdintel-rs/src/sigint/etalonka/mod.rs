@@ -55,7 +55,7 @@ pub async fn report_networks(
 
     let filename = format!(
         "report_{}.docx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f").to_string()
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
     );
 
     let outpath = generate_networks_docx_report(
@@ -70,7 +70,7 @@ pub async fn report_networks(
 
     save_report_log(
         &env.dbx,
-        format!("reports_log/{}", filename),
+        format!("reports_log/{filename}"),
         &serde_json::to_string(&req).context(h!())?,
         &user_login,
     )
@@ -106,7 +106,7 @@ pub async fn report_networks_batch_id(
 
     let filename = format!(
         "report_{}.docx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f").to_string()
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
     );
 
     let outpath = generate_networks_docx_report(
@@ -121,7 +121,7 @@ pub async fn report_networks_batch_id(
 
     save_report_log(
         &env.dbx,
-        format!("reports_log/{}", filename),
+        format!("reports_log/{filename}"),
         &serde_json::to_string(&req).context(h!())?,
         &user_login,
     )
@@ -149,7 +149,7 @@ pub async fn generate_networks_docx_report(
     let outfolder = storage_dir.join("reports_log");
     let _ = std::fs::create_dir_all(&outfolder);
 
-    let outpath = outfolder.join(&filename);
+    let outpath = outfolder.join(filename);
     let file = std::fs::File::create(outpath.clone())?;
 
     // Define styles for the document
@@ -279,7 +279,7 @@ pub async fn generate_networks_docx_report(
 
             let callsigns_reporting = get_network_callsings_reporting(
                 &env.dbx,
-                network.id.clone(),
+                network.id,
                 callsigns_txt,
             )
             .await
@@ -293,7 +293,7 @@ pub async fn generate_networks_docx_report(
                     .map(|item| &item.callsign)
                     .collect::<HashSet<_>>()
                     .len();
-                format!("щонайменше {} ВЗ.", unique_count)
+                format!("щонайменше {unique_count} ВЗ.")
             };
 
             let freqs = load_freqs(
@@ -323,18 +323,14 @@ pub async fn generate_networks_docx_report(
                 doc,
                 "2. Район функціонування/розгортання: ",
                 network
-                    .location
-                    .as_ref()
-                    .map(String::as_str)
+                    .location.as_deref()
                     .unwrap_or_default(),
             );
             doc = add_field(
                 doc,
                 "3. Призначення: ",
                 network
-                    .purpose
-                    .as_ref()
-                    .map(String::as_str)
+                    .purpose.as_deref()
                     .unwrap_or(DEFAULT_PURPOSE),
             );
             doc = add_field(
@@ -342,7 +338,7 @@ pub async fn generate_networks_docx_report(
                 "4. Склад кореспондентів: ",
                 &correspondents_number,
             );
-            doc = add_field(doc, "5. Позивні: ", &String::new());
+            doc = add_field(doc, "5. Позивні: ", "");
             if !callsigns.is_empty() {
                 // Add known callsigns in table
                 if let Some(table) = build_callsigns_table(
@@ -385,7 +381,7 @@ pub async fn generate_networks_docx_report(
                     );
                 }
             }
-            doc = add_field(doc, "6. Робочі частоти: ", &String::new());
+            doc = add_field(doc, "6. Робочі частоти: ", "");
             if let Some(table) = build_freqs_table(
                 &freqs,
                 width_unit,
@@ -406,27 +402,21 @@ pub async fn generate_networks_docx_report(
                 doc,
                 "8. Режим роботи радіомережі: ",
                 network
-                    .operation_mode
-                    .as_ref()
-                    .map(String::as_str)
+                    .operation_mode.as_deref()
                     .unwrap_or(DEFAULT_OPERATION_MODE),
             );
             doc = add_field(
                 doc,
                 "9. Характер роботи: ",
                 network
-                    .operation_type
-                    .as_ref()
-                    .map(String::as_str)
+                    .operation_type.as_deref()
                     .unwrap_or(DEFAULT_OPERATION_TYPE),
             );
             doc = add_field(
                 doc,
                 "10. Період функціонування: ",
                 network
-                    .operation_period
-                    .as_ref()
-                    .map(String::as_str)
+                    .operation_period.as_deref()
                     .unwrap_or(DEFAULT_OPERATION_PERIOD),
             );
 
@@ -509,8 +499,8 @@ pub async fn generate_networks_docx_report(
                 }
             }
 
-            if !settings.networks_only {
-                if settings.include_pelengs_map {
+            if !settings.networks_only
+                && settings.include_pelengs_map {
                     let pelengs_map =
                         load_pelengs_map(&env.dbx, &groups, &filter)
                             .await
@@ -541,7 +531,6 @@ pub async fn generate_networks_docx_report(
                             .add_paragraph(Paragraph::new());
                     }
                 }
-            }
 
             // Add empty paragraph after each network if this is not the last network
             if index < unit_networks.len() - 1 {
@@ -573,7 +562,7 @@ fn build_callsigns_table(
             let has_known = callsign
                 .known_callsigns
                 .as_ref()
-                .map_or(false, |v| !v.is_empty());
+                .is_some_and(|v| !v.is_empty());
 
             if networks_only {
                 has_known
@@ -677,7 +666,7 @@ fn build_callsigns_table(
                     false,
                 ),
                 create_table_header_cell(
-                    width_unit * 1,
+                    width_unit,
                     Some(DEFAULT_TABLE_HEADER_COLOR),
                     table_header_style_id,
                     "К-ть перехоплень",
@@ -741,7 +730,7 @@ fn build_callsigns_table(
                         false,
                     ),
                     create_table_data_cell(
-                        width_unit * 1,
+                        width_unit,
                         &callsign.message_count.to_string(),
                         get_color(callsign.is_old),
                         false,
@@ -1123,13 +1112,13 @@ fn define_new_paragraph_style(
         run_property = run_property.bold();
     }
 
-    let style = Style {
+    
+
+    Style {
         run_property,
         paragraph_property: ParagraphProperty::new().align(align),
         ..style
-    };
-
-    style
+    }
 }
 
 fn get_color(is_old: bool) -> Option<String> {
@@ -1210,7 +1199,7 @@ where
 {
     let field_vec = input.as_ref().map(|vec| {
         vec.iter()
-            .map(|item| field_extractor(item))
+            .map(field_extractor)
             .collect::<Vec<_>>()
     });
 

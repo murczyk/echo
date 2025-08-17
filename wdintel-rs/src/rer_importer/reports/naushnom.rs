@@ -20,7 +20,7 @@ fn split_into_lines(mut cell: TableCell, text: &str) -> TableCell {
             Paragraph::new().add_run(Run::new().add_text(text_line)),
         )
     }
-    return cell;
+    cell
 }
 
 pub async fn report_docx_kind_naushnom(
@@ -54,14 +54,13 @@ pub async fn report_docx_kind_naushnom(
 
     for (m_location, kind, network_units_map) in network_map.values() {
         let all_units = network_units_map.keys().join("; ");
-        let mut title = format!("{} р/м {}", kind, all_units);
+        let mut title = format!("{kind} р/м {all_units}");
         if let Some(location) = m_location {
             title += &format!(" (р-н {})", location.to_uppercase().trim());
         }
         let freqs = network_units_map
             .values()
-            .map(|v| v.iter().map(|r| r.freq.clone()))
-            .flatten()
+            .flat_map(|v| v.iter().map(|r| r.freq.clone()))
             .collect::<HashSet<String>>();
         let freq_title = if freqs.len() > 1 {
             "Частоти:"
@@ -109,7 +108,7 @@ pub async fn report_docx_kind_naushnom(
         ])];
 
         let tz = crate::config::get_tz();
-        for (_, message_reports) in network_units_map {
+        for message_reports in network_units_map.values() {
             for msg in message_reports {
                 let formatted_dt = msg
                     .datetime
@@ -137,7 +136,7 @@ pub async fn report_docx_kind_naushnom(
                         .add_paragraph(
                             Paragraph::new().add_run(
                                 Run::new()
-                                    .add_text(format!("{}", msg.freq.clone())),
+                                    .add_text(msg.freq.clone().to_string()),
                             ),
                         )
                         .set_borders(TableCellBorders::new()),
@@ -161,7 +160,7 @@ pub async fn report_docx_kind_naushnom(
                 Paragraph::new()
                     .add_run(
                         Run::new()
-                            .add_text(format!("{}", freq_title))
+                            .add_text(freq_title.to_string())
                             .underline("single"),
                     )
                     .add_run(
@@ -233,7 +232,7 @@ pub async fn get_inbox_messages_report_network(
 > {
     let login = user.id()?;
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
 
     let mut q = signal_message::Entity::find()
         .select_only()
@@ -352,7 +351,7 @@ pub async fn get_inbox_messages_report_network(
         let message_report = NetworkMessagesReport {
             comment: row.comment.clone(),
             body: row.body.clone(),
-            datetime: row.datetime.clone(),
+            datetime: row.datetime,
             freq: row.freq.clone(),
         };
         let network_map = res_map.entry(network_id).or_insert((

@@ -26,8 +26,7 @@ async fn test_bl_szd_group_update_01() {
         .unwrap();
     assert!(
         signal_group_aors.is_empty(),
-        "Expected no group AORs, found: {:?}",
-        signal_group_aors
+        "Expected no group AORs, found: {signal_group_aors:?}"
     );
     let aor = mk_aor(
         &txn,
@@ -48,7 +47,7 @@ async fn test_bl_szd_group_update_01() {
     };
     let res = bl_szd_group_update(&req, &szd, &txn).await.unwrap();
 
-    assert_eq!(res.aor.is_some(), true);
+    assert!(res.aor.is_some());
     let signal_group_aors = signal_group_aor::Entity::find()
         .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
         .all(&txn)

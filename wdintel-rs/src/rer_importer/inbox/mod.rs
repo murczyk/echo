@@ -226,7 +226,7 @@ async fn inbox_group_stats(
         // recordings are sorted by date, so each next is older
         while rec.timestamp > current_ts.naive_utc() {
             // fill in all previous minutes before this rec
-            current_ts = current_ts + Duration::minutes(1);
+            current_ts += Duration::minutes(1);
             result.push(InboxGroupStatsByMinute {
                 timestamp: print_utc_timestamp(&current_ts),
                 stats: current_rec,
@@ -248,7 +248,7 @@ async fn inbox_group_stats(
     }
     while result.len() < 60 {
         // fill in all future recs
-        current_ts = current_ts + Duration::minutes(1);
+        current_ts += Duration::minutes(1);
         result.push(InboxGroupStatsByMinute {
             timestamp: print_utc_timestamp(&current_ts),
             stats: current_rec,
@@ -401,7 +401,7 @@ async fn inbox_cursor(
 ) -> Result<Json<Option<i64>>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let since_id_noninclusive: Option<i64> = match DeltaKv::find()
-        .filter(delta_kv::Column::K.eq(format!("rer_importer_id_cursor")))
+        .filter(delta_kv::Column::K.eq("rer_importer_id_cursor".to_string()))
         .one(&env.dbx)
         .await?
     {
@@ -421,7 +421,7 @@ async fn update_inbox_cursor(
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
     let txn = env.dbx.begin().await?;
     let cursor_existing = DeltaKv::find()
-        .filter(delta_kv::Column::K.eq(format!("rer_importer_id_cursor")))
+        .filter(delta_kv::Column::K.eq("rer_importer_id_cursor".to_string()))
         .one(&txn)
         .await?;
     // {
@@ -458,7 +458,7 @@ pub async fn get_inbox_messages(
 
     trace!(
         ">get_inbox_messages inbox items query sql: {}",
-        q.build(DbBackend::Postgres).to_string()
+        q.build(DbBackend::Postgres)
     );
 
     let messages = q

@@ -18,11 +18,11 @@ const REDIS_READ_STREAM_ELEMENTS_MAX: usize = 1000;
 const REDIS_READ_STREAM_BLOCK_MS: usize = 50000;
 
 pub fn session_stream_id(session_id: Uuid) -> String {
-    format!("echo-stream:{}", session_id)
+    format!("echo-stream:{session_id}")
 }
 
 pub fn get_sess_key(session_id: Uuid) -> String {
-    format!("echo-sess-{}", session_id)
+    format!("echo-sess-{session_id}")
 }
 
 pub fn get_session_id(

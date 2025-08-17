@@ -194,7 +194,7 @@ pub async fn zones_datasources_group_add(
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
             is_group_secret: req.is_secret,
-            areas_of_responsibility: areas_of_responsibility,
+            areas_of_responsibility,
             group_master_key,
             allowed_users,
             short_note,

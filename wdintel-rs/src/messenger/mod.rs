@@ -169,7 +169,7 @@ fn only_alphanumeric_and_hyphen(x: &str) -> Result<(), AppError> {
     lazy_static! {
         static ref RE: Regex = Regex::new(r"^[A-Za-z0-9-]+$").unwrap();
     }
-    if !RE.is_match(&x) {
+    if !RE.is_match(x) {
         let msg = format!(
             "Назва може містити тільки латинські літери, цифри та дефіс: {x}",
         );
@@ -182,7 +182,7 @@ fn valid_phone_number(x: &str) -> Result<(), AppError> {
     lazy_static! {
         static ref RE: Regex = Regex::new(r"^\+38\d{10}$").unwrap();
     }
-    if !RE.is_match(&x) {
+    if !RE.is_match(x) {
         let msg = format!(
             "Номер телефону має починатись з +38 та містити 12 цифр: {x}"
         );

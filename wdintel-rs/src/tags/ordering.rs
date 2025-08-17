@@ -48,7 +48,7 @@ pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
         .await
         .context(h!())?;
     for login in logins {
-        info!("> ensure_matching_ordering for {}", login);
+        info!("> ensure_matching_ordering for {login}");
         ensure_matching_ordering(&login, &db, tag_ids_string.clone(), &tags)
             .await?;
     }
@@ -81,7 +81,7 @@ async fn ensure_matching_ordering(
     }
     let ordering = match matching_ordering {
         Some(ordering) => ordering,
-        None => mk_new_ordering(tag_ids_string, &tags, user_id, db)
+        None => mk_new_ordering(tag_ids_string, tags, user_id, db)
             .await
             .context(h!())?,
     };
@@ -101,7 +101,7 @@ async fn collect_enabled_regular_tags(
     let tag_ids_string = tags
         .iter()
         .map(|x| format!("{}", x.id))
-        .reduce(|a, b| format!("{},{}", a, b))
+        .reduce(|a, b| format!("{a},{b}"))
         .unwrap_or_default();
     let tags = tags
         .into_iter()
@@ -177,7 +177,7 @@ fn arrange_tags(
                 tags = vec![];
             }
         }
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             let (tags_sorted_val, seed) =
                 arrange_tags_vec(tags).context(h!())?;
             seed_entries.push(seed);

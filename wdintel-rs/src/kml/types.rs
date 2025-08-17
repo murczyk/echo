@@ -550,7 +550,7 @@ mod tests {
 				</Icon>
 			</IconStyle>
 		</Style>"###;
-        let style: Style = quick_xml::de::from_str(&input).unwrap();
+        let style: Style = quick_xml::de::from_str(input).unwrap();
         assert_eq!(style.id, Some("sh_Логістика, БК50".to_string()));
     }
 }

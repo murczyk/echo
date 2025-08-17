@@ -124,7 +124,7 @@ pub async fn report_docx(
     let _ = std::fs::create_dir_all(&outfolder);
     let filename = format!(
         "report_{}.docx",
-        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f").to_string()
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
     );
     let outpath = outfolder.join(&filename);
     let user_login = user.id().context(h!())?;
@@ -177,7 +177,7 @@ pub async fn report_docx(
     let file = actix_files::NamedFile::open(&outpath)?;
     save_report_log(
         &env.dbx,
-        format!("reports_log/{}", filename),
+        format!("reports_log/{filename}"),
         &serde_json::to_string(&req).context(h!())?,
         &user_login,
     )
@@ -214,8 +214,8 @@ async fn fill_comp_freq(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(start.clone()))
-        .filter(sigint_inbox_item::Column::Datetime.lt(end.clone()))
+        .filter(sigint_inbox_item::Column::Datetime.gte(*start))
+        .filter(sigint_inbox_item::Column::Datetime.lt(*end))
         .order_by_asc(signal_message::Column::Id);
     let count = q.clone().count(dbx).await?;
     let pb = ProgressBar::new(count as u64);
@@ -288,7 +288,7 @@ async fn fill_comp_freq(
                 id: NotSet,
                 zone_id: Set(zone_id),
                 freq: Set(freq.clone()),
-                first_seen: Set(Some(first_seen.clone())),
+                first_seen: Set(Some(first_seen)),
                 updated_at: NotSet,
             }
             .insert(dbx)
@@ -325,7 +325,7 @@ async fn fill_comp_freq(
                 zone_id: Set(zone_id),
                 freq: Set(freq.clone()),
                 callsign: Set(callsign.clone().to_lowercase()),
-                first_seen: Set(Some(first_seen.clone())),
+                first_seen: Set(Some(first_seen)),
                 updated_at: NotSet,
             }
             .insert(dbx)
@@ -363,7 +363,7 @@ pub async fn fill_comp_freq_worker(dbx: &sea_orm::DatabaseConnection) {
         match fill_comp_freq_worker_1(dbx).await {
             Ok(_) => {}
             Err(e) => {
-                println!("fill_comp_freq_worker error: {}", e);
+                println!("fill_comp_freq_worker error: {e}");
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(10 * 60)).await;

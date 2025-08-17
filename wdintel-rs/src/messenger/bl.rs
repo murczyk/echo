@@ -32,9 +32,7 @@ where
     let account = list_accounts(Some(id), txn)
         .await
         .context(h!())?
-        .into_iter()
-        .filter(|a| a.id == id)
-        .next()
+        .into_iter().find(|a| a.id == id)
         .context(h!())?;
     Ok(account)
 }
@@ -112,7 +110,7 @@ pub async fn link_account(
     aor_id: i64,
     txn: &DatabaseTransaction,
 ) -> Result<EchoAccountF1, AppError> {
-    if !is_valid_service_name(&system_service_name) {
+    if !is_valid_service_name(system_service_name) {
         return Err(AppError::BL {
             msg: format!("Invalid system service name: {system_service_name}"),
         });
@@ -138,22 +136,18 @@ pub async fn link_account(
                 .map(|s| s.eq(system_service_name))
                 .is_some()
         })
-        .filter(|a| a.phone_number.eq(phone_number))
-        .filter(|a| a.messenger.eq(&src_name))
-        .into_iter()
-        .next();
+        .filter(|a| a.phone_number.eq(phone_number)).find(|a| a.messenger.eq(&src_name));
 
     if let Some(acc) = existing_account {
-        let msg = format!("Номером телефону {} вже прив'язано", phone_number);
-        error!("{}: {:?}", msg, acc);
+        let msg = format!("Номером телефону {phone_number} вже прив'язано");
+        error!("{msg}: {acc:?}");
         return Err(AppError::BL { msg });
     }
 
     let port = find_port_available(8010, 9000).await.context(h!())?;
     let src_display_name = src.to_string().to_lowercase();
     let attachment_path = format!(
-        "/etc/echo/{}-cli-data/{}/{}-cli/attachments/",
-        src_display_name, system_service_name, src_display_name
+        "/etc/echo/{src_display_name}-cli-data/{system_service_name}/{src_display_name}-cli/attachments/"
     );
     info!("attachment path created: {attachment_path}");
     echo_im::attach_new_client(
@@ -168,14 +162,14 @@ pub async fn link_account(
     .map_err(|res| {
         warn!("AppError: {:?}", res.to_string());
         AppError::BL {
-            msg: format!("{:?}", res),
+            msg: format!("{res:?}"),
         }
     })
     .cae(h!())?;
 
     let lock = echo_im::set_account_phone(
         String::from(phone_number),
-        &system_service_name,
+        system_service_name,
         src.clone(),
         true,
         txn,
@@ -206,7 +200,7 @@ pub async fn link_account(
 
     match src {
         MessageSource::Signal => os_specific::start_new_signal_client(
-            &system_service_name,
+            system_service_name,
             port,
             SIGNAL_CLIENT_DIR,
             SIGNAL_UNIT_NAME,
@@ -216,7 +210,7 @@ pub async fn link_account(
         .await
         .context(h!())?,
         MessageSource::Whatsapp => os_specific::start_new_whatsapp_client(
-            &system_service_name,
+            system_service_name,
             WHATSAPP_CLIENT_CONFIG,
             WHATSAPP_CLIENT_DIR,
             WHATSAPP_UNIT_NAME,
@@ -236,9 +230,7 @@ pub async fn get_qr_code(
     let account = list_accounts(Some(account_id), txn)
         .await
         .context(h!())?
-        .into_iter()
-        .filter(|a| a.id.eq(&account_id))
-        .next()
+        .into_iter().find(|a| a.id.eq(&account_id))
         .context(h!())?;
 
     let messenger = parse_message_source(&account).context(h!())?;
@@ -346,7 +338,7 @@ where
 
         datasources.push(EchoAccountF1 {
             id: a.id,
-            area_of_responsibility: area_of_responsibility,
+            area_of_responsibility,
             status: a.status.into_value().to_string(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
@@ -367,10 +359,7 @@ pub async fn find_port_available(
     end: i32,
 ) -> Result<i32, AppError> {
     let Some(port) = (start..end).find(|p| {
-        match TcpListener::bind(format!("127.0.0.1:{}", p)) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        TcpListener::bind(format!("127.0.0.1:{p}")).is_ok()
     }) else {
         return Err(AppError::BL {
             msg: "can't find free port".to_string(),
@@ -469,7 +458,7 @@ pub async fn bl_group_update(
     let m_group = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey
-                .eq(&req.master_key.clone()),
+                .eq(req.master_key.clone()),
         )
         .one(txn)
         .await

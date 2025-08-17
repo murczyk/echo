@@ -35,7 +35,7 @@ async fn rer_callsign_info_single(
         .context(h!())?;
     let callsign_ids = callsigns_data
         .iter()
-        .map(|(x, _)| x.id.clone())
+        .map(|(x, _)| x.id)
         .collect::<Vec<_>>();
     let reported_networks_per_callsign =
         collect_reported_networks_per_callsign(callsign_ids, dbx)
@@ -49,10 +49,8 @@ async fn rer_callsign_info_single(
                 callsign: callsign.callsign,
                 position: callsign.position,
                 comment: callsign.comment.to_string()
-                    + callsign
-                        .developing
-                        .then(|| " (в дорозвідці)")
-                        .unwrap_or(""),
+                    + if callsign
+                        .developing { " (в дорозвідці)" } else { "" },
                 unit_1: unit.name,
                 unit_2: "".to_string(),
                 unit_id: Some(unit.id),
@@ -115,7 +113,7 @@ async fn collect_reported_networks_per_callsign(
         if let Some(&callsign_id) = text_to_id.get(&record.sigint_callsign) {
             let mut network_ids = reported_networks_per_callsign
                 .remove(&callsign_id)
-                .unwrap_or(vec![]);
+                .unwrap_or_default();
             network_ids.push(record.sigint_network_id);
             reported_networks_per_callsign.insert(callsign_id, network_ids);
         }
@@ -172,7 +170,7 @@ pub async fn load_callsigns(
 
     let callsign_ids = callsigns
         .iter()
-        .map(|(x, _)| x.id.clone())
+        .map(|(x, _)| x.id)
         .collect::<Vec<_>>();
 
     let reported_networks_per_callsign =
@@ -193,10 +191,8 @@ pub async fn load_callsigns(
                         callsign: callsign.callsign.clone(),
                         position: callsign.position.clone(),
                         comment: callsign.comment.to_string()
-                            + callsign
-                                .developing
-                                .then(|| " (в дорозвідці)")
-                                .unwrap_or(""),
+                            + if callsign
+                                .developing { " (в дорозвідці)" } else { "" },
                         unit_1: unit.name.clone(),
                         unit_2: "".to_string(),
                         unit_id: Some(unit.id),

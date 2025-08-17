@@ -11,8 +11,8 @@ use sea_orm::*;
 use std::path::PathBuf;
 
 const WIDTH_UNIT: usize = 1870;
-const DTM_FORMAT: &'static str = "%Y.%m.%d %H:%M:%S";
-const FUNCTIONALITY_DESC_DEFAULT: &'static str = "Склад кореспондентів - звичайний, інтенсивність роботи - звичайна, час роботи - звичайний, район роботи - старий/без змін.";
+const DTM_FORMAT: &str = "%Y.%m.%d %H:%M:%S";
+const FUNCTIONALITY_DESC_DEFAULT: &str = "Склад кореспондентів - звичайний, інтенсивність роботи - звичайна, час роботи - звичайний, район роботи - старий/без змін.";
 
 pub struct Report {
     pub summary: ReportSummary,
@@ -77,7 +77,7 @@ pub async fn report_docx_kind_revo(
     let logins = crate::users::get_organism_logins(&env.dbx, user).await?;
     let messages: Vec<(i64, InboxMessage)> =
         crate::rer_importer::inbox::get_inbox_messages(
-            &login, &logins, &env, &req.req,
+            &login, &logins, env, &req.req,
         )
         .await?;
     let mut report = collect_report(messages.clone(), logins.clone(), env)
@@ -86,10 +86,10 @@ pub async fn report_docx_kind_revo(
     info!("report_docx_kind_revo data collected");
     report
         .hostile_networks
-        .sort_by_key(|x| x.activity.seances_qty as i64 * -1);
+        .sort_by_key(|x| -(x.activity.seances_qty as i64));
     report
         .undefined_networks
-        .sort_by_key(|x| x.activity.seances_qty as i64 * -1);
+        .sort_by_key(|x| -(x.activity.seances_qty as i64));
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
@@ -162,13 +162,13 @@ fn render_network_row(row: NetworkRow) -> TableRow {
         mk_bold_text_cell(&row.name).add_paragraph(mk_paragraph(""));
     for freq in row.freqs {
         network_cell = network_cell
-            .add_paragraph(mk_paragraph(&format!("\n{} МГц", freq)));
+            .add_paragraph(mk_paragraph(&format!("\n{freq} МГц")));
     }
     let activity_cell =
         mk_text_cell(&row.activity.since.format(DTM_FORMAT).to_string())
             .add_paragraph(mk_paragraph(&format!(
                 "- {}",
-                row.activity.till.format(DTM_FORMAT).to_string(),
+                row.activity.till.format(DTM_FORMAT),
             )))
             .add_paragraph(mk_paragraph(&format!(
                 "Сеанси: {}",
@@ -390,15 +390,15 @@ async fn collect_report(
 
     let networks_dictionary = {
         let mut result = HashMap::new();
-        for (_, n) in &networks {
+        for n in networks.values() {
             result.insert(n.id, n.clone());
         }
         result
     };
 
     let mut network_ids = HashSet::new();
-    for (_, n) in &networks {
-        network_ids.insert(n.id.clone());
+    for n in networks.values() {
+        network_ids.insert(n.id);
     }
 
     let mut callsigns_set = HashSet::new();
@@ -496,21 +496,18 @@ async fn collect_report(
     let mut hostile_networks = vec![];
     let mut undefined_networks = vec![];
     for id in network_ids {
-        let keys = seances_map
-            .iter()
-            .map(|(k, _)| k.clone())
-            .filter(|(_, id_val, _)| id == *id_val)
+        let keys = seances_map.keys().filter(|&(_, id_val, _)| id == *id_val).cloned()
             .collect_vec();
         let seances = seances_map
             .iter()
             .filter(|(k, _)| keys.contains(k))
-            .flat_map(|(_, v)| v.into_iter())
+            .flat_map(|(_, v)| v.iter())
             .cloned()
             .collect_vec();
         let mut linked_callsigns = linked_callsigns_map
             .iter()
             .filter(|(k, _)| keys.contains(k))
-            .flat_map(|(_, v)| v.into_iter())
+            .flat_map(|(_, v)| v.iter())
             .cloned()
             .unique()
             .collect_vec();
@@ -518,7 +515,7 @@ async fn collect_report(
         let mut unlinked_callsigns = unlinked_callsigns_map
             .iter()
             .filter(|(k, _)| keys.contains(k))
-            .flat_map(|(_, v)| v.into_iter())
+            .flat_map(|(_, v)| v.iter())
             .cloned()
             .unique()
             .collect_vec();
@@ -530,8 +527,8 @@ async fn collect_report(
         if seances.is_empty() {
             continue;
         }
-        let since = seances.iter().min().context(h!())?.clone();
-        let till = seances.iter().max().context(h!())?.clone();
+        let since = *seances.iter().min().context(h!())?;
+        let till = *seances.iter().max().context(h!())?;
         let seances_qty = seances.len() as u64;
         let mut correspondents = vec![];
         for c in linked_callsigns {
@@ -558,10 +555,10 @@ async fn collect_report(
         }
         let (name, is_defined) = match network.unit_name.clone() {
             None => {
-                (format!("{} невизначеного підрозділу", network_name), false)
+                (format!("{network_name} невизначеного підрозділу"), false)
             }
             Some(unit_name) => {
-                (format!("{} {}", network_name, unit_name), true)
+                (format!("{network_name} {unit_name}"), true)
             }
         };
         let row = NetworkRow {

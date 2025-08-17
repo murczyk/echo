@@ -35,8 +35,7 @@ pub async fn oneoff_rer_csv_import_1(
     bgtask_log(
         bgid,
         &format!(
-            "> rer_importer::oneoff_rer_importer_import starting; ps: {:?}",
-            ps
+            "> rer_importer::oneoff_rer_importer_import starting; ps: {ps:?}"
         ),
         &dbx,
     )
@@ -100,7 +99,7 @@ pub async fn oneoff_rer_csv_import_1(
     for body in bodies {
         // Normalize body
         let body = body.replace("\r\n", "\n");
-        bgtask_log(bgid, &format!("> body: {}", body), &dbx).await?;
+        bgtask_log(bgid, &format!("> body: {body}"), &dbx).await?;
 
         // hardcode
         let datasource_id = 1;
@@ -112,7 +111,7 @@ pub async fn oneoff_rer_csv_import_1(
             created_at: NotSet,
             group_master_key: Set(Some(group_id.to_string())),
             timestamp: Set(Some(timestamp)),
-            sender: Set(Some(format!("{}", source_uuid))),
+            sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
@@ -177,15 +176,17 @@ pub async fn rer_csv_import(
     }
     .insert(&env.dbx)
     .await?;
-    let bgtask_id = bgtask.id.clone();
+    let bgtask_id = bgtask.id;
 
     let dbx2 = env.dbx.clone();
+    let redis2 = env.redis.clone();
     let mode = env.mode;
-    let mode2 = Box::new(mode.clone());
-    let bgtask_id2 = Box::new(bgtask_id.clone());
-    tokio::spawn((async move || {
+    let mode2 = Box::new(mode);
+    let bgtask_id2 = Box::new(bgtask_id);
+    tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
+        let mut redis3 = redis2;
         let csv_file2 = csv_file;
         // crazy hacks due to bug in nightly. remove asap
         // possibly https://github.com/rust-lang/rust/issues/119757
@@ -196,7 +197,7 @@ pub async fn rer_csv_import(
         let res = oneoff_rer_csv_import_go(
             *mode3,
             &dbx3,
-            &mut env.redis.clone(),
+            &mut redis3,
             &crate::OneoffRerCsvImportPs {
                 input: csv_file2.as_path().to_string_lossy().to_string(),
             },
@@ -205,7 +206,7 @@ pub async fn rer_csv_import(
         .await;
         let res = finish_bgtask(Some(*bgtask_id3), &dbx3, &res).await;
         res
-    })());
+    });
 
     Ok(Json(bgtask_id))
 }
@@ -241,20 +242,24 @@ pub async fn rer_delta_csv_import(
     let dbx2 = env.dbx.clone();
     let config2 = env.config.clone();
     let rq2 = env.rq.clone();
-    let bgtask_id2 = Box::new(bgtask_id.clone());
-    tokio::spawn((async move || {
+    let redis2 = env.redis.clone();
+    let settlements2 = env.settlements.clone();
+    let bgtask_id2 = Box::new(bgtask_id);
+    tokio::spawn(async {
         let _tmp_dir = tmp_dir;
         let dbx3 = dbx2;
         let config3 = config2;
         let rq3 = rq2;
+        let mut redis3 = redis2;
+        let settlements3 = settlements2;
         // crazy hacks due to bug in nightly. remove asap
         // possibly https://github.com/rust-lang/rust/issues/119757
         let bgtask_id3 = bgtask_id2;
         let res = rer_delta_csv_import_go(
-            env.settlements.clone(),
+            settlements3,
             &dbx3,
             &config3,
-            &mut env.redis.clone(),
+            &mut redis3,
             &rq3,
             csv_file,
             Some(*bgtask_id3),
@@ -263,7 +268,7 @@ pub async fn rer_delta_csv_import(
 
         let res2 = finish_bgtask(Some(*bgtask_id3), &dbx3, &res).await;
         res2
-    })());
+    });
 
     Ok(Json(bgtask_id))
 }
@@ -293,12 +298,12 @@ pub async fn rer_delta_csv_import_go(
             "> rer_delta_csv_import_go starting; csv_file: {}",
             csv_file.display()
         ),
-        &dbx,
+        dbx,
     )
     .await?;
 
     let recs = parse_delta_csv(csv_file)?;
-    bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), &dbx)
+    bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), dbx)
         .await?;
 
     // hardcode
@@ -334,12 +339,12 @@ pub async fn rer_delta_csv_import_go(
     let source_uuid = signal_profile.uuid;
 
     for rec in recs {
-        bgtask_log(bgtask_id, &format!("> rec: {:?}", rec), &dbx).await?;
+        bgtask_log(bgtask_id, &format!("> rec: {rec:?}"), dbx).await?;
 
         let timestamp = Utc::now().naive_utc();
         let body: String = format!(
             "{} F={}(МГц)\n\n{:.6} {:.6}\n\n{}",
-            rec.time.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            rec.time.format("%Y-%m-%dT%H:%M:%S"),
             rec.freq.replace(".", ","),
             rec.lat,
             rec.lon,
@@ -355,7 +360,7 @@ pub async fn rer_delta_csv_import_go(
             created_at: NotSet,
             group_master_key: Set(Some(group_id.to_string())),
             timestamp: Set(Some(timestamp)),
-            sender: Set(Some(format!("{}", source_uuid))),
+            sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
             format: Set(Some(2)),
             datasource_id: Set(Some(datasource_id)),
@@ -369,8 +374,8 @@ pub async fn rer_delta_csv_import_go(
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             dbx,
-            &rq,
-            &config,
+            rq,
+            config,
             redis,
             db_message_id,
             None,
@@ -428,7 +433,7 @@ pub fn parse_delta_csv_method1(
     for e_rec in rdr.deserialize() {
         let rec: Rec = e_rec?;
         if rec.r#type != "10061500002001000000" {
-            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {:?}", rec);
+            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
             continue;
         }
         let Some(freq) =
@@ -467,7 +472,7 @@ pub fn parse_delta_csv_method2(
     for e_rec in rdr.deserialize() {
         let rec: Rec = e_rec?;
         if rec.sidc != "10061500002001000000" {
-            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {:?}", rec);
+            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
             continue;
         }
         let Some(freq) =
@@ -525,9 +530,9 @@ pub fn parse_delta_csv_method3(
     let mut res: Vec<DeltaCsvFreqRec> = vec![];
     for e_rec in rdr.deserialize() {
         let rec: Rec = e_rec?;
-        println!("rec: {:?}", rec);
+        println!("rec: {rec:?}");
         if rec.sidc != "10061500002001000000" {
-            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {:?}", rec);
+            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
             continue;
         }
         let Some(freq) =
@@ -551,7 +556,7 @@ pub fn parse_delta_csv_method3(
             continue;
         };
         let lng: f64 = lng.parse().context(h!())?;
-        println!("lat: {}, lng: {}", lat, lng);
+        println!("lat: {lat}, lng: {lng}");
         let rec: DeltaCsvFreqRec = DeltaCsvFreqRec {
             freq: super::frequency::round_to_nearest_005(freq),
             lat,

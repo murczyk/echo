@@ -102,7 +102,7 @@ pub async fn network_list(
             )
             .filter(Expr::cust_with_values(
                 "sigint_network_freq.freq ilike $1",
-                vec![format!("{}%", filter_freq).as_str()],
+                vec![format!("{filter_freq}%").as_str()],
             ));
         networks = networks.filter(Expr::exists(subquery.into_query()));
     }
@@ -150,7 +150,7 @@ pub async fn restore_network(
     if network.deleted && network.active_to.is_some() {
         bl_restore_network(&txn, network).await.context(h!())?;
     } else {
-        error!("user {} attempted to re-activate already active network, skipping...", user_id);
+        error!("user {user_id} attempted to re-activate already active network, skipping...");
     }
 
     let res = bl_network_info_batch(vec![network_id], &txn)
@@ -165,11 +165,11 @@ async fn bl_restore_network(
     txn: &DatabaseTransaction,
     network: sigint_network::Model,
 ) -> Result<sigint_network::Model, AppError> {
-    if let Some(active_to) = network.active_to.clone() {
+    if let Some(active_to) = network.active_to {
         sigint_network_activity_history::ActiveModel {
             id: NotSet,
             sigint_network_id: Set(network.id),
-            active_from: Set(network.active_from.clone()),
+            active_from: Set(network.active_from),
             active_to: Set(active_to),
             created_at: NotSet,
         }
@@ -425,12 +425,12 @@ pub async fn create_network(
     for frequency in req.freqs.clone() {
         let active_from = frequency
             .active_from
-            .map(|dt| dt_from_millis(dt))
+            .map(dt_from_millis)
             .transpose()?
             .unwrap_or(Utc::now().naive_utc());
         let active_to = frequency
             .active_to
-            .map(|dt| dt_from_millis(dt))
+            .map(dt_from_millis)
             .transpose()?;
 
         let freq_id = sigint_network_freq::ActiveModel {
@@ -591,7 +591,7 @@ pub async fn update_network(
                 model.r#type =
                     Set(NetworkDescriptionType::from(p.descr_type.clone()));
                 model.description = Set(p.description.clone());
-                model.sigint_network_freq_id = Set(p.network_freq_id.clone());
+                model.sigint_network_freq_id = Set(p.network_freq_id);
                 model.comment = NotSet; // Set(p.comment.clone());
                 model.update(&txn).await.context(h!())?;
             } else {
@@ -638,7 +638,7 @@ pub async fn delete_network(
 ) -> Result<Json<Network>, AppError> {
     let user_login = user.id()?.to_string();
     crate::users::has_role(&env.dbx, &user_login, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_login.as_str(), "UnitsEditor")
+    crate::users::has_role(&env.dbx, user_login.as_str(), "UnitsEditor")
         .await?;
     let req: DeleteNetworkReq = req.into_inner();
     let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -819,7 +819,7 @@ pub async fn network_group_activity_one(
         .get(&req.network_id.to_string())
         .cloned()
         .unwrap_or_default();
-    return Ok(Json(res));
+    Ok(Json(res))
 }
 
 #[post("/api/sigint/network-group-activity")]
@@ -1186,7 +1186,7 @@ pub async fn update_freq_networks(
 
     for req_network in &req.networks {
         let network_id = if let Some(id) = req_network.id {
-            let network_id = id.clone();
+            let network_id = id;
             let network = sigint_network::Entity::find_by_id(id)
                 .one(&txn)
                 .await
@@ -1246,7 +1246,7 @@ pub async fn update_freq_networks(
             .await
             .context(h!())?;
 
-            info!("inserted new network with id {}", new_network_id);
+            info!("inserted new network with id {new_network_id}");
 
             for unit_id in &req_network.unit_ids {
                 let network_unit = sigint_network_unit::ActiveModel {
@@ -1280,7 +1280,7 @@ pub async fn update_freq_networks(
                 model.r#type =
                     Set(NetworkDescriptionType::from(req.descr_type.clone()));
                 model.description = Set(req.description.clone());
-                model.sigint_network_freq_id = Set(req.network_freq_id.clone());
+                model.sigint_network_freq_id = Set(req.network_freq_id);
                 model.comment = NotSet; // Set(req.comment.clone());
                 model.update(&txn).await.context(h!())?;
             } else {
@@ -1363,13 +1363,13 @@ pub async fn add_network_freq(
         let active_from = req
             .freq_rec
             .active_from
-            .map(|dt| dt_from_millis(dt))
+            .map(dt_from_millis)
             .transpose()?
             .unwrap_or(Utc::now().naive_utc());
         let active_to = req
             .freq_rec
             .active_to
-            .map(|dt| dt_from_millis(dt))
+            .map(dt_from_millis)
             .transpose()?;
 
         let network_freq = sigint_network_freq::ActiveModel {
@@ -1529,7 +1529,7 @@ pub async fn update_network_freq(
         let active_from =
             dt_from_millis(req.active_from).unwrap_or(Utc::now().naive_utc());
         let active_to =
-            req.active_to.map(|dt| dt_from_millis(dt)).transpose()?;
+            req.active_to.map(dt_from_millis).transpose()?;
 
         let mut model = network_freq_model.into_active_model();
         model.kind = Set(SigintNetworkKind::try_from_value(&req.kind)?);
@@ -1723,7 +1723,7 @@ async fn cleanup_networks_worker_1(
         .await
         .context(h!())?;
 
-    if networks_freqs_to_remove.len() > 0 {
+    if !networks_freqs_to_remove.is_empty() {
         info!(
             "networks freqs up to removal: {}",
             networks_freqs_to_remove.len()
@@ -1756,7 +1756,7 @@ async fn cleanup_networks_worker_1(
             }
         }
 
-        let network_id = network.id.clone();
+        let network_id = network.id;
         let (network_active_from, network_active_to) =
             get_network_activity_range(dbx, network_id)
                 .await
@@ -1775,7 +1775,7 @@ async fn cleanup_networks_worker_1(
             .unwrap_or(String::from(""));
         let location = Some(sigint_network_freq.location.trim())
             .filter(|x| !x.is_empty())
-            .map(|x| format!("({})", x))
+            .map(|x| format!("({x})"))
             .unwrap_or(String::from(""));
         let desc = vec![sigint_network_freq.name.clone(), unit_desc, location]
             .into_iter()
@@ -1898,7 +1898,7 @@ pub async fn collect_network_units(
     }
     let mut result: BTreeMap<String, Vec<sigint_unit::Model>> = BTreeMap::new();
     for (network_id, freq) in freq_networks {
-        let s_units = result.entry(freq).or_insert(vec![]);
+        let s_units = result.entry(freq).or_default();
         if let Some(units) = network_units_map.get(&network_id) {
             for u in units {
                 if unit_filter(u, &data) {
@@ -1968,7 +1968,7 @@ pub async fn merge_network(
     // debug!("> merge networks");
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let _res = merge_two_networks(
+    merge_two_networks(
         &txn,
         login.clone(),
         false,
@@ -2049,7 +2049,7 @@ pub async fn network_callsigns_list(
 
     let callsigns_reporting = get_network_callsings_reporting(
         &env.dbx,
-        network.id.clone(),
+        network.id,
         callsigns_txt,
     )
     .await
@@ -2118,7 +2118,7 @@ pub async fn network_freqs_list(
         .await
         .context(h!())?;
 
-    let res = SingleNetworkFreqsListRsp { freqs: freqs };
+    let res = SingleNetworkFreqsListRsp { freqs };
 
     Ok(Json(res))
 }
@@ -2237,7 +2237,7 @@ pub async fn update_network_posts(
         let network_post = sigint_network_post::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
-            post_id: Set(post_id.clone()),
+            post_id: Set(post_id),
             deleted: NotSet,
             created_at: NotSet,
             sigint_origin_id: NotSet,
@@ -2354,7 +2354,7 @@ pub async fn update_network_units(
         let network_unit = sigint_network_unit::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
-            unit_id: Set(unit_id.clone()),
+            unit_id: Set(unit_id),
             created_at: NotSet,
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
@@ -2509,7 +2509,7 @@ pub async fn update_network_description(
         model.r#type =
             Set(NetworkDescriptionType::from(req.descr_type.clone()));
         model.description = Set(req.description.clone());
-        model.sigint_network_freq_id = Set(req.network_freq_id.clone());
+        model.sigint_network_freq_id = Set(req.network_freq_id);
         model.comment = NotSet; // Set(req.comment.clone());
         model.update(&txn).await.context(h!())?;
     } else {
@@ -2655,8 +2655,7 @@ pub async fn oneoff_merge_all_possible_networks(
             for secondary_id in iter {
                 if !merged.contains(&secondary_id) {
                     println!(
-                        "Merging network {} into network {} (Name: '{}', Unit ID: {})",
-                        secondary_id, primary_id, name, unit_id
+                        "Merging network {secondary_id} into network {primary_id} (Name: '{name}', Unit ID: {unit_id})"
                     );
 
                     // Merge networks
@@ -2670,14 +2669,12 @@ pub async fn oneoff_merge_all_possible_networks(
                     .await
                     {
                         eprintln!(
-                            "❌ Failed to merge network {} into {}: {}",
-                            secondary_id, primary_id, e
+                            "❌ Failed to merge network {secondary_id} into {primary_id}: {e}"
                         );
                     }
 
                     println!(
-                        "✅ Successfully merged network {} into {}",
-                        secondary_id, primary_id
+                        "✅ Successfully merged network {secondary_id} into {primary_id}"
                     );
 
                     // Mark secondary_id as merged
@@ -2726,7 +2723,7 @@ pub async fn oneoff_merge_two_networks(
         }
         Err(e) => {
             txn.rollback().await.context(h!())?;
-            error!("❌ Merge failed: {:?}", e);
+            error!("❌ Merge failed: {e:?}");
         }
     }
 
@@ -2938,8 +2935,7 @@ pub async fn merge_two_networks(
     network_from_model.update(txn).await.context(h!())?;
 
     println!(
-        "✅ Merged network {} into {}",
-        network_id_from, network_id_to
+        "✅ Merged network {network_id_from} into {network_id_to}"
     );
 
     Ok(())
@@ -2954,7 +2950,7 @@ fn concat_unique(to: Option<String>, from: Option<String>) -> Option<String> {
             if parts.contains(&from_val) {
                 Some(to_val.to_string()) // Already present, return as is
             } else {
-                Some(format!("{}|{}", to_val, from_val)) // Append uniquely
+                Some(format!("{to_val}|{from_val}")) // Append uniquely
             }
         }
         (Some(to_val), None) => Some(to_val.to_string()),
@@ -3032,7 +3028,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     Ok(sigint_network_post::Entity::find()
-        .filter(sigint_network_post::Column::NetworkId.eq(network_id.clone()))
+        .filter(sigint_network_post::Column::NetworkId.eq(network_id))
         .filter(sigint_network_post::Column::Deleted.eq(false))
         .all(txn)
         .await

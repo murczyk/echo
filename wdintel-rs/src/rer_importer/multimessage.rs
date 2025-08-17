@@ -10,13 +10,13 @@ const MAX_MESSAGE_SIZE: usize = 20000;
 
 pub fn should_try_split_message(body: &str) -> bool {
     // if message is too long - try splitting it
-    let chars = body.chars().into_iter().count();
+    let chars = body.chars().count();
     chars > SPLITTABLE_MESSAGE_SIZE
 }
 
 pub fn check_message_length_is_valid(body: &str) -> bool {
     // if the message length is >20k + it cannot be split - mark as deleted
-    let chars = body.chars().into_iter().count();
+    let chars = body.chars().count();
     chars <= MAX_MESSAGE_SIZE
 }
 
@@ -41,8 +41,7 @@ where
 
     if new_messages.len() > 1 {
         warn!(
-            "signal_message#{}: invalid message size, too long. splitting...",
-            id
+            "signal_message#{id}: invalid message size, too long. splitting..."
         );
         for body in new_messages {
             let deleted = !check_message_length_is_valid(&body);
@@ -58,8 +57,7 @@ where
         }
     } else {
         error!(
-            "signal_message#{}: invalid message size, too long. removing...",
-            id
+            "signal_message#{id}: invalid message size, too long. removing..."
         );
     }
     Ok(models)

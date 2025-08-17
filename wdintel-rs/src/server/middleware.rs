@@ -232,7 +232,7 @@ async fn store_activity_in_redis(
         .await?;
 
     // Store the actual data with TTL
-    let data_key = format!("{}:{}", collection_key, member_key);
+    let data_key = format!("{collection_key}:{member_key}");
     let _: () = redis.set_ex(&data_key, activity_json, 3600).await?; // 1 hour TTL
 
     // Maintain cap of 10000 elements
@@ -250,7 +250,7 @@ async fn store_activity_in_redis(
 
             // Delete associated data keys
             for member in removed_members {
-                let data_key = format!("{}:{}", collection_key, member);
+                let data_key = format!("{collection_key}:{member}");
                 let _: () = redis.del(&data_key).await?;
             }
         }
@@ -328,7 +328,7 @@ pub async fn activity_details_worker(
 
         // Collect all activities
         for (member, _score) in &members {
-            let data_key = format!("{}:{}", collection_key, member);
+            let data_key = format!("{collection_key}:{member}");
             keys_to_delete.push(data_key.clone());
 
             let data: Result<Option<String>, _> = redis.get(&data_key).await;
@@ -423,7 +423,7 @@ pub async fn activity_details_worker(
 
             let mut success = true;
             if let Err(e) = client.simple_query(&sql).await {
-                warn!("Failed to bulk insert activity_details: {:?}", e);
+                warn!("Failed to bulk insert activity_details: {e:?}");
                 success = false;
             }
 

@@ -71,7 +71,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -97,7 +97,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -123,7 +123,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -149,7 +149,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -175,7 +175,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -201,7 +201,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -227,7 +227,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -253,7 +253,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -279,7 +279,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -305,7 +305,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -331,7 +331,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -357,7 +357,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -383,7 +383,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -409,7 +409,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -435,7 +435,7 @@ where
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.clone().map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }

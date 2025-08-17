@@ -63,9 +63,9 @@ pub fn extract_operatyvka_folders(kml: &Kml) -> Result<Vec<Folder>, AppError> {
     let mut folders = vec![];
     // x1 = мої місця
     if let Some(folder) =
-        node_as_folder(kml.nodes.get(0).ok_or("must not be empty")?)?
+        node_as_folder(kml.nodes.first().ok_or("must not be empty")?)?
     {
-        if let Some(x1) = folder.nodes.get(0) {
+        if let Some(x1) = folder.nodes.first() {
             if let Some(folder1) = node_as_folder(x1)? {
                 for x2 in folder1.nodes.iter() {
                     let Some(folder2) = node_as_folder(x2)? else {
@@ -264,7 +264,7 @@ async fn operatyvka_download(
                         }),
                         icon: Some(Icon {
                             href: Some(Href {
-                                body: Some(format!("{icon}")),
+                                body: Some(icon.to_string()),
                             }),
                         }),
                     }),
@@ -473,7 +473,7 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
                     per_date
                         .entry(date.clone())
                         .and_modify(|xs| xs.push(placemark.clone()))
-                        .or_insert(vec![]);
+                        .or_default();
                 })
                 .or_insert(new_btmap(date.clone(), vec![placemark.clone()]));
         }
@@ -523,7 +523,7 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
         };
         kml_nodes.push(Node::Folder(freq_folder));
     }
-    let kml_fol1 = node_as_folder(kml.nodes.get(0).ok_or("kml has no nodes")?)?
+    let kml_fol1 = node_as_folder(kml.nodes.first().ok_or("kml has no nodes")?)?
         .ok_or("kml node must be a folderish")?;
     let root_node = Node::Folder(Folder {
         name: Some(Name {
@@ -568,7 +568,7 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
     std::fs::copy(dst_file, "/Users/kon/Downloads/rer.kmz")?;
     println!("> done. see /Users/kon/Downloads/rer.kmz");
     for (freq, per_date_map) in per_freq_per_date.iter() {
-        let num_items: usize = per_date_map.iter().map(|(_k, v)| v.len()).sum();
+        let num_items: usize = per_date_map.values().map(|v| v.len()).sum();
         println!("> freq: {freq}, items: {num_items}");
     }
     Ok(())
@@ -630,7 +630,7 @@ pub async fn oneoff_fix_kml(
     std::fs::copy(kmz_path, &tmp_dir_kmz)?;
     crate::zip::unzip(&tmp_dir_kmz)?;
     std::fs::remove_file(&tmp_dir_kmz)?;
-    crate::utils::backup_tmp_dir(&tmp_dir.path())?;
+    crate::utils::backup_tmp_dir(tmp_dir.path())?;
     // todo: list dir, search for kml file name
     let mut kml_path = tmp_dir
         .path()
@@ -639,7 +639,7 @@ pub async fn oneoff_fix_kml(
     if !kml_path.exists() {
         kml_path = tmp_dir.path().join("doc.kml");
     }
-    println!("> kml_path: {:?}", kml_path);
+    println!("> kml_path: {kml_path:?}");
     let mut kml: Kml =
         quick_xml::de::from_str(&std::fs::read_to_string(&kml_path)?)
             .context(h!())?;
@@ -972,14 +972,14 @@ pub async fn api_fix_kmz(
 
     while let Some(item) = payload.next().await {
         let mut field = item.map_err(|e| -> AppError {
-            format!("Multipart error: {:?}", e).into()
+            format!("Multipart error: {e:?}").into()
         })?;
         let field_name = field.name().context(h!())?;
         if field_name == "hide_titles" {
             while let Some(chunk) = field.next().await {
                 let v = chunk
                     .map_err(|e| -> AppError {
-                        format!("Multipart error: {:?}", e).into()
+                        format!("Multipart error: {e:?}").into()
                     })?
                     .to_vec();
                 if String::from_utf8(v) == Ok("1".to_string()) {
@@ -993,7 +993,7 @@ pub async fn api_fix_kmz(
                 val_curr.extend(
                     chunk
                         .map_err(|e| -> AppError {
-                            format!("Multipart error: {:?}", e).into()
+                            format!("Multipart error: {e:?}").into()
                         })?
                         .to_vec(),
                 );
@@ -1041,7 +1041,7 @@ fn extract_radio_info(nn: &str) -> Result<Option<RadioInfo>, AppError> {
                 Regex::new(r"(?P<radio>[a-zA-Z\d\-]+),?\s*\(?(?P<day>\d\d)\.(?P<mon>\d\d)\.(?P<year>\d\d\d\d)( (?<hour>\d\d):(?P<min>\d\d):(?P<sec>\d\d)\)?)?")
                     .unwrap();
         }
-        let Some(capts) = RE.captures(&nn) else {
+        let Some(capts) = RE.captures(nn) else {
             break '_if;
         };
         let Some(radio) = m_cap_s(&capts, "radio") else {
@@ -1071,7 +1071,7 @@ fn extract_radio_info(nn: &str) -> Result<Option<RadioInfo>, AppError> {
                 Regex::new(r"(?P<radio>[a-zA-Z\d\-]+)(,)?\s+(?P<day>\d\d)\.(?P<mon>\d\d)\.(?P<year>\d\d\d\d)( (?<hour>\d\d):(?P<min>\d\d):(?P<sec>\d\d)?Z?)?")
                     .unwrap();
         }
-        let Some(capts) = RE.captures(&nn) else {
+        let Some(capts) = RE.captures(nn) else {
             break '_if;
         };
         let Some(radio) = m_cap_s(&capts, "radio") else {
@@ -1101,7 +1101,7 @@ fn extract_radio_info(nn: &str) -> Result<Option<RadioInfo>, AppError> {
                 Regex::new(r"(?P<radio>[a-zA-Zа-яА-Я/\d\-\s,]+),\s+(?P<day>\d\d)\.(?P<mon>\d\d)\.(?P<year>\d\d\d\d)( (?<hour>\d\d):(?P<min>\d\d):(?P<sec>\d\d)?Z?)?")
                     .unwrap();
         }
-        let Some(capts) = RE.captures(&nn) else {
+        let Some(capts) = RE.captures(nn) else {
             break '_if;
         };
         let Some(radio) = m_cap_s(&capts, "radio") else {
@@ -1180,7 +1180,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     bgtask_log2(m_bgtask_id, "> rm", m_dbx).await?;
     std::fs::remove_file(&tmp_dir_kmz)?;
     bgtask_log2(m_bgtask_id, "> backup", m_dbx).await?;
-    crate::utils::backup_tmp_dir(&tmp_dir.path())?;
+    crate::utils::backup_tmp_dir(tmp_dir.path())?;
     let mut kml_path = tmp_dir
         .path()
         .join(kmz_path.file_stem().ok_or("no stem 92832")?)
@@ -1253,7 +1253,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
 
     let csv_path_out = if let Some(bgtask_id) = m_bgtask_id {
         PathBuf::from(config.storage_dir.clone())
-            .join(format!("radios-{}-radio.csv", bgtask_id))
+            .join(format!("radios-{bgtask_id}-radio.csv"))
     } else {
         kmz_path.with_file_name(
             kmz_path
@@ -1274,7 +1274,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
 
     let kmz_path_out = if let Some(bgtask_id) = m_bgtask_id {
         PathBuf::from(config.storage_dir.clone())
-            .join(format!("radios-{}-date.kmz", bgtask_id))
+            .join(format!("radios-{bgtask_id}-date.kmz"))
     } else {
         kmz_path.with_file_name(
             kmz_path
@@ -1287,7 +1287,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     };
     render_nodes(
         &kml,
-        &kmz_path,
+        kmz_path,
         &kml_path,
         &nodes_per_date_per_radio,
         &kmz_path_out,
@@ -1297,7 +1297,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     .await?;
     let kmz_path_out = if let Some(bgtask_id) = m_bgtask_id {
         PathBuf::from(config.storage_dir.clone())
-            .join(format!("radios-{}-radio.kmz", bgtask_id))
+            .join(format!("radios-{bgtask_id}-radio.kmz"))
     } else {
         kmz_path.with_file_name(
             kmz_path
@@ -1310,7 +1310,7 @@ pub async fn oneoff_radio_per_day_per_abonent(
     };
     render_nodes(
         &kml,
-        &kmz_path,
+        kmz_path,
         &kml_path,
         &nodes_per_radio_per_date,
         &kmz_path_out,
@@ -1378,7 +1378,7 @@ async fn render_nodes(
         };
         kml_nodes.push(Node::Folder(date_folder));
     }
-    let kml_fol1 = node_as_folder(kml.nodes.get(0).ok_or("kml has no nodes")?)?
+    let kml_fol1 = node_as_folder(kml.nodes.first().ok_or("kml has no nodes")?)?
         .ok_or("kml node must be a folderish")?;
     let root_node = Node::Folder(Folder {
         name: Some(Name {
@@ -1437,7 +1437,7 @@ async fn render_nodes(
     );
     println!("> dst_file is exist: {}", dst_file.exists());
     let res = std::fs::copy(dst_file, kmz_path_out);
-    println!("> res: {:?}", res);
+    println!("> res: {res:?}");
     res?;
     println!("> done copying");
     bgtask_log2(
@@ -1448,7 +1448,7 @@ async fn render_nodes(
     .await?;
     for (date, per_radio_map) in node_map.iter() {
         let num_items: usize =
-            per_radio_map.iter().map(|(_k, v)| v.len()).sum();
+            per_radio_map.values().map(|v| v.len()).sum();
         bgtask_log2(
             m_bgtask_id,
             &format!("> date: {date}, items: {num_items}"),
@@ -1469,7 +1469,7 @@ async fn render_nodes_csv(
     let per_page = 2000;
     let mut rows = vec![];
     for (date, per_radio_map) in node_map.iter() {
-        println!("> render_nodes_csv date: {}", date);
+        println!("> render_nodes_csv date: {date}");
         for (radio, vs) in per_radio_map.iter() {
             for v in vs.iter() {
                 let Some(point) = v.point.clone() else {
@@ -1487,7 +1487,7 @@ async fn render_nodes_csv(
                     quantity: "".to_string(),
                     name: radio.clone(),
                     // like 2023-10-11T00:00:00
-                    observation_datetime: format!("{}T12:00:00", date),
+                    observation_datetime: format!("{date}T12:00:00"),
                     reliability_credibility: "B3".to_string(),
                     staff_comments: "".to_string(),
                     platform_type: "ELINT".to_string(),
@@ -1495,9 +1495,7 @@ async fn render_nodes_csv(
                     speed: "".to_string(),
                     // like POINT (37.083 47.5489)
                     coordinates: format!(
-                        "POINT ({lon} {lat})",
-                        lon = lon,
-                        lat = lat
+                        "POINT ({lon} {lat})"
                     ),
                     // comment_1: v.description.clone().unwrap_or("".to_string()),
                     comment_1: "".to_string(),
@@ -1533,7 +1531,7 @@ async fn render_nodes_csv(
 
     for (date, per_radio_map) in node_map.iter() {
         let num_items: usize =
-            per_radio_map.iter().map(|(_k, v)| v.len()).sum();
+            per_radio_map.values().map(|v| v.len()).sum();
         bgtask_log2(
             m_bgtask_id,
             &format!("> date: {date}, items: {num_items}"),
@@ -1557,7 +1555,7 @@ pub fn build_style_maps_per_app6d(
     // per app6d
     let mut styles_highlight: BTreeMap<String, Style> = BTreeMap::new();
     for sidc in sidcs.iter() {
-        let icon = format!("{}.png", sidc);
+        let icon = format!("{sidc}.png");
         styles_normal.insert(
             sidc.clone(),
             Style {

@@ -252,9 +252,9 @@ async fn callsigns_alchemy(
             .expect("impossible! seed=71928")
             .clone();
         nodes.push(CallsignsAlchemyNode {
-            id: format!("node-{}", callsign),
+            id: format!("node-{callsign}"),
             cluster,
-            title: format!("{}", callsign),
+            title: callsign.to_string(),
             relatedness: "1.0".to_string(),
         });
     }
@@ -277,13 +277,13 @@ fn fill_edges(
     callsigns: Vec<String>,
 ) -> Result<Vec<CallsignAlchemyEdge>, AppError> {
     let mut res = vec![];
-    if callsigns.len() > 0 {
+    if !callsigns.is_empty() {
         let (c1, cs) = callsigns.split_at(1);
         let c1 = &c1[0];
         for c in cs.iter() {
             res.push(CallsignAlchemyEdge {
-                source: format!("node-{}", c1),
-                target: format!("node-{}", c),
+                source: format!("node-{c1}"),
+                target: format!("node-{c}"),
                 relatedness: "1.0".to_string(),
             });
         }
@@ -510,9 +510,9 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
     while let Some(item) = inbox_items.try_next().await.context(h!())? {
         pb.inc(1);
 
-        if let Some(ref freq) = item.freq.as_ref() {
-            let freq2 = self::frequency::etalon(&freq);
-            if &freq2 != *freq {
+        if let Some(freq) = item.freq.as_ref() {
+            let freq2 = self::frequency::etalon(freq);
+            if &freq2 != freq {
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
                 item.update(&dbx).await.context(h!())?;
@@ -574,12 +574,11 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
                 callsigns,
             )?;
             let unit_new = result.unit.clone();
-            if unit_new.is_none() {
-                if unit_old.is_some() {
+            if unit_new.is_none()
+                && unit_old.is_some() {
                     continue;
                 }
-            }
-            println!("{:?} -> {:?}", unit_old, unit_new);
+            println!("{unit_old:?} -> {unit_new:?}");
             let mut item: sigint_inbox_item::ActiveModel = item.into();
             let location_v2 =
                 match (result.locality.clone(), result.locality_v2.clone()) {

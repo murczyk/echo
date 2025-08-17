@@ -121,7 +121,7 @@ pub async fn update_organism(
 ) -> Result<Json<Organism>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    let parent_id = match req.parent_id.clone() {
+    let parent_id = match req.parent_id {
         None => None,
         Some(parent_id) => {
             let has_organism = organism::Entity::find_by_id(parent_id)
@@ -250,7 +250,7 @@ pub async fn create_organism(
 ) -> Result<Json<Organism>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    let parent_id = match req.parent_id.clone() {
+    let parent_id = match req.parent_id {
         None => None,
         Some(parent_id) => {
             let has_organism = organism::Entity::find_by_id(parent_id)

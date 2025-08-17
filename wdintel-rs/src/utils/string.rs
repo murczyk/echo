@@ -31,7 +31,7 @@ pub fn byte_to_char_index(inp: &str, b_index: usize) -> usize {
         pos += c.to_string().len();
         chars += 1;
     }
-    return chars;
+    chars
 }
 
 /// Use in pair with functions like String::match_index to get the resulting substring
@@ -44,7 +44,7 @@ pub fn byte_substr(
         inp.as_bytes()
             .get(begin..end)
             .ok_or(AppError::BL {
-                msg: format!("byte_substr error: {} {} {}", inp, begin, end),
+                msg: format!("byte_substr error: {inp} {begin} {end}"),
             })?
             .to_vec(),
     )
@@ -65,7 +65,7 @@ pub fn m_str_trim(s: &Option<String>) -> Option<String> {
     match s {
         None => None,
         Some(v) => {
-            if v.trim().len() == 0 {
+            if v.trim().is_empty() {
                 None
             } else {
                 Some(v.to_string())

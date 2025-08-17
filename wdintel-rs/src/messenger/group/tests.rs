@@ -107,8 +107,7 @@ async fn test_insert_group_aor_respects_existing_assignments() {
 
     assert_eq!(
         aor_count_after, 2,
-        "Expected 2 AOR assignments but found {}",
-        aor_count_after
+        "Expected 2 AOR assignments but found {aor_count_after}"
     );
 
     let assigned_aor_ids: Vec<i64> = signal_group_aor::Entity::find()

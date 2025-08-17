@@ -35,7 +35,7 @@ pub async fn fetch_redirect_url(
             HttpResponse::Ok().json(Json(DeltaLoginUrl { url: Some(url) }))
         }
         Err(e) => {
-            warn!("failed to build auth url: {:?}", e);
+            warn!("failed to build auth url: {e:?}");
             HttpResponse::BadRequest().body("Missing Delta API config")
         }
     }
@@ -67,7 +67,7 @@ pub async fn handle_redirect(
             }
         }
         Err(e) => {
-            error!("Delta API error occurred: {:?}", e);
+            error!("Delta API error occurred: {e:?}");
             HttpResponse::Found()
                 .insert_header((
                     "Location",
@@ -84,7 +84,7 @@ async fn perform_login(
     user_info: UserInfo,
 ) -> Result<(), Error> {
     let username = user_info.user_name;
-    info!("delta: logging in as '{}'", username);
+    info!("delta: logging in as '{username}'");
 
     let delta_logins = delta_login::Entity::find()
         .find_with_related(login::Entity)
@@ -108,7 +108,7 @@ async fn perform_login(
                 delta_login.login, delta_logins
             );
         } else {
-            result_login = logins.iter().next().clone();
+            result_login = logins.iter().next();
         }
     }
 

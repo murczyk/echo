@@ -6,7 +6,6 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
-use crate::location::SettlementsData;
 use milgeo_rs::MilGeo;
 
 pub mod discord;
@@ -43,18 +42,18 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let m_greptimedb = match e_greptimedb {
         Ok(greptimedb) => Some(greptimedb),
         Err(e) => {
-            warn!("failed to establish GreptimeDB connection: {:?}", e);
+            warn!("failed to establish GreptimeDB connection: {e:?}");
             None
         }
     };
     let settlement_paths = config.settlement_paths().unwrap();
     let settlements_data = crate::location::load_from_file(settlement_paths)
-        .unwrap_or(SettlementsData::default());
+        .unwrap_or_default();
     let settlements = Arc::new(RwLock::new(settlements_data));
 
     let version_file = match mode {
         Mode::Debug | Mode::Test => {
-            PathBuf::from(std::env::current_dir().unwrap()).to_path_buf()
+            std::env::current_dir().unwrap().to_path_buf()
         }
         Mode::Live => PathBuf::from("usr/share/echo"),
     }
@@ -99,7 +98,7 @@ pub async fn main_server(
     )
     .await
     {
-        warn!("Failed to ensure import group exists: {:?}", e);
+        warn!("Failed to ensure import group exists: {e:?}");
     };
 
     let redis_session_store =
@@ -149,7 +148,7 @@ pub async fn main_server(
             });
         }
         tokio::spawn(async move {
-            crate::messenger::worker::receive_thread_nofail(mode.clone()).await;
+            crate::messenger::worker::receive_thread_nofail(mode).await;
         });
     }
 
@@ -157,7 +156,7 @@ pub async fn main_server(
         echo_im::enable_signal_cli_verbose_logging("echo", SIGNAL_CLIENT_PORT)
             .await
     {
-        error!("failed to configure signal cli: {:?}", e);
+        error!("failed to configure signal cli: {e:?}");
     }
 
     if config.feature_tmp_in_memory.unwrap_or(false) {
@@ -168,7 +167,7 @@ pub async fn main_server(
 
     let bind_ip = "0.0.0.0";
     let bind_port = 8081;
-    info!("Starting server on {}:{}", bind_ip, bind_port);
+    info!("Starting server on {bind_ip}:{bind_port}");
 
     let env_for_server = env.clone();
     HttpServer::new(move || {

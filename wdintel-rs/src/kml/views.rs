@@ -5,7 +5,7 @@ use anyhow::Context;
 
 pub fn render_kml(kml: &Kml) -> Result<String, AppError> {
     if let Some(folder) =
-        super::node_as_folder(kml.nodes.get(0).ok_or("kml must not be empty")?)?
+        super::node_as_folder(kml.nodes.first().ok_or("kml must not be empty")?)?
     {
         Ok(format!(
             r###"<?xml version="1.0" encoding="UTF-8"?>
