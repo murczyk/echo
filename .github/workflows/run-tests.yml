@@ -20,16 +20,31 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v3
-        with:
-          path: wdintel-web/node_modules
-          key: npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}
-          restore-keys: |
-            npm-deps-
+      - name: Setup local npm cache
+        run: |
+          CACHE_DIR="/tmp/echo-ci-cache/npm"
+          CACHE_KEY="npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}"
+          mkdir -p "$CACHE_DIR"
+
+          if [ -d "$CACHE_DIR/$CACHE_KEY" ]; then
+            echo "Restoring npm dependencies from local cache"
+            cp -r "$CACHE_DIR/$CACHE_KEY" wdintel-web/node_modules
+          fi
 
       - name: Run frontend tests
         run: just test-fe
+
+      - name: Save local npm cache
+        run: |
+          CACHE_DIR="/tmp/echo-ci-cache/npm"
+          CACHE_KEY="npm-deps-${{ hashFiles('wdintel-web/package-lock.json') }}"
+          mkdir -p "$CACHE_DIR"
+
+          if [ -d "wdintel-web/node_modules" ]; then
+            echo "Saving npm dependencies to local cache"
+            rm -rf "$CACHE_DIR/$CACHE_KEY"
+            cp -r wdintel-web/node_modules "$CACHE_DIR/$CACHE_KEY"
+          fi
 
   backend-tests:
     if: github.repository == 'echoua/echo'
@@ -37,45 +52,76 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Generate cache key
-        id: cache-key
+      - name: Setup local caches
         run: |
+          CACHE_BASE="/tmp/echo-ci-cache"
+          mkdir -p "$CACHE_BASE"/{python,rust,spacy}
+
+          # Python cache
           if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
-            echo "key=python-deps-clean-$(date +%s)" >> $GITHUB_OUTPUT
+            PYTHON_KEY="python-deps-clean-$(date +%s)"
           else
-            echo "key=python-deps-$(sha256sum wdintel-rs/wdintel-py/requirements.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+            PYTHON_KEY="python-deps-$(sha256sum wdintel-rs/wdintel-py/requirements.txt | cut -d' ' -f1)"
           fi
 
-      - name: Cache Python virtual environment
-        uses: actions/cache@v3
-        with:
-          path: wdintel-rs/wdintel-py/.venv
-          key: ${{ steps.cache-key.outputs.key }}
-          restore-keys: |
-            python-deps-
+          if [ -d "$CACHE_BASE/python/$PYTHON_KEY" ]; then
+            echo "Restoring Python venv from local cache"
+            cp -r "$CACHE_BASE/python/$PYTHON_KEY" wdintel-rs/wdintel-py/.venv
+          fi
 
-      - name: Cache spacy model
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/spacy
-          key: spacy-model-ru_core_news_md-v1
-          restore-keys: |
-            spacy-model-
+          # Rust cache
+          RUST_KEY="rust-deps-$(sha256sum wdintel-rs/Cargo.lock | cut -d' ' -f1)"
+          if [ -d "$CACHE_BASE/rust/$RUST_KEY" ]; then
+            echo "Restoring Rust dependencies from local cache"
+            mkdir -p ~/.cargo wdintel-rs/target
+            [ -d "$CACHE_BASE/rust/$RUST_KEY/cargo" ] && cp -r "$CACHE_BASE/rust/$RUST_KEY/cargo"/* ~/.cargo/
+            [ -d "$CACHE_BASE/rust/$RUST_KEY/target" ] && cp -r "$CACHE_BASE/rust/$RUST_KEY/target"/* wdintel-rs/target/
+          fi
 
-      - name: Cache Rust dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            wdintel-rs/target/
-          key: rust-deps-${{ hashFiles('wdintel-rs/Cargo.lock') }}
-          restore-keys: |
-            rust-deps-
+          # Spacy cache
+          if [ -d "$CACHE_BASE/spacy/models" ]; then
+            echo "Restoring spacy models from local cache"
+            mkdir -p ~/.cache/spacy
+            cp -r "$CACHE_BASE/spacy/models"/* ~/.cache/spacy/
+          fi
 
       - name: Run backend tests
         env:
           GITHUB_ACTIONS: true
         run: just test-be
+
+      - name: Save local caches
+        run: |
+          CACHE_BASE="/tmp/echo-ci-cache"
+
+          # Save Python cache
+          if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
+            PYTHON_KEY="python-deps-clean-$(date +%s)"
+          else
+            PYTHON_KEY="python-deps-$(sha256sum wdintel-rs/wdintel-py/requirements.txt | cut -d' ' -f1)"
+          fi
+
+          if [ -d "wdintel-rs/wdintel-py/.venv" ]; then
+            echo "Saving Python venv to local cache"
+            rm -rf "$CACHE_BASE/python/$PYTHON_KEY"
+            mkdir -p "$CACHE_BASE/python"
+            cp -r wdintel-rs/wdintel-py/.venv "$CACHE_BASE/python/$PYTHON_KEY"
+          fi
+
+          # Save Rust cache
+          RUST_KEY="rust-deps-$(sha256sum wdintel-rs/Cargo.lock | cut -d' ' -f1)"
+          if [ -d "wdintel-rs/target" ] || [ -d "~/.cargo" ]; then
+            echo "Saving Rust dependencies to local cache"
+            rm -rf "$CACHE_BASE/rust/$RUST_KEY"
+            mkdir -p "$CACHE_BASE/rust/$RUST_KEY"/{cargo,target}
+            [ -d "~/.cargo" ] && cp -r ~/.cargo/* "$CACHE_BASE/rust/$RUST_KEY/cargo/" 2>/dev/null || true
+            [ -d "wdintel-rs/target" ] && cp -r wdintel-rs/target/* "$CACHE_BASE/rust/$RUST_KEY/target/" 2>/dev/null || true
+          fi
+
+          # Save spacy cache
+          if [ -d "~/.cache/spacy" ]; then
+            echo "Saving spacy models to local cache"
+            rm -rf "$CACHE_BASE/spacy/models"
+            mkdir -p "$CACHE_BASE/spacy"
+            cp -r ~/.cache/spacy "$CACHE_BASE/spacy/models" 2>/dev/null || true
+          fi

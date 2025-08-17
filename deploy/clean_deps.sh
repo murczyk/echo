@@ -63,6 +63,10 @@ safe_remove "$HOME/.cargo/git/db"
 echo "🦀 Cleaning cargo incremental cache..."
 safe_remove "$HOME/.cargo/.package-cache"
 
+# Clean local CI cache
+echo "🗂️  Cleaning local CI cache..."
+safe_remove "/tmp/echo-ci-cache"
+
 echo "✅ Cleanup complete!"
 echo ""
 echo "Next steps:"
@@ -70,3 +74,4 @@ echo "  - Run 'just dev-py' to recreate Python environment"
 echo "  - Run 'just test-fe' to reinstall npm dependencies"
 echo "  - Run 'just test-be' to recompile Rust dependencies"
 echo "  - Or simply run 'just test' to rebuild everything"
+echo "  - Local CI cache cleared - next CI run will rebuild caches"
