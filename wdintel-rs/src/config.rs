@@ -45,6 +45,8 @@ pub const IMPORT_DIRECTION_FINDING_UUID: &str =
 pub const REDIS_HOST: &str = "localhost";
 pub const REDIS_PORT: u16 = 6379;
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
+/// Minimum time to keep a long-poll request open to accumulate events
+pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;

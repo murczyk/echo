@@ -5,6 +5,7 @@
 ## CODE STYLE
 
 - keep code formatted with `cargo fmt`
+- keep `cargo clippy` clean
 
 ## GIT
 
