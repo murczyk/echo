@@ -18,6 +18,7 @@ use itertools::Itertools;
 use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
+use sqlx::Row;
 use std::collections::BTreeMap;
 use std::path::Path;
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
@@ -83,7 +84,7 @@ async fn rer_importer_callsigns(
         sixty_days_ago_offset.date(),
         sixty_days_ago_offset.time(),
     );
-    let res1 = sqlx::query!(
+    let res1_rows = sqlx::query(
         r#"
 select
   jsonb_array_elements_text(sii.callsigns) as callsign,
@@ -96,18 +97,20 @@ inner join sigint_zone sz on sz.id=szd.sigint_zone_id
 inner join login l on l.sigint_zone_id = sz.id
 where sm.created_at >= $1 and sii.checked and l.login=$2
  group by 1"#,
-        sixty_days_ago_primitive, // Use the PrimitiveDateTime
-        user.id()?
     )
+    .bind(sixty_days_ago_primitive)
+    .bind(user.id()?)
     .fetch_all(env.dbx.get_postgres_connection_pool())
     .await
     .context(h!())?;
 
     let mut res = vec![];
-    for x in res1.iter() {
-        if req.filter.is_none() || (x.callsign == req.filter.clone()) {
-            if let Some(callsign) = x.callsign.clone() {
-                if let Some(freqs) = x.freqs.clone() {
+    for row in res1_rows.iter() {
+        let callsign: Option<String> = row.try_get("callsign").ok();
+        let freqs: Option<Vec<String>> = row.try_get("freqs").ok();
+        if req.filter.is_none() || (callsign == req.filter.clone()) {
+            if let Some(callsign) = callsign.clone() {
+                if let Some(freqs) = freqs.clone() {
                     res.push(CallsignWithFrequencies {
                         callsign,
                         frequencies: freqs
@@ -302,38 +305,36 @@ pub async fn unread_counters(
         .await
         .context(h!())?;
     let newer_msg_count = match req.only_show_unprocessed {
-        Some(true) => {
-            sqlx::query!(
-                r#"
+        Some(true) => sqlx::query(
+            r#"
 SELECT count(*) as cnt
 FROM signal_message sm
 INNER JOIN sigint_inbox_item sii ON sm.id=sii.id
 WHERE sm.id > $1 AND sm.duplicate_of is null
   AND not sii.reviewed
 "#,
-                req.last_id,
-            )
-            .fetch_one(env.dbx.get_postgres_connection_pool())
-            .await
-            .context(h!())?
-            .cnt
-        }
-        _ => {
-            sqlx::query!(
-                r#"
+        )
+        .bind(req.last_id)
+        .fetch_one(env.dbx.get_postgres_connection_pool())
+        .await
+        .ok()
+        .and_then(|row| row.try_get::<i64, _>("cnt").ok())
+        .unwrap_or(0),
+        _ => sqlx::query(
+            r#"
 SELECT count(*) as cnt
 FROM signal_message sm
 WHERE sm.id > $1 AND sm.duplicate_of is null
 "#,
-                req.last_id,
-            )
-            .fetch_one(env.dbx.get_postgres_connection_pool())
-            .await
-            .context(h!())?
-            .cnt
-        }
+        )
+        .bind(req.last_id)
+        .fetch_one(env.dbx.get_postgres_connection_pool())
+        .await
+        .ok()
+        .and_then(|row| row.try_get::<i64, _>("cnt").ok())
+        .unwrap_or(0),
     };
-    let newer_msg_count = newer_msg_count.unwrap_or(0);
+    let newer_msg_count = newer_msg_count;
 
     Ok(Json(UnreadCountersRsp { newer_msg_count }))
 }

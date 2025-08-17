@@ -189,32 +189,6 @@ pub async fn highlight_callsigns(
     Ok(res)
 }
 
-// /// We only guess callsigns which we've seen on the same frequency during a 7-day period
-// async fn seen_callsign_on_freq_lately(
-//     dbx: &sea_orm::DatabaseConnection,
-//     freq: &str,
-//     callsign: &str,
-//     seen_since: DateTime<Utc>,
-// ) -> Result<bool, AppError> {
-//     let res = sqlx::query!(
-//         r#"
-// select count(sii.id) as count
-// from sigint_inbox_item sii
-// inner join signal_message sm on sm.id = sii.id
-// where sm.created_at > $1
-//   and sii.freq=$2
-//   and sii.callsigns::jsonb ? $3
-//             "#,
-//         seen_since.naive_utc(),
-//         freq,
-//         callsign,
-//     )
-//     .fetch_one(dbx.get_postgres_connection_pool())
-//     .await?;
-//     let count = res.count.unwrap_or(0);
-//     Ok(count > 0)
-// }
-
 /// Lines like "УКХ р/м управління БТГр 70 мсп 42 мсд 58 А ((РОБОТИНЕ))"
 fn is_unit_line(l: &str) -> bool {
     l.contains("УКХ радіомережа") || l.contains("управління")
