@@ -876,7 +876,7 @@ pub async fn oneoff_register_user(
         &dbx,
         &ps.login,
         &ps.password,
-        &[ps.role.clone()],
+        std::slice::from_ref(&ps.role),
         ps.sigint_zone,
         ps.organism_id,
     )

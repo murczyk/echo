@@ -276,7 +276,7 @@ async fn callsigns_alchemy(
 }
 
 fn fill_edges(
-    freq: &str,
+    _freq: &str,
     callsigns: Vec<String>,
 ) -> Result<Vec<CallsignAlchemyEdge>, AppError> {
     let mut res = vec![];
@@ -290,7 +290,7 @@ fn fill_edges(
                 relatedness: "1.0".to_string(),
             });
         }
-        res.extend(fill_edges(freq, cs.to_vec())?);
+        res.extend(fill_edges(_freq, cs.to_vec())?);
     }
     Ok(res)
 }
@@ -334,7 +334,6 @@ WHERE sm.id > $1 AND sm.duplicate_of is null
         .and_then(|row| row.try_get::<i64, _>("cnt").ok())
         .unwrap_or(0),
     };
-    let newer_msg_count = newer_msg_count;
 
     Ok(Json(UnreadCountersRsp { newer_msg_count }))
 }

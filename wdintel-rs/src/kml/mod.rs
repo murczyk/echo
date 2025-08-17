@@ -794,8 +794,9 @@ pub async fn oneoff_fix_kml_go1(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn oneoff_fix_kml_go2(
-    base_path: &Path,
+    _base_path: &Path,
     node: &mut Node,
     replacement_map: &BTreeMap<String, String>,
     image_checksums: &BTreeMap<String, String>,
@@ -808,7 +809,7 @@ pub fn oneoff_fix_kml_go2(
         Node::Folder(x) => {
             for node in x.nodes.iter_mut() {
                 oneoff_fix_kml_go2(
-                    base_path,
+                    _base_path,
                     node,
                     replacement_map,
                     image_checksums,
@@ -833,7 +834,7 @@ pub fn oneoff_fix_kml_go2(
         Node::Document(x) => {
             for node in x.nodes.iter_mut() {
                 oneoff_fix_kml_go2(
-                    base_path,
+                    _base_path,
                     node,
                     replacement_map,
                     image_checksums,
@@ -1543,7 +1544,7 @@ pub struct BuildStyleMapsRes {
 }
 
 pub fn build_style_maps_per_app6d(
-    sidcs: &Vec<String>,
+    sidcs: &[String],
 ) -> Result<BuildStyleMapsRes, AppError> {
     // per app6d
     let mut styles_normal: BTreeMap<String, Style> = BTreeMap::new();
