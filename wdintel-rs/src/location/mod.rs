@@ -256,8 +256,14 @@ fn find_matching_settlements(
     }
     let mut i = 0;
     while i + 2 < words.len() {
-        i = handle_three_words_group(regions, trie, &mut result, &mut cache, i)
-            .context(h!())?;
+        i = handle_three_words_group(
+            &regions,
+            trie,
+            &mut result,
+            &mut cache,
+            i,
+        )
+        .context(h!())?;
     }
     let remainder = words.len() - i;
     if remainder == 1 {
@@ -266,7 +272,7 @@ fn find_matching_settlements(
             result.insert(row, coords);
         }
     } else {
-        handle_two_words_group(regions, trie, &mut result, &mut cache, i)
+        handle_two_words_group(&regions, trie, &mut result, &mut cache, i)
             .context(h!())?;
     }
     let mut result = result.into_iter().collect_vec();
@@ -279,10 +285,10 @@ fn find_matching_settlements(
 }
 
 fn handle_two_words_group(
-    regions: &Vec<String>,
+    regions: &[String],
     trie: &Trie<SettlementDetails>,
     result: &mut BTreeMap<String, SettlementDetails>,
-    cache: &mut Vec<(String, trie::Result<SettlementDetails>)>,
+    cache: &mut [(String, trie::Result<SettlementDetails>)],
     i: usize,
 ) -> anyhow::Result<()> {
     let (word0, res0) = cache.get(i).context(h!())?;
@@ -306,10 +312,10 @@ fn handle_two_words_group(
 }
 
 fn handle_three_words_group(
-    regions: &Vec<String>,
+    regions: &[String],
     trie: &Trie<SettlementDetails>,
     result: &mut BTreeMap<String, SettlementDetails>,
-    cache: &mut Vec<(String, trie::Result<SettlementDetails>)>,
+    cache: &mut [(String, trie::Result<SettlementDetails>)],
     i: usize,
 ) -> anyhow::Result<usize> {
     let (word0, res0) = cache.get(i).context(h!())?;
@@ -434,7 +440,7 @@ pub fn load_from_file(
 }
 
 fn match_settlement(
-    query: &String,
+    query: &str,
     trie: &Trie<SettlementDetails>,
 ) -> trie::Result<SettlementDetails> {
     let len = query.chars().count();

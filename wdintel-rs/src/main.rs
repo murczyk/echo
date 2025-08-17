@@ -1,5 +1,9 @@
 #![feature(error_generic_member_access)]
 #![feature(once_cell_try_insert)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::borrow_interior_mutable_const)]
+#![allow(clippy::ptr_arg)]
 
 use crate::config::*;
 use crate::types::*;

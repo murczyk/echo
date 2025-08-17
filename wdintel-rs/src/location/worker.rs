@@ -121,16 +121,17 @@ pub async fn run_process_coords_locations_worker(
 }
 
 async fn push_frequency_locations<'a, 'async_trait, C>(
-    locations: &Vec<String>,
+    locations: &[String],
     freq: String,
     ts: NaiveDateTime,
     txn: &'a C,
-    peleng_locations: &Vec<(Model, Vec<Locality>)>,
+    peleng_locations: &[(Model, Vec<Locality>)],
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let mut locations = locations.clone().into_iter().collect::<BTreeSet<_>>();
+    let mut locations =
+        locations.to_owned().into_iter().collect::<BTreeSet<_>>();
     for (_, localities) in peleng_locations {
         for l in localities {
             locations.insert(l.settlement_name.clone());

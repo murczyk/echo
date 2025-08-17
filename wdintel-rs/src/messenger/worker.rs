@@ -456,7 +456,7 @@ where
 
 async fn sync_senders(
     db: &DatabaseConnection,
-    inbox_messages: &Vec<MessageF1>,
+    inbox_messages: &[MessageF1],
 ) -> anyhow::Result<()> {
     let mut senders = inbox_messages
         .iter()
