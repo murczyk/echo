@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteNetwork, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkFreqsActivity, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
+    , CallsignsByNetwork, addFreqToNetwork, createNetwork, deleteMessage, deleteNetwork, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkCallsignsList, getNetworkFreqsActivity, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
     )
 
 {-|
@@ -120,6 +120,7 @@ type Effect msg
     | GetUnitStatsForNetworks (Result ApiError B.NetworkUnitStatsRsp -> msg)
     | GetNetworksReport (Result ApiError Bytes -> msg) B.EtalonkaJimForksReq
     | GetNetworkCallsigns (Result ApiError B.SingleNetworkCallsignsListRsp -> msg) B.SingleNetworkCallsignsReq
+    | GetNetworkCallsignsList (Result ApiError B.ListNetworkCallsignsRes -> msg) B.ListNetworkCallsignsReq
     | GetSingleNetwork (Result ApiError B.Network -> msg) Int
     | GetSingleNetworkGroupsActivity (Result ApiError GroupsByDate -> msg) B.NetworkGroupsActivityOneReq
     | GetNetworkFreqsActivity (Result ApiError (Dict String (Dict String Int)) -> msg) B.NetworkFreqsActivityReq
@@ -518,6 +519,10 @@ getNetworkCallsigns toMsg payload =
     GetNetworkCallsigns toMsg payload
 
 
+getNetworkCallsignsList toMsg payload =
+    GetNetworkCallsignsList toMsg payload
+
+
 getSingleNetwork toMsg networkId =
     GetSingleNetwork toMsg networkId
 
@@ -809,6 +814,9 @@ map fn effect =
 
         GetNetworkCallsigns toMsg payload ->
             GetNetworkCallsigns (fn << toMsg) payload
+
+        GetNetworkCallsignsList toMsg payload ->
+            GetNetworkCallsignsList (fn << toMsg) payload
 
         GetSingleNetwork toMsg payload ->
             GetSingleNetwork (fn << toMsg) payload
@@ -1283,6 +1291,13 @@ toCmd options effect =
                 { url = "/api/sigint/network-callsigns-list"
                 , body = Http.jsonBody (B.singleNetworkCallsignsReqEncoder payload)
                 , expect = leExpectJson toMsg B.singleNetworkCallsignsListRspDecoder
+                }
+
+        GetNetworkCallsignsList toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network-callsigns/list"
+                , body = Http.jsonBody (B.listNetworkCallsignsReqEncoder payload)
+                , expect = leExpectJson toMsg B.listNetworkCallsignsResDecoder
                 }
 
         GetSingleNetwork toMsg networkId ->

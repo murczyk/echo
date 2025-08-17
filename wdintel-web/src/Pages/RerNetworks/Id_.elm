@@ -240,6 +240,10 @@ type alias Model =
     , freqCreateDescriptionInp : String
     , freqCreateFormatError : Maybe String
     , freqCreateShowActiveTo : Bool
+
+    -- Network callsigns (new table)
+    , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
+    , networkCallsignsTableState : Table.State
     }
 
 
@@ -363,6 +367,10 @@ init route shared () =
       , freqCreateDescriptionInp = ""
       , freqCreateFormatError = Nothing
       , freqCreateShowActiveTo = False
+
+      -- Network callsigns (new table)
+      , networkCallsigns = NotAsked
+      , networkCallsignsTableState = Table.initialSort "Позивний"
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -439,6 +447,8 @@ type Msg
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
     | SetCallsignsTableState Table.State
+    | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
+    | SetNetworkCallsignsTableState Table.State
     | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
@@ -528,6 +538,7 @@ update shared msg model =
               }
             , E.batch
                 [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = res.id }
+                , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = res.id, sortBy = Nothing }
                 , E.getNetworkPoints MapPointsReturnedByApi
                     { networkId = res.id
                     , sinceDateInclusiveMs = res.activeFrom
@@ -1262,6 +1273,17 @@ update shared msg model =
 
         SetCallsignsTableState newState ->
             ( { model | callsignsTableState = newState }, E.none )
+
+        NetworkCallsignsReturnedByApi (Err e) ->
+            ( { model | networkCallsigns = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних мережі" e
+            )
+
+        NetworkCallsignsReturnedByApi (Ok res) ->
+            ( { model | networkCallsigns = Success res.networkCallsigns }, E.none )
+
+        SetNetworkCallsignsTableState newState ->
+            ( { model | networkCallsignsTableState = newState }, E.none )
 
         OpenFreqEditSidebar freqId updateReq ->
             let
@@ -2093,6 +2115,86 @@ callsignsTableConfig shared model user =
         , customizations = customizations
         }
 
+
+networkCallsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkCallsign Msg
+networkCallsignsTableConfig shared model user =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ↓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ↑"
+
+                                     else
+                                        " ↓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
+        { toId = String.fromInt << .id
+        , toMsg = SetNetworkCallsignsTableState
+        , columns =
+            [ Table.stringColumn "Позивний" .callsign |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "25%"
+            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "30%"
+            , Table.veryCustomColumn
+                { name = "Дата створення"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "15%"
+            , Table.intColumn "К-сть повідомлень" .messageCount |> Table.withColumnWidth "10%"
+            ]
+        , customizations = customizations
+        }
 
 
 -- SIDEBAR CONTENT
