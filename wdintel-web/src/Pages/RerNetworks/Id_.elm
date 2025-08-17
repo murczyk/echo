@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
@@ -44,7 +45,6 @@ import Time
 import Time.Extra
 import Url.Builder
 import View exposing (View)
-import Char
 
 
 page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
@@ -438,7 +438,7 @@ type Msg
     | DeleteNetworkConfirmedByUser
     | DeleteNetworkCanceledByUser
     | DeleteNetworkReturnedByApi (Result ApiError B.Network)
-    -- Frequency creation messages
+      -- Frequency creation messages
     | OpenFreqCreateSidebar
     | CloseFreqCreateSidebar
     | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
@@ -1166,8 +1166,6 @@ update shared msg model =
             , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
             )
 
-
-
         ReportModalOpenedByUser ->
             ( { model | reportModalOpened = True }, E.none )
 
@@ -1498,6 +1496,7 @@ update shared msg model =
 
         CloseFreqCreateSidebar ->
             ( { model
+            ( { model
                 | freqCreateSidebar = False
                 , freqCreateDescriptionInp = ""
                 , freqCreateFormatError = Nothing
@@ -1594,9 +1593,11 @@ update shared msg model =
                     if not newShowActiveTo then
                         -- очистити activeTo при знятті чекбокса
                         let
-                            freqState = model.freqCreateState
+                            freqState =
+                                model.freqCreateState
                         in
                         { freqState | activeTo = Nothing }
+
                     else
                         model.freqCreateState
             in
@@ -1615,6 +1616,7 @@ update shared msg model =
                         description =
                             if String.trim model.freqCreateDescriptionInp == "" then
                                 Nothing
+
                             else
                                 Just
                                     { descrType = B.Confirmation
@@ -1635,7 +1637,8 @@ update shared msg model =
                                 }
                             }
                     in
-                    ( { model | freqEditSaving = True } -- Reuse existing loading state
+                    ( { model | freqEditSaving = True }
+                      -- Reuse existing loading state
                     , E.addFreqToNetwork FreqAddedToNetwork addFreqReq
                     )
 
@@ -1667,11 +1670,8 @@ update shared msg model =
             , E.batch
                 [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
-
                 ]
             )
-
-
 
 
 
@@ -2687,12 +2687,12 @@ contentBlock user shared network model =
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
         , div [ class "flex gap-[8px]" ]
-            [
-             Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
-             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+            [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
                     |> Button.withStyleDanger
                     |> Button.view
+
               else
                 text ""
             ]
@@ -2948,6 +2948,7 @@ contentBlock user shared network model =
                     , onClick OpenFreqCreateSidebar
                     ]
                     [ i [ class "bi bi-plus-lg" ] [] ]
+
               else
                 text ""
             ]
@@ -2972,7 +2973,6 @@ contentBlock user shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні" ]
-
             ]
         , case model.callsigns of
             Success callsigns ->
@@ -3014,7 +3014,6 @@ contentBlock user shared network model =
                                                 Nothing ->
                                                     text ""
                                             ]
-
                                         , td [] [ text x.position ]
                                         , td [] [ text x.unitName ]
                                         , td [] [ text x.comment ]
@@ -3077,7 +3076,6 @@ contentBlock user shared network model =
                                                 Nothing ->
                                                     text ""
                                             ]
-
                                         , td [] [ text x.position ]
                                         , td [] [ text x.unitName ]
                                         , td [] [ text x.comment ]
@@ -3099,32 +3097,46 @@ contentBlock user shared network model =
                                 [] ->
                                     [ text "" ]
 
-                        ( callsignsWithUnits, callsignsUnknown ) =
+                        -- Перетворюємо дані у плоску структуру для таблиці
+                        callsignsTableRows =
                             callsigns
-                                |> List.partition
+                                |> List.concatMap
                                     (\callsign ->
                                         case callsign.knownCallsigns of
-                                            Just _ ->
-                                                True
+                                            Just knownCallsigns ->
+                                                List.map
+                                                    (\knownCallsign ->
+                                                        { callsign = callsign.callsign
+                                                        , messageCount = callsign.messageCount
+                                                        , lastDatetime = callsign.lastDatetime
+                                                        , position = knownCallsign.position
+                                                        , unitName = knownCallsign.unitName
+                                                        , comment = knownCallsign.comment
+                                                        , createdAt = knownCallsign.createdAt
+                                                        , sourceName = knownCallsign.sourceName
+                                                        }
+                                                    )
+                                                    knownCallsigns
 
                                             Nothing ->
-                                                False
+                                                []
                                     )
 
-                        callsignsWithUnits2 =
-                            List.map
-                                (\callsign ->
-                                    { knownCallsigns = Maybe.withDefault [] callsign.knownCallsigns
-                                    , callsign = callsign.callsign
-                                    , messageCount = callsign.messageCount
-                                    , lastDatetime = callsign.lastDatetime
-                                    , freqs = callsign.freqs
-                                    , networkNames = callsign.networkNames
-                                    , isOld = callsign.isOld
-                                    , isReported = callsign.isReported
-                                    }
-                                )
-                                callsignsWithUnits
+                        callsignsUnknown =
+                            callsigns
+                                |> List.filterMap
+                                    (\callsign ->
+                                        case callsign.knownCallsigns of
+                                            Just knownCallsigns ->
+                                                if List.isEmpty knownCallsigns then
+                                                    Just callsign.callsign
+
+                                                else
+                                                    Nothing
+
+                                            Nothing ->
+                                                Just callsign.callsign
+                                    )
                       in
                       table [ class "table-fixed w-full" ]
                         [ thead [ class "text-[13px]/[110%] font-medium sticky bg-w dark:bg-[#1C1C21]", style "inset-block-start" "0" ]
@@ -3146,21 +3158,6 @@ contentBlock user shared network model =
                                         ]
                                     ]
                                 , th [ class "w-[10%]" ] [ text "Останній раз в етері" ]
-                                , th [ class "w-[8%]" ]
-                                    [ Html.node
-                                        "sl-tooltip"
-                                        [ attribute "content" "Якщо опція вибрана - позивний потрапить в звіт \"Згідно форми\""
-                                        , attribute "placement" "right"
-                                        , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
-                                        ]
-                                        [ text "Звітний"
-                                        , sup [ class "ml-[2px]" ]
-                                            [ i
-                                                [ class "bi-question-circle" ]
-                                                []
-                                            ]
-                                        ]
-                                    ]
                                 , th [ class "w-[22%]" ] [ text "Посада" ]
                                 , th [ class "w-[14%]" ] [ text "Підрозділ" ]
                                 , th [ class "w-[19%]" ] [ text "Коментар" ]
@@ -3169,22 +3166,46 @@ contentBlock user shared network model =
                                 ]
                             ]
                         , tbody []
-                            (List.concatMap
-                                (\callsign ->
-                                    case model.callsignsEditingState of
-                                        Readonly ->
-                                            renderCallsignMainRow shared model callsign
+                            (List.map
+                                (\row ->
+                                    tr [ class "" ]
+                                        [ td []
+                                            [ div [ class "flex items-center flex-wrap" ]
+                                                [ text <| String.toUpper row.callsign
+                                                , a
+                                                    [ href (createAnalysisUrl shared model row.callsign)
+                                                    , target "_blank"
+                                                    , title "Відкрити позивний в аналізі"
+                                                    , class "ml-2"
+                                                    ]
+                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
+                                                ]
+                                            ]
+                                        , td [] [ text <| String.fromInt row.messageCount ]
+                                        , td []
+                                            [ case row.lastDatetime of
+                                                Just lastDatetime ->
+                                                    text <|
+                                                        Le.Time.renderDateF6 shared.timeZone
+                                                            (Time.millisToPosix lastDatetime)
 
-                                        Editing editingDict ->
-                                            renderCallsignEdit shared model editingDict callsign
+                                                Nothing ->
+                                                    text ""
+                                            ]
+                                        , td [] [ text row.position ]
+                                        , td [] [ text row.unitName ]
+                                        , td [] [ text row.comment ]
+                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                                        , td [] [ text row.sourceName ]
+                                        ]
                                 )
-                                callsignsWithUnits2
+                                callsignsTableRows
                             )
                         , tfoot []
                             [ tr []
-                                [ td [ colspan 8 ]
+                                [ td [ colspan 7 ]
                                     [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                                    , div [ class "flex flex-wrap gap-[4px] text-[13px]" ] (List.map (\c -> span [] [ text <| String.toUpper c.callsign ]) callsignsUnknown)
+                                    , div [ class "flex flex-wrap gap-[4px] text-[13px]" ] (List.map (\c -> span [] [ text <| String.toUpper c ]) callsignsUnknown)
                                     ]
                                 ]
                             ]
@@ -3556,7 +3577,9 @@ updateActiveToFromInput input timeZone currentValue =
                 |> Just
 
 
+
 -- VALIDATION
+-- Frequency format validation
 
 
 
@@ -3582,6 +3605,7 @@ freqCreateSidebarContent shared model user =
                         "w-full p-2 border rounded "
                             ++ (if String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing then
                                     "border-red-500"
+
                                 else
                                     "border-border"
                                )
@@ -3594,11 +3618,13 @@ freqCreateSidebarContent shared model user =
                     [ if String.trim model.freqCreateState.freq == "" then
                         div [ class "text-sm text-red-600" ]
                             [ text "Це поле обов'язкове" ]
+
                       else
                         case model.freqCreateFormatError of
                             Just error ->
                                 div [ class "text-sm text-red-600" ]
                                     [ text error ]
+
                             Nothing ->
                                 text ""
                     ]
@@ -3700,8 +3726,7 @@ freqCreateSidebarContent shared model user =
                     []
                 ]
             , div []
-                [
-                 Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
+                [ Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
                     |> Checkbox.withContent [ text "Частота вже не активна" ]
                     |> Checkbox.view
                 ]
@@ -3735,6 +3760,7 @@ freqCreateSidebarContent shared model user =
                         ]
                         []
                     ]
+
               else
                 text ""
             ]
@@ -3747,6 +3773,7 @@ freqCreateSidebarContent shared model user =
                     Button.new { label = "Додавання...", onClick = AddFreqToNetwork }
                         |> Button.withDisabled True
                         |> Button.view
+
                   else
                     Button.new { label = "Додати", onClick = AddFreqToNetwork }
                         |> Button.withDisabled
