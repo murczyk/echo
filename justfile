@@ -152,6 +152,12 @@ ci-setup-cache clean="false":
 ci-save-cache clean="false":
     bash deploy/save_ci_cache.sh {{clean}}
 
+ci-setup-cache-frontend:
+    bash deploy/setup_ci_cache_frontend.sh
+
+ci-save-cache-frontend:
+    bash deploy/save_ci_cache_frontend.sh
+
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
