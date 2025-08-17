@@ -12,6 +12,15 @@ on:
         required: false
         default: false
         type: boolean
+      cache_strategy:
+        description: "Cache strategy to use"
+        required: false
+        default: "optimized"
+        type: choice
+        options:
+          - "standard"
+          - "optimized"
+          - "sccache"
 
 jobs:
   frontend-tests:
@@ -37,11 +46,27 @@ jobs:
 
       - name: Setup cache
         run: |
+          CACHE_STRATEGY="${{ github.event.inputs.cache_strategy || 'optimized' }}"
+          CLEAN_FLAG=""
           if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
-            just ci-setup-cache clean
-          else
-            just ci-setup-cache
+            CLEAN_FLAG="clean"
           fi
+
+          case "$CACHE_STRATEGY" in
+            "standard")
+              just ci-setup-cache $CLEAN_FLAG
+              ;;
+            "optimized")
+              just ci-setup-cache-optimized $CLEAN_FLAG
+              ;;
+            "sccache")
+              just ci-setup-cache-sccache $CLEAN_FLAG
+              ;;
+            *)
+              echo "Unknown cache strategy: $CACHE_STRATEGY, using optimized"
+              just ci-setup-cache-optimized $CLEAN_FLAG
+              ;;
+          esac
 
       - name: Run backend tests
         env:
@@ -50,8 +75,24 @@ jobs:
 
       - name: Save cache
         run: |
+          CACHE_STRATEGY="${{ github.event.inputs.cache_strategy || 'optimized' }}"
+          CLEAN_FLAG=""
           if [ "${{ github.event.inputs.clean_cache }}" = "true" ]; then
-            just ci-save-cache clean
-          else
-            just ci-save-cache
+            CLEAN_FLAG="clean"
           fi
+
+          case "$CACHE_STRATEGY" in
+            "standard")
+              just ci-save-cache $CLEAN_FLAG
+              ;;
+            "optimized")
+              just ci-save-cache-optimized $CLEAN_FLAG
+              ;;
+            "sccache")
+              just ci-save-cache-sccache $CLEAN_FLAG
+              ;;
+            *)
+              echo "Unknown cache strategy: $CACHE_STRATEGY, using optimized"
+              just ci-save-cache-optimized $CLEAN_FLAG
+              ;;
+          esac

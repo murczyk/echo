@@ -158,6 +158,18 @@ ci-setup-cache-frontend:
 ci-save-cache-frontend:
     bash deploy/save_ci_cache_frontend.sh
 
+ci-setup-cache-optimized clean="false":
+    bash deploy/setup_ci_cache_optimized.sh {{clean}}
+
+ci-save-cache-optimized clean="false":
+    bash deploy/save_ci_cache_optimized.sh {{clean}}
+
+ci-setup-cache-sccache clean="false":
+    bash deploy/setup_ci_cache_sccache.sh {{clean}}
+
+ci-save-cache-sccache clean="false":
+    bash deploy/save_ci_cache_sccache.sh {{clean}}
+
 ci-test-be:
     bash deploy/run_backend_tests.sh
 
