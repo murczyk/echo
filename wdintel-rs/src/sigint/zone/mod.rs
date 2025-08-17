@@ -1,8 +1,8 @@
 use self::bl::*;
 use super::types::*;
 use crate::entities::*;
-use crate::sigint::area_of_responsibility::bl::collect_group_aors;
-use crate::sigint::area_of_responsibility::render_aor;
+use crate::sigint::aor::bl::collect_group_aors;
+use crate::sigint::aor::render_aor;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;

@@ -1,6 +1,6 @@
 use crate::entities::*;
-use crate::sigint::area_of_responsibility::render_aor;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::sigint::aor::render_aor;
+use crate::sigint::aor::types::AreaOfResponsibility;
 use crate::types::*;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use std::collections::BTreeMap;

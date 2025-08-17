@@ -1,5 +1,5 @@
 use crate::rer_importer::types::SignalGroupStats;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::sigint::aor::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;

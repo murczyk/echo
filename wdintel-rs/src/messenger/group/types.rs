@@ -1,6 +1,6 @@
 use crate::rer_importer::types::GroupAdminData;
 use crate::rer_importer::types::SignalGroupStats;
-use crate::sigint::area_of_responsibility::types::AreaOfResponsibility;
+use crate::sigint::aor::types::AreaOfResponsibility;
 use crate::types::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 

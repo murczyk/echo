@@ -91,6 +91,7 @@ pub async fn main_server(
     let dbx7 = env.dbx.clone();
     let dbx8 = env.dbx.clone();
     let dbx9 = env.dbx.clone();
+    let dbx10 = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
     if let Err(e) = crate::rer_importer::import_csv::ensure_import_group_exists(
         &env.dbx, &config,
@@ -146,6 +147,11 @@ pub async fn main_server(
                 .await;
             });
         }
+        // AoR assignments consistency check worker (runs every 5 minutes)
+        tokio::spawn(async move {
+            crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)
+                .await;
+        });
         tokio::spawn(async move {
             crate::messenger::worker::receive_thread_nofail(mode).await;
         });
@@ -382,10 +388,10 @@ pub async fn main_server(
             .service(crate::sigint::freq::freq_activity_daily)
             .service(crate::sigint::freq::list_alt_unit_by_freqs)
             .service(crate::sigint::freq::callsigns_for_filter)
-            .service(crate::sigint::area_of_responsibility::aor_list)
-            .service(crate::sigint::area_of_responsibility::create_aor)
-            .service(crate::sigint::area_of_responsibility::update_aor)
-            .service(crate::sigint::area_of_responsibility::delete_aor)
+            .service(crate::sigint::aor::aor_list)
+            .service(crate::sigint::aor::create_aor)
+            .service(crate::sigint::aor::update_aor)
+            .service(crate::sigint::aor::delete_aor)
             .service(crate::sigint::etalonka::report_networks)
             .service(crate::sigint::etalonka::report_networks_batch_id)
             .service(crate::sigint::source::list_sources)

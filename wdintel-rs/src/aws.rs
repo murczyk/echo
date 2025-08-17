@@ -14,10 +14,8 @@ pub async fn s3_put_object(
     while retries_left > 0 {
         // Use writer_with builder to set content type and write all bytes
         let write_res = async {
-            let mut writer = store
-                .writer_with(key)
-                .content_type(content_type)
-                .await?;
+            let mut writer =
+                store.writer_with(key).content_type(content_type).await?;
             // Write all bytes, then close
             writer.write(body.clone()).await?;
             writer.close().await

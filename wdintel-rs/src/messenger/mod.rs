@@ -2,7 +2,7 @@ use crate::entities::{group_admin_data, signal_group};
 use crate::error::ContextAndError;
 use crate::h;
 use crate::messenger::types::*;
-use crate::sigint::area_of_responsibility::render_aor;
+use crate::sigint::aor::render_aor;
 use crate::types::{AppError, Env};
 use actix_web::post;
 use actix_web::web::Json;

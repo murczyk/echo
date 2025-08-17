@@ -2,7 +2,7 @@ use super::types::*;
 use crate::entities::*;
 use crate::messenger::group::collect_group_stats;
 use crate::rer_importer::collect_group_admin_data;
-use crate::sigint::area_of_responsibility::bl::collect_group_aors;
+use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
