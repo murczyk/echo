@@ -1,5 +1,5 @@
 use anyhow::Context;
-use aws_sdk_s3::error::SdkError;
+// use aws_sdk_s3::error::SdkError;
 use log::error;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -21,27 +21,10 @@ pub enum AppError {
         #[from]
         source: std::io::Error,
     },
-    #[error("aws sdk s3 get object error")]
-    AwsSdkGetObjectErr {
+    #[error("opendal error")]
+    OpendalError {
         #[from]
-        source:
-            Box<SdkError<aws_sdk_s3::operation::get_object::GetObjectError>>,
-    },
-    #[error("aws sdk s3 presigning error")]
-    AwsPresigningErr {
-        #[from]
-        source: Box<aws_sdk_s3::Error>,
-    },
-    #[error("aws sdk s3 put object error")]
-    AwsPutObjectErr {
-        #[from]
-        source:
-            Box<SdkError<aws_sdk_s3::operation::put_object::PutObjectError>>,
-    },
-    #[error("aws sdk s3 presigning config error")]
-    PresigningConfigError {
-        #[from]
-        source: Box<aws_sdk_s3::presigning::PresigningConfigError>,
+        source: opendal::Error,
     },
     #[error("join error")]
     JoinErr {
@@ -218,9 +201,7 @@ impl actix_web::error::ResponseError for AppError {
                 println!("Internal server error: {self:?}");
                 match self {
                     AppError::IO { .. }
-                    | AppError::AwsSdkGetObjectErr { .. }
-                    | AppError::AwsPresigningErr { .. }
-                    | AppError::AwsPutObjectErr { .. }
+                    | AppError::OpendalError { .. }
                     | AppError::JoinErr { .. }
                     | AppError::FsExtraErr { .. }
                     | AppError::HtmlParserError { .. }
@@ -242,7 +223,6 @@ impl actix_web::error::ResponseError for AppError {
                     | AppError::PayloadError { .. }
                     | AppError::Base64DecodeError { .. }
                     | AppError::Argon2Error { .. }
-                    | AppError::PresigningConfigError { .. }
                     | AppError::QueryPayloadError { .. }
                     | AppError::AddrParseError { .. }
                     | AppError::TomlDeError { .. }

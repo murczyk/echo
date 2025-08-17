@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
-use std::time::Duration;
+// use std::time::Duration;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -329,22 +329,8 @@ async fn parse_terminal_pdf(
     _http_req: HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let b2_cli: &aws_sdk_s3::Client = &env.b2_cli;
-
-    let presigned_req: aws_sdk_s3::presigning::PresignedRequest = b2_cli
-        .get_object()
-        .bucket("wildducks-online")
-        .key("report2kmz/bg4-cropped.png")
-        .presigned(
-            aws_sdk_s3::presigning::PresigningConfig::expires_in(
-                Duration::from_secs(60 * 60 * 24),
-            )
-            .map_err(Box::new)?,
-        )
-        .await
-        .map_err(Box::new)?;
-
-    println!("> presigned uri: {}", presigned_req.uri());
+    // Previously generated a presigned GET; now omitted.
+    // Public assets can be accessed via their HTTPS URLs directly.
 
     Ok(
         actix_web::HttpResponseBuilder::new(actix_web::http::StatusCode::OK)
@@ -444,7 +430,7 @@ pub async fn upload_screenshot(
     mut payload: Multipart,
 ) -> Result<Json<UploadScreenshotRes>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let b2_cli: &aws_sdk_s3::Client = &env.b2_cli;
+    let b2_store = &env.b2_store;
 
     let (field, val) = multipart::extract(&mut payload).await?;
 
@@ -463,7 +449,7 @@ pub async fn upload_screenshot(
     .to_string();
     let filename = format!("report2kmz/{uuid}.{ext}");
     crate::aws::s3_put_object(
-        b2_cli,
+        b2_store,
         "wildducks-online-public",
         &filename,
         val,
@@ -492,7 +478,7 @@ pub async fn upload_pdf(
     mut payload: Multipart,
 ) -> Result<Json<UploadPdfRes>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Basic").await?;
-    let b2_cli: &aws_sdk_s3::Client = &env.b2_cli;
+    let b2_store = &env.b2_store;
 
     let (_, val) = multipart::extract(&mut payload).await?;
 
@@ -548,7 +534,7 @@ pub async fn upload_pdf(
                 let upload = async || {
                     println!("> uploading {image}");
                     crate::aws::s3_put_object(
-                        b2_cli,
+                        b2_store,
                         "wildducks-online-public",
                         &filename,
                         img_bytes,

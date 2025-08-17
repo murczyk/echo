@@ -1,37 +1,40 @@
 use crate::error::AppError;
-use aws_sdk_s3::operation::put_object::PutObjectOutput;
+use opendal::Operator;
 use rand::Rng;
 use std::time::Duration;
 
 pub async fn s3_put_object(
-    b2_cli: &aws_sdk_s3::Client,
-    bucket: &str,
+    store: &Operator,
+    _bucket: &str,
     key: &str,
     body: Vec<u8>,
     content_type: &str,
-) -> Result<PutObjectOutput, AppError> {
+) -> Result<(), AppError> {
     let mut retries_left: u32 = 2;
     while retries_left > 0 {
-        let res = b2_cli
-            .put_object()
-            .bucket(bucket)
-            .key(key)
-            .body(aws_sdk_s3::primitives::ByteStream::from(body.clone()))
-            .set_content_type(Some(content_type.to_string()))
-            .send()
-            .await;
+        // Use writer_with builder to set content type and write all bytes
+        let write_res = async {
+            let mut writer = store
+                .writer_with(key)
+                .content_type(content_type)
+                .await?;
+            // Write all bytes, then close
+            writer.write(body.clone()).await?;
+            writer.close().await
+        }
+        .await;
+        let res = write_res.map_err(|e| e);
         match res {
             Err(e) => {
                 retries_left -= 1;
                 random_sleep().await;
                 if retries_left == 0 {
-                    return Err(AppError::from(Box::new(e)));
+                    return Err(AppError::from(e));
                 }
             }
-            Ok(v) => return Ok(v),
+            Ok(_) => return Ok(()),
         }
     }
-
     Err(AppError::BL {
         msg: "impossible".to_string(),
     })
@@ -42,6 +45,5 @@ pub async fn random_sleep() {
         let mut rng = rand::rng();
         rng.random_range(900..1100)
     };
-
     tokio::time::sleep(Duration::from_millis(sleep_time)).await;
 }

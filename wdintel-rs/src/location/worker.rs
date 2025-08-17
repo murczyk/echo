@@ -75,7 +75,7 @@ pub async fn run_process_coords_locations_worker(
                     Some(loc) => to_location_list(loc),
                 };
                 let mut existing_locations =
-                    new_locations.clone().into_iter().collect::<BTreeSet<_>>();
+                    new_locations.iter().cloned().collect::<BTreeSet<_>>();
                 if let (Some(freq), Some(datetime)) =
                     (inbox_item.freq.clone(), inbox_item.datetime)
                 {

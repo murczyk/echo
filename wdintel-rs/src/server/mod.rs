@@ -7,6 +7,8 @@ use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
 use milgeo_rs::MilGeo;
+use opendal::services::S3;
+use opendal::Operator;
 
 pub mod discord;
 mod healthcheck;
@@ -17,21 +19,18 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = crate::config::read_config(mode).unwrap();
     let redis = new_redis(&config).await.unwrap();
     let redisb = new_redisb(&config).await.unwrap();
-    let b2_creds = aws_sdk_s3::config::Credentials::new(
-        config.b2_aws_access_key_id.clone(),
-        config.b2_aws_secret_access_key.clone(),
-        None,
-        None,
-        crate::config::B2_AWS_PROFILE_NAME,
-    );
-    let b2_s3 = config.b2_s3.clone();
-    let b2_config = aws_sdk_s3::Config::builder()
-        .region(aws_sdk_s3::config::Region::new(config.b2_s3_region.clone()))
-        // .endpoint_resolver(b2_endpoint)
-        .endpoint_url(b2_s3)
-        .credentials_provider(b2_creds)
-        .build();
-    let b2_cli = aws_sdk_s3::Client::from_conf(b2_config);
+    let b = S3::default()
+        .region(&config.b2_s3_region)
+        .access_key_id(&config.b2_aws_access_key_id)
+        .secret_access_key(&config.b2_aws_secret_access_key)
+        .endpoint(&config.b2_s3)
+        .bucket("wildducks-online-public");
+    let b2_store = Operator::new(b)
+        .map_err(|e| AppError::BL {
+            msg: format!("s3 store build error: {e}"),
+        })?
+        .finish();
+    // opendal Operator is cheaply cloneable; store directly on Env
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
     let rq: reqwest::Client = reqwest::Client::builder()
@@ -65,7 +64,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mode,
         redis: redis.clone(),
         redisb: redisb.clone(),
-        b2_cli,
+        b2_store,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         rq,

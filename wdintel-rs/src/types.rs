@@ -27,7 +27,7 @@ pub enum Mode {
 pub struct Env {
     pub mode: Mode,
     pub config: crate::config::Config,
-    pub b2_cli: aws_sdk_s3::Client,
+    pub b2_store: opendal::Operator,
     pub dbx: sea_orm::DatabaseConnection,
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,
