@@ -1,5 +1,8 @@
 ## NEXT
 
+- [#1262](https://github.com/echoua/echo/issues/1262) Сумга груп та мереж має бути завжди
+- [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
+- [#1231](https://github.com/echoua/echo/issues/1231) Декілька смуг в групі
 - [#1260](https://github.com/echoua/echo/issues/1260) Мережа: додавання частоти
 - [#1244](https://github.com/echoua/echo/issues/1244) Фіча-прапор: строгі привʼязки (feature_strict_networks).
 - [#1232](https://github.com/echoua/echo/issues/1232) окремо підтримувати статус перманентного видалення для організмів та логінів (а-ля архівація).
@@ -63,8 +66,6 @@
 - [#1094](https://github.com/echoua/echo/issues/1094) Мережа: зробити активність мережі статичним полем
 - [#1047](https://github.com/echoua/echo/issues/1047) Мережа: додано фільтр по активним і неактивним частотам
 - [#1046](https://github.com/echoua/echo/issues/1046) Налаштування: редизайн і додана версія білда
-- [#1261](https://github.com/echoua/echo/issues/1261) Некоректно працює збереження смуг груп
-- [#1231](https://github.com/echoua/echo/issues/1231) Декілька смуг в групі
 
 ## 2025-07-08
 
