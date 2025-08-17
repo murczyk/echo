@@ -197,6 +197,7 @@ wdintel-rs/data/report_2023-02-17_00-23-20_16022023-Ж1-orig/bg15.png filter=lfs
 wdintel-rs/data/report_2023-02-17_00-23-20_16022023-Ж1-orig/bg27.png filter=lfs diff=lfs merge=lfs -text
 wdintel-rs/data/report_2023-02-17_00-23-20_16022023-Ж1-orig/bg52.png filter=lfs diff=lfs merge=lfs -text
 wdintel-rs/data/report_2023-02-17_00-23-20_16022023-Ж1-orig/bg54.png filter=lfs diff=lfs merge=lfs -text
+wdintel-rs/data/callsigns_whitelist.txt filter=lfs diff=lfs merge=lfs -text
 deploy/echo-whatsapp/echo-whatsapp filter=lfs diff=lfs merge=lfs -text
 deploy/wd-2024-06-21-13-00-59.pgrestore filter=lfs diff=lfs merge=lfs -text
 signal-cli-native/deploy/signal-cli/signal-cli-native filter=lfs diff=lfs merge=lfs -text
