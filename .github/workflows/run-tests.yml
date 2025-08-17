@@ -59,8 +59,8 @@ jobs:
       - name: Restore Python cache
         run: ./scripts/cache/restore-python.sh || true
 
-      - name: Restore Cargo cache
-        run: ./scripts/cache/restore-cargo.sh || true
+      # - name: Restore Cargo cache
+      #   run: ./scripts/cache/restore-cargo.sh || true
 
       - name: Restore Spacy cache
         run: ./scripts/cache/restore-spacy.sh || true
@@ -75,9 +75,9 @@ jobs:
         if: always()
         run: ./scripts/cache/save-python.sh
 
-      - name: Save Cargo cache
-        if: always()
-        run: ./scripts/cache/save-cargo.sh
+      # - name: Save Cargo cache
+      #   if: always()
+      #   run: ./scripts/cache/save-cargo.sh
 
       - name: Save Spacy cache
         if: always()
