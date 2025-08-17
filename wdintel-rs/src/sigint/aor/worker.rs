@@ -41,7 +41,7 @@ async fn check_signal_groups(dbx: &DatabaseConnection) -> anyhow::Result<()> {
         let cnt = counts.get(&g.master_key).cloned().unwrap_or(0);
         if cnt != 1 {
             error!(
-                "[AoRCheck] signal_group master_key={} name={:?} has {} AoRs assigned (expected exactly 1)",
+                "[AOR Check] signal_group master_key={} name={:?} has {} AORs assigned (expected exactly 1)",
                 g.master_key, g.name, cnt
             );
         }
@@ -71,7 +71,7 @@ async fn check_networks(dbx: &DatabaseConnection) -> anyhow::Result<()> {
         let cnt = counts.get(&n.id).cloned().unwrap_or(0);
         if cnt != 1 {
             error!(
-                "[AoRCheck] network id={} name={} has {} AoRs assigned (expected exactly 1)",
+                "[AORCheck] network id={} name={} has {} AORs assigned (expected exactly 1)",
                 n.id, n.name, cnt
             );
         }
