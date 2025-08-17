@@ -205,3 +205,4 @@ milgeo-rs/data_gen/cod.xlsx filter=lfs diff=lfs merge=lfs -text
 milgeo-rs/data_gen/data.sql filter=lfs diff=lfs merge=lfs -text
 milgeo-rs/data_gen/hum.csv filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
+deploy/wd_test-2025-08-17-07-43.pgrestore filter=lfs diff=lfs merge=lfs -text
