@@ -70,13 +70,9 @@ jobs:
               --pr-number ${{ github.event.pull_request.number }}
           fi
 
-      - name: Discord notification - PR Checkbox Check
-        if: always()
+      - name: Discord notification - PR Checkbox Check (failures only)
+        if: failure()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          if [ "${{ steps.checkbox_check.outcome }}" = "success" ]; then
-            ./scripts/notifications/discord-notify.sh pr_check_success "" "PR Checkboxes Valid" "All required checkboxes are checked in PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
-          else
-            ./scripts/notifications/discord-notify.sh pr_check_failure "" "PR Checkboxes Invalid" "Some required checkboxes are missing in PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
-          fi
+          ./scripts/notifications/discord-notify.sh pr_check_failure "" "PR Checkboxes Invalid" "Some required checkboxes are missing in PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
