@@ -388,7 +388,7 @@ async fn collect_report(
         networks.insert(k, v);
     }
 
-    let networks_dictionary = {
+    let mut networks_dictionary = {
         let mut result = HashMap::new();
         for n in networks.values() {
             result.insert(n.id, n.clone());
@@ -451,12 +451,30 @@ async fn collect_report(
         else {
             continue;
         };
-        let Some(summary) = networks
+        let m_network_summary = networks
             .get(&(freq.clone(), Some(master_key)))
             .or(networks.get(&(freq.clone(), None)))
-            .cloned()
-        else {
-            continue;
+            .cloned();
+        let summary = match m_network_summary {
+            None => {
+                let Ok(freq_pseudo_id) =
+                    freq.replace(".", "").replace(",", "").parse::<i64>()
+                else {
+                    error!("[{}] bad freq: {freq}", h!());
+                    continue;
+                };
+                let new_summary = NetworkSummary {
+                    id: -1 * freq_pseudo_id,
+                    name: "".to_string(),
+                    freq: freq.clone(),
+                    unit_name: None,
+                    master_key: None,
+                };
+                networks_dictionary.insert(new_summary.id, new_summary.clone());
+                network_ids.insert(new_summary.id);
+                new_summary
+            }
+            Some(s) => s,
         };
         let network_key = (summary.name.clone(), summary.id, freq);
 
@@ -495,6 +513,7 @@ async fn collect_report(
     let mut unidentified_qty = 0;
     let mut hostile_networks = vec![];
     let mut undefined_networks = vec![];
+    let mut skipped_callsigns = HashSet::<String>::new();
     for id in network_ids {
         let keys = seances_map
             .keys()
@@ -534,6 +553,18 @@ async fn collect_report(
         let till = *seances.iter().max().context(h!())?;
         let seances_qty = seances.len() as u64;
         let mut correspondents = vec![];
+
+        let network = networks_dictionary.get(&id).context(h!())?;
+        let mut network_name = network.name.clone();
+        if network_name.trim().is_empty() {
+            network_name = "Радіомережа".to_string();
+        }
+        let (name, is_defined) = match network.unit_name.clone() {
+            None => (format!("{network_name} невизначеного підрозділу"), false),
+            Some(unit_name) => (format!("{network_name} {unit_name}"), true),
+        };
+
+        let skip_unmapped: bool = id < 0;
         for c in linked_callsigns {
             correspondents.push(NetworkCorrespondent {
                 callsign: c.callsign,
@@ -541,6 +572,12 @@ async fn collect_report(
             })
         }
         for c in unlinked_callsigns {
+            if skip_unmapped {
+                if !env.callsigns_whitelist.contains(&c) {
+                    skipped_callsigns.insert(c);
+                    continue;
+                }
+            }
             correspondents.push(NetworkCorrespondent {
                 callsign: c,
                 position: None,
@@ -550,15 +587,6 @@ async fn collect_report(
             since,
             till,
             seances_qty,
-        };
-        let network = networks_dictionary.get(&id).context(h!())?;
-        let mut network_name = network.name.clone();
-        if network_name.trim().is_empty() {
-            network_name = "Радіомережа".to_string();
-        }
-        let (name, is_defined) = match network.unit_name.clone() {
-            None => (format!("{network_name} невизначеного підрозділу"), false),
-            Some(unit_name) => (format!("{network_name} {unit_name}"), true),
         };
         let row = NetworkRow {
             name,
@@ -585,5 +613,11 @@ async fn collect_report(
         hostile_networks,
         undefined_networks,
     };
+
+    debug!(
+        "skipped unmapped callsigns: {}",
+        skipped_callsigns.into_iter().sorted_unstable().join(", ")
+    );
+
     Ok(report)
 }

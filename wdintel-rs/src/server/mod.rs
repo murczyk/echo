@@ -49,6 +49,10 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let settlements_data =
         crate::location::load_from_file(settlement_paths).unwrap_or_default();
     let settlements = Arc::new(RwLock::new(settlements_data));
+    let callsigns_whitelist =
+        crate::sigint::callsign::load_whitelist_from_file()
+            .await
+            .unwrap();
 
     let version_file = match mode {
         Mode::Debug | Mode::Test => {
@@ -71,6 +75,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         config: config.clone(),
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
+        callsigns_whitelist: callsigns_whitelist.clone(),
         version: version.clone(),
     };
     Ok(Arc::new(env))

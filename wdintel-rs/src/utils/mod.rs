@@ -4,6 +4,7 @@ use chrono::prelude::*;
 use chrono_tz::Europe::Kyiv;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use tokio::io::AsyncBufReadExt;
 
 pub mod grafana;
 pub mod http;
@@ -149,6 +150,22 @@ pub fn pop_vector<T>(data: &mut Vec<T>) -> Option<T> {
     } else {
         Some(data.remove(0))
     }
+}
+
+pub async fn read_lines_from_file<P: AsRef<Path>>(
+    path: P,
+) -> anyhow::Result<Vec<String>> {
+    let file = tokio::fs::File::open(path).await?;
+    let reader = tokio::io::BufReader::new(file);
+    let mut lines = Vec::new();
+    let mut stream = reader.lines();
+    loop {
+        let Some(line) = stream.next_line().await? else {
+            break;
+        };
+        lines.push(line);
+    }
+    Ok(lines)
 }
 
 #[macro_export]
