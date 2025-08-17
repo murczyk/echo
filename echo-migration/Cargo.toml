@@ -9,5 +9,5 @@ name = "echo_migration"
 path = "src/lib.rs"
 
 [dependencies]
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 sea-orm-migration = { workspace = true }
