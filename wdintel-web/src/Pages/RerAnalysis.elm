@@ -605,21 +605,12 @@ update user shared route msg model =
                         , now = now_
                         }
 
-                initialStrictUnits =
-                    case shared.serverInfo of
-                        Just info ->
-                            info.featureStrictNetworks
-
-                        Nothing ->
-                            False
-
                 m2 =
                     { model
                         | from = from
                         , to = to
                         , dateRangePicker = Le.Block.DateRangePicker.initFromData from to
                         , now = Just now_
-                        , unitsExactMatchOnly = if model.unitsExactMatchOnly then True else initialStrictUnits
                     }
 
                 ( m3, cmd3 ) =

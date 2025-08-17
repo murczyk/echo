@@ -1896,6 +1896,7 @@ type alias RerAnalysisQueryState =
     , search : String
     , tags : List Int
     , includePelengLocations : Bool
+    , unitsExactMatchOnly : Bool
     }
 
 
@@ -1919,6 +1920,7 @@ rerAnalysisQueryStateEncoder struct =
         , ( "search", Json.Encode.string struct.search )
         , ( "tags", Json.Encode.list Json.Encode.int struct.tags )
         , ( "include_peleng_locations", Json.Encode.bool struct.includePelengLocations )
+        , ( "units_exact_match_only", Json.Encode.bool struct.unitsExactMatchOnly )
         ]
 
 
@@ -6620,6 +6622,7 @@ rerAnalysisQueryStateDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_peleng_locations" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" Json.Decode.bool))
 
 
 editFreqUnitNameReqDecoder : Json.Decode.Decoder EditFreqUnitNameReq

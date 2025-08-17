@@ -26,6 +26,7 @@ emptyQueryState =
     , orWithCoords = False
     , search = ""
     , tags = []
+    , unitsExactMatchOnly = True
     }
 
 
@@ -48,6 +49,7 @@ modelQueryState model =
     , orWithCoords = model.orWithCoords
     , search = model.searchInput
     , tags = model.tagsSelected
+    , unitsExactMatchOnly = model.unitsExactMatchOnly
     }
 
 
@@ -67,6 +69,7 @@ updModelFromQueryState model ms =
         , orWithExtendedForm = ms.orWithExtendedForm
         , orBookmarked = ms.orBookmarked
         , searchInput = ms.search
+        , unitsExactMatchOnly = ms.unitsExactMatchOnly
     }
 
 

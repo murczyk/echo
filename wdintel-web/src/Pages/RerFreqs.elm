@@ -1642,6 +1642,7 @@ freqsTableConfig shared model user =
                                     , orWithCoords = False
                                     , search = ""
                                     , tags = []
+                                    , unitsExactMatchOnly = True
                                     }
                                 )
 

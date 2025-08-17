@@ -606,6 +606,7 @@ leftColumn ( messageId, message ) ps model =
                                         , orWithCoords = False
                                         , search = ""
                                         , tags = []
+                                        , unitsExactMatchOnly = True
                                         }
                                     )
 
