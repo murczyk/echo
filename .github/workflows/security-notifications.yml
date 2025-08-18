@@ -27,7 +27,7 @@ jobs:
 
       - name: Discord notification - Security Advisory
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           severity="${{ github.event.security_advisory.severity }}"
           if [ "${{ github.event.action }}" = "published" ]; then
@@ -44,7 +44,7 @@ jobs:
 
       - name: Discord notification - Vulnerability PR
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           pr_title="${{ github.event.pull_request.title }}"
           pr_number="${{ github.event.pull_request.number }}"
@@ -59,7 +59,7 @@ jobs:
 
       - name: Discord notification - Critical Issue
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           issue_title="${{ github.event.issue.title }}"
           issue_body="${{ github.event.issue.body }}"
@@ -84,7 +84,7 @@ jobs:
 
       - name: Discord notification - Urgent Comment
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           ./scripts/notifications/discord-notify.sh critical_issue "" "🚨 Urgent Comment" "**Issue #${{ github.event.issue.number }}:** ${{ github.event.issue.title }}\\n\\n**Comment by @${{ github.event.comment.user.login }}:**\\n${{ github.event.comment.body }}"
 
@@ -118,6 +118,6 @@ jobs:
       - name: Discord notification - Dependency Changes
         if: steps.dep_check.outputs.has_changes == 'true'
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           ./scripts/notifications/discord-notify.sh dependency_update "" "📦 Dependencies Updated" "The following dependency files were modified:${{ steps.dep_check.outputs.changed_files }}"

@@ -40,7 +40,7 @@ jobs:
       - name: Discord notification - Frontend tests
         if: always()
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           if [ "${{ job.status }}" != "success" ]; then
             ./scripts/notifications/discord-notify.sh ci_failure "" "Frontend Tests Failed" "Frontend tests encountered failures"
@@ -88,7 +88,7 @@ jobs:
       - name: Discord notification - Backend tests
         if: always()
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           if [ "${{ job.status }}" != "success" ]; then
             ./scripts/notifications/discord-notify.sh ci_failure "" "Backend Tests Failed" "Backend tests encountered failures"
@@ -103,7 +103,7 @@ jobs:
 
       - name: Discord notification - Overall CI failures only
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
         run: |
           frontend_status="${{ needs.frontend-tests.result }}"
           backend_status="${{ needs.backend-tests.result }}"
