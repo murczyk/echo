@@ -98,6 +98,9 @@ type alias Model =
     , showArchived : Bool
     , loadingUnitStats : Bool
     , tableState : Table.State
+    , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
+    , aorFilterSelect : Le.Block.Select.SelectType Int
+    , aorFilterFocusedBefore : Maybe (List Int)
     }
 
 
@@ -159,12 +162,20 @@ init _ =
             , showArchived = False
             , loadingUnitStats = True
             , tableState = Table.initialSort "Мережа"
+            , aorList = NotAsked
+            , aorFilterSelect =
+                { state = Select.initState (Select.selectIdentifier "aor-filter-select")
+                , items = []
+                , selected = []
+                }
+            , aorFilterFocusedBefore = Nothing
             }
     in
     ( m2
     , E.batch
         [ E.sendCmd <| Task.attempt GotZone Le.Time.getZone
         , E.getUnitStatsForNetworks UnitStatsReturnedByApi
+        , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
         ]
     )
 
@@ -191,6 +202,12 @@ loadNetworks model =
                 Nothing
         , showInactive = Just (not model.showOnlyActive)
         , showOnlyDeleted = Just model.showArchived
+        , aorIds =
+            if List.isEmpty model.aorFilterSelect.selected then
+                Nothing
+
+            else
+                Just model.aorFilterSelect.selected
         }
     )
 
@@ -210,6 +227,12 @@ loadNetworksWithTracker model tracker =
                 Nothing
         , showInactive = Just (not model.showOnlyActive)
         , showOnlyDeleted = Just model.showArchived
+        , aorIds =
+            if List.isEmpty model.aorFilterSelect.selected then
+                Nothing
+
+            else
+                Just model.aorFilterSelect.selected
         }
 
 
@@ -257,6 +280,8 @@ type Msg
     | SetTableState Table.State
     | ToggleShowOnlyActive Bool
     | ToggleShowArchived Bool
+    | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
+    | AorFilterSelMsg (Select.Msg Int)
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -943,9 +968,74 @@ update shared msg model =
         SetTableState newState ->
             ( { model | tableState = newState }, E.none )
 
+        AorListReturnedByApi (Ok aors) ->
+            let
+                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                oldAorSelect = model.aorFilterSelect
+                newAorSelect = { oldAorSelect | items = items }
+            in
+            ( { model | aorList = Success aors, aorFilterSelect = newAorSelect }, E.none )
 
-networksTableConfig : Shared.Model -> Model -> Table.Config B.Network Msg
-networksTableConfig shared model =
+        AorListReturnedByApi (Err e) ->
+            ( { model | aorList = Failure e }, E.none )
+
+        AorFilterSelMsg selMsg ->
+            let
+                ( mAction, iState, icmd ) =
+                    Select.update selMsg model.aorFilterSelect.state
+
+                ( newSelected, newState ) =
+                    Le.Block.Select.multiUpdMenuOpen mAction model.aorFilterSelect.selected iState
+
+                focusedBefore =
+                    case mAction of
+                        Just Select.Focus ->
+                            Just model.aorFilterSelect.selected
+                        Just (Select.MenuToggle Select.MenuOpen) ->
+                            Just model.aorFilterSelect.selected
+                        _ ->
+                            model.aorFilterFocusedBefore
+
+                newSel =
+                    { state = newState
+                    , items = model.aorFilterSelect.items
+                    , selected = newSelected
+                    }
+
+                m2 = { model | aorFilterSelect = newSel, aorFilterFocusedBefore = focusedBefore }
+
+                shouldReload =
+                    case mAction of
+                        Just Select.Blur -> True
+                        Just (Select.MenuToggle Select.MenuClose) -> True
+                        Just Select.Clear -> True
+                        _ -> False
+
+                valueChanged =
+                    case mAction of
+                        Just Select.Clear -> True
+                        _ ->
+                            case m2.aorFilterFocusedBefore of
+                                Just xs -> xs /= newSelected
+                                Nothing -> False
+
+                ( m3, eff ) =
+                    if shouldReload && valueChanged then
+                        loadNetworks { m2 | aorFilterFocusedBefore = Nothing }
+
+                    else if shouldReload then
+                        ( { m2 | aorFilterFocusedBefore = Nothing }, E.none )
+
+                    else
+                        ( m2, E.none )
+            in
+            ( m3
+            , E.batch [ E.sendCmd <| Cmd.map AorFilterSelMsg icmd, eff ]
+            )
+
+
+networksTableConfig : Auth.User -> Shared.Model -> Model -> Table.Config B.Network Msg
+networksTableConfig user shared model =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1064,174 +1154,181 @@ networksTableConfig shared model =
                 , sorter = Table.unsortable
                 }
                 |> Table.withColumnWidth "8%"
-            , Table.veryCustomColumn
-                { name = "Локації"
-                , viewData =
-                    \network ->
-                        { attributes = []
-                        , children =
-                            [ div [ style "overflow-wrap" "anywhere" ] [ text network.location ]
-                            ]
-                        }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "11%"
-            , Table.veryCustomColumn
-                { name = "Пеленги"
-                , viewData =
-                    \network ->
-                        { attributes = []
-                        , children =
-                            [ case model.map of
-                                Closed ->
-                                    span [ class " cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
-                                        [ text "відкрити мапу "
-                                        , i [ class "bi bi-map text-sm mr-2" ]
-                                            []
+            ]
+                ++ (if Le.Auth.hasRole "UnitsEditor" user then
+                        [ Table.veryCustomColumn
+                            { name = "Смуги"
+                            , viewData =
+                                \network ->
+                                    { attributes = []
+                                    , children =
+                                        [ case model.aorList of
+                                            Success aors ->
+                                                let
+                                                    aorNames =
+                                                        network.aorIds
+                                                            |> List.filterMap (\aid -> aors |> List.filter (\a -> a.id == aid) |> List.head |> Maybe.map .name)
+                                                            |> String.join ", "
+                                                in
+                                                text aorNames
+
+                                            _ ->
+                                                Le.Block.Spinner.loadingSpinnerSm
                                         ]
-
-                                Opened networkId points ->
-                                    if networkId == network.id then
-                                        Html.node "small-map"
-                                            [ property "points" (Encode.list B.networkPointEncoder points)
-                                            , Html.Events.on "close-map" (Decode.succeed MapClosedByUser)
-                                            , class "block w-full h-[90px]"
-                                            ]
-                                            []
-
-                                    else
-                                        span [ class "cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
-                                            [ text "відкрити мапу "
-                                            , i [ class "bi bi-map text-sm mr-2" ]
-                                                []
-                                            ]
-                            ]
+                                    }
+                            , sorter = Table.unsortable
+                            }
+                            |> Table.withColumnWidth "10%"
+                        ]
+                    else
+                        []
+                   )
+                ++ [ Table.veryCustomColumn
+                        { name = "Локації"
+                        , viewData =
+                            \network ->
+                                { attributes = []
+                                , children =
+                                    [ div [ style "overflow-wrap" "anywhere" ] [ text network.location ]
+                                    ]
+                                }
+                        , sorter = Table.unsortable
                         }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "18%"
-            , Table.veryCustomColumn
-                { name = "Позивні"
-                , viewData =
-                    \network ->
-                        { attributes = []
-                        , children =
-                            [ case model.callsignsByNetwork of
-                                Success cbn ->
-                                    let
-                                        callsigns =
-                                            case Dict.get (String.fromInt network.id) cbn of
-                                                Nothing ->
-                                                    []
-
-                                                Just v ->
-                                                    v
-
-                                        isOpen =
-                                            case model.callsignsOpenedPopupId of
-                                                Just openCallsignsPopup ->
-                                                    openCallsignsPopup == network.id
-
-                                                Nothing ->
-                                                    False
-                                    in
-                                    case shared.masterUnits of
-                                        Success units ->
-                                            CallsignsPopup.view
-                                                { isOpened = isOpen
-                                                , onClose = CallsignsPopupClosedByUser
-                                                , onOpen = CallsignsPopupOpenedByUser network.id
-                                                , callsigns = callsigns
-                                                , callsignsInfo = model.callsignsInfo
-                                                , masterUnits = units
-                                                }
-                                                (NetworksPage
-                                                    network
-                                                )
-
-                                        _ ->
-                                            Le.Block.Spinner.loadingSpinnerSm
-
-                                _ ->
-                                    Le.Block.Spinner.loadingSpinnerSm
-                            ]
-                        }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "9%"
-            , Table.veryCustomColumn
-                { name = "Активність"
-                , viewData =
-                    \network ->
-                        { attributes = []
-                        , children =
-                            [ case model.networksGroupsActivity of
-                                Success data ->
-                                    let
-                                        groupsMessageCountByDayJson =
-                                            Dict.get (String.fromInt network.id) data |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
-                                    in
-                                    case groupsMessageCountByDayJson of
-                                        Just g ->
-                                            div [ style "width" "200px", style "height" "90px" ]
-                                                [ Html.node "bar-chart"
-                                                    [ Attr.property "data" <| g
-                                                    , Attr.property "last-day" <| Encode.string model.to.dateStr
-                                                    , style "display" "block"
+                        |> Table.withColumnWidth "11%"
+                   , Table.veryCustomColumn
+                        { name = "Пеленги"
+                        , viewData =
+                            \network ->
+                                { attributes = []
+                                , children =
+                                    [ case model.map of
+                                        Closed ->
+                                            span [ class " cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
+                                                [ text "відкрити мапу "
+                                                , i [ class "bi bi-map text-sm mr-2" ] []
+                                                ]
+                                        Opened networkId points ->
+                                            if networkId == network.id then
+                                                Html.node "small-map"
+                                                    [ property "points" (Encode.list B.networkPointEncoder points)
+                                                    , Html.Events.on "close-map" (Decode.succeed MapClosedByUser)
+                                                    , class "block w-full h-[90px]"
                                                     ]
                                                     []
-                                                ]
-
-                                        Nothing ->
-                                            text "Не активні останні 10 днів"
-
-                                _ ->
-                                    Le.Block.Spinner.loadingSpinnerSm
-                            ]
-                        }
-                , sorter = Table.unsortable
-                }
-                |> Table.withColumnWidth "18%"
-            , Table.veryCustomColumn
-                { name = "Останнє оновлення"
-                , viewData =
-                    \network ->
-                        { attributes = []
-                        , children =
-                            case ( network.lastUpdatedAt, model.zone ) of
-                                ( updatedAt, Just zone ) ->
-                                    let
-                                        updatedAtString =
-                                            Le.Time.renderDateF6 zone
-                                                (Time.millisToPosix updatedAt)
-
-                                        updatedByString =
-                                            Maybe.withDefault "невідомий" network.lastUpdatedBy
-
-                                        createdAtString =
-                                            Le.Time.renderDateF6 zone
-                                                (Time.millisToPosix network.createdAt)
-                                    in
-                                    [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
-                                        [ i [ class "bi bi-calendar-date" ]
-                                            []
-                                        , text <|
-                                            " "
-                                                ++ createdAtString
-                                        ]
-                                    , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
-                                        [ i [ class "bi bi-pencil-square" ] []
-                                        , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
-                                        ]
+                                            else
+                                                span [ class "cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
+                                                    [ text "відкрити мапу "
+                                                    , i [ class "bi bi-map text-sm mr-2" ] []
+                                                    ]
                                     ]
-
-                                _ ->
-                                    [ text "" ]
+                                }
+                        , sorter = Table.unsortable
                         }
-                , sorter = Table.increasingOrDecreasingBy (\network -> String.fromInt network.lastUpdatedAt)
-                }
-                |> Table.withColumnWidth "9%"
-            ]
+                        |> Table.withColumnWidth "18%"
+                   , Table.veryCustomColumn
+                        { name = "Позивні"
+                        , viewData =
+                            \network ->
+                                { attributes = []
+                                , children =
+                                    [ case model.callsignsByNetwork of
+                                        Success cbn ->
+                                            let
+                                                callsigns =
+                                                    case Dict.get (String.fromInt network.id) cbn of
+                                                        Nothing -> []
+                                                        Just v -> v
+
+                                                isOpen =
+                                                    case model.callsignsOpenedPopupId of
+                                                        Just openCallsignsPopup -> openCallsignsPopup == network.id
+                                                        Nothing -> False
+                                            in
+                                            case shared.masterUnits of
+                                                Success units ->
+                                                    CallsignsPopup.view
+                                                        { isOpened = isOpen
+                                                        , onClose = CallsignsPopupClosedByUser
+                                                        , onOpen = CallsignsPopupOpenedByUser network.id
+                                                        , callsigns = callsigns
+                                                        , callsignsInfo = model.callsignsInfo
+                                                        , masterUnits = units
+                                                        }
+                                                        (NetworksPage network)
+
+                                                _ ->
+                                                    Le.Block.Spinner.loadingSpinnerSm
+                                        _ ->
+                                            Le.Block.Spinner.loadingSpinnerSm
+                                    ]
+                                }
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "9%"
+                   , Table.veryCustomColumn
+                        { name = "Активність"
+                        , viewData =
+                            \network ->
+                                { attributes = []
+                                , children =
+                                    [ case model.networksGroupsActivity of
+                                        Success data ->
+                                            let
+                                                groupsMessageCountByDayJson =
+                                                    Dict.get (String.fromInt network.id) data
+                                                        |> Maybe.map (Encode.dict identity (Encode.dict identity Encode.int))
+                                            in
+                                            case groupsMessageCountByDayJson of
+                                                Just g ->
+                                                    div [ style "width" "200px", style "height" "90px" ]
+                                                        [ Html.node "bar-chart"
+                                                            [ Attr.property "data" <| g
+                                                            , Attr.property "last-day" <| Encode.string model.to.dateStr
+                                                            , style "display" "block"
+                                                            ]
+                                                            []
+                                                        ]
+                                                Nothing ->
+                                                    text "Не активні останні 10 днів"
+                                        _ ->
+                                            Le.Block.Spinner.loadingSpinnerSm
+                                    ]
+                                }
+                        , sorter = Table.unsortable
+                        }
+                        |> Table.withColumnWidth "18%"
+                   , Table.veryCustomColumn
+                        { name = "Останнє оновлення"
+                        , viewData =
+                            \network ->
+                                { attributes = []
+                                , children =
+                                    case ( network.lastUpdatedAt, model.zone ) of
+                                        ( updatedAt, Just zone ) ->
+                                            let
+                                                updatedAtString =
+                                                    Le.Time.renderDateF6 zone (Time.millisToPosix updatedAt)
+                                                updatedByString =
+                                                    Maybe.withDefault "невідомий" network.lastUpdatedBy
+                                                createdAtString =
+                                                    Le.Time.renderDateF6 zone (Time.millisToPosix network.createdAt)
+                                            in
+                                            [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
+                                                [ i [ class "bi bi-calendar-date" ] []
+                                                , text (" " ++ createdAtString)
+                                                ]
+                                            , div [ style "padding-left" "4px", title ("Востаннє прив'язка редагована " ++ updatedAtString ++ " користувачем " ++ updatedByString) ]
+                                                [ i [ class "bi bi-pencil-square" ] []
+                                                , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
+                                                ]
+                                            ]
+                                        _ ->
+                                            [ text "" ]
+                                }
+                        , sorter = Table.increasingOrDecreasingBy (\network -> String.fromInt network.lastUpdatedAt)
+                        }
+                        |> Table.withColumnWidth "9%"
+                   ]
         , customizations = customizations
         }
 
@@ -1286,20 +1383,20 @@ subscriptions _ =
     Sub.none
 
 
-mainContent : List B.Network -> Shared.Model -> Model -> Html Msg
-mainContent networks shared model =
+mainContent : Auth.User -> List B.Network -> Shared.Model -> Model -> Html Msg
+mainContent user networks shared model =
     section []
         [ div [ class "table-responsive-modern" ]
             [ Table.view
-                (networksTableConfig shared model)
+                (networksTableConfig user shared model)
                 model.tableState
                 networks
             ]
         ]
 
 
-filterPanel : Shared.Model -> Model -> Html Msg
-filterPanel shared model =
+filterPanel : Auth.User -> Shared.Model -> Model -> Html Msg
+filterPanel user shared model =
     let
         filterState =
             model.filterState
@@ -1361,16 +1458,42 @@ filterPanel shared model =
                 ]
             ]
         , -- Archive filter row
-          div [ class "flex gap-2 justify-start items-center" ]
+          div [ class "flex gap-4 justify-start items-center" ]
             [ SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
                 |> SegmentedControl.view
-            , -- Network status filters row (only show when not in archive mode)
-              if not model.showArchived then
-                div [ class "flex gap-4 justify-start items-center" ]
-                    [ div [] [ text "" ] -- Spacer to align with first row
-                    , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+            , (if not model.showArchived then
+                    Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
                         |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
                         |> Checkbox.view
+
+               else
+                    text ""
+              )
+            , if Le.Auth.hasRole "UnitsEditor" user then
+                let
+                    selectedItems =
+                        model.aorFilterSelect.selected
+                            |> List.filterMap (\aid ->
+                                case model.aorList of
+                                    Success aors ->
+                                        aors
+                                            |> List.filter (\a -> a.id == aid)
+                                            |> List.head
+                                            |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                                    _ ->
+                                        Nothing
+                            )
+                in
+                div [ style "min-width" "210px", style "width" "210px" ]
+                    [ Html.map AorFilterSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.aorFilterSelect.state
+                                model.aorFilterSelect.items
+                                "смуги"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode)
                     ]
 
               else
@@ -1461,17 +1584,18 @@ filterPanel shared model =
         ]
 
 
-contentBlock : Shared.Model -> Model -> Html Msg
-contentBlock shared model =
+contentBlock : Auth.User -> Shared.Model -> Model -> Html Msg
+contentBlock user shared model =
     div []
         [ div
             [ class "border mb-4 p-2"
             ]
-            [ filterPanel shared model
+            [ filterPanel user shared model
             ]
         , case model.networks of
             Success networks ->
                 mainContent
+                    user
                     networks
                     shared
                     model
@@ -1607,7 +1731,7 @@ view dark shared user model =
 
                     _ ->
                         text ""
-                , contentBlock shared model
+                , contentBlock user shared model
                 ]
             , let
                 isOpen =

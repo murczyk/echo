@@ -213,6 +213,8 @@ pub struct ListNetworksReq {
     pub filter_further_investigation: Option<bool>,
     pub show_inactive: Option<bool>,
     pub show_only_deleted: Option<bool>,
+    /// Optional filter by Areas of Responsibility (AOR) IDs
+    pub aor_ids: Option<Vec<i64>>,
     pub sort_by: Option<Vec<ListNetworksSortBy>>,
 }
 
