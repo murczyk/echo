@@ -7,14 +7,15 @@ set -Eeuo pipefail
 
 # Configuration: read from env or optional config.env; never hardcode secrets
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -z "${DISCORD_WEBHOOK_URL:-}" && -f "$SCRIPT_DIR/config.env" ]]; then
+# Prefer CI-specific var; fall back to local config if neither is set
+if [[ -z "${DISCORD_WEBHOOK_URL_CI:-}" && -z "${DISCORD_WEBHOOK_URL:-}" && -f "$SCRIPT_DIR/config.env" ]]; then
   # shellcheck disable=SC1091
   source "$SCRIPT_DIR/config.env"
 fi
 
-WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-${WEBHOOK_URL:-}}"
+WEBHOOK_URL="${DISCORD_WEBHOOK_URL_CI:-${DISCORD_WEBHOOK_URL:-${WEBHOOK_URL:-}}}"
 if [[ -z "${WEBHOOK_URL:-}" ]]; then
-  echo "ERROR: DISCORD_WEBHOOK_URL is not set. Configure GitHub secret 'DISCORD_WEBHOOK_URL' or scripts/notifications/config.env." >&2
+  echo "ERROR: Discord webhook URL is not set. Configure GitHub secret 'DISCORD_WEBHOOK_URL_CI' (preferred for CI) or set 'DISCORD_WEBHOOK_URL' in scripts/notifications/config.env for local/dev." >&2
   exit 2
 fi
 
