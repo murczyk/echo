@@ -1,4 +1,6 @@
 ## NEXT
+
+- [#1264](https://github.com/echoua/echo/issues/1159) Редагування смуг мереж
 - [#1264](https://github.com/echoua/echo/issues/1264) Не так часто кидати події про оновлення
 - [#1265](https://github.com/echoua/echo/issues/1265) Парсинг посту: додаткові кейси
 - [#1283](https://github.com/echoua/echo/issues/1283) Додано нову модуляцію "Умовна"
