@@ -411,14 +411,14 @@ fn match_network_ids_for_messages(
             continue;
         };
 
-        let mut matched = Vec::new();
+        let mut matched = HashSet::new();
 
         for network_id in candidate_networks {
             if let Some(net_bounds) = network_bounds_map.get(network_id) {
                 for (gl, gr) in group_bounds {
                     for (nl, nr) in net_bounds {
                         if (gl >= nl && gl <= nr) || (gr >= nl && gr <= nr) {
-                            matched.push(*network_id);
+                            matched.insert(*network_id);
                             break;
                         }
                     }
@@ -426,7 +426,7 @@ fn match_network_ids_for_messages(
             }
         }
 
-        result.insert(msg.id, matched);
+        result.insert(msg.id, matched.into_iter().collect::<Vec<_>>());
     }
 
     Ok(result)
