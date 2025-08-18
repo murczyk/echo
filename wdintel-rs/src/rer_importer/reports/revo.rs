@@ -27,6 +27,7 @@ pub struct ReportSummary {
 
 pub struct NetworkRow {
     pub name: String,
+    pub location: Option<String>,
     pub freqs: Vec<String>,
     pub activity: NetworkActivity,
     pub correspondents: Vec<NetworkCorrespondent>,
@@ -50,6 +51,7 @@ pub struct NetworkCorrespondent {
 pub struct NetworkSummary {
     pub id: i64,
     pub name: String,
+    pub location: Option<String>,
     pub freq: String,
     pub unit_name: Option<String>,
     pub master_key: Option<String>,
@@ -161,8 +163,12 @@ pub async fn report_docx_kind_revo(
 }
 
 fn render_network_row(row: NetworkRow) -> TableRow {
-    let mut network_cell =
-        mk_bold_text_cell(&row.name).add_paragraph(mk_paragraph(""));
+    let mut network_cell = mk_bold_text_cell(&row.name);
+    if let Some(location) = row.location {
+        network_cell = network_cell
+            .add_paragraph(mk_bold_paragraph(&format!("({location})")));
+    }
+    network_cell = network_cell.add_paragraph(mk_paragraph(""));
     for freq in row.freqs {
         network_cell =
             network_cell.add_paragraph(mk_paragraph(&format!("\n{freq} МГц")));
@@ -193,8 +199,7 @@ fn render_network_row(row: NetworkRow) -> TableRow {
     let correspondents_cell = mk_multiline_text_cell(correspondents);
 
     let functionality_details_cell = mk_text_cell(&row.functionality_details);
-    let identified_details_cell =
-        mk_multiline_text_cell(row.identified_details);
+    let identified_details_cell = mk_bullet_list_cell(row.identified_details);
 
     let communication_kind_cell =
         mk_text_cell(&row.communication_kind.unwrap_or("".to_string()));
@@ -238,15 +243,33 @@ fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
         .vertical_align(VAlignType::Center);
     let mut remaining_count: i32 = lines.len() as i32;
     for text in lines {
+        let mut separator_line_border =
+            ParagraphBorder::new(ParagraphBorderPosition::Bottom);
+        separator_line_border.val = BorderType::Single;
+        let mut paragraph_borders_config = ParagraphBorders::with_empty();
+        paragraph_borders_config =
+            paragraph_borders_config.set(separator_line_border);
         remaining_count -= 1;
         let mut paragraph = Paragraph::new().add_run(Run::new().add_text(text));
         if remaining_count > 0 {
-            let mut border = ParagraphBorders::with_empty();
-            border = border
-                .set(ParagraphBorder::new(ParagraphBorderPosition::Bottom));
-            paragraph.property = paragraph.property.set_borders(border);
+            paragraph.property = paragraph
+                .property
+                .set_borders(paragraph_borders_config.clone());
+            paragraph.property = paragraph
+                .property
+                .line_spacing(LineSpacing::new().after(20));
         }
         cell = cell.add_paragraph(paragraph);
+    }
+    cell
+}
+
+fn mk_bullet_list_cell(lines: Vec<String>) -> TableCell {
+    let mut cell = TableCell::new()
+        .width(WIDTH_UNIT * 2, WidthType::Dxa)
+        .vertical_align(VAlignType::Center);
+    for text in lines {
+        cell = cell.add_paragraph(mk_paragraph(&format!(" • {text}")));
     }
     cell
 }
@@ -323,6 +346,7 @@ async fn collect_report(
         .select_only()
         .column(sigint_network::Column::Id)
         .column(sigint_network::Column::Name)
+        .column(sigint_network::Column::Location)
         .column(sigint_network_freq::Column::Freq)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .into_model::<NetworkSummary>()
@@ -375,6 +399,7 @@ async fn collect_report(
         .select_only()
         .column(sigint_network::Column::Id)
         .column(sigint_network::Column::Name)
+        .column(sigint_network::Column::Location)
         .column(sigint_network_freq::Column::Freq)
         .column(signal_group_aor::Column::MasterKey)
         .column_as(sigint_unit::Column::Name, "unit_name")
@@ -514,6 +539,7 @@ async fn collect_report(
                         freq: freq.clone(),
                         unit_name: None,
                         master_key: None,
+                        location: None,
                     };
                     networks_dictionary
                         .insert(new_summary.id, new_summary.clone());
@@ -630,7 +656,7 @@ async fn collect_report(
             })
         }
         for c in unlinked_callsigns {
-            if unmapped_network && !env.callsigns_whitelist.contains(&c) {
+            if !env.callsigns_whitelist.contains(&c) {
                 skipped_callsigns.insert(c);
                 continue;
             }
@@ -644,11 +670,24 @@ async fn collect_report(
             till,
             seances_qty,
         };
+        let location = network
+            .location
+            .clone()
+            .map(|l| l.trim().to_string())
+            .map(|l| {
+                if l.starts_with("(") {
+                    l.replace("(", "").replace(")", "")
+                } else {
+                    l
+                }
+            })
+            .filter(|l| !l.is_empty());
         let row = NetworkRow {
             name,
             freqs,
             activity,
             correspondents,
+            location,
             communication_kind: None,
             functionality_details: FUNCTIONALITY_DESC_DEFAULT.to_string(),
             identified_details: comments,
