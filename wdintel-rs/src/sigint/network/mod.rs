@@ -1631,7 +1631,6 @@ pub async fn delete_network_freq(
     let freq_records = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
-        .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(&txn)
         .await
