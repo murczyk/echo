@@ -64,7 +64,17 @@ validateCreateNetworkReq req =
 
 isFormValid : B.CreateNetworkReq -> Bool
 isFormValid req =
-    not (String.trim req.name == "" || String.trim req.location == "" || List.isEmpty req.freqs)
+    let
+        hasAor =
+            case req.areaOfResponsibilityIds of
+                Just ids -> not (List.isEmpty ids)
+                Nothing -> False
+    in
+    not (String.trim req.name == ""
+        || String.trim req.location == ""
+        || List.isEmpty req.freqs
+        || not hasAor
+        )
 
 
 validateRequiredString : String -> String -> Dict String String -> Dict String String
@@ -115,6 +125,8 @@ type alias Model =
     , kindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , unitSelect : Le.Block.Select.SelectType Int
     , postsSelect : Le.Block.Select.SelectType Int
+    , aorSelect : Le.Block.Select.SelectType Int
+    , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
     , units : RemoteData ApiError (List B.Unit)
     , addConfirmationInp : String
     , addSignsInp : String
@@ -185,6 +197,12 @@ init route shared () =
             , items = []
             , selected = []
             }
+      , aorSelect =
+            { state = Select.initState (Select.selectIdentifier "create-network-aor-state")
+            , items = []
+            , selected = []
+            }
+      , aorList = NotAsked
       , units = NotAsked
       , addConfirmationInp = ""
       , addSignsInp = ""
@@ -231,6 +249,7 @@ init route shared () =
             }
         , E.loadPostsFromShared { sortBy = Nothing }
         , E.getModulations ModulationsReturnedByApi
+        , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
         ]
     )
 
@@ -245,6 +264,8 @@ type Msg
     | KindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | UnitSelectMsg (Select.Msg Int)
     | PostsSelectMsg (Select.Msg Int)
+    | AorSelectMsg (Select.Msg Int)
+    | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
     | UnitsReturnedByApi (Result ApiError B.ListUnitsRsp)
     | ConfirmationInputChangedByUser String
     | SignsInputChangedByUser String
@@ -370,6 +391,47 @@ update shared msg model =
             ( { model | postsSelect = newSelect, createNetworkState = newNetworkState }
             , E.sendCmd <| Cmd.map PostsSelectMsg selectCmd
             )
+
+        AorSelectMsg selectMsg ->
+            let
+                ( mAct, newState, selectCmd ) =
+                    Select.update selectMsg model.aorSelect.state
+
+                updatedAors =
+                    Le.Block.Select.multiUpdI mAct model.aorSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.aorSelect.items
+                    , selected = updatedAors
+                    }
+
+                oldNetworkState =
+                    model.createNetworkState
+
+                newNetworkState =
+                    { oldNetworkState
+                        | areaOfResponsibilityIds =
+                            if List.isEmpty updatedAors then
+                                Nothing
+
+                            else
+                                Just updatedAors
+                    }
+            in
+            ( { model | aorSelect = newSelect, createNetworkState = newNetworkState }
+            , E.sendCmd <| Cmd.map AorSelectMsg selectCmd
+            )
+
+        AorListReturnedByApi (Ok aors) ->
+            let
+                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                sel = model.aorSelect
+            in
+            ( { model | aorList = RD.Success aors, aorSelect = { sel | items = items } }, E.none )
+
+        AorListReturnedByApi (Err e) ->
+            ( { model | aorList = RD.Failure e }, E.none )
 
         UnitsReturnedByApi (Ok response) ->
             let
@@ -769,6 +831,46 @@ viewMissingFieldsBlock shared model =
                         , placeholder "введіть радіостанцію"
                         ]
                         []
+                    ]
+                ]
+            , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ]
+                    [ text "Смуги"
+                    , span [ class "text-red-500 ml-1" ] [ text "*" ]
+                    ]
+                , div [ class "col-span-2" ]
+                    [ let
+                        selectedItems =
+                            model.aorSelect.selected
+                                |> List.map
+                                    (\aorId ->
+                                        Select.basicMenuItem
+                                            { item = aorId
+                                            , label =
+                                                case model.aorList of
+                                                    RD.Success aors ->
+                                                        aors
+                                                            |> List.filter (\a -> a.id == aorId)
+                                                            |> List.head
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault (String.fromInt aorId)
+
+                                                    _ ->
+                                                        String.fromInt aorId
+                                            }
+                                    )
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions shared.isDarkMode
+                      in
+                      Html.map AorSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.aorSelect.state
+                                model.aorSelect.items
+                                "виберіть смуги"
+                                defaultOptions
                     ]
                 ]
             , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
@@ -1237,6 +1339,9 @@ viewActionButtons model =
 
             else if List.isEmpty model.createNetworkState.freqs then
                 "Додайте хоча б одну частоту"
+
+            else if Maybe.withDefault [] model.createNetworkState.areaOfResponsibilityIds |> List.isEmpty then
+                "Оберіть смугу відповідальності"
 
             else
                 ""
