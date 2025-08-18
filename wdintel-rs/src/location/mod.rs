@@ -371,7 +371,9 @@ pub fn load_from_file(
                     .context(h!())?
             }
         };
-        debug!("[{}] loaded source successfully", &source);
+        if !(mode == Mode::Test) {
+            debug!("[{}] loaded source successfully", &source);
+        }
         let data: BTreeMap<String, Vec<SettlementFileRow>> =
             serde_json::from_str(&text).context(h!())?;
 

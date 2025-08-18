@@ -125,7 +125,7 @@ impl Config {
 pub fn get_settlement_paths(
     m_settlement_path: Option<String>,
 ) -> Result<Vec<String>> {
-    let old = vec!["data/settlements.json".to_string()];
+    let old = vec!["settlements.json".to_string()];
     let settlement_paths = match m_settlement_path {
         // old settlements.json logic (all in one file)
         None => old,
