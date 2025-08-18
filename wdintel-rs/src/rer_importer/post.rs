@@ -5,6 +5,12 @@ use regex::Regex;
 
 pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
     let mut transit_post = None;
+    // Only inspect the first N lines to avoid false positives deep in dialogues
+    let scan_inp = inp
+        .lines()
+        .take(crate::config::POSTS_MAX_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
 
     // Extract transit_post_name if message has Отримано з поста "transit_post_name" substring.
     // But continue scan to find original post name
@@ -16,7 +22,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
             )
             .unwrap();
         }
-        let Some(capts) = RE.captures(inp) else {
+        let Some(capts) = RE.captures(&scan_inp) else {
             break '_if;
         };
         let Some(post) = m_cap_s(&capts, "post") else {
@@ -34,7 +40,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
             )
             .unwrap();
         }
-        let Some(capts) = RE.captures(inp) else {
+        let Some(capts) = RE.captures(&scan_inp) else {
             break '_if;
         };
         let Some(post) = m_cap_s(&capts, "post") else {
@@ -50,7 +56,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
                 Regex::new(r#"\s(?P<post>[а-яіїА-ЯІЇ]{0,2}(П|п)-{0,1}\d+)"#)
                     .unwrap();
         }
-        let Some(capts) = RE.captures(inp) else {
+        let Some(capts) = RE.captures(&scan_inp) else {
             break '_if;
         };
         let Some(post) = m_cap_s(&capts, "post") else {
@@ -66,7 +72,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
                 Regex::new(r#"\s"(?P<post>[а-яіїА-ЯІЇ]{0,2}(П|п)\d+)""#)
                     .unwrap();
         }
-        let Some(capts) = RE.captures(inp) else {
+        let Some(capts) = RE.captures(&scan_inp) else {
             break '_if;
         };
         let Some(post) = m_cap_s(&capts, "post") else {
@@ -82,7 +88,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
                 Regex::new(r#"\s\((?P<post>[а-яіїА-ЯІЇ]{0,2}(П|п)\d+)\)"#)
                     .unwrap();
         }
-        let Some(capts) = RE.captures(inp) else {
+        let Some(capts) = RE.captures(&scan_inp) else {
             break '_if;
         };
         let Some(post) = m_cap_s(&capts, "post") else {
@@ -97,7 +103,7 @@ pub fn extract_post(inp: &str) -> Result<Option<String>, AppError> {
             static ref RE: Regex =
                 Regex::new(r#"\s(?P<post>ЦФП \d+)"#).unwrap();
         }
-        let Some(capts) = RE.captures(inp) else {
+        let Some(capts) = RE.captures(&scan_inp) else {
             break '_if;
         };
         let Some(post) = m_cap_s(&capts, "post") else {
@@ -443,5 +449,38 @@ Kupol80
 Также высокоскоростные? в секторе работаю"#;
         let res = extract_post(body).unwrap();
         assert_eq!(res.unwrap(), "П123".to_string())
+    }
+
+    #[test]
+    fn extract_post_p16_should_not_parse() {
+        let body = r#"17.08.2025, 07:29:16
+333.2260
+🌻УКХ р/м підрозділу зі складу 128 омсбр 44 АК (Вовчанськ)🌻
+НВ
+НВ
+
+— Хищник , Психу.
+— Хищник на связи.
+-- Хищник, Хищник эти провода, полевка разъебанная. Надо полевка, брат, полевка, полевку скинуть.
+— Плюс, плюс, плюс, плюс. Сейчас, сейчас, сейчас, что ни придумаем, сейчас что ни придумаем.
+-- ..полевку скинуть.?
+-- Барс, Барс. На П16, на П16. Как принял?
+-- На П16 сколько полевки тебе кинуть?
+-- 200, 200 метров, 200 метров. Как принял?
+- Я Барс, да.
+— Спасибо, спасибо, Барс.
+-- Барс Хищнику, Барс Хищнику.
+-- Хищник, я Барс, на приеме.
+-- Барс, а можно это сделать в ближайшее время, самое ближайшее время? Как принял меня?
+--..
+— Не прошло, не прошло, Барс.
+-- Кроме полевки, что тебе еще нужно?
+-- В принципе все, все остальное есть, все остальное есть там. Изоленты если только.
+-- А МОНок хватает?
+-- Да, да, да, да, вполне, вполне хватит, вполне хватит. И можно изоленты разных цветов, чтобы пометить, какая, откуда, куда.
+— Ну по разным цветам не знаю, изоленту кинут.
+- плюс, плюс, спасибо. Барс, Барс, Туар, Барс, Барс."#;
+        let res = extract_post(body).unwrap();
+        assert_eq!(res, None)
     }
 }

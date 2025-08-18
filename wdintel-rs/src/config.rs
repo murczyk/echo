@@ -11,6 +11,8 @@ pub const RQ_TIMEOUT: u64 = 10;
 // pub const CALLSIGNS_SEEN_LATELY_PERIOD_DAYS: i64 = 1;
 pub const CALLSIGNS_MAX_LEN: usize = 16;
 pub const CALLSIGNS_MAX_LINES: usize = 10;
+/// Limit how many top lines are scanned when extracting post from text
+pub const POSTS_MAX_LINES: usize = 8;
 pub const CALLSIGNS_TO_VISUALISE: usize = 40;
 pub const SIGNAL_CLIENT_ADDR: &str = "http://localhost:8083";
 pub const SIGNAL_CLIENT_PORT: i32 = 8083;
