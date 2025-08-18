@@ -371,7 +371,7 @@ pub fn load_from_file(
                     .context(h!())?
             }
         };
-        if !(mode == Mode::Test) {
+        if mode != Mode::Test {
             debug!("[{}] loaded source successfully", &source);
         }
         let data: BTreeMap<String, Vec<SettlementFileRow>> =
