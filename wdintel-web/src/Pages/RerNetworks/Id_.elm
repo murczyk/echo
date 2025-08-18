@@ -192,6 +192,8 @@ type alias Model =
     , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , editPostsSelect : Le.Block.Select.SelectType Int
     , editUnitsSelect : Le.Block.Select.SelectType Int
+    , editAorSelect : Le.Block.Select.SelectType Int
+    , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
     , addConfirmationInp : String
     , addConfirmationFreqSelect : Le.Block.Select.SelectTypeSingle String
     , addSignsInp : String
@@ -263,6 +265,12 @@ init route shared () =
             , items = []
             , selected = []
             }
+      , editAorSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-aor-state")
+            , items = []
+            , selected = []
+            }
+      , aorList = NotAsked
       , addConfirmationInp = ""
       , addConfirmationFreqSelect =
             { state = Select.initState (Select.selectIdentifier "add-confirmation-freq-state")
@@ -343,10 +351,14 @@ init route shared () =
             E.batch
                 [ E.getSingleNetwork NetworkReturnedByApi id
                 , E.getModulations ModulationsReturnedByApi
+                , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
                 ]
 
         Nothing ->
-            E.getModulations ModulationsReturnedByApi
+            E.batch
+                [ E.getModulations ModulationsReturnedByApi
+                , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
+                ]
     )
 
 
@@ -386,6 +398,8 @@ type Msg
     | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
     | NetworkEditUnitsSelMsg (Select.Msg Int)
+    | NetworkEditAorSelMsg (Select.Msg Int)
+    | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
     | DescriptionAddClickedByUser Int B.NetworkDescrType
     | NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
     | ConfirmationInputChangedByUser String
@@ -471,12 +485,28 @@ update shared msg model =
 
                 unitsSelect2 =
                     { unitsSelect | selected = Maybe.withDefault [] res.unitIds }
+
+                -- set AOR selection items if list is loaded
+                editAorSelect2 =
+                    case model.aorList of
+                        Success aors ->
+                            let
+                                sel0 = model.editAorSelect
+                            in
+                            { state = sel0.state
+                            , items = List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name }) aors
+                            , selected = res.aorIds
+                            }
+
+                        _ ->
+                            model.editAorSelect
             in
             ( { model
                 | network = Success res
                 , editKindSelect = kindSelect
                 , editPostsSelect = postsSelect2
                 , editUnitsSelect = unitsSelect2
+                , editAorSelect = editAorSelect2
               }
             , E.batch
                 [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = res.id }
@@ -538,6 +568,16 @@ update shared msg model =
             in
             ( { model | freqs = Success res.freqs, addConfirmationFreqSelect = acfs2 }, E.getCallsignsInfoShared callsigns )
 
+        AorListReturnedByApi (Ok aors) ->
+            let
+                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                sel = model.editAorSelect
+            in
+            ( { model | aorList = Success aors, editAorSelect = { sel | items = items } }, E.none )
+
+        AorListReturnedByApi (Err e) ->
+            ( { model | aorList = Failure e }, E.none )
+
         CallsignsPopupOpenedByUser freq ->
             ( { model | callsignsOpenedPopupId = Just freq }, E.none )
 
@@ -560,6 +600,7 @@ update shared msg model =
                                 , operationPeriod = network.operationPeriod
                                 , descriptions = Nothing --TODO
                                 , restoreNetwork = Nothing
+                                , areaOfResponsibilityIds = Nothing
                                 }
                       }
                     , E.none
@@ -608,7 +649,25 @@ update shared msg model =
                                 , operationPeriod = network.operationPeriod
                                 , descriptions = Nothing
                                 , restoreNetwork = Nothing
+                                , areaOfResponsibilityIds = Nothing
                                 }
+                        , editAorSelect =
+                            let
+                                items =
+                                    case model.aorList of
+                                        Success aors ->
+                                            aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                                        _ ->
+                                            []
+                            in
+                            let
+                                sel0 = model.editAorSelect
+                            in
+                            { state = sel0.state
+                            , items = items
+                            , selected = network.aorIds
+                            }
                       }
                     , E.none
                     )
@@ -649,7 +708,11 @@ update shared msg model =
             ( model, E.updateNetworkUnits (NetworkUnitsUpdatedByApi editState) { networkId = editState.id, unitIds = model.editUnitsSelect.selected } )
 
         NetworkUnitsUpdatedByApi editState (Ok _) ->
-            ( model, E.updateNetwork NetworkUpdatedByApi editState )
+            let
+                aorIds = if List.isEmpty model.editAorSelect.selected then Nothing else Just model.editAorSelect.selected
+                editWithAors = { editState | areaOfResponsibilityIds = aorIds }
+            in
+            ( model, E.updateNetwork NetworkUpdatedByApi editWithAors )
 
         NetworkUnitsUpdatedByApi editState (Err e) ->
             ( { model | missingFieldsEditLoading = False }
@@ -790,6 +853,42 @@ update shared msg model =
                             NetworkEditUnitsSelMsg
                             icmd
                     )
+
+                _ ->
+                    ( model, E.none )
+
+        NetworkEditAorSelMsg imsg ->
+            case model.missingFieldsMode of
+                Editing editNetworkState ->
+                    let
+                        ( mAct, imodel, icmd ) =
+                            Select.update imsg model.editAorSelect.state
+
+                        updatedAors =
+                            Le.Block.Select.multiUpdI mAct model.editAorSelect.selected
+
+                        items =
+                            case model.aorList of
+                                Success aors ->
+                                    List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name }) aors
+
+                                _ ->
+                                    []
+
+                        aorSelect2 =
+                            let
+                                sel0 = model.editAorSelect
+                            in
+                            { state = imodel
+                            , selected = updatedAors
+                            , items = items
+                            }
+                    in
+                    ( { model
+                        | editAorSelect = aorSelect2
+                        , missingFieldsMode = Editing editNetworkState
+                      }
+                    , E.sendCmd <| Cmd.map NetworkEditAorSelMsg icmd )
 
                 _ ->
                     ( model, E.none )
@@ -2084,7 +2183,28 @@ missingFieldsBlock user network shared model =
             text ""
         ]
     , div [ class "space-y-3" ]
-        [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+        [ if Le.Auth.hasRole "UnitsEditor" user then
+            div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+                [ span [ class "text-[13px] font-medium" ] [ text "Смуги:" ]
+                , div [ class "col-span-2 h-[40px] flex items-center" ]
+                    [ case model.aorList of
+                        Success aors ->
+                            let
+                                aorNames =
+                                    network.aorIds
+                                        |> List.filterMap (\aid -> aors |> List.filter (\a -> a.id == aid) |> List.head |> Maybe.map .name)
+                                        |> String.join ", "
+                            in
+                            text aorNames
+
+                        _ ->
+                            text ""
+                    ]
+                ]
+
+          else
+            text ""
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Назва:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
                 [ text network.name ]
@@ -3284,6 +3404,43 @@ missingFieldsEditBlock user network updNetworkReq shared model =
         ]
     , div [ class "space-y-3" ]
         [ div [ class "grid grid-cols-3 gap-x-4 items-center" ]
+            [ span [ class "text-[13px] font-medium" ] [ text "Смуги:" ]
+            , div [ class "col-span-2" ]
+                [ let
+                    selectedItems =
+                        List.map
+                            (\aorId ->
+                                let
+                                    label =
+                                        case model.aorList of
+                                            Success aors ->
+                                                aors
+                                                    |> List.filter (\a -> a.id == aorId)
+                                                    |> List.head
+                                                    |> Maybe.map (.name)
+                                                    |> Maybe.withDefault ""
+
+                                            _ ->
+                                                ""
+                                in
+                                Select.basicMenuItem { item = aorId, label = label }
+                            )
+                            model.editAorSelect.selected
+
+                    defaultOptions =
+                        Le.Block.Select.defaultOptions shared.isDarkMode
+                  in
+                  Html.map NetworkEditAorSelMsg <|
+                    Styled.toUnstyled <|
+                        Le.Block.Select.renderSelect
+                            selectedItems
+                            model.editAorSelect.state
+                            model.editAorSelect.items
+                            "виберіть смуги"
+                            defaultOptions
+                ]
+            ]
+        , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Назва:" ]
             , div [ class "col-span-2" ]
                 [ input

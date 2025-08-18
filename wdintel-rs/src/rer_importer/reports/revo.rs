@@ -493,14 +493,13 @@ async fn collect_report(
                     error!("[{}] bad freq: {freq}", h!());
                     continue;
                 };
-                let id = -1 * (freq_num * 10000.0).ceil() as i64;
-                if let Some(id) = unmapped_freqs
-                    .iter()
-                    .map(|(f, _)| f)
-                    .filter(|f| (((**f - id) as i64).abs()) < 250)
-                    .next()
+                let id = -((freq_num * 10000.0).ceil() as i64);
+                if let Some(existing_id) = unmapped_freqs
+                    .keys()
+                    .copied()
+                    .find(|f: &i64| (*f - id).abs() < 250)
                 {
-                    networks_dictionary.get(&id).cloned().context(h!())?
+                    networks_dictionary.get(&existing_id).cloned().context(h!())?
                 } else {
                     let mut freqs =
                         unmapped_freqs.remove(&id).unwrap_or(vec![]);
@@ -628,11 +627,9 @@ async fn collect_report(
             })
         }
         for c in unlinked_callsigns {
-            if unmapped_network {
-                if !env.callsigns_whitelist.contains(&c) {
-                    skipped_callsigns.insert(c);
-                    continue;
-                }
+            if unmapped_network && !env.callsigns_whitelist.contains(&c) {
+                skipped_callsigns.insert(c);
+                continue;
             }
             correspondents.push(NetworkCorrespondent {
                 callsign: c,

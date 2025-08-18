@@ -2,10 +2,12 @@
 
 - Read README.md to understand the general project purpose
 
-## CODE STYLE
+## CODE STYLE AND CHECKING
 
 - keep code formatted with `cargo fmt`
 - keep `cargo clippy` clean
+- run `cargo check` for rust check
+- run `just build-front` to build front-end code
 
 ## GIT
 
@@ -29,3 +31,10 @@
   where
   version='m20250615_135039_battle_unit_is_flight_journal_enabled';`
 - NEVER edit old and existing migrations (unless not committed yet)
+- run `just gen-seaorm` after you've made some schema changes in the database to regenerate sea-orm models
+
+## Code gen
+
+- run `just gen-seaorm` after you've made some schema changes in the database to regenerate sea-orm models
+- run `just gen-front` to generate Elm front-end bindings from back-end definitions (types listed in elm.rs)
+

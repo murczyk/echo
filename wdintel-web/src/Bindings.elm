@@ -4303,6 +4303,7 @@ type alias Network =
     { id : Int
     , freqs : List NetworkFreq
     , unitIds : Maybe (List Int)
+    , aorIds : List Int
     , name : String
     , location : String
     , radioStation : Maybe String
@@ -4327,6 +4328,7 @@ networkEncoder struct =
         [ ( "id", Json.Encode.int struct.id )
         , ( "freqs", Json.Encode.list networkFreqEncoder struct.freqs )
         , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.unitIds )
+        , ( "aor_ids", Json.Encode.list Json.Encode.int struct.aorIds )
         , ( "name", Json.Encode.string struct.name )
         , ( "location", Json.Encode.string struct.location )
         , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioStation )
@@ -4362,6 +4364,7 @@ updateFreqNetworksReqEncoder struct =
 type alias CreateNetworkReq =
     { freqs : List AddNetworkFreq
     , unitIds : Maybe (List Int)
+    , areaOfResponsibilityIds : Maybe (List Int)
     , name : String
     , location : String
     , radioStation : Maybe String
@@ -4379,6 +4382,7 @@ createNetworkReqEncoder struct =
     Json.Encode.object
         [ ( "freqs", Json.Encode.list addNetworkFreqEncoder struct.freqs )
         , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.unitIds )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
         , ( "name", Json.Encode.string struct.name )
         , ( "location", Json.Encode.string struct.location )
         , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioStation )
@@ -4406,6 +4410,7 @@ deleteNetworkReqEncoder struct =
 type alias UpdateNetworkReq =
     { id : Int
     , restoreNetwork : Maybe Bool
+    , areaOfResponsibilityIds : Maybe (List Int)
     , name : String
     , location : String
     , radioStation : Maybe String
@@ -4422,6 +4427,7 @@ updateNetworkReqEncoder struct =
     Json.Encode.object
         [ ( "id", Json.Encode.int struct.id )
         , ( "restore_network", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.restoreNetwork )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
         , ( "name", Json.Encode.string struct.name )
         , ( "location", Json.Encode.string struct.location )
         , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioStation )
@@ -4600,6 +4606,7 @@ networkPointEncoder struct =
 type alias UpdFreqNetwork =
     { id : Maybe Int
     , unitIds : List Int
+    , areaOfResponsibilityIds : Maybe (List Int)
     , name : String
     , location : String
     , radioStation : Maybe String
@@ -4613,6 +4620,7 @@ updFreqNetworkEncoder struct =
     Json.Encode.object
         [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
         , ( "unit_ids", Json.Encode.list Json.Encode.int struct.unitIds )
+        , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
         , ( "name", Json.Encode.string struct.name )
         , ( "location", Json.Encode.string struct.location )
         , ( "radio_station", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioStation )
@@ -8070,6 +8078,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list networkFreqDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
@@ -8099,6 +8108,7 @@ createNetworkReqDecoder =
     Json.Decode.succeed CreateNetworkReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list addNetworkFreqDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
@@ -8121,6 +8131,7 @@ updateNetworkReqDecoder =
     Json.Decode.succeed UpdateNetworkReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "restore_network" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))
@@ -8190,6 +8201,7 @@ updFreqNetworkDecoder =
     Json.Decode.succeed UpdFreqNetwork
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_station" (Json.Decode.nullable Json.Decode.string)))

@@ -256,10 +256,14 @@ where
             .await
             .context(h!())?;
 
+        let aor_ids =
+            get_network_aor_ids(txn, network.id).await.context(h!())?;
+
         networks_res.push(Network {
             id: network.id,
             freqs,
             unit_ids,
+            aor_ids,
             name: network.name,
             location: network.location,
             radio_station: network.radio_station,
@@ -347,7 +351,8 @@ pub async fn create_network(
 
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let areas_of_responsibility_ids: Vec<i64> = vec![]; // todo get from req
+    let areas_of_responsibility_ids: Vec<i64> =
+        req.area_of_responsibility_ids.clone().unwrap_or_default();
     if req.freqs.is_empty() {
         return Err(AppError::Form(BTreeMap::from_iter([(
             "freqs".to_string(),
@@ -569,6 +574,18 @@ pub async fn update_network(
     network_model.updated_at = Set(Utc::now().naive_utc());
 
     let network = network_model.update(&txn).await.context(h!())?;
+
+    if let Some(aor_ids) = req.area_of_responsibility_ids.clone() {
+        // Replace existing AOR links with the provided set
+        sigint_network_aor::Entity::delete_many()
+            .filter(sigint_network_aor::Column::NetworkId.eq(network.id))
+            .exec(&txn)
+            .await
+            .context(h!())?;
+        save_network_aors(&txn, aor_ids, network.id)
+            .await
+            .context(h!())?;
+    }
 
     if let Some(description_patches) = &req.descriptions {
         for p in description_patches {
@@ -1233,7 +1250,10 @@ pub async fn update_freq_networks(
             .context(h!())?
             .id;
 
-            let areas_of_responsibility_ids = vec![]; // todo read from req
+            let areas_of_responsibility_ids = req_network
+                .area_of_responsibility_ids
+                .clone()
+                .unwrap_or_default();
 
             save_network_aors(
                 &txn,
@@ -3021,6 +3041,23 @@ where
         .context(h!())?
         .iter()
         .map(|x| x.post_id)
+        .collect())
+}
+
+async fn get_network_aor_ids<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(sigint_network_aor::Entity::find()
+        .filter(sigint_network_aor::Column::NetworkId.eq(network_id))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|x| x.aor_id)
         .collect())
 }
 

@@ -29,6 +29,7 @@ pub struct Network {
     pub id: i64,
     pub freqs: Vec<NetworkFreq>,
     pub unit_ids: Option<Vec<i64>>,
+    pub aor_ids: Vec<i64>,
     pub name: String,
     pub location: String,
     pub radio_station: Option<String>,
@@ -60,6 +61,7 @@ pub struct UpdateFreqNetworksReq {
 pub struct CreateNetworkReq {
     pub freqs: Vec<AddNetworkFreq>,
     pub unit_ids: Option<Vec<i64>>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
     pub name: String,
     pub location: String,
     pub radio_station: Option<String>,
@@ -96,6 +98,7 @@ pub struct UpdateNetworkReq {
     // pub post_ids: Vec<i64>,
     // pub descriptions: Vec<NetworkDescription>,
     pub restore_network: Option<bool>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
     pub name: String,
     pub location: String,
     pub radio_station: Option<String>,
@@ -192,6 +195,7 @@ pub struct ListNetworkPointsRsp {
 pub struct UpdFreqNetwork {
     pub id: Option<i64>,
     pub unit_ids: Vec<i64>,
+    pub area_of_responsibility_ids: Option<Vec<i64>>,
     pub name: String,
     pub location: String,
     pub radio_station: Option<String>,
