@@ -95,18 +95,11 @@ jobs:
           fi
 
   notify-completion:
-    if: always() && github.repository == 'echoua/echo'
+    # Disabled: previously sent overall CI failure Discord notification ("💥 CI Tests Failed").
+    # Intentionally left as a no-op job to preserve workflow structure if referenced elsewhere.
+    if: false
     needs: [frontend-tests, backend-tests]
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Discord notification - Overall CI failures only
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
-        run: |
-          frontend_status="${{ needs.frontend-tests.result }}"
-          backend_status="${{ needs.backend-tests.result }}"
-          if [ ! "$frontend_status" = "success" ] || [ ! "$backend_status" = "success" ]; then
-            ./scripts/notifications/discord-notify.sh ci_failure "" "💥 CI Tests Failed" "Frontend: $frontend_status\\nBackend: $backend_status\\n\\nPlease check the logs for details."
-          fi
+      - name: Skip overall CI failure notification
+        run: echo "Overall CI failure Discord notification disabled."
