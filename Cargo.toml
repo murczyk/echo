@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "wdintel-rs",
-    "echo-migration",
+    "echo-migration", "echo-install",
 ]
 resolver = "2"
 

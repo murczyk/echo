@@ -855,6 +855,46 @@ oneoff-reprocess-units-search-index:
     ssh echo-zaporizhzha2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-kherson2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-donetsk2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
+
+
+# build and copy deb and binary for echo-install
+builder-build-echo-install:
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ builder }}" == "" ]] ; then
+        echo "❌ builder parameter not recognized. value: {{ builder }}"; exit 1;
+    fi
+    ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
+    ssh {{ builder }} '(cd ~/workspace/echo && /home/ubuntu/.cargo/bin/cargo deb -p echo-install)'
+    rsync --progress {{ builder }}:~/workspace/echo/target/debian/echo-install_0.1.0-1_amd64.deb /tmp/
+    rsync --progress {{ builder }}:~/workspace/echo/target/release/echo-install /tmp/
+
+# Build a directory under target/build with echo-install binary and deb plus wdintel-rs deb,
+# then copy it to a given server under /tmp/echo-install-package
+deploy-echo-install-package:
+    #!/bin/bash
+    set -euxo pipefail
+
+    if [[ "{{ builder }}" == "" ]] ; then
+        echo "❌ builder parameter not recognized. value: {{ builder }}"; exit 1;
+    fi
+    if [[ "{{ server }}" == "" ]] ; then
+        just _print-servers; exit 1;
+    fi
+
+    TGT_DIR=target/echo-install-package
+    TGT_DIR_SERVER=/tmp/echo-install-package
+    (rm -rf $TGT_DIR || true) && mkdir -p $TGT_DIR
+
+    just builder={{ builder }} builder-build-echo-install
+    cp /tmp/echo-install_0.1.0-1_amd64.deb $TGT_DIR/
+    cp /tmp/echo-install $TGT_DIR/
+
+    just builder={{ builder }} _echo-generic-build-rs
+    cp /tmp/wdintel-rs_0.1.0-1_amd64.deb $TGT_DIR/
+
+    ssh {{ server }} "rm -rf $TGT_DIR_SERVER || true && mkdir -p $TGT_DIR_SERVER"
+    rsync -r $TGT_DIR/ {{ server }}:$TGT_DIR_SERVER/
     ssh echo-kharkiv2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-siversk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-lyman -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'

@@ -1,0 +1,16 @@
+[package]
+name = "echo-install"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+tracing-subscriber = { version = "0.3.19", features = ["tracing-log", "env-filter"] }
+
+[dependencies.echo-install-utils]
+git = "ssh://git@github.com/echoua/echo-install-utils.git"
+rev = "4c40a3ca0b9d8ee46ba506edeac0866279e86994"
+# path = "../echo-install-utils/"
