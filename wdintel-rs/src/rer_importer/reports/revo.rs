@@ -499,7 +499,10 @@ async fn collect_report(
                     .copied()
                     .find(|f: &i64| (*f - id).abs() < 250)
                 {
-                    networks_dictionary.get(&existing_id).cloned().context(h!())?
+                    networks_dictionary
+                        .get(&existing_id)
+                        .cloned()
+                        .context(h!())?
                 } else {
                     let mut freqs =
                         unmapped_freqs.remove(&id).unwrap_or(vec![]);

@@ -51,7 +51,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
             .unwrap_or_default();
     let settlements = Arc::new(RwLock::new(settlements_data));
     let callsigns_whitelist =
-        crate::sigint::callsign::load_whitelist_from_file(mode.clone())
+        crate::sigint::callsign::load_whitelist_from_file(mode)
             .await
             .unwrap();
 
