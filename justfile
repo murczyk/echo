@@ -721,6 +721,11 @@ config-deploy:
     fi
     . deploy/utils.sh
     ensure_nonempty "server" "{{ server }}"
+    # Notify Discord at the start of deployment including local hostname
+    curl -sS -X POST \
+      -H 'Content-Type: application/json' \
+      -d "{\"content\":\"deploying config for {{ server }} from $(hostname)\"}" \
+      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
     bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
 
 stop-processing:
