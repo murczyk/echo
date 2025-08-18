@@ -1,5 +1,6 @@
 ## NEXT
 
+- [#1295](https://github.com/echoua/echo/issues/1295) Видалення частоти мережі
 - [#1292](https://github.com/echoua/echo/issues/1292) Фільтр мереж за смугою
 - [#1264](https://github.com/echoua/echo/issues/1264) Редагування смуг мереж
 - [#1294](https://github.com/echoua/echo/issues/1294) Мережі: оновлено валідацію частот до формату ЦЦЦ.ЦЦЦЦ

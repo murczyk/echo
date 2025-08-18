@@ -282,6 +282,7 @@ fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
             )),
         )
         .and_where(sigint_network_freq::Column::ActiveTo.is_null())
+        .and_where(sigint_network_freq::Column::Deleted.eq(false))
         .and_where(sigint_unit::Column::Deleted.eq(false))
         .and_where(sigint_network::Column::Deleted.eq(false))
         .and_where(filter_expr)

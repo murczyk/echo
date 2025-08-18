@@ -120,6 +120,7 @@ mod m20250808_153740_add_deleted_permanently;
 mod m20250811_140034_add_default_organism;
 mod m20250816_160937_default_big_aor;
 mod m20250817_172424_add_modulation;
+mod m20250818_124718_sigint_network_freq_deleted;
 
 pub struct Migrator;
 
@@ -247,6 +248,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250811_140034_add_default_organism::Migration),
             Box::new(m20250816_160937_default_big_aor::Migration),
             Box::new(m20250817_172424_add_modulation::Migration),
+            Box::new(m20250818_124718_sigint_network_freq_deleted::Migration),
         ]
     }
 }

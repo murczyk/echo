@@ -100,7 +100,9 @@ pub async fn network_list(
                     sigint_network::Relation::SigintNetworkAor.def(),
                     Alias::new("sigint_network_aor"),
                 )
-                .filter(sigint_network_aor::Column::AorId.is_in(aor_ids.clone()));
+                .filter(
+                    sigint_network_aor::Column::AorId.is_in(aor_ids.clone()),
+                );
         }
     }
 
@@ -457,6 +459,7 @@ pub async fn create_network(
             active_to: Set(active_to),
             kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
             modulation_id: Set(frequency.modulation_id),
+            deleted: Set(false),
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
         }
@@ -1379,6 +1382,7 @@ pub async fn add_network_freq(
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .one(&txn)
         .await
         .context(h!())?;
@@ -1408,6 +1412,7 @@ pub async fn add_network_freq(
             modulation_id: Set(req.freq_rec.modulation_id),
             active_from: Set(active_from),
             active_to: Set(active_to),
+            deleted: Set(false),
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
         };
@@ -1627,6 +1632,7 @@ pub async fn delete_network_freq(
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(&txn)
         .await
         .context(h!())?;
@@ -1644,9 +1650,10 @@ pub async fn delete_network_freq(
                 req.freq, freq_record.id, req.network_id
             );
 
-            let mut model = freq_record.into_active_model();
-            model.active_to = Set(Some(Utc::now().naive_utc()));
-            model.update(&txn).await.context(h!())?;
+            let mut freq_record = freq_record.into_active_model();
+            freq_record.deleted = Set(true);
+            freq_record.active_to = Set(Some(Utc::now().naive_utc()));
+            freq_record.update(&txn).await.context(h!())?;
         }
     }
 
@@ -1744,6 +1751,7 @@ async fn cleanup_networks_worker_1(
             ),
         )
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .into_model::<NetworkFreqDesc>()
         .all(dbx)
         .await
@@ -1878,6 +1886,7 @@ pub async fn collect_network_units(
         )
         .filter(sigint_network_freq::Column::Freq.is_in(freqs))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .select_only()
         .column(sigint_network::Column::Id) //
         .column(sigint_network_freq::Column::Freq) // Select sn::Column
@@ -2806,11 +2815,13 @@ pub async fn merge_two_networks(
         .column(sigint_network_freq::Column::Freq)
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id_to))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .into_query();
 
     let freqs_from = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::Freq.not_in_subquery(freqs_to))
         .all(txn)
         .await

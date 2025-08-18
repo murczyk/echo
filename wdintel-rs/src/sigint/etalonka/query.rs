@@ -79,6 +79,7 @@ pub enum SigintNetworkFreq {
     ActiveTo,
     ModulationId,
     Kind,
+    Deleted,
 }
 
 #[derive(Iden)]
@@ -151,6 +152,9 @@ pub async fn load_freqs(
     )
     .and_where(
         Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+    )
+    .and_where(
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
     )
     .and_where(
         Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(filter.network_id),
@@ -272,6 +276,10 @@ pub async fn load_freqs(
             Alias::new("agg"),
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Id))
                 .equals((Alias::new("agg"), Alias::new("network_freq_id"))),
+        )
+        .and_where(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
         )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintUnit::Id))
@@ -582,6 +590,10 @@ fn build_callsigns_queries(
             SigintNetwork::Table,
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
                 .equals((SigintNetwork::Table, SigintNetwork::Id)),
+        )
+        .and_where(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
         )
         .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Id))
@@ -1191,7 +1203,8 @@ pub async fn load_networks(
             Expr::cust(r#"(select string_agg(snf.freq, ', ')
                             from sigint_network_freq snf
                             where snf.network_id = "sigint_network"."id"
-                            and snf.active_to is null)"#.to_string()),
+                            and snf.active_to is null
+                            and snf.deleted = false)"#.to_string()),
             "freqs",
         )
         .column(sigint_network::Column::OperationMode)
@@ -1227,6 +1240,7 @@ pub async fn load_networks(
             .filter(signal_message::Column::Deleted.eq(false))
             .filter(signal_message::Column::GroupMasterKey.is_in(groups))
             .filter(sigint_network_freq::Column::ActiveTo.is_null())
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
             .filter(
                 sigint_network_freq::Column::NetworkId
                     .into_simple_expr()
@@ -1323,7 +1337,8 @@ pub async fn load_networks_by_id(
             Expr::cust(r#"(select string_agg(snf.freq, ', ')
                             from sigint_network_freq snf
                             where snf.network_id = "sigint_network"."id"
-                            and snf.active_to is null)"#.to_string()),
+                            and snf.active_to is null
+                            and snf.deleted = false)"#.to_string()),
             "freqs",
         )
         .column(sigint_network::Column::OperationMode)
