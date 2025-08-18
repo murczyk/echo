@@ -83,6 +83,15 @@ pub enum SigintNetworkFreq {
 }
 
 #[derive(Iden)]
+pub enum SigintNetworkCallsign {
+    Table,
+    Id,
+    SigintNetworkId,
+    SigintCallsign,
+    Deleted,
+}
+
+#[derive(Iden)]
 pub enum SigintUnit {
     Table,
     Id,
@@ -442,10 +451,14 @@ pub async fn load_callsigns(
         build_callsigns_queries(groups, network_id).context(h!())?;
 
     // Step 1. Get all active callsigns for the given network
-    let active_callsigns =
-        get_active_callsigns(db, base_with.clone(), callsigns_select.clone())
-            .await
-            .context(h!())?;
+    let active_callsigns = get_active_callsigns(
+        db,
+        base_with.clone(),
+        callsigns_select.clone(),
+        network_id,
+    )
+    .await
+    .context(h!())?;
 
     let mut res: Vec<CallsignRes> = active_callsigns
         .iter()
@@ -709,7 +722,7 @@ pub fn build_callsigns_queries(
                 .or(Expr::col((SigintUnit::Table, SigintUnit::Id)).is_null()),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id))
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
                 .eq(network_id),
         )
         .to_owned();
@@ -722,24 +735,44 @@ pub fn build_callsigns_queries(
     Ok((base_with, callsigns_select))
 }
 
+/// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
     base_with: WithClause,
     callsigns_select: SelectStatement,
+    network_id: i64,
 ) -> Result<Vec<CallsignQueryResult>, AppError> {
     let callsigns_cte = CommonTableExpression::new()
         .query(callsigns_select)
         .table_name(Alias::new("callsigns"))
         .to_owned();
 
+let network_callsign_alias = Alias::new("nc");
+let callsigns_alias = Alias::new("callsigns");
+let callsign_alias = Alias::new("callsign");
+let network_callsigns_subquery: SelectStatement = Query::select()
+    .expr(Expr::value(1)) // SELECT 1
+    .from_as(SigintNetworkCallsign::Table, network_callsign_alias.clone()) // FROM network_callsign
+    .and_where(Expr::col((network_callsign_alias.clone(), SigintNetworkCallsign::SigintNetworkId))
+        .eq(network_id)) // WHERE network_id = ?
+    .and_where(Expr::col((network_callsign_alias.clone(), SigintNetworkCallsign::Deleted))
+        .eq(false)) // WHERE network_id = ?
+    .and_where(
+        Expr::col((network_callsign_alias.clone(), SigintNetworkCallsign::SigintCallsign))
+            .eq(Expr::col((callsigns_alias.clone(), callsign_alias.clone()))),
+    )
+    .to_owned();
+
     let active_callsigns_select = Query::select()
-        .expr_as(Expr::cust("DISTINCT callsign"), Alias::new("callsign"))
+        .expr_as(Expr::cust("DISTINCT callsign"), callsign_alias)
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
         .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
         .expr_as(Expr::cust("division"), Alias::new("division"))
         .expr_as(Expr::cust("army"), Alias::new("army"))
-        .from(Alias::new("callsigns"))
+        .from(callsigns_alias.clone())
+        // виключаємо позивні, які вже прив'язані до мережі
+        .and_where(Expr::exists(network_callsigns_subquery).not())
         .order_by_expr(Expr::cust("callsign"), Order::Asc)
         .to_owned();
 

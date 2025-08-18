@@ -169,7 +169,11 @@ type alias CallsignResModified =
     , isReported : Bool
     }
 
+
+
 -- Нова структура для рядка таблиці позивних
+
+
 type alias CallsignTableRow =
     { callsign : String
     , messageCount : Int
@@ -519,7 +523,8 @@ update shared msg model =
                     case model.aorList of
                         Success aors ->
                             let
-                                sel0 = model.editAorSelect
+                                sel0 =
+                                    model.editAorSelect
                             in
                             { state = sel0.state
                             , items = List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name }) aors
@@ -599,8 +604,11 @@ update shared msg model =
 
         AorListReturnedByApi (Ok aors) ->
             let
-                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
-                sel = model.editAorSelect
+                items =
+                    aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                sel =
+                    model.editAorSelect
             in
             ( { model | aorList = Success aors, editAorSelect = { sel | items = items } }, E.none )
 
@@ -691,7 +699,8 @@ update shared msg model =
                                             []
                             in
                             let
-                                sel0 = model.editAorSelect
+                                sel0 =
+                                    model.editAorSelect
                             in
                             { state = sel0.state
                             , items = items
@@ -738,8 +747,15 @@ update shared msg model =
 
         NetworkUnitsUpdatedByApi editState (Ok _) ->
             let
-                aorIds = if List.isEmpty model.editAorSelect.selected then Nothing else Just model.editAorSelect.selected
-                editWithAors = { editState | areaOfResponsibilityIds = aorIds }
+                aorIds =
+                    if List.isEmpty model.editAorSelect.selected then
+                        Nothing
+
+                    else
+                        Just model.editAorSelect.selected
+
+                editWithAors =
+                    { editState | areaOfResponsibilityIds = aorIds }
             in
             ( model, E.updateNetwork NetworkUpdatedByApi editWithAors )
 
@@ -906,7 +922,8 @@ update shared msg model =
 
                         aorSelect2 =
                             let
-                                sel0 = model.editAorSelect
+                                sel0 =
+                                    model.editAorSelect
                             in
                             { state = imodel
                             , selected = updatedAors
@@ -917,7 +934,8 @@ update shared msg model =
                         | editAorSelect = aorSelect2
                         , missingFieldsMode = Editing editNetworkState
                       }
-                    , E.sendCmd <| Cmd.map NetworkEditAorSelMsg icmd )
+                    , E.sendCmd <| Cmd.map NetworkEditAorSelMsg icmd
+                    )
 
                 _ ->
                     ( model, E.none )
@@ -1536,7 +1554,6 @@ update shared msg model =
 
         CloseFreqCreateSidebar ->
             ( { model
-            ( { model
                 | freqCreateSidebar = False
                 , freqCreateDescriptionInp = ""
                 , freqCreateFormatError = Nothing
@@ -1561,8 +1578,10 @@ update shared msg model =
                 formatError =
                     if String.trim newFreqState.freq == "" then
                         Nothing
-                                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
-                    Just "Невірний формат частоти (наприклад: 146.5000)"
+
+                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
+                        Just "Невірний формат частоти (наприклад: 146.5000)"
+
                     else
                         Nothing
             in
@@ -2195,6 +2214,7 @@ networkCallsignsTableConfig shared model user =
             ]
         , customizations = customizations
         }
+
 
 
 -- SIDEBAR CONTENT
@@ -3219,12 +3239,16 @@ contentBlock user shared network model =
                 div [ class "overflow-y-auto grow-1 mb-4" ]
                     [ Table.view (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState networkCallsigns
                     ]
+
             Loading ->
                 Le.Block.Spinner.loadingSpinnerSm
+
             Failure e ->
                 div [ class "text-red-500" ] [ text "Помилка завантаження позивних мережі" ]
+
             NotAsked ->
                 text ""
+
             NeedsReload _ ->
                 Le.Block.Spinner.loadingSpinnerSm
         , div [ class "mb-[8px] flex justify-between items-center" ]
@@ -3501,7 +3525,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                                                 aors
                                                     |> List.filter (\a -> a.id == aorId)
                                                     |> List.head
-                                                    |> Maybe.map (.name)
+                                                    |> Maybe.map .name
                                                     |> Maybe.withDefault ""
 
                                             _ ->
@@ -3652,12 +3676,6 @@ updateActiveToFromInput input timeZone currentValue =
 
 -- VALIDATION
 -- Frequency format validation
-
-
-
-
-
-
 -- FREQUENCY CREATION SIDEBAR CONTENT
 
 
