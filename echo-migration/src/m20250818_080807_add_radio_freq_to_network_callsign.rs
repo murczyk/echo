@@ -12,7 +12,7 @@ impl MigrationTrait for Migration {
             ALTER TABLE sigint_network_callsign ADD COLUMN radio_freq TEXT;
             "#,
         )
-            .await?;
+        .await?;
         Ok(())
     }
 
@@ -24,7 +24,7 @@ impl MigrationTrait for Migration {
             ALTER TABLE sigint_network_callsign DROP COLUMN radio_freq;
             "#,
         )
-            .await?;
+        .await?;
 
         Ok(())
     }

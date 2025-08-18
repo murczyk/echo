@@ -308,7 +308,9 @@ pub async fn create_callsign(
 
     let txn = env.dbx.begin().await?;
     let req = req.into_inner();
-    let callsign = bl_callsign_create(&req, &user_id, &txn).await.context(h!())?;
+    let callsign = bl_callsign_create(&req, &user_id, &txn)
+        .await
+        .context(h!())?;
 
     txn.commit().await.context(h!())?;
 
@@ -367,7 +369,7 @@ pub async fn bl_callsign_create(
         created_at: NotSet,
         new_value: Set(Some(callsign_json)),
         old_value: NotSet,
-        req: Set(Some(serde_json::to_value(&req).context(h!())?)),
+        req: Set(Some(serde_json::to_value(req).context(h!())?)),
     }
     .insert(txn)
     .await

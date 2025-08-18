@@ -747,21 +747,34 @@ pub async fn get_active_callsigns(
         .table_name(Alias::new("callsigns"))
         .to_owned();
 
-let network_callsign_alias = Alias::new("nc");
-let callsigns_alias = Alias::new("callsigns");
-let callsign_alias = Alias::new("callsign");
-let network_callsigns_subquery: SelectStatement = Query::select()
-    .expr(Expr::value(1)) // SELECT 1
-    .from_as(SigintNetworkCallsign::Table, network_callsign_alias.clone()) // FROM network_callsign
-    .and_where(Expr::col((network_callsign_alias.clone(), SigintNetworkCallsign::SigintNetworkId))
-        .eq(network_id)) // WHERE network_id = ?
-    .and_where(Expr::col((network_callsign_alias.clone(), SigintNetworkCallsign::Deleted))
-        .eq(false)) // WHERE network_id = ?
-    .and_where(
-        Expr::col((network_callsign_alias.clone(), SigintNetworkCallsign::SigintCallsign))
+    let network_callsign_alias = Alias::new("nc");
+    let callsigns_alias = Alias::new("callsigns");
+    let callsign_alias = Alias::new("callsign");
+    let network_callsigns_subquery: SelectStatement = Query::select()
+        .expr(Expr::value(1)) // SELECT 1
+        .from_as(SigintNetworkCallsign::Table, network_callsign_alias.clone()) // FROM network_callsign
+        .and_where(
+            Expr::col((
+                network_callsign_alias.clone(),
+                SigintNetworkCallsign::SigintNetworkId,
+            ))
+            .eq(network_id),
+        ) // WHERE network_id = ?
+        .and_where(
+            Expr::col((
+                network_callsign_alias.clone(),
+                SigintNetworkCallsign::Deleted,
+            ))
+            .eq(false),
+        ) // WHERE network_id = ?
+        .and_where(
+            Expr::col((
+                network_callsign_alias.clone(),
+                SigintNetworkCallsign::SigintCallsign,
+            ))
             .eq(Expr::col((callsigns_alias.clone(), callsign_alias.clone()))),
-    )
-    .to_owned();
+        )
+        .to_owned();
 
     let active_callsigns_select = Query::select()
         .expr_as(Expr::cust("DISTINCT callsign"), callsign_alias)

@@ -158,7 +158,8 @@ pub async fn bl_delete_network_callsign(
         find_network_callsign_one(id, txn).await?;
     let mut network_callsign_rec = network_callsign.into_active_model();
     network_callsign_rec.deleted = Set(true);
-    let network_callsign = network_callsign_rec.update(txn).await.context(h!())?;
+    let network_callsign =
+        network_callsign_rec.update(txn).await.context(h!())?;
 
     Ok(network_callsign)
 }
