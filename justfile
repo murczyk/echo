@@ -649,9 +649,10 @@ deploy-docs:
     ssh -t {{ server }} 'cd Downloads && sudo dpkg -i echo-docs_0.1.0-1_amd64.deb'
 
 fmt:
+    just --fmt --unstable
     (cd echo-migration && cargo fmt)
     (cd wdintel-rs && cargo fmt)
-    just --fmt --unstable
+    (cd wdintel-rs && cargo clippy --all-targets --all-features -- -D warnings)
 
 setup-kibana-local:
     #!/bin/bash
@@ -856,7 +857,6 @@ oneoff-reprocess-units-search-index:
     ssh echo-kherson2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
     ssh echo-donetsk2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
 
-
 # build and copy deb and binary for echo-install
 builder-build-echo-install:
     #!/bin/bash
@@ -870,6 +870,7 @@ builder-build-echo-install:
     rsync --progress {{ builder }}:~/workspace/echo/target/release/echo-install /tmp/
 
 # Build a directory under target/build with echo-install binary and deb plus wdintel-rs deb,
+
 # then copy it to a given server under /tmp/echo-install-package
 deploy-echo-install-package:
     #!/bin/bash
