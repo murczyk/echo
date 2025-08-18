@@ -1663,7 +1663,7 @@ pub async fn delete_network_freq(
             freq_record.update(&txn).await.context(h!())?;
         }
 
-        if let Some(network_id) = freq_records.get(0).map(|x| x.network_id) {
+        if let Some(network_id) = freq_records.first().map(|x| x.network_id) {
             let network = find_network(&txn, network_id).await.context(h!())?;
             let (network_active_from, network_active_to) =
                 get_network_activity_range(&txn, network_id)
