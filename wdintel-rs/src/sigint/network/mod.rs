@@ -91,6 +91,19 @@ pub async fn network_list(
             networks.filter(sigint_network_unit::Column::Id.is_not_null());
     }
 
+    // Optional filter by Areas of Responsibility (AOR) IDs
+    if let Some(aor_ids) = &req.aor_ids {
+        if !aor_ids.is_empty() {
+            networks = networks
+                .join_as(
+                    JoinType::InnerJoin,
+                    sigint_network::Relation::SigintNetworkAor.def(),
+                    Alias::new("sigint_network_aor"),
+                )
+                .filter(sigint_network_aor::Column::AorId.is_in(aor_ids.clone()));
+        }
+    }
+
     if let Some(filter_freq) = &req.filter_freq {
         let subquery = sigint_network_freq::Entity::find()
             .select_only()

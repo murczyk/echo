@@ -140,6 +140,7 @@ update req msg model =
                     , filterFurtherInvestigation = Nothing
                     , showInactive = Nothing
                     , showOnlyDeleted = Nothing
+                    , aorIds = Nothing
                     }
                 ]
             )
@@ -392,6 +393,7 @@ update req msg model =
                         , filterFurtherInvestigation = Nothing
                         , showInactive = Nothing
                         , showOnlyDeleted = Nothing
+                        , aorIds = Nothing
                         }
                     )
 

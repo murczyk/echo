@@ -99,6 +99,8 @@ type alias Model =
     , loadingUnitStats : Bool
     , tableState : Table.State
     , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
+    , aorFilterSelect : Le.Block.Select.SelectType Int
+    , aorFilterFocusedBefore : Maybe (List Int)
     }
 
 
@@ -161,6 +163,12 @@ init _ =
             , loadingUnitStats = True
             , tableState = Table.initialSort "Мережа"
             , aorList = NotAsked
+            , aorFilterSelect =
+                { state = Select.initState (Select.selectIdentifier "aor-filter-select")
+                , items = []
+                , selected = []
+                }
+            , aorFilterFocusedBefore = Nothing
             }
     in
     ( m2
@@ -194,6 +202,12 @@ loadNetworks model =
                 Nothing
         , showInactive = Just (not model.showOnlyActive)
         , showOnlyDeleted = Just model.showArchived
+        , aorIds =
+            if List.isEmpty model.aorFilterSelect.selected then
+                Nothing
+
+            else
+                Just model.aorFilterSelect.selected
         }
     )
 
@@ -213,6 +227,12 @@ loadNetworksWithTracker model tracker =
                 Nothing
         , showInactive = Just (not model.showOnlyActive)
         , showOnlyDeleted = Just model.showArchived
+        , aorIds =
+            if List.isEmpty model.aorFilterSelect.selected then
+                Nothing
+
+            else
+                Just model.aorFilterSelect.selected
         }
 
 
@@ -261,6 +281,7 @@ type Msg
     | ToggleShowOnlyActive Bool
     | ToggleShowArchived Bool
     | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
+    | AorFilterSelMsg (Select.Msg Int)
 
 
 prepareReportDownloadCmd : Model -> Effect Msg
@@ -948,10 +969,69 @@ update shared msg model =
             ( { model | tableState = newState }, E.none )
 
         AorListReturnedByApi (Ok aors) ->
-            ( { model | aorList = Success aors }, E.none )
+            let
+                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                oldAorSelect = model.aorFilterSelect
+                newAorSelect = { oldAorSelect | items = items }
+            in
+            ( { model | aorList = Success aors, aorFilterSelect = newAorSelect }, E.none )
 
         AorListReturnedByApi (Err e) ->
             ( { model | aorList = Failure e }, E.none )
+
+        AorFilterSelMsg selMsg ->
+            let
+                ( mAction, iState, icmd ) =
+                    Select.update selMsg model.aorFilterSelect.state
+
+                ( newSelected, newState ) =
+                    Le.Block.Select.multiUpdMenuOpen mAction model.aorFilterSelect.selected iState
+
+                focusedBefore =
+                    case mAction of
+                        Just Select.Focus ->
+                            Just model.aorFilterSelect.selected
+                        Just (Select.MenuToggle Select.MenuOpen) ->
+                            Just model.aorFilterSelect.selected
+                        _ ->
+                            model.aorFilterFocusedBefore
+
+                newSel =
+                    { state = newState
+                    , items = model.aorFilterSelect.items
+                    , selected = newSelected
+                    }
+
+                m2 = { model | aorFilterSelect = newSel, aorFilterFocusedBefore = focusedBefore }
+
+                shouldReload =
+                    case mAction of
+                        Just Select.Blur -> True
+                        Just (Select.MenuToggle Select.MenuClose) -> True
+                        Just Select.Clear -> True
+                        _ -> False
+
+                valueChanged =
+                    case mAction of
+                        Just Select.Clear -> True
+                        _ ->
+                            case m2.aorFilterFocusedBefore of
+                                Just xs -> xs /= newSelected
+                                Nothing -> False
+
+                ( m3, eff ) =
+                    if shouldReload && valueChanged then
+                        loadNetworks { m2 | aorFilterFocusedBefore = Nothing }
+
+                    else if shouldReload then
+                        ( { m2 | aorFilterFocusedBefore = Nothing }, E.none )
+
+                    else
+                        ( m2, E.none )
+            in
+            ( m3
+            , E.batch [ E.sendCmd <| Cmd.map AorFilterSelMsg icmd, eff ]
+            )
 
 
 networksTableConfig : Auth.User -> Shared.Model -> Model -> Table.Config B.Network Msg
@@ -1315,8 +1395,8 @@ mainContent user networks shared model =
         ]
 
 
-filterPanel : Shared.Model -> Model -> Html Msg
-filterPanel shared model =
+filterPanel : Auth.User -> Shared.Model -> Model -> Html Msg
+filterPanel user shared model =
     let
         filterState =
             model.filterState
@@ -1378,16 +1458,42 @@ filterPanel shared model =
                 ]
             ]
         , -- Archive filter row
-          div [ class "flex gap-2 justify-start items-center" ]
+          div [ class "flex gap-4 justify-start items-center" ]
             [ SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
                 |> SegmentedControl.view
-            , -- Network status filters row (only show when not in archive mode)
-              if not model.showArchived then
-                div [ class "flex gap-4 justify-start items-center" ]
-                    [ div [] [ text "" ] -- Spacer to align with first row
-                    , Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+            , (if not model.showArchived then
+                    Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
                         |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
                         |> Checkbox.view
+
+               else
+                    text ""
+              )
+            , if Le.Auth.hasRole "UnitsEditor" user then
+                let
+                    selectedItems =
+                        model.aorFilterSelect.selected
+                            |> List.filterMap (\aid ->
+                                case model.aorList of
+                                    Success aors ->
+                                        aors
+                                            |> List.filter (\a -> a.id == aid)
+                                            |> List.head
+                                            |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                                    _ ->
+                                        Nothing
+                            )
+                in
+                div [ style "min-width" "210px", style "width" "210px" ]
+                    [ Html.map AorFilterSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelect
+                                selectedItems
+                                model.aorFilterSelect.state
+                                model.aorFilterSelect.items
+                                "смуги"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode)
                     ]
 
               else
@@ -1484,7 +1590,7 @@ contentBlock user shared model =
         [ div
             [ class "border mb-4 p-2"
             ]
-            [ filterPanel shared model
+            [ filterPanel user shared model
             ]
         , case model.networks of
             Success networks ->
