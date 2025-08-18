@@ -211,7 +211,7 @@ deploy:
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying {{ server }} from $(hostname)\"}" \
-      'https://discord.com/api/webhooks/1126490645310222417/FKvFD2FAXo2BAYgMclrRIn3ygI6bZcIRQ4Cm-bGk3l7O4D2YgHwyiXF4q1z4hEkJ6utW' || true
+      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
     if [[ "{{ server }}" == "jvln" ]]; then
         just _jvln-deploy;
     else
