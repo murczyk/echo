@@ -3,6 +3,7 @@ module Pages.RerNetworks.Create exposing (Model, Msg, page)
 import Api exposing (check_if_freq_exist)
 import Auth
 import Bindings as B
+import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.Sidebar as Sidebar
@@ -31,7 +32,6 @@ import Shared
 import Time
 import Time.Extra
 import View exposing (View)
-import Char
 
 
 
@@ -57,35 +57,6 @@ validateCreateNetworkReq req =
     , isValid = Dict.isEmpty errors
     }
 
-
--- Frequency format validation
-validateFrequencyFormat : String -> Bool
-validateFrequencyFormat freq =
-    let
-        trimmed =
-            String.trim freq
-    in
-    if String.isEmpty trimmed then
-        True  -- Empty is handled by required validation
-    else
-        -- Check if it contains only digits and at most one decimal point
-        let
-            hasOnlyValidChars =
-                String.all (\char -> Char.isDigit char || char == '.') trimmed
-            
-            decimalCount =
-                String.foldl (\char count -> if char == '.' then count + 1 else count) 0 trimmed
-            
-            startsWithDecimal =
-                String.startsWith "." trimmed
-            
-            endsWithDecimal =
-                String.endsWith "." trimmed
-        in
-        hasOnlyValidChars 
-            && decimalCount <= 1 
-            && not startsWithDecimal 
-            && not endsWithDecimal
 
 
 -- Helper function to check if form is valid for save button
@@ -262,9 +233,6 @@ init route shared () =
         , E.getModulations ModulationsReturnedByApi
         ]
     )
-
-
-
 
 
 
@@ -528,16 +496,18 @@ update shared msg model =
             let
                 newFreqState =
                     updateFunc model.freqCreateState
-                
+
                 formatError =
                     if String.trim newFreqState.freq == "" then
                         Nothing
-                    else if not (validateFrequencyFormat newFreqState.freq) then
-                        Just "Невірний формат частоти. (наприклад: 146.500)"
+
+                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
+                        Just "Невірний формат частоти (наприклад: 146.5000)"
+
                     else
                         Nothing
             in
-            ( { model 
+            ( { model
                 | freqCreateState = newFreqState
                 , freqFormatError = formatError
               }
@@ -597,18 +567,22 @@ update shared msg model =
 
         ToggleFreqShowActiveTo ->
             let
-                newShowActiveTo = not model.freqShowActiveTo
-                newFreqState = 
+                newShowActiveTo =
+                    not model.freqShowActiveTo
+
+                newFreqState =
                     if not newShowActiveTo then
                         -- очистити activeTo при знятті чекбокса
                         let
-                            freqState = model.freqCreateState
+                            freqState =
+                                model.freqCreateState
                         in
                         { freqState | activeTo = Nothing }
+
                     else
                         model.freqCreateState
             in
-            ( { model 
+            ( { model
                 | freqShowActiveTo = newShowActiveTo
                 , freqCreateState = newFreqState
               }
@@ -693,9 +667,6 @@ update shared msg model =
 
         ModulationsReturnedByApi (Err error) ->
             ( { model | modulations = RD.Failure error }, E.none )
-
-
-
 
 
 
@@ -1002,10 +973,10 @@ viewFrequencyRow shared model index freq =
                                 |> List.head
                                 |> Maybe.map .name
                                 |> Maybe.withDefault "Невідома модуляція"
-                        
+
                         _ ->
                             "Завантаження..."
-                
+
                 Nothing ->
                     "Не встановлено"
     in
@@ -1074,10 +1045,11 @@ viewFreqSidebar shared model =
                         "w-full p-2 border rounded "
                             ++ (if String.trim model.freqCreateState.freq == "" || model.freqFormatError /= Nothing then
                                     "border-red-500"
+
                                 else
                                     "border-border"
                                )
-                    , placeholder "наприклад, 146.500"
+                    , placeholder "наприклад, 146.5000"
                     , value model.freqCreateState.freq
                     , onInput (\freq -> UpdateFreqField (\state -> { state | freq = freq }))
                     ]
@@ -1086,11 +1058,13 @@ viewFreqSidebar shared model =
                     [ if String.trim model.freqCreateState.freq == "" then
                         div [ class "text-sm text-red-600" ]
                             [ text "Це поле обов'язкове" ]
+
                       else
                         case model.freqFormatError of
                             Just error ->
                                 div [ class "text-sm text-red-600" ]
                                     [ text error ]
+
                             Nothing ->
                                 text ""
                     ]
@@ -1192,8 +1166,7 @@ viewFreqSidebar shared model =
                     []
                 ]
             , div []
-                [ 
-                 Checkbox.new { isChecked = model.freqShowActiveTo, onToggle = \_ -> ToggleFreqShowActiveTo }
+                [ Checkbox.new { isChecked = model.freqShowActiveTo, onToggle = \_ -> ToggleFreqShowActiveTo }
                     |> Checkbox.withContent [ text "Частота вже не активна" ]
                     |> Checkbox.view
                 ]
@@ -1227,6 +1200,7 @@ viewFreqSidebar shared model =
                         ]
                         []
                     ]
+
               else
                 text ""
             ]

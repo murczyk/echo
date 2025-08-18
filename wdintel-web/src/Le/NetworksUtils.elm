@@ -1,6 +1,7 @@
 module Le.NetworksUtils exposing (..)
 
 import Bindings as B
+import Char
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (class)
@@ -119,3 +120,26 @@ networkStringToLabel networkString =
 
         a ->
             a
+
+
+-- Frequency format validation
+-- Перевіряє формат ЦЦЦ.ЦЦЦЦ (3 цифри до крапки, рівно 4 цифри після крапки)
+-- Приклади: 130.1000 ✅, 130.100 ❌, 13.1000 ❌, 1300.1000 ❌
+validateFrequencyFormat : String -> Bool
+validateFrequencyFormat freq =
+    let
+        trimmed = String.trim freq
+    in
+    if String.isEmpty trimmed then
+        True  -- Empty is handled by required validation
+    else
+        case String.split "." trimmed of
+            [ wholePart, decimalPart ] ->
+                -- Перевіряємо що до крапки рівно 3 цифри
+                String.length wholePart == 3 
+                    && String.all Char.isDigit wholePart
+                    -- Перевіряємо що після крапки рівно 4 цифри
+                    && String.length decimalPart == 4
+                    && String.all Char.isDigit decimalPart
+            
+            _ -> False
