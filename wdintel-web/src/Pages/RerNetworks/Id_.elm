@@ -1547,8 +1547,8 @@ update shared msg model =
                 formatError =
                     if String.trim newFreqState.freq == "" then
                         Nothing
-                    else if not (validateFrequencyFormat newFreqState.freq) then
-                        Just "Невірний формат частоти. (наприклад: 146.500)"
+                                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
+                    Just "Невірний формат частоти (наприклад: 146.5000)"
                     else
                         Nothing
             in
@@ -3568,34 +3568,7 @@ updateActiveToFromInput input timeZone currentValue =
 -- VALIDATION
 
 
--- Frequency format validation
-validateFrequencyFormat : String -> Bool
-validateFrequencyFormat freq =
-    let
-        trimmed =
-            String.trim freq
-    in
-    if String.isEmpty trimmed then
-        True  -- Empty is handled by required validation
-    else
-        -- Check if it contains only digits and at most one decimal point
-        let
-            hasOnlyValidChars =
-                String.all (\char -> Char.isDigit char || char == '.') trimmed
 
-            decimalCount =
-                String.foldl (\char count -> if char == '.' then count + 1 else count) 0 trimmed
-
-            startsWithDecimal =
-                String.startsWith "." trimmed
-
-            endsWithDecimal =
-                String.endsWith "." trimmed
-        in
-        hasOnlyValidChars
-            && decimalCount <= 1
-            && not startsWithDecimal
-            && not endsWithDecimal
 
 
 
@@ -3621,7 +3594,7 @@ freqCreateSidebarContent shared model user =
                                 else
                                     "border-border"
                                )
-                    , placeholder "наприклад, 146.500"
+                    , placeholder "наприклад, 146.5000"
                     , value model.freqCreateState.freq
                     , onInput (\freq -> UpdateFreqCreateField (\state -> { state | freq = freq }))
                     ]
