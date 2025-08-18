@@ -135,7 +135,7 @@ where
         txn,
         base_with.clone(),
         callsigns_select.clone(),
-        &callsigns,
+        callsigns,
     )
     .await
     .context(h!())?;
@@ -158,7 +158,7 @@ pub fn render_network_callsign(
         network_id: network_callsign.sigint_network_id,
         callsign: network_callsign.sigint_callsign.clone(),
         known_callsign_id: network_callsign.sigint_callsign_id,
-        known_callsign: known_callsign,
+        known_callsign,
         position: network_callsign.position.clone(),
         comment: network_callsign.comment.clone(),
         source_id: network_callsign.source_id,

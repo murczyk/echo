@@ -112,7 +112,7 @@ pub async fn load_freqs(
     network_id: i64,
     active_freqs_only: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
-    trace!("> load freqs for network: {:?}", network_id);
+    trace!("> load freqs for network: {network_id:?}");
 
     let mut q: SelectStatement = Query::select();
     q.expr_as(
@@ -436,7 +436,7 @@ pub async fn load_callsigns(
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
-    trace!("> load_callsigns for network: {:?}", network_id);
+    trace!("> load_callsigns for network: {network_id:?}");
 
     let (base_with, callsigns_select) =
         build_callsigns_queries(groups, network_id).context(h!())?;
@@ -524,9 +524,7 @@ pub async fn load_callsigns(
 
     let duration = start.elapsed();
     trace!(
-        "[load_callsigns] Execution time: {:.2?} (network: {:?})",
-        duration,
-        network_id
+        "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?})"        
     );
 
     Ok(res)

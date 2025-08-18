@@ -8,7 +8,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         db.execute_unprepared("DROP TABLE sigint_callsign_bind;")
-            .await?;        
+            .await?;
         Ok(())
     }
 

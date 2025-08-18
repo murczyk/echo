@@ -219,7 +219,7 @@ pub async fn create_network_callsign(
 ///
 /// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
 /// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
-/// * `req`: [`Json<AddAsKnownNetworkCallsignReq>`] - де [`AddAsKnownNetworkCallsignReq`] Тіло запиту, що містить параметри створення 
+/// * `req`: [`Json<AddAsKnownNetworkCallsignReq>`] - де [`AddAsKnownNetworkCallsignReq`] Тіло запиту, що містить параметри створення
 ///    нового позивного прив'язаного до мережі, на основі вже існуючого прив'язаного (до підрозділу) позивного.
 ///
 /// # Повертає
@@ -340,11 +340,11 @@ pub async fn update_network_callsign(
         .ok_or(AppError::NotFound)?;
 
     let mut network_callsign_model = network_callsign.into_active_model();
-    network_callsign_model.sigint_network_id = Set(req.network_id.clone());
+    network_callsign_model.sigint_network_id = Set(req.network_id);
     network_callsign_model.sigint_callsign = Set(req.callsign.clone());
     network_callsign_model.position = Set(req.position.clone());
     network_callsign_model.comment = Set(req.comment.clone());
-    network_callsign_model.source_id = Set(req.source_id.clone());
+    network_callsign_model.source_id = Set(req.source_id);
 
     let network_callsign =
         network_callsign_model.update(&txn).await.context(h!())?;
@@ -388,7 +388,7 @@ pub async fn update_network_callsign(
 ///
 /// # Повертає
 ///
-/// [`Json<NetworkCallsign>`], де [`NetworkCallsign`] - структура, що представляє один прив'язаний до мережі позивний. 
+/// [`Json<NetworkCallsign>`], де [`NetworkCallsign`] - структура, що представляє один прив'язаний до мережі позивний.
 ///  Видалений позивний буде позначено як active = false, але не буде видалено з бази даних.
 ///
 #[post("/api/sigint/network-callsign/delete")]
@@ -401,10 +401,7 @@ pub async fn delete_network_callsign(
     crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
     crate::users::has_role(&env.dbx, &user_id, "UnitsEditor").await?;
 
-    info!(
-        "Delete network callsign; login: {}; req: {:?}",
-        user_id, req
-    );
+    info!("Delete network callsign; login: {user_id}; req: {req:?}");
 
     let (network_callsign, _known_callsign, _unit) =
         find_network_callsign_one(*req, &env.dbx).await?;
