@@ -49,7 +49,7 @@ pub async fn backup(mode: Mode) -> Result<(), AppError> {
     )
     .run()?;
     cmd!(sh, "ls -lah wd-{server}-{dt1}.pgrestore.gpg").run()?;
-    cmd!(sh, "b2 upload-file echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
+    cmd!(sh, "b2 file upload echouabackup ./wd-{server}-{dt1}.pgrestore.gpg backup/echo/{day_s}/wd-{server}-{dt1}.pgrestore.gpg")
         .env("B2_APPLICATION_KEY_ID", backup_key_id.clone())
         .env("B2_APPLICATION_KEY", backup_key.clone())
         .run()?;
