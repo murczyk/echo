@@ -970,9 +970,14 @@ update shared msg model =
 
         AorListReturnedByApi (Ok aors) ->
             let
-                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                topLevelAors = aors |> List.filter (.isTopLevel)
+                items = topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
                 oldAorSelect = model.aorFilterSelect
-                newAorSelect = { oldAorSelect | items = items }
+                -- keep only selected AORs that are top-level
+                selectedFiltered =
+                    oldAorSelect.selected
+                        |> List.filter (\id -> List.any (\a -> a.id == id) topLevelAors)
+                newAorSelect = { oldAorSelect | items = items, selected = selectedFiltered }
             in
             ( { model | aorList = Success aors, aorFilterSelect = newAorSelect }, E.none )
 
