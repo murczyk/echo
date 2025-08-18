@@ -1403,6 +1403,7 @@ where
             kind: Set(rec.kind),
             active_from: Set(rec.active_from),
             active_to: Set(rec.active_to),
+            deleted: Set(false),
             sigint_origin_id: Set(Some(origin_id)),
             mothership_id: Set(rec.mothership_id),
         };

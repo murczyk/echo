@@ -660,6 +660,7 @@ pub async fn list_freqs(
             .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
             .filter(sigint_network::Column::Deleted.eq(false))
             .filter(sigint_network_freq::Column::ActiveTo.is_null())
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
             .order_by_asc(sigint_network::Column::CreatedAt)
             .all(&env.dbx)
             .await?;
@@ -980,6 +981,7 @@ pub async fn list_freqs_v2(
             .filter(sigint_network_freq::Column::Freq.eq(freq.clone()))
             .filter(sigint_network::Column::Deleted.eq(false))
             .filter(sigint_network_freq::Column::ActiveTo.is_null())
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
             .order_by_asc(sigint_network::Column::CreatedAt)
             .all(&env.dbx)
             .await?;
@@ -1197,6 +1199,7 @@ pub async fn freq_unit_stats(
         .column_as(sigint_unit::Column::Id, "unit_id")
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         // .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         // .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .order_by_asc(sigint_unit::Column::Army)

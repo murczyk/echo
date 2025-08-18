@@ -337,6 +337,7 @@ pub async fn load_messages_networks(
         .find_also_related(sigint_network::Entity)
         .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::ActiveTo.is_null())
         .all(dbx)

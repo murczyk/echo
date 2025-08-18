@@ -217,6 +217,8 @@ type alias Model =
     , freqEditShowActiveTo : Bool
     , deleteNetworkConfirmation : Maybe Int
     , deleteNetworkLoading : Bool
+    , deleteFreqConfirmation : Maybe String
+    , deleteFreqLoading : Bool
     -- Frequency creation sidebar
     , freqCreateSidebar : Bool
     , freqCreateState : B.AddNetworkFreq
@@ -314,6 +316,8 @@ init route shared () =
       , freqEditShowActiveTo = False
       , deleteNetworkConfirmation = Nothing
       , deleteNetworkLoading = False
+      , deleteFreqConfirmation = Nothing
+      , deleteFreqLoading = False
       -- Frequency creation sidebar
       , freqCreateSidebar = False
       , freqCreateState =
@@ -449,6 +453,10 @@ type Msg
     | ToggleFreqCreateShowActiveTo
     | AddFreqToNetwork
     | FreqAddedToNetwork (Result ApiError B.Network)
+    | DeleteFreqClickedByUser String
+    | DeleteFreqConfirmedByUser
+    | DeleteFreqCanceledByUser
+    | DeleteFreqReturnedByApi (Result ApiError B.Network)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1482,6 +1490,39 @@ update shared msg model =
             , E.none
             )
 
+        DeleteFreqClickedByUser freqStr ->
+            ( { model | deleteFreqConfirmation = Just freqStr }
+            , E.none
+            )
+
+        DeleteFreqCanceledByUser ->
+            ( { model | deleteFreqConfirmation = Nothing }
+            , E.none
+            )
+
+        DeleteFreqConfirmedByUser ->
+            case ( model.network, model.deleteFreqConfirmation ) of
+                ( Success network, Just freqStr ) ->
+                    ( { model | deleteFreqLoading = True, deleteFreqConfirmation = Nothing }
+                    , E.removeFreqFromNetwork DeleteFreqReturnedByApi { networkId = network.id, freq = freqStr }
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        DeleteFreqReturnedByApi (Err e) ->
+            ( { model | deleteFreqLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти" e
+            )
+
+        DeleteFreqReturnedByApi (Ok network) ->
+            ( { model | deleteFreqLoading = False, network = Success network }
+            , E.batch
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
+                ]
+            )
+
         DeleteNetworkClickedByUser ->
             case model.network of
                 Success network ->
@@ -1934,27 +1975,35 @@ freqsTableConfig shared model user =
             ]
                 ++ (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                         [ Table.veryCustomColumn
-                            { name = ""
+                            { name = "Дії"
                             , viewData =
                                 \freq ->
                                     { attributes = []
                                     , children =
                                         [ case model.network of
                                             Success network ->
-                                                button
-                                                    [ class "table-action-btn"
-                                                    , type_ "button"
-                                                    , onClick <|
-                                                        OpenFreqEditSidebar freq.freq
-                                                            { networkId = network.id
-                                                            , freq = freq.freq
-                                                            , kind = Maybe.withDefault "VHF" freq.kind
-                                                            , modulationId = freq.modulationId
-                                                            , activeFrom = freq.activeFrom
-                                                            , activeTo = freq.activeTo
-                                                            }
-                                                    ]
-                                                    [ i [ class "bi bi-pencil-square" ] []
+                                                div [ class "flex items-center gap-2" ]
+                                                    [ button
+                                                        [ class "table-action-btn"
+                                                        , type_ "button"
+                                                        , onClick <|
+                                                            OpenFreqEditSidebar freq.freq
+                                                                { networkId = network.id
+                                                                , freq = freq.freq
+                                                                , kind = Maybe.withDefault "VHF" freq.kind
+                                                                , modulationId = freq.modulationId
+                                                                , activeFrom = freq.activeFrom
+                                                                , activeTo = freq.activeTo
+                                                                }
+                                                        ]
+                                                        [ i [ class "bi bi-pencil-square" ] [] ]
+                                                    , button
+                                                        [ class "table-action-btn text-red-600 hover:text-red-700"
+                                                        , type_ "button"
+                                                        , title "Видалити частоту"
+                                                        , onClick (DeleteFreqClickedByUser freq.freq)
+                                                        ]
+                                                        [ i [ class "bi bi-trash" ] [] ]
                                                     ]
 
                                             _ ->
@@ -1963,7 +2012,7 @@ freqsTableConfig shared model user =
                                     }
                             , sorter = TableSorter.unsortable
                             }
-                            |> Table.withColumnWidth "5%"
+                            |> Table.withColumnWidth "8%"
                         ]
 
                     else
@@ -3379,6 +3428,36 @@ view user shared model =
                         ]
                   in
                   ModalDialog.modalDialog (model.deleteNetworkConfirmation /= Nothing) DeleteNetworkCanceledByUser [] deleteDialogContent
+                , let
+                    ( isOpen, freqStr ) =
+                        case model.deleteFreqConfirmation of
+                            Just f ->
+                                ( True, f )
+
+                            Nothing ->
+                                ( False, "" )
+
+                    deleteFreqDialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-6" ]
+                                [ h2 [] [ text "Видалити частоту" ]
+                                , p [] [ text ("Ви впевнені, що хочете видалити частоту " ++ freqStr ++ "?") ]
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Скасувати", onClick = DeleteFreqCanceledByUser } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Видалити", onClick = DeleteFreqConfirmedByUser }
+                                    |> Button.withStyleDanger
+                                    |> (if model.deleteFreqLoading then
+                                            Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                        else
+                                            identity
+                                       )
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+                  in
+                  ModalDialog.modalDialog isOpen DeleteFreqCanceledByUser [] deleteFreqDialogContent
                 ]
             ]
         ]

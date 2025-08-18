@@ -12,5 +12,7 @@ pub fn filter_by_active_ts(
     let filter_active_to = no_active_to.or(active_to_ok);
     let filter_from = sigint_network_freq::Column::ActiveFrom.lte(dt_till);
 
-    filter_active_to.and(filter_from)
+    filter_active_to
+        .and(filter_from)
+        .and(sigint_network_freq::Column::Deleted.eq(false))
 }
