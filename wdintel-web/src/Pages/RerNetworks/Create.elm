@@ -180,6 +180,7 @@ init route shared () =
       , createNetworkState =
             { freqs = []
             , unitIds = Nothing
+            , areaOfResponsibilityIds = Nothing
             , name = "управління"
             , location = ""
             , radioStation = Nothing
