@@ -3004,7 +3004,7 @@ where
         .collect())
 }
 
-async fn get_network_units<'a, 'async_trait, C>(
+pub async fn get_network_units<'a, 'async_trait, C>(
     txn: &'a C,
     network_id: i64,
 ) -> Result<Option<Vec<i64>>, AppError>
@@ -3012,7 +3012,12 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let units = sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
         .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .all(txn)
         .await
         .context(h!())?
@@ -3020,11 +3025,7 @@ where
         .map(|x| x.unit_id)
         .collect::<Vec<_>>();
 
-    if units.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(units))
-    }
+    Ok(if units.is_empty() { None } else { Some(units) })
 }
 
 async fn get_network_posts<'a, 'async_trait, C>(

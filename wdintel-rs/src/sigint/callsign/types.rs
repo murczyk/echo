@@ -157,7 +157,8 @@ pub struct CreateNetworkCallsignReq {
     pub callsign: String,
     pub position: Option<String>,
     pub comment: Option<String>,
-    pub source_id: Option<i64>,
+    pub source_id: i64,
+    pub radio_freq: Option<String>,
 }
 
 #[derive(
@@ -169,7 +170,8 @@ pub struct UpdateNetworkCallsignReq {
     pub callsign: String,
     pub position: Option<String>,
     pub comment: Option<String>,
-    pub source_id: Option<i64>,
+    pub source_id: i64,
+    pub radio_freq: Option<String>,
 }
 
 #[derive(

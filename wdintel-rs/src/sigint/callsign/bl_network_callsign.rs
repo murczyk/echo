@@ -1,9 +1,167 @@
 use crate::entities::*;
 use crate::sigint::callsign::types::*;
 use crate::sigint::etalonka::query::*;
+use crate::sigint::network::{find_network, get_network_units};
 use crate::types::*;
+use chrono::*;
+use sea_orm::QuerySelect;
 use sea_orm::*;
+use sea_query::JoinType;
 use std::collections::HashMap;
+
+pub async fn bl_create_network_callsign(
+    req: &CreateNetworkCallsignReq,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+) -> Result<i64, AppError> {
+    let network = find_network(txn, req.network_id).await.context(h!())?;
+    let network_units =
+        get_network_units(txn, req.network_id).await.context(h!())?;
+
+    // If network has units then create sigint_callsign for the first unit and add link to this callsign as a network callsign
+    // othervise, create a network callsing just in place
+    let network_callsign_id = if let Some(network_units) = &network_units {
+        let unit_id = network_units[0];
+
+        let known_callsing_req = CreateCallsignReq {
+            callsign: req.callsign.clone(),
+            position: req.position.clone().unwrap_or_default(),
+            comment: req.comment.clone().unwrap_or_default(),
+            unit_id,
+            source_id: req.source_id as i32,
+            radio_freq: req.radio_freq.clone(),
+            developing: false,
+        };
+
+        let known_callsing = crate::sigint::callsign::bl_callsign_create(
+            &known_callsing_req,
+            user_id,
+            txn,
+        )
+        .await
+        .context(h!())?;
+
+        bl_add_as_known_network_callsign(
+            req.network_id,
+            known_callsing.id,
+            user_id,
+            txn,
+        )
+        .await
+        .context(h!())?
+    } else {
+        let network_callsign = sigint_network_callsign::ActiveModel {
+            id: NotSet,
+            sigint_network_id: Set(req.network_id),
+            deleted: NotSet,
+            created_at: NotSet,
+            sigint_callsign: Set(req.callsign.clone()),
+            sigint_callsign_id: NotSet,
+            position: Set(req.position.clone()),
+            comment: Set(req.comment.clone()),
+            source_id: Set(Some(req.source_id)),
+            radio_freq: Set(req.radio_freq.clone()),
+            sigint_origin_id: NotSet,
+            mothership_id: NotSet,
+        }
+        .insert(txn)
+        .await
+        .context(h!())?;
+
+        // Update the network's updated_at timestamp
+        let mut network_record = network.into_active_model();
+        network_record.updated_at = Set(Utc::now().naive_utc());
+        network_record.updated_by = Set(Some(user_id.to_string()));
+        network_record.update(txn).await.context(h!())?;
+
+        network_callsign.id
+    };
+
+    Ok(network_callsign_id)
+}
+
+pub async fn bl_add_as_known_network_callsign(
+    network_id: i64,
+    known_callsign_id: i64,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+) -> Result<i64, AppError> {
+    let network = find_network(txn, network_id).await.context(h!())?;
+    let known_callsign =
+        crate::sigint::callsign::find_callsign(txn, known_callsign_id)
+            .await
+            .context(h!())?;
+
+    let network_callsign = sigint_network_callsign::ActiveModel {
+        id: NotSet,
+        sigint_network_id: Set(network_id),
+        deleted: NotSet,
+        created_at: NotSet,
+        sigint_callsign: Set(known_callsign.callsign.clone()),
+        sigint_callsign_id: Set(Some(known_callsign_id)),
+        position: NotSet,
+        comment: NotSet,
+        source_id: NotSet,
+        radio_freq: NotSet,
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    // Update the network's updated_at timestamp
+    let mut network_record = network.into_active_model();
+    network_record.updated_at = Set(Utc::now().naive_utc());
+    network_record.updated_by = Set(Some(user_id.to_string()));
+    network_record.update(txn).await.context(h!())?;
+
+    Ok(network_callsign.id)
+}
+
+pub async fn bl_update_network_callsign(
+    req: &UpdateNetworkCallsignReq,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+) -> Result<i64, AppError> {
+    let network = find_network(txn, req.network_id).await.context(h!())?;
+    let network_callsign = sigint_network_callsign::Entity::find_by_id(req.id)
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut network_callsign_record = network_callsign.into_active_model();
+    network_callsign_record.sigint_network_id = Set(req.network_id);
+    network_callsign_record.sigint_callsign = Set(req.callsign.clone());
+    network_callsign_record.position = Set(req.position.clone());
+    network_callsign_record.comment = Set(req.comment.clone());
+    network_callsign_record.source_id = Set(Some(req.source_id));
+
+    let network_callsign =
+        network_callsign_record.update(txn).await.context(h!())?;
+
+    // Update the network's updated_at timestamp as well as new active_from and active_to
+    let mut network_record = network.into_active_model();
+    network_record.updated_at = Set(Utc::now().naive_utc());
+    network_record.updated_by = Set(Some(user_id.to_string()));
+    network_record.update(txn).await.context(h!())?;
+
+    Ok(network_callsign.id)
+}
+
+pub async fn bl_delete_network_callsign(
+    id: i64,
+    txn: &DatabaseTransaction,
+) -> Result<sigint_network_callsign::Model, AppError> {
+    let (network_callsign, _known_callsign, _unit) =
+        find_network_callsign_one(id, txn).await?;
+    let mut network_callsign_rec = network_callsign.into_active_model();
+    network_callsign_rec.deleted = Set(true);
+    let network_callsign = network_callsign_rec.update(txn).await.context(h!())?;
+
+    Ok(network_callsign)
+}
 
 pub async fn find_network_callsign_one<'a, 'async_trait, C>(
     network_callsign_id: i64,

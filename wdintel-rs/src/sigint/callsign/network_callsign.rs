@@ -3,11 +3,9 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::sigint::callsign::bl_network_callsign::*;
 use crate::sigint::callsign::types::*;
-use crate::sigint::network::find_network;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
-use chrono::*;
 use sea_orm::QuerySelect;
 use sea_orm::*;
 use sea_query::JoinType;
@@ -132,6 +130,9 @@ pub async fn list_network_callsigns(
 
 /// Створення нового позивного прив'язаного до мережі
 ///
+///  Якщо для мережі вказано підрозділ, то позивний буде створено як прив'язаний до підрозділу.
+///  а в таблиці `sigint_network_callsign` буде створено запис з посиланням на цей позивний.
+///
 /// # API URL
 /// - POST: /api/sigint/network-callsign/create
 ///
@@ -165,30 +166,11 @@ pub async fn create_network_callsign(
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let req = req.into_inner();
 
-    let network_callsign = sigint_network_callsign::ActiveModel {
-        id: NotSet,
-        sigint_network_id: Set(req.network_id),
-        deleted: NotSet,
-        created_at: NotSet,
-        sigint_callsign: Set(req.callsign.clone()),
-        sigint_callsign_id: NotSet,
-        position: Set(req.position.clone()),
-        comment: Set(req.comment.clone()),
-        source_id: Set(req.source_id),
-        sigint_origin_id: NotSet,
-        mothership_id: NotSet,
-    }
-    .insert(&txn)
-    .await
-    .context(h!())?;
-
-    // Update the network's updated_at timestamp
-    let mut network_model = network.into_active_model();
-    network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user_id.clone()));
-    network_model.update(&txn).await.context(h!())?;
+    let network_callsign_id = bl_create_network_callsign(&req, &user_id, &txn)
+        .await
+        .context(h!())?;
 
     txn.commit().await.context(h!())?;
 
@@ -196,7 +178,7 @@ pub async fn create_network_callsign(
         &env.dbx,
         &user_id,
         req.network_id,
-        vec![network_callsign.id],
+        vec![network_callsign_id],
     )
     .await
     .context(h!())?
@@ -246,42 +228,21 @@ pub async fn add_as_known_network_callsign(
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
-    let known_callsign =
-        crate::sigint::callsign::find_callsign(&txn, req.known_callsign_id)
-            .await
-            .context(h!())?;
-
-    let network_callsign = sigint_network_callsign::ActiveModel {
-        id: NotSet,
-        sigint_network_id: Set(req.network_id),
-        deleted: NotSet,
-        created_at: NotSet,
-        sigint_callsign: Set(known_callsign.callsign.clone()),
-        sigint_callsign_id: Set(Some(req.known_callsign_id)),
-        position: NotSet,
-        comment: NotSet,
-        source_id: NotSet,
-        sigint_origin_id: NotSet,
-        mothership_id: NotSet,
-    }
-    .insert(&txn)
+    let network_callsign_id = bl_add_as_known_network_callsign(
+        req.network_id,
+        req.known_callsign_id,
+        &user_id,
+        &txn,
+    )
     .await
     .context(h!())?;
-
-    // Update the network's updated_at timestamp
-    let mut network_model = network.into_active_model();
-    network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user_id.clone()));
-    network_model.update(&txn).await.context(h!())?;
-
     txn.commit().await.context(h!())?;
 
     let res = bl_get_network_callsigns_info_batch(
         &env.dbx,
         &user_id,
         req.network_id,
-        vec![network_callsign.id],
+        vec![network_callsign_id],
     )
     .await
     .context(h!())?
@@ -332,36 +293,16 @@ pub async fn update_network_callsign(
     let txn = env.dbx.begin().await.context(h!())?;
     let req = req.into_inner();
 
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
-    let network_callsign = sigint_network_callsign::Entity::find_by_id(req.id)
-        .one(&txn)
+    let network_callsign_id = bl_update_network_callsign(&req, &user_id, &txn)
         .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
-
-    let mut network_callsign_model = network_callsign.into_active_model();
-    network_callsign_model.sigint_network_id = Set(req.network_id);
-    network_callsign_model.sigint_callsign = Set(req.callsign.clone());
-    network_callsign_model.position = Set(req.position.clone());
-    network_callsign_model.comment = Set(req.comment.clone());
-    network_callsign_model.source_id = Set(req.source_id);
-
-    let network_callsign =
-        network_callsign_model.update(&txn).await.context(h!())?;
-
-    // Update the network's updated_at timestamp as well as new active_from and active_to
-    let mut network_model = network.into_active_model();
-    network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user_id.clone()));
-    network_model.update(&txn).await.context(h!())?;
-
+        .context(h!())?;
     txn.commit().await.context(h!())?;
 
     let res = bl_get_network_callsigns_info_batch(
         &env.dbx,
         &user_id,
         req.network_id,
-        vec![network_callsign.id],
+        vec![network_callsign_id],
     )
     .await
     .context(h!())?
@@ -402,12 +343,12 @@ pub async fn delete_network_callsign(
     crate::users::has_role(&env.dbx, &user_id, "UnitsEditor").await?;
 
     info!("Delete network callsign; login: {user_id}; req: {req:?}");
+    let txn = env.dbx.begin().await.context(h!())?;
+    let req = req.into_inner();
 
-    let (network_callsign, _known_callsign, _unit) =
-        find_network_callsign_one(*req, &env.dbx).await?;
-    let mut network_callsign = network_callsign.into_active_model();
-    network_callsign.deleted = Set(true);
-    let network_callsign = network_callsign.update(&env.dbx).await?;
+    let network_callsign =
+        bl_delete_network_callsign(req, &txn).await.context(h!())?;
+    txn.commit().await.context(h!())?;
 
     let res = bl_get_network_callsigns_info_batch(
         &env.dbx,
