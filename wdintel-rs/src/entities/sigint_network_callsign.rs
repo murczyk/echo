@@ -23,6 +23,8 @@ pub struct Model {
     pub comment: Option<String>,
     pub sigint_callsign_id: Option<i64>,
     pub source_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub radio_freq: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
