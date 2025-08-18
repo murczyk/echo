@@ -4544,16 +4544,18 @@ updateNetworkFreqReqEncoder struct =
 
 
 type alias DeleteNetworkFreqReq =
-    { networkId : Int
-    , freq : String
+    { id : Maybe Int
+    , networkId : Maybe Int
+    , freq : Maybe String
     }
 
 
 deleteNetworkFreqReqEncoder : DeleteNetworkFreqReq -> Json.Encode.Value
 deleteNetworkFreqReqEncoder struct =
     Json.Encode.object
-        [ ( "network_id", Json.Encode.int struct.networkId )
-        , ( "freq", Json.Encode.string struct.freq )
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.id )
+        , ( "network_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.networkId )
+        , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.freq )
         ]
 
 
@@ -8171,8 +8173,9 @@ updateNetworkFreqReqDecoder =
 deleteNetworkFreqReqDecoder : Json.Decode.Decoder DeleteNetworkFreqReq
 deleteNetworkFreqReqDecoder =
     Json.Decode.succeed DeleteNetworkFreqReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable Json.Decode.string)))
 
 
 listNetworkPointsReqDecoder : Json.Decode.Decoder ListNetworkPointsReq

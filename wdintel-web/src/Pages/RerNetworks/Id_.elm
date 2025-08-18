@@ -217,7 +217,7 @@ type alias Model =
     , freqEditShowActiveTo : Bool
     , deleteNetworkConfirmation : Maybe Int
     , deleteNetworkLoading : Bool
-    , deleteFreqConfirmation : Maybe String
+    , deleteFreqConfirmation : Maybe ( Int, String )
     , deleteFreqLoading : Bool
     -- Frequency creation sidebar
     , freqCreateSidebar : Bool
@@ -453,7 +453,7 @@ type Msg
     | ToggleFreqCreateShowActiveTo
     | AddFreqToNetwork
     | FreqAddedToNetwork (Result ApiError B.Network)
-    | DeleteFreqClickedByUser String
+    | DeleteFreqClickedByUser Int String
     | DeleteFreqConfirmedByUser
     | DeleteFreqCanceledByUser
     | DeleteFreqReturnedByApi (Result ApiError B.Network)
@@ -1490,8 +1490,8 @@ update shared msg model =
             , E.none
             )
 
-        DeleteFreqClickedByUser freqStr ->
-            ( { model | deleteFreqConfirmation = Just freqStr }
+        DeleteFreqClickedByUser freqId freqStr ->
+            ( { model | deleteFreqConfirmation = Just ( freqId, freqStr ) }
             , E.none
             )
 
@@ -1502,9 +1502,9 @@ update shared msg model =
 
         DeleteFreqConfirmedByUser ->
             case ( model.network, model.deleteFreqConfirmation ) of
-                ( Success network, Just freqStr ) ->
+                ( Success network, Just ( freqId, _ ) ) ->
                     ( { model | deleteFreqLoading = True, deleteFreqConfirmation = Nothing }
-                    , E.removeFreqFromNetwork DeleteFreqReturnedByApi { networkId = network.id, freq = freqStr }
+                    , E.removeFreqFromNetwork DeleteFreqReturnedByApi { id = Just freqId, networkId = Nothing, freq = Nothing }
                     )
 
                 _ ->
@@ -2001,7 +2001,7 @@ freqsTableConfig shared model user =
                                                         [ class "table-action-btn text-red-600 hover:text-red-700"
                                                         , type_ "button"
                                                         , title "Видалити частоту"
-                                                        , onClick (DeleteFreqClickedByUser freq.freq)
+                                                        , onClick (DeleteFreqClickedByUser freq.networkFreqId freq.freq)
                                                         ]
                                                         [ i [ class "bi bi-trash" ] [] ]
                                                     ]
@@ -3431,7 +3431,7 @@ view user shared model =
                 , let
                     ( isOpen, freqStr ) =
                         case model.deleteFreqConfirmation of
-                            Just f ->
+                            Just ( _, f ) ->
                                 ( True, f )
 
                             Nothing ->

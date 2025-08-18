@@ -234,12 +234,14 @@ pub struct AddNetworkFreqReq {
     pub freq_rec: AddNetworkFreq,
 }
 
+/// You can either delete by setting explicit `id`, or set `network_id` and `freq` pair
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct DeleteNetworkFreqReq {
-    pub network_id: i64,
-    pub freq: String,
+    pub id: Option<i64>,
+    pub network_id: Option<i64>,
+    pub freq: Option<String>,
 }
 
 #[derive(

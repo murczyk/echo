@@ -1614,9 +1614,11 @@ pub async fn delete_network_freq(
     crate::users::has_role(&env.dbx, &user.id()?, "UnitsEditor")
         .await
         .context(h!())?;
+    let req = req.into_inner();
 
     info!(
-        "Removing frequency {} from network {}; user={}",
+        "Removing frequency id={:?} freq={:?} network={:?}; user={}",
+        req.id,
         req.freq,
         req.network_id,
         user.id()?
@@ -1624,63 +1626,70 @@ pub async fn delete_network_freq(
 
     let txn = env.dbx.begin().await.context(h!())?;
 
-    // Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
-
-    // Find the frequency connections for this network
-    let freq_records = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
-        .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .all(&txn)
-        .await
-        .context(h!())?;
-
+    let mut freq_records = sigint_network_freq::Entity::find();
+    // You can either delete by setting explicit `id`, or set `network_id` and `freq` pair
+    match req.id {
+        Some(id) => {
+            freq_records =
+                freq_records.filter(sigint_network_freq::Column::Id.eq(id));
+        }
+        None => {
+            freq_records = freq_records
+                .filter(
+                    sigint_network_freq::Column::NetworkId.eq(req.network_id),
+                )
+                .filter(sigint_network_freq::Column::Freq.eq(req.freq.clone()))
+                .filter(sigint_network_freq::Column::Deleted.eq(false));
+        }
+    }
+    let freq_records = freq_records.all(&txn).await.context(h!())?;
+    let mut network_detail = None;
     if freq_records.is_empty() {
         debug!(
-            "Frequency {} not found for network {}, no action needed",
+            "Frequency {:?} not found for network {:?}, no action needed",
             req.freq, req.network_id
         );
     } else {
         // Mark all matching frequency connections as deleted
-        for freq_record in freq_records {
+        for freq_record in freq_records.iter() {
             info!(
-                "Removing frequency {} (id: {}) from network {}",
+                "Removing frequency {:?} (id: {:?}) from network {:?}",
                 req.freq, freq_record.id, req.network_id
             );
 
-            let mut freq_record = freq_record.into_active_model();
+            let mut freq_record = freq_record.clone().into_active_model();
             freq_record.deleted = Set(true);
             freq_record.active_to = Set(Some(Utc::now().naive_utc()));
             freq_record.update(&txn).await.context(h!())?;
         }
+
+        if let Some(network_id) = freq_records.get(0).map(|x| x.network_id) {
+            let network = find_network(&txn, network_id).await.context(h!())?;
+            let (network_active_from, network_active_to) =
+                get_network_activity_range(&txn, network_id)
+                    .await
+                    .context(h!())?;
+
+            // Update the network's updated_at timestamp as well as new active_from and active_to
+            let mut network_model = network.into_active_model();
+            network_model.updated_at = Set(Utc::now().naive_utc());
+            network_model.updated_by = Set(Some(user.id()?.to_string()));
+            network_model.active_from = Set(network_active_from);
+            network_model.active_to = Set(network_active_to);
+            network_model.update(&txn).await.context(h!())?;
+
+            network_detail = Some(
+                bl_network_info_batch(vec![network_id], &txn)
+                    .await
+                    .context(h!())?,
+            );
+        }
     }
-
-    let (network_active_from, network_active_to) =
-        get_network_activity_range(&txn, req.network_id)
-            .await
-            .context(h!())?;
-
-    // Update the network's updated_at timestamp as well as new active_from and active_to
-    let mut network_model = network.into_active_model();
-    network_model.updated_at = Set(Utc::now().naive_utc());
-    network_model.updated_by = Set(Some(user.id()?.to_string()));
-    network_model.active_from = Set(network_active_from);
-    network_model.active_to = Set(network_active_to);
-    network_model.update(&txn).await.context(h!())?;
-
-    // Now fetch the updated network with all frequencies to return
-    let network_detail = bl_network_info_batch(vec![req.network_id], &txn)
-        .await
-        .context(h!())?;
 
     txn.commit().await.context(h!())?;
-
-    if network_detail.is_empty() {
-        return Err(AppError::NotFound);
-    }
-
-    Ok(Json(network_detail[0].clone()))
+    let network_details = network_detail.clone().context(h!())?;
+    let first_network_detail = network_details.first().context(h!())?;
+    Ok(Json(first_network_detail.clone()))
 }
 
 pub async fn cleanup_networks_worker(dbx: &DatabaseConnection) {

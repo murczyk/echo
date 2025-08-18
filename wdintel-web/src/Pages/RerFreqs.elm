@@ -1269,8 +1269,9 @@ update shared msg model =
         FreqRemoveFromExistingNetwork freq network ->
             ( { model | networkAddLoading = True }
             , E.removeFreqFromNetwork (FreqRemovedFromNetwork freq)
-                { networkId = network.id
-                , freq = freq
+                { id = Nothing
+                , networkId = Just network.id
+                , freq = Just freq
                 }
             )
 
