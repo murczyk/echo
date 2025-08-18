@@ -895,10 +895,6 @@ deploy-echo-install-package:
 
     ssh {{ server }} "rm -rf $TGT_DIR_SERVER || true && mkdir -p $TGT_DIR_SERVER"
     rsync -r $TGT_DIR/ {{ server }}:$TGT_DIR_SERVER/
-    ssh echo-kharkiv2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
-    ssh echo-siversk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
-    ssh echo-lyman -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
-    ssh echo-luhansk -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
 
 export-datasource-to-target:
     ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }} --till-epoch-ms {{ till_ts }} '
