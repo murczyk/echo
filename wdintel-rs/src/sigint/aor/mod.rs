@@ -17,9 +17,13 @@ pub async fn aor_list(
     env: Data<Env>,
     req: Json<ListAreasOfResponsibilityReq>,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
-        .await
-        .context(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &user.id()?,
+        vec!["Admin", "UnitsEditor"],
+    )
+    .await
+    .context(h!())?;
 
     let aors = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
