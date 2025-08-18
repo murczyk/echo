@@ -15,8 +15,6 @@
   - enable MagicDNS, choose domain
   - enable HTTPS in Tailscale web ui
   - **disable key expiry** in Tailscale machines list [machine menu item](https://tailscale.com/kb/1028/key-expiry)
-- openssh-server /etc/ssh/sshd_config `PasswordAuthentication no`, `PermitRootLogin no`
-- ~~configure legacy timezone: `sudo cp /usr/share/zoneinfo/Europe/Kyiv /usr/share/zoneinfo/Europe/Kiev`~~ (already same file)
 - set [swappiness=0](https://askubuntu.com/questions/103915/how-do-i-configure-swappiness)
 
 <details>
