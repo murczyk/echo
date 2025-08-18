@@ -527,6 +527,7 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     let settlements = Arc::new(RwLock::new(
         crate::location::load_from_file(
             config.settlement_paths().context(h!())?,
+            mode,
         )
         .unwrap(),
     ));

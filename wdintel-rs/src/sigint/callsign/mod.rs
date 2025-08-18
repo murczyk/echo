@@ -831,12 +831,10 @@ pub async fn callsign_unit_stats(
     Ok(Json(CallsignUnitStatsRsp { units: res }))
 }
 
-pub async fn load_whitelist_from_file() -> anyhow::Result<HashSet<String>> {
-    let root_dir = if Path::new("/etc/echo").exists() {
-        Path::new("/etc/echo")
-    } else {
-        Path::new(std::env!("CARGO_MANIFEST_DIR"))
-    };
+pub async fn load_whitelist_from_file(
+    mode: Mode,
+) -> anyhow::Result<HashSet<String>> {
+    let root_dir = crate::config::get_data_folder(mode).context(h!())?;
     let path = root_dir.join("callsigns_whitelist.txt");
     let callsigns = crate::utils::read_lines_from_file(path)
         .await

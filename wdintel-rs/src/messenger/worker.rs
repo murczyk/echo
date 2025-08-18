@@ -72,7 +72,8 @@ async fn setup_worker(
         .context(h!())?;
     let settlement_paths = config.settlement_paths().context(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(settlement_paths).context(h!())?,
+        crate::location::load_from_file(settlement_paths, mode)
+            .context(h!())?,
     ));
     let rq = Client::builder()
         .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))

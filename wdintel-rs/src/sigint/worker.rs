@@ -10,8 +10,11 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
 
     let redis = crate::new_redis(&config).await.context(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(config.settlement_paths().unwrap())
-            .unwrap(),
+        crate::location::load_from_file(
+            config.settlement_paths().unwrap(),
+            mode,
+        )
+        .unwrap(),
     ));
 
     let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();

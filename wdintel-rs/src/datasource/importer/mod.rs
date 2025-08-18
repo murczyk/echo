@@ -46,6 +46,7 @@ pub async fn oneoff_import_datasource(
         let settlements = Arc::new(RwLock::new(
             crate::location::load_from_file(
                 config.settlement_paths().context(h!())?,
+                mode,
             )
             .context(h!())?,
         ));

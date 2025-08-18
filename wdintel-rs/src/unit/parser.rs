@@ -709,8 +709,11 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -733,8 +736,11 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -758,8 +764,11 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління 1 мсб 4 ВБ");
@@ -780,8 +789,11 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м управління 4 ВБ 58 А");
@@ -800,8 +812,11 @@ mod tests {
 1.- михалыч михалыч - вышел на 71й  вот и он сказал - я не знаю вы все делали ? или нет вы "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м мсб на АТ 503 мсп 19 мсд 58 ЗА");
@@ -819,8 +834,11 @@ mod tests {
 - Рубеж-1, Рубеж-2 по нулям"	(перевірка обстановки)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"УКХ радіомережа н\в підрозділу"#);
@@ -840,8 +858,11 @@ mod tests {
 - Искра Байкалу прием"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -861,8 +882,11 @@ mod tests {
             r#"УКХ р/м гсабатр гсадн 70 мсп 42 мсд 58 А (ТАРАСІВКА - ПОЛОГИ)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -881,8 +905,11 @@ mod tests {
         let body = r#"УКХ радіомережа невизначеного підрозділу в районі населених пунктів       БЛАГОДАТНЕ - УРОЖАЙНЕ   -если человека одного ос"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -902,8 +929,11 @@ mod tests {
             r#"УКХ р/м підрозділу із складу 64 омсбр 35 А (н.п. Дорожнянка)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -922,8 +952,11 @@ mod tests {
         let body = r#"УКХ р/м управління мсб зі складу 5сб 123сп МР 1 АК"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -942,8 +975,11 @@ mod tests {
         let body = r#"УКХ р/м 5 сб 112 мсп МР 1 АК КЕРМЕНЧИК"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м 5 сб 112 мсп МР 1 АК"#);
@@ -959,8 +995,11 @@ mod tests {
         let body = r#"УКХ р/м управління стрілецькими підрозділами припустимо зі складу 1113 сп МР 1 АК (північніше ПОЛОГИ)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -986,8 +1025,11 @@ mod tests {
 — Борный 34. Просто скажи."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м реадн 70 мсп 42 мсд 58 А"#);
@@ -1004,8 +1046,11 @@ mod tests {
             r#"УКХ р/м 1 мсб 70 мсп 42 мсд 58 А (ПАВЛІВСЬКЕ, НОВОФЕДОРІВКА)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м 1 мсб 70 мсп 42 мсд 58 А"#);
@@ -1024,8 +1069,11 @@ mod tests {
         let body = r#"УКХ р/м управління 1 мсб 38 омсбр 35 А (півд. МИРНЕ);"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1044,8 +1092,11 @@ mod tests {
         let body = r#"30.05.23 13:11 \\ 438.500 УКХ р/м управління 5 сб 112 осп (131 сп) МР, 4 осб ТрО 110 омсбр (район н.п. Новодонецьке – Новомайорське		"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1081,8 +1132,11 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"УКХ р/м управління йм. 116 осп"#);
@@ -1102,8 +1156,11 @@ mod tests {
 1. Да, да, плюс"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"1 мсб 123 омсбр"#);
@@ -1130,8 +1187,11 @@ mod tests {
 --И короче, я там круги делал, там вышка есть высокая, прям такая, ее прям в темноте, прям четко видно было.  "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1164,8 +1224,11 @@ mod tests {
 — По полю, откуда, с севера? Если что, светлячки запускай Андрюха сразу."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit, None);
@@ -1192,8 +1255,11 @@ mod tests {
 "#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1225,8 +1291,11 @@ mod tests {
 — 75й, я Коробка, у нас 0 3."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1257,8 +1326,11 @@ mod tests {
 — Если вызываю я тебя, то я говорю Второй Первому."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м пн. сх. н.п. Веріговка 8 мсб 27 омсбр ймовірно\u{a0}арт.\u{a0}батарєя 444.550 МГц 06.09.24 50,2090 37,6695 \\ 50,2061 37,6612");
@@ -1284,8 +1356,11 @@ mod tests {
 Коментар: T4"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"УКХ Варяг (р/м НВ підрозділу"#);
@@ -1313,8 +1388,11 @@ mod tests {
 — Лупс 50. Читер, Читер 50. Читер, Читер 50. Днепр, Днепр 50. Днепр, Днепр 50. Днепр повтори, не прошло. Днепр повтори, не прошло. Плюс, Абухов 50. Плюс, Абухов 50. Чернобы 50. Чернобы 50. Ялта АДС 55. Ялта АДС 55."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1347,8 +1425,11 @@ mod tests {
 1. Колодец, Барвиха да, 119-й да"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"йм. 1 мсб 85 омсбр"#);
@@ -1374,8 +1455,11 @@ mod tests {
 1. 80, 80, я 24. 05, 43, 2, 238 (баба-яга). Я 24, прием."#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), r#"123 омсбр"#);
@@ -1403,8 +1487,11 @@ mod tests {
 — Сколько там метров?"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1430,8 +1517,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1457,8 +1547,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1480,8 +1573,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м НВ підрозділу(DMR)".to_string());
@@ -1503,8 +1599,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1530,8 +1629,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1556,8 +1658,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м йм. гсабатр гсадн 30 мсп\u{a0}72\u{a0}мсд\u{a0}44\u{a0}АК (р-н Шебекіно)".to_string());
@@ -1576,8 +1681,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "УКХ р/м НВ підрозділу(DMR)".to_string());
@@ -1601,8 +1709,11 @@ mod tests {
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1629,8 +1740,11 @@ Az-155
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1658,8 +1772,11 @@ Az-155
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.locality, Some("УКХ р/м управління артилерійською розвідкою ТАГр (ГАБатр ГАДн) 227 абр 49 ЗВА (КОЖУМ'ЯКИ - МАЛА ЛЕПЕТИХА)".to_string()));
@@ -1685,8 +1802,11 @@ Az-155
 Коментар: ( запит на зв'язок );"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1715,8 +1835,11 @@ Az-155
 ( Запит на звязок)"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1743,8 +1866,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 - ...спасибо"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1770,8 +1896,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             БАЙКАЛ"#;
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1796,8 +1925,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1822,8 +1954,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1845,8 +1980,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1866,8 +2004,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1888,8 +2029,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1914,8 +2058,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1944,8 +2091,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -1976,8 +2126,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -2008,8 +2161,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -2044,8 +2200,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)".to_string().to_string());
@@ -2072,8 +2231,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert!(res.unit.is_none());
@@ -2096,8 +2258,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -2134,8 +2299,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res =
             extract_unit(settlements, body, vec![String::from("ВЕСЕЛЫЙ")])
@@ -2155,8 +2323,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(
@@ -2183,8 +2354,11 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(
-            crate::location::load_from_file(config.settlement_paths().unwrap())
-                .unwrap(),
+            crate::location::load_from_file(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
         assert_eq!(res.unit, None);

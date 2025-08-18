@@ -42,8 +42,11 @@ pub async fn oneoff_rer_csv_import_1(
     .await
     .context(h!())?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(config.settlement_paths().unwrap())
-            .unwrap(),
+        crate::location::load_from_file(
+            config.settlement_paths().unwrap(),
+            mode,
+        )
+        .unwrap(),
     ));
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(

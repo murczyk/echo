@@ -167,25 +167,17 @@ pub struct VaultConfig {
 }
 
 pub fn read_config(mode: Mode) -> Result<Config, AppError> {
-    // debug!("read_config; mode: {:?}", mode);
+    let folder = get_deploy_folder(mode).context(h!())?;
     let path = match mode {
-        Mode::Live => PathBuf::from("/etc/echo/config.toml"),
+        Mode::Live => folder.join("config.toml"),
+        Mode::Test => folder.join("config-test.toml"),
         Mode::Debug => {
-            let man = std::env!("CARGO_MANIFEST_DIR");
-            let mut path =
-                PathBuf::from_iter([man, "..", "deploy"]).join("config.toml");
+            let mut path = folder.join("config.toml");
             if !path.exists() {
-                path = PathBuf::from_iter([man, "..", "deploy"])
-                    .join("config-debug.toml");
+                path = folder.join("config-debug.toml");
             }
             path
         }
-        Mode::Test => PathBuf::from_iter([
-            std::env!("CARGO_MANIFEST_DIR"),
-            "..",
-            "deploy",
-            "config-test.toml",
-        ]),
     };
     read_from_path(path)
 }
@@ -223,6 +215,25 @@ pub fn m_location_to_unidenfitied(location: Option<String>) -> String {
         return "--Не визначено--".to_string();
     }
     res
+}
+
+pub fn get_deploy_folder(mode: Mode) -> Result<PathBuf, AppError> {
+    let path = match mode {
+        Mode::Live => PathBuf::from("/etc/echo"),
+        _ => {
+            let man = std::env!("CARGO_MANIFEST_DIR");
+            PathBuf::from_iter([man, "..", "deploy"])
+        }
+    };
+    Ok(path)
+}
+
+pub fn get_data_folder(mode: Mode) -> Result<PathBuf, AppError> {
+    let path = match mode {
+        Mode::Live => PathBuf::from("/etc/echo"),
+        _ => PathBuf::from(std::env!("CARGO_MANIFEST_DIR")).join("data"),
+    };
+    Ok(path)
 }
 
 pub fn get_assets_folder(config: &Config) -> String {

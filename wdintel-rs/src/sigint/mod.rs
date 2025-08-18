@@ -239,8 +239,11 @@ pub async fn oneoff_sigint_import_mouse(
         ))
         .build()?;
     let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(config.settlement_paths().unwrap())
-            .unwrap(),
+        crate::location::load_from_file(
+            config.settlement_paths().unwrap(),
+            mode,
+        )
+        .unwrap(),
     ));
 
     let mut workbook: calamine::Xlsx<_> =
