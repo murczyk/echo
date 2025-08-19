@@ -995,7 +995,7 @@ pub async fn validate_login(
     if login_obj.deleted {
         let (msg, reason) = match login_obj.deactivation_reason {
             Some(DeactivationReasonEnum::Inactive) => {
-                let message = format!("Користувача \"{login}\" було заблоковано як не автивного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора");
+                let message = format!("Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора");
                 (message, Some(DeactivationReasonEnum::Inactive))
             }
             Some(DeactivationReasonEnum::Admin) => {
