@@ -344,7 +344,7 @@ pub async fn main_server(
             .service(crate::sigint::callsign::update_callsign)
             .service(crate::sigint::callsign::delete_callsign)
             .service(crate::sigint::callsign::callsign_unit_stats)
-            .service(crate::sigint::callsign::network_callsign::add_as_known_network_callsign)
+            .service(crate::sigint::callsign::network_callsign::add_as_known_network_callsigns)
             .service(crate::sigint::callsign::network_callsign::create_network_callsign)
             .service(crate::sigint::callsign::network_callsign::delete_network_callsign)
             .service(crate::sigint::callsign::network_callsign::list_network_callsigns)

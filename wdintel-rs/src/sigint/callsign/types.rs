@@ -179,5 +179,5 @@ pub struct UpdateNetworkCallsignReq {
 )]
 pub struct AddAsKnownNetworkCallsignReq {
     pub network_id: i64,
-    pub known_callsign_id: i64,
+    pub known_callsign_ids: Vec<i64>,
 }

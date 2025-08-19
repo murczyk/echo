@@ -607,7 +607,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"network_id\":39,\n    \"known_callsign_id\":1026\n}",
+							"raw": "{\n    \"network_id\":39,\n    \"known_callsign_ids\":[1015,1026]\n}",
 							"options": {
 								"raw": {
 									"language": "json"

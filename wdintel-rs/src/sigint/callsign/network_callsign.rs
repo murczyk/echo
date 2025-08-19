@@ -124,11 +124,11 @@ pub async fn create_network_callsign(
 /// [`Json<NetworkCallsign>`], де [`NetworkCallsign`] - структура, що представляє один прив'язаний до мережі позивний.
 ///
 #[post("/api/sigint/network-callsign/add-as-known")]
-pub async fn add_as_known_network_callsign(
+pub async fn add_as_known_network_callsigns(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<AddAsKnownNetworkCallsignReq>,
-) -> Result<Json<NetworkCallsign>, AppError> {
+) -> Result<Json<Vec<NetworkCallsign>>, AppError> {
     let user_id = user.id()?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
@@ -138,14 +138,14 @@ pub async fn add_as_known_network_callsign(
         .context(h!())?;
 
     info!(
-        "Adding known network callsign {} to network {}; user={}",
-        req.known_callsign_id, req.network_id, user_id
+        "Adding known network callsigns {} to network {}; user={}",
+        req.known_callsign_ids.len(), req.network_id, user_id
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
-    let network_callsign_id = bl_add_as_known_network_callsign(
+    let network_callsign_ids = bl_add_as_known_network_callsigns(
         req.network_id,
-        req.known_callsign_id,
+        req.known_callsign_ids.clone(),
         &user_id,
         &txn,
     )
@@ -157,13 +157,10 @@ pub async fn add_as_known_network_callsign(
         &env.dbx,
         &user_id,
         req.network_id,
-        vec![network_callsign_id],
+        network_callsign_ids
     )
     .await
-    .context(h!())?
-    .into_iter()
-    .next()
-    .ok_or(AppError::NotFound)?;
+    .context(h!())?;
 
     let event = EventMsg::new(EventType::ETNetworkChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
