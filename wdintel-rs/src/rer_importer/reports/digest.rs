@@ -17,9 +17,7 @@ const DOC_NAME: &str = "Форма №1.2.17/ОСУВ";
 const DOC_HEADER: &str =
     "Донесення за результатами ведення радіоелектронної розвідки";
 
-const WIDTH_UNIT: usize = 1870;
-const DTM_FORMAT: &str = "%Y.%m.%d %H:%M:%S";
-const FUNCTIONALITY_DESC_DEFAULT: &str = "Склад кореспондентів - звичайний, інтенсивність роботи - звичайна, час роботи - звичайний, район роботи - старий/без змін.";
+const WIDTH_UNIT: usize = 785;
 
 pub struct Report {
     pub datetime: DateTime<Utc>,
@@ -90,11 +88,13 @@ pub async fn report_docx_kind_digest(
     let config = DocxConfig {
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
+        split_multiline_cells: false,
+        paragraph_spacing: None,
     };
 
     let form_paragraph = Paragraph::new()
         .add_run(Run::new().add_text(DOC_NAME))
-        .align(AlignmentType::Center);
+        .align(AlignmentType::Right);
 
     let title_paragraph = Paragraph::new()
         .add_run(Run::new().add_text(DOC_HEADER).bold())
@@ -109,11 +109,23 @@ pub async fn report_docx_kind_digest(
 
     let mut rows_amrp: Vec<TableRow> = vec![];
     rows_amrp.push(TableRow::new(vec![
-        mk_text_cell("Висновки", util::ParagraphStyle::BoldAndItalic, &config),
-        mk_text_cell(
-            "Радіоперехоплення",
-            util::ParagraphStyle::BoldAndItalic,
+        mk_cell(
             &config,
+            mk_paragraph(
+                "Висновки",
+                util::ParagraphStyle::BoldAndItalic,
+                &config,
+            )
+            .align(AlignmentType::Center),
+        ),
+        mk_cell(
+            &config,
+            mk_paragraph(
+                "Радіоперехоплення",
+                util::ParagraphStyle::BoldAndItalic,
+                &config,
+            )
+            .align(AlignmentType::Center),
         ),
     ]));
     for aor_row in report.aor_data {
@@ -151,27 +163,43 @@ pub async fn report_docx_kind_digest(
             )]));
             for note in network_row.notes {
                 let note_txt = format!("{} {}", note.time, note.text);
-                let inter_txt = match note.interception_or_id {
+                let inter_cell = match note.interception_or_id {
                     Either::Left(interception) => {
-                        mk_paragraph(&interception, util::ParagraphStyle::Italic)
+                        let lines = interception
+                            .split('\n')
+                            .collect::<Vec<&str>>()
+                            .into_iter()
+                            .map(|s| s.to_string())
+                            .collect();
+                        mk_multiline_text_cell(
+                            lines,
+                            util::ParagraphStyle::Italic,
+                            &config,
+                        )
+                        .vertical_align(VAlignType::Top)
                     }
                     Either::Right(interception_id) => {
                         let host = env.config.public_host.clone();
                         let link = format!("{host}/rer-analysis?interception_id={interception_id}");
-                        mk_hyperlink(
+                        mk_text_cell(
                             &format!("Перехоплення #{interception_id}"),
-                            &link,
+                            util::ParagraphStyle::Default,
+                            &config,
                         )
+                        .add_paragraph(mk_paragraph(
+                            &link,
+                            util::ParagraphStyle::Default,
+                            &config,
+                        ))
                     }
                 };
-                rows_amrp.push(TableRow::new(vec![
-                    mk_text_cell(
-                        &note_txt,
-                        util::ParagraphStyle::Italic,
-                        &config,
-                    ),
-                    mk_cell(&config, inter_txt),
-                ]));
+                let comment_cell = mk_text_cell(
+                    &note_txt,
+                    util::ParagraphStyle::Italic,
+                    &config,
+                )
+                .vertical_align(VAlignType::Top);
+                rows_amrp.push(TableRow::new(vec![comment_cell, inter_cell]));
             }
         }
     }
@@ -181,13 +209,16 @@ pub async fn report_docx_kind_digest(
         .size(12);
     let table_amrp = Table::new(rows_amrp)
         .width(WIDTH_UNIT * 12, WidthType::Dxa)
-        .set_border(thin_border);
+        .set_border(thin_border)
+        .align(TableAlignmentType::Center);
 
     let docx = Docx::new()
         .page_orient(PageOrientationType::Portrait)
-        .default_size(10)
-        .page_margin(PageMargin::new().left(600).right(300).top(300))
+        .default_size(20)
+        .page_size(11906, 16838)
+        .page_margin(PageMargin::new().left(1500).right(450).top(1200))
         .add_paragraph(form_paragraph)
+        .add_paragraph(mk_paragraph("", util::ParagraphStyle::Default, &config))
         .add_paragraph(title_paragraph)
         .add_paragraph(timestamp_paragraph)
         .add_paragraph(Paragraph::new())
@@ -201,9 +232,76 @@ pub async fn report_docx_kind_digest(
 }
 
 fn mk_report_mock() -> Report {
+    let note_r1_1 = InterNote {
+        time: NaiveTime::from_hms(7, 9, 12),
+        text: "противник  зі   складу гсав гсадн 7 омсп 11 АК (ЛОЗОВОЄ, БЄЛГОРОДСЬКА ОБЛАСТЬ) планує переміщення особового складу.".to_string(),
+        interception_or_id: Either::Left("17.08.2025, 07:09:50
+167.2550
+НВ
+АНГЕЛ, КАБАН
+
+1— Ты к Ангелу уходишь?
+2—  К Кабану выхожу.
+1— Не будет заезжать, выходи сюда. Через пару малых он будет сюда двигаться.
+".to_string()),
+    };
+    let note_r1_2 = InterNote {
+        time: NaiveTime::from_hms(9, 12, 4),
+        text: "з метою перевірки стану справ та готовність до виконання завдань противник зі складу 6 тр 2 тб 11 тп 18 мсд 11 АК очікує прибуття посадової особи в районі: ЧЕРЕМОШНОЕ".to_string(),
+        interception_or_id: Either::Left("158.5500
+АРКАН
+ПЛАМЯ, ЧЕРНЫЙ
+— Черный, Черный, Пламя, Пламя, я Аркан, все, старший начальник выдвинулся по подразделениям, всем готовность номер 1. Как поняли?".to_string()),
+    };
+    let note_r2_1 = InterNote {
+        time: NaiveTime::from_hms(11, 55, 0),
+        text: "противник зі складу 3 мсб 82 мсп 69 мсд 6 ЗА планує нанесення вогневого ураження по позиціям СОУ в районі ВОВЧАНСЬК (37U CR 53632 73496) та ВІЛЬЧА (37U CR 53183 68322)".to_string(),
+        interception_or_id: Either::Right("ghmk-dcty".to_string()),
+    };
+    let note_r4_1 = InterNote {
+        time: NaiveTime::from_hms(0, 0, 12),
+        text: "відмічено переміщення особового складу, через позиції  3 мсб 82 мсп 69 мсд 6 А в районі пд. ГАТИЩЕ (37U CR 49203 72626)".to_string(),
+        interception_or_id: Either::Right("dggh-fefs".to_string()),
+    };
+    let row_1 = NetworkRow {
+        network_name: "гсав гсадн 7 омсп 11 АК".to_string(),
+        network_location: "район ЛОЗОВОЄ".to_string(),
+        notes: vec![note_r1_1, note_r1_2],
+    };
+    let row_2 = NetworkRow {
+        network_name: "6 тр 2 тб 11 тп 18 мсд 11 АК".to_string(),
+        network_location: "ЧЕРЕМОШНЕ, Бєлгородська область".to_string(),
+        notes: vec![note_r2_1],
+    };
+    let row_3 = NetworkRow {
+        network_name: "6 тр 2 тб 11 тп 18 мсд 11 АК".to_string(),
+        network_location: "ЧЕРЕМОШНЕ, Бєлгородська область".to_string(),
+        notes: vec![],
+    };
+    let row_4 = NetworkRow {
+        network_name: "6 тр 2 тб 11 тп 18 мсд 11 АК".to_string(),
+        network_location: "ЗАПУПЯНКА, Бєлгородська область".to_string(),
+        notes: vec![note_r4_1],
+    };
+    let aor_row1 = AorRow {
+        aor_name: "2 КНГУ".to_string(),
+        network_data: vec![row_1, row_2],
+    };
+    let aor_row2 = AorRow {
+        aor_name: "16 АК".to_string(),
+        network_data: vec![row_3],
+    };
+    let aor_row3 = AorRow {
+        aor_name: "17 АК".to_string(),
+        network_data: vec![],
+    };
+    let aor_row4 = AorRow {
+        aor_name: "18 АК".to_string(),
+        network_data: vec![row_4],
+    };
     Report {
         datetime: Utc::now(),
-        aor_data: vec![],
+        aor_data: vec![aor_row1, aor_row2],
     }
 }
 

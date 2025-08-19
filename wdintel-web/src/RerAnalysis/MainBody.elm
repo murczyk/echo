@@ -535,8 +535,7 @@ filtersAndMainContent user model shared route =
                     (ReportTemplateSelect RTReo)
                     "РЕО"
                     "Для генерування потрібні права редактора чи адміна"
-                ]
-                 , templateCard
+                , templateCard
                     (model.reportTemplate == RTDigest)
                     (ReportTemplateSelect RTDigest)
                     "Дайджест"

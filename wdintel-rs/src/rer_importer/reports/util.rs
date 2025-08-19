@@ -1,8 +1,10 @@
 use docx_rs::*;
 
 pub struct DocxConfig {
-    pub width_unit: usize,       // 1820
-    pub highlight_color: String, // "FF0000"
+    pub width_unit: usize,
+    pub highlight_color: String,
+    pub split_multiline_cells: bool,
+    pub paragraph_spacing: Option<u32>,
 }
 
 pub enum ParagraphStyle {
@@ -18,9 +20,7 @@ pub fn mk_header_cell(text: &str, config: &DocxConfig) -> TableCell {
         .vertical_align(VAlignType::Center)
         // .vertical_merge(VMergeType::Restart)
         .add_paragraph(
-            Paragraph::new()
-                .add_run(Run::new().add_text(text).bold())
-                .line_spacing(LineSpacing::new().before(80).after(80))
+            mk_paragraph(text, ParagraphStyle::Bold, config)
                 .align(AlignmentType::Center),
         )
 }
@@ -30,7 +30,7 @@ pub fn mk_text_cell(
     style: ParagraphStyle,
     config: &DocxConfig,
 ) -> TableCell {
-    mk_cell(config, mk_paragraph(text, style))
+    mk_cell(config, mk_paragraph(text, style, config))
 }
 
 pub fn mk_cell(config: &DocxConfig, paragraph: Paragraph) -> TableCell {
@@ -42,6 +42,7 @@ pub fn mk_cell(config: &DocxConfig, paragraph: Paragraph) -> TableCell {
 
 pub fn mk_multiline_text_cell(
     lines: Vec<String>,
+    style: ParagraphStyle,
     config: &DocxConfig,
 ) -> TableCell {
     let mut cell = TableCell::new()
@@ -56,14 +57,16 @@ pub fn mk_multiline_text_cell(
         paragraph_borders_config =
             paragraph_borders_config.set(separator_line_border);
         remaining_count -= 1;
-        let mut paragraph = Paragraph::new().add_run(Run::new().add_text(text));
+        let mut paragraph = Paragraph::new().add_run(mk_text(&text, &style));
         if remaining_count > 0 {
-            paragraph.property = paragraph
-                .property
-                .set_borders(paragraph_borders_config.clone());
-            paragraph.property = paragraph
-                .property
-                .line_spacing(LineSpacing::new().after(20));
+            if config.split_multiline_cells {
+                paragraph.property = paragraph
+                    .property
+                    .set_borders(paragraph_borders_config.clone());
+                paragraph.property = paragraph
+                    .property
+                    .line_spacing(LineSpacing::new().after(20));
+            }
         }
         cell = cell.add_paragraph(paragraph);
     }
@@ -81,12 +84,26 @@ pub fn mk_bullet_list_cell(
         cell = cell.add_paragraph(mk_paragraph(
             &format!(" • {text}"),
             ParagraphStyle::Default,
+            config,
         ));
     }
     cell
 }
 
-pub fn mk_paragraph(text: &str, style: ParagraphStyle) -> Paragraph {
+pub fn mk_paragraph(
+    text: &str,
+    style: ParagraphStyle,
+    config: &DocxConfig,
+) -> Paragraph {
+    let mut paragraph = Paragraph::new().add_run(mk_text(text, &style));
+    if let Some(spacing) = config.paragraph_spacing {
+        paragraph = paragraph
+            .line_spacing(LineSpacing::new().before(spacing).after(spacing))
+    }
+    paragraph
+}
+
+fn mk_text(text: &str, style: &ParagraphStyle) -> Run {
     let text = Run::new().add_text(text);
     let text = match style {
         ParagraphStyle::Default => text,
@@ -94,9 +111,7 @@ pub fn mk_paragraph(text: &str, style: ParagraphStyle) -> Paragraph {
         ParagraphStyle::Italic => text.italic(),
         ParagraphStyle::BoldAndItalic => text.bold().italic(),
     };
-    Paragraph::new()
-        .add_run(text)
-        .line_spacing(LineSpacing::new().before(80).after(80))
+    text
 }
 
 pub fn mk_merged_text_cell(
@@ -105,7 +120,7 @@ pub fn mk_merged_text_cell(
     style: ParagraphStyle,
     config: &DocxConfig,
 ) -> TableCell {
-    let mut text = mk_paragraph(text, style);
+    let mut text = mk_paragraph(text, style, config);
     if is_highlighted {
         text = text.color(&config.highlight_color);
     }
@@ -115,9 +130,4 @@ pub fn mk_merged_text_cell(
         .vertical_merge(VMergeType::Restart)
         .add_paragraph(text.align(AlignmentType::Center))
         .grid_span(6)
-}
-
-pub fn mk_hyperlink(text: &str, link: &str) -> Paragraph {
-    mk_paragraph(text, ParagraphStyle::Default)
-        .add_hyperlink(Hyperlink::new(link, HyperlinkType::External))
 }

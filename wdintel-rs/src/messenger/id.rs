@@ -1,13 +1,12 @@
-use crate::entities::{sigint_origin, signal_message};
+use crate::entities::signal_message;
 use crate::error::AppError;
 use crate::h;
-use crate::sigint::import::types::EtalonData;
 use crate::types::Mode;
 use anyhow::Context;
+use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use log::info;
-use sea_orm::{EntityTrait, QueryOrder, QuerySelect};
-use std::collections::{HashMap, HashSet};
-use tokio::fs::File;
+use sea_orm::*;
+use std::collections::HashMap;
 
 const FNV_PRIME: u64 = 1_099_511_628_211;
 const FNV_OFFSET_BASIS: u64 = 14_695_981_039_346_656_037;
@@ -19,39 +18,32 @@ pub struct MessageMeta {
 }
 
 pub fn generate_message_id(message: MessageMeta) -> String {
-    let user_id_mod = message.user_id % 999;
+    let user_id_mod = message.user_id % 99;
     let group_id_mod = message.group_id % 99;
-    let id_mod = message.id.abs() as u64 % 99999;
+    let id_mod = message.id.abs() as u64 % 9999999;
 
     // A simple, predictable hash combining a, b, and c
-    let hash: u64 = group_id_mod * 100000 + user_id_mod * 10000000 + id_mod;
+    let mut hash: u64 =
+        group_id_mod * 10000000 + user_id_mod * 1000000000 + id_mod;
 
     // Map the hash to letters and numbers
     let letters = "abcdefghijklmnopqrstuvwxyz";
 
-    // Part 1: First 4 letters
-    let mut hash_part1 = hash;
     let mut part1 = String::with_capacity(4);
     for _ in 0..4 {
-        let index = (hash_part1 % 26) as usize;
+        let index = (hash % 26) as usize;
         part1.push(letters.chars().nth(index).unwrap());
-        hash_part1 /= 26;
+        hash /= 26;
     }
 
     // Part 2: Second 4 letters
-    let mut hash_part2 = hash / 1_000_000;
     let mut part2 = String::with_capacity(4);
     for _ in 0..4 {
-        let index = (hash_part2 % 26) as usize;
+        let index = (hash % 26) as usize;
         part2.push(letters.chars().nth(index).unwrap());
-        hash_part2 /= 26;
+        hash /= 26;
     }
-
-    // Part 3: 4 numbers
-    let part3 = format!("{:04}", id_mod % 10000);
-
-    // Combine and return the code
-    format!("{}-{}-{}", part1, part2, part3)
+    format!("{}-{}", part1, part2)
 }
 
 fn fnv1a_hash(input: &str) -> u64 {
@@ -67,9 +59,21 @@ pub async fn oneoff_assign_message_ids(
     dry_run: bool,
 ) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let cutoff = if dry_run {
+        NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2014, 1, 1).context(h!())?,
+            NaiveTime::MIN,
+        )
+    } else {
+        Utc::now().naive_utc() - Duration::days(90)
+    };
     info!("oneoff_assign_message_ids dry_run={dry_run}");
     if dry_run {
         info!(" > running in dry run mode, no changes applied. to apply changes re-run with --dry-run=false");
+    } else {
+        return Err(AppError::BL {
+            msg: "not implemented yet".to_string(),
+        });
     }
     let mut offset = 0;
     let mut id_set = HashMap::new();
@@ -80,6 +84,7 @@ pub async fn oneoff_assign_message_ids(
             .column(signal_message::Column::Id)
             .column(signal_message::Column::GroupMasterKey)
             .column(signal_message::Column::Sender)
+            .filter(signal_message::Column::CreatedAt.gte(cutoff))
             .order_by_asc(signal_message::Column::CreatedAt)
             .limit(20000)
             .offset(offset)
@@ -111,6 +116,7 @@ pub async fn oneoff_assign_message_ids(
                 collisions.push((id, id2));
             }
             id_set.insert(mid, id);
+            //todo update MESSAGE with id=id with message_id=mid
         }
     }
     println!("Collisions occurred: {}", collisions.len());

@@ -178,7 +178,8 @@ pub async fn report_docx(
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
         .await?;
-        self::digest::report_docx_kind_digest(user, &env, &req, &outpath).await?;
+        self::digest::report_docx_kind_digest(user, &env, &req, &outpath)
+            .await?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }

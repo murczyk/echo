@@ -666,9 +666,11 @@ async fn main() -> Result<(), AppError> {
                 .await
         }
         Cmd::OneoffAssignMessageIds(ps) => {
-            crate::messenger::id::oneoff_assign_message_ids(mode, ps.dry_run.unwrap_or(true))
-                .await
+            crate::messenger::id::oneoff_assign_message_ids(
+                mode,
+                ps.dry_run.unwrap_or(true),
+            )
+            .await
         }
-
     }
 }

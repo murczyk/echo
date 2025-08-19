@@ -110,6 +110,8 @@ pub async fn report_docx_kind_revo(
     let config = DocxConfig {
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
+        split_multiline_cells: true,
+        paragraph_spacing: Some(80),
     };
 
     let mut rows_amrp: Vec<TableRow> = vec![];
@@ -177,16 +179,18 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
             mk_paragraph(
                 &format!("({location})"),
                 util::ParagraphStyle::Default,
+                config,
             )
             .bold(),
         );
     }
     network_cell = network_cell
-        .add_paragraph(mk_paragraph("", util::ParagraphStyle::Default));
+        .add_paragraph(mk_paragraph("", util::ParagraphStyle::Default, config));
     for freq in row.freqs {
         network_cell = network_cell.add_paragraph(mk_paragraph(
             &format!("\n{freq} МГц"),
             util::ParagraphStyle::Default,
+            config,
         ));
     }
     let activity_cell = mk_text_cell(
@@ -197,10 +201,12 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
     .add_paragraph(mk_paragraph(
         &format!("- {}", row.activity.till.format(DTM_FORMAT),),
         util::ParagraphStyle::Default,
+        config,
     ))
     .add_paragraph(mk_paragraph(
         &format!("Сеанси: {}", row.activity.seances_qty),
         util::ParagraphStyle::Default,
+        config,
     ));
 
     let mut correspondents = vec![];
@@ -215,7 +221,7 @@ fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
         }
     }
     correspondents.push(other_correspondents.join(", "));
-    let correspondents_cell = mk_multiline_text_cell(correspondents, config);
+    let correspondents_cell = mk_multiline_text_cell(correspondents, util::ParagraphStyle::Default, config);
 
     let functionality_details_cell = mk_text_cell(
         &row.functionality_details,
