@@ -175,7 +175,8 @@ type alias CallsignResModified =
 
 
 type alias CallsignTableRow =
-    { callsign : String
+    { id : Int
+    , callsign : String
     , messageCount : Int
     , lastDatetime : Maybe Int
     , position : String
@@ -250,7 +251,7 @@ type alias Model =
     , networkCallsignsTableState : Table.State
     
     -- Callsign selection and adding functionality
-    , callsignsSelected : Set String  -- Виділені позивні (callsign)
+    , callsignsSelected : Set Int    -- Виділені позивні (known_callsign_id)
     , callsignsAddLoading : Bool     -- Стан завантаження при додаванні позивних
     }
 
@@ -491,7 +492,7 @@ type Msg
     | DeleteFreqReturnedByApi (Result ApiError B.Network)
     
     -- Callsign selection and adding functionality
-    | ToggleCallsignSelection String                    -- Перемикання виділення позивного
+    | ToggleCallsignSelection Int                    -- Перемикання виділення позивного
     | AddSelectedCallsignsToNetwork                     -- Додавання виділених позивних до мережі
     | CallsignsAddedToNetwork (Result ApiError (List B.NetworkCallsign))  -- Результат додавання (тепер список)
 
@@ -718,7 +719,7 @@ update shared msg model =
                             { state = sel0.state
                             , items = items
                             , selected = network.aorIds
-                            }
+                                }
                       }
                     , E.none
                     )
@@ -1744,15 +1745,15 @@ update shared msg model =
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
-        
+
         -- Callsign selection and adding functionality
-        ToggleCallsignSelection callsign ->
+        ToggleCallsignSelection knownCallsignId ->
             let
                 newSelected = 
-                    if Set.member callsign model.callsignsSelected then
-                        Set.remove callsign model.callsignsSelected
+                    if Set.member knownCallsignId model.callsignsSelected then
+                        Set.remove knownCallsignId model.callsignsSelected
                     else
-                        Set.insert callsign model.callsignsSelected
+                        Set.insert knownCallsignId model.callsignsSelected
             in
             ( { model | callsignsSelected = newSelected }, E.none )
 
@@ -1763,10 +1764,9 @@ update shared msg model =
                         Success network -> network.id
                         _ -> 0
                 
-                -- Створюємо запит для додавання кількох позивних
                 payload = 
                     { networkId = networkId
-                    , callsigns = Set.toList model.callsignsSelected
+                    , knownCallsignIds = Set.toList model.callsignsSelected
                     }
             in
             ( { model | callsignsAddLoading = True }
@@ -2043,18 +2043,18 @@ freqsTableConfig shared model user =
                                             Success network ->
                                                 div [ class "flex items-center gap-2" ]
                                                     [ button
-                                                        [ class "table-action-btn"
-                                                        , type_ "button"
-                                                        , onClick <|
-                                                            OpenFreqEditSidebar freq.freq
-                                                                { networkId = network.id
-                                                                , freq = freq.freq
-                                                                , kind = Maybe.withDefault "VHF" freq.kind
-                                                                , modulationId = freq.modulationId
-                                                                , activeFrom = freq.activeFrom
-                                                                , activeTo = freq.activeTo
-                                                                }
-                                                        ]
+                                                    [ class "table-action-btn"
+                                                    , type_ "button"
+                                                    , onClick <|
+                                                        OpenFreqEditSidebar freq.freq
+                                                            { networkId = network.id
+                                                            , freq = freq.freq
+                                                            , kind = Maybe.withDefault "VHF" freq.kind
+                                                            , modulationId = freq.modulationId
+                                                            , activeFrom = freq.activeFrom
+                                                            , activeTo = freq.activeTo
+                                                            }
+                                                    ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
                                                     , button
                                                         [ class "table-action-btn text-red-600 hover:text-red-700"
@@ -2150,8 +2150,8 @@ callsignsTableConfig shared model user =
                         { attributes = []
                         , children =
                             [ Checkbox.new 
-                                { isChecked = Set.member row.callsign model.callsignsSelected
-                                , onToggle = \_ -> ToggleCallsignSelection row.callsign
+                                { isChecked = Set.member row.id model.callsignsSelected
+                                , onToggle = \_ -> ToggleCallsignSelection row.id
                                 }
                                 |> Checkbox.view
                             ]
@@ -3381,7 +3381,8 @@ contentBlock user shared network model =
                                             Just knownCallsigns ->
                                                 List.map
                                                     (\knownCallsign ->
-                                                        { callsign = callsign.callsign
+                                                        { id = knownCallsign.id
+                                                        , callsign = callsign.callsign
                                                         , messageCount = callsign.messageCount
                                                         , lastDatetime = callsign.lastDatetime
                                                         , position = knownCallsign.position

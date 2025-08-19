@@ -98,7 +98,7 @@ type Effect msg
     | GetCallsignsInfo (Result ApiError (List B.CallsignInfoRes) -> msg) B.RerCallsignInfoBatchReq
     | GetNetworksInfoByFreqs (Result ApiError (List B.Network) -> msg) (List String)
     | GetNetworksInfoByIds (Result ApiError (List B.Network) -> msg) (List Int)
-    | AddMultipleCallsignsToNetwork (Result ApiError (List B.NetworkCallsign) -> msg) { networkId : Int, callsigns : List String }
+    | AddMultipleCallsignsToNetwork (Result ApiError (List B.NetworkCallsign) -> msg) B.AddAsKnownNetworkCallsignReq
     | DownloadKmz (Result ApiError Bytes -> msg) AnalysisStatsReq
     | DownloadGeojson (Result ApiError Bytes -> msg) B.AnalysisStatsReq
     | GetCorrelatedFreqs (Result ApiError B.CorrelatedFreqsRsp -> msg) B.AnalysisStatsReq
@@ -1140,11 +1140,7 @@ toCmd options effect =
         AddMultipleCallsignsToNetwork toMsg payload ->
             Http.post
                 { url = "/api/sigint/network-callsigns/add-multiple"
-                , body = Http.jsonBody (Encode.object 
-                    [ ( "networkId", Encode.int payload.networkId )
-                    , ( "callsigns", Encode.list Encode.string payload.callsigns )
-                    ]
-                )
+                , body = Http.jsonBody (B.addAsKnownNetworkCallsignReqEncoder payload)
                 , expect = leExpectJson toMsg (Decode.list B.networkCallsignDecoder)
                 }
 
@@ -1468,7 +1464,7 @@ callsignsByNetworkDecoder =
     Decode.dict (Decode.list Decode.string)
 
 
-addMultipleCallsignsToNetwork : (Result ApiError (List B.NetworkCallsign) -> msg) -> { networkId : Int, callsigns : List String } -> Effect msg
+addMultipleCallsignsToNetwork : (Result ApiError (List B.NetworkCallsign) -> msg) -> B.AddAsKnownNetworkCallsignReq -> Effect msg
 addMultipleCallsignsToNetwork toMsg payload =
     AddMultipleCallsignsToNetwork toMsg payload
 
