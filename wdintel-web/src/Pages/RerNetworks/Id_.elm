@@ -257,10 +257,12 @@ type alias Model =
     , callsignsAddLoading : Bool     -- Стан завантаження при додаванні позивних
     
     -- Network callsign creation sidebar
-    , callsignCreateSidebar : Bool
-    , callsignCreateState : Maybe B.CreateNetworkCallsignReq
-    , callsignCreateSaving : Bool
-    , callsignCreateErrors : Dict String String
+            , callsignCreateSidebar : Bool
+        , callsignCreateState : Maybe B.CreateNetworkCallsignReq
+        , callsignCreateSaving : Bool
+        , callsignCreateErrors : Dict String String
+        , callsignCreateSourceSelState : Select.State
+        , callsignCreateSources : List B.Source
     }
 
 
@@ -394,10 +396,12 @@ init route shared () =
       , callsignsAddLoading = False
       
       -- Network callsign creation sidebar
-      , callsignCreateSidebar = False
-      , callsignCreateState = Nothing
-      , callsignCreateSaving = False
-      , callsignCreateErrors = Dict.empty
+              , callsignCreateSidebar = False
+        , callsignCreateState = Nothing
+        , callsignCreateSaving = False
+        , callsignCreateErrors = Dict.empty
+        , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+        , callsignCreateSources = []
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -405,6 +409,7 @@ init route shared () =
                 [ E.getSingleNetwork NetworkReturnedByApi id
                 , E.getModulations ModulationsReturnedByApi
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
+                , E.sendCmd (Api.sigint_list_sources GotSources ())
                 ]
 
         Nothing ->
@@ -483,6 +488,7 @@ type Msg
     | OpenFreqDetailPopup String
     | CloseFreqDetailPopup
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | GotSources (Result ApiError B.ListSourcesRsp)
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | ToggleFreqEditShowActiveTo
@@ -508,7 +514,10 @@ type Msg
     -- Network callsign creation messages
     | OpenCallsignCreateSidebar
     | CloseCallsignCreateSidebar
-    | UpdateCallsignCreateField (B.CreateNetworkCallsignReq -> B.CreateNetworkCallsignReq)
+    | UpdateCallsignCreateField (Maybe B.CreateNetworkCallsignReq -> Maybe B.CreateNetworkCallsignReq)
+            | CreateCallsignClicked
+        | CallsignCreated (Result ApiError B.NetworkCallsign)
+        | CallsignCreateSourceSelMsg (Select.Msg Int)
     
     -- Callsign selection and adding functionality
     | ToggleCallsignSelection Int                    -- Перемикання виділення позивного
@@ -1417,6 +1426,16 @@ update shared msg model =
             , E.none
             )
 
+        GotSources (Err err) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел" err
+            )
+
+        GotSources (Ok rsp) ->
+            ( { model | callsignCreateSources = rsp.sources }
+            , E.none
+            )
+
         FreqKindSelectMsg imsg ->
             let
                 ( mAct, imodel, icmd ) =
@@ -1559,6 +1578,7 @@ update shared msg model =
                             , sourceId = 1  -- Default source ID
                             , radioFreq = Nothing
                             }
+                        
                     in
                     ( { model 
                         | callsignCreateSidebar = True
@@ -1575,12 +1595,65 @@ update shared msg model =
                 | callsignCreateSidebar = False
                 , callsignCreateState = Nothing
                 , callsignCreateErrors = Dict.empty
+                , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+                , callsignCreateSources = []
               }
             , E.none )
         
         UpdateCallsignCreateField updateFunc ->
-            ( { model | callsignCreateState = Maybe.map updateFunc model.callsignCreateState }
+            ( { model | callsignCreateState = updateFunc model.callsignCreateState }
             , E.none )
+        
+        CreateCallsignClicked ->
+            case model.callsignCreateState of
+                Just createReq ->
+                    ( { model | callsignCreateSaving = True }
+                    , E.createNetworkCallsign CallsignCreated createReq
+                    )
+                
+                Nothing ->
+                    ( model, E.none )
+        
+        CallsignCreated (Ok networkCallsign) ->
+            ( { model 
+                | callsignCreateSaving = False
+                , callsignCreateSidebar = False
+                , callsignCreateState = Nothing
+                , callsignCreateErrors = Dict.empty
+                , networkCallsigns = 
+                    case model.networkCallsigns of
+                        Success existingCallsigns ->
+                            Success (networkCallsign :: existingCallsigns)
+                        
+                        _ ->
+                            Success [ networkCallsign ]
+              }
+            , E.none
+            )
+        
+        CallsignCreated (Err error) ->
+            ( { model 
+                | callsignCreateSaving = False
+                , callsignCreateErrors = Dict.singleton "general" (Le.ErrorHandling.formatErrorForShowError "Помилка створення позивного" error)
+              }
+            , E.none
+            )
+
+        CallsignCreateSourceSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.callsignCreateSourceSelState
+
+                updatedSourceId =
+                    Le.Block.Select.singleUpd mAction (Maybe.map .sourceId model.callsignCreateState)
+            in
+            ( { model
+                | callsignCreateSourceSelState = imodel2
+                , callsignCreateState = 
+                    Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.callsignCreateState
+              }
+            , E.sendCmd <| Cmd.map CallsignCreateSourceSelMsg icmd
+            )
 
         DeleteNetworkClickedByUser ->
             case model.network of
@@ -3370,6 +3443,12 @@ contentBlock user shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
+            , Button.new 
+                { label = "+"
+                , onClick = OpenCallsignCreateSidebar
+                }
+                |> Button.withStyleSecondary
+                |> Button.view
             ]
         , case model.networkCallsigns of
             Success networkCallsigns ->
@@ -3506,6 +3585,11 @@ view user shared model =
                         text ""
                 , if model.freqCreateSidebar then
                     Sidebar.view True CloseFreqCreateSidebar (freqCreateSidebarContent shared model user)
+
+                  else
+                    text ""
+                , if model.callsignCreateSidebar then
+                    Sidebar.view True CloseCallsignCreateSidebar [ callsignCreateSidebarContent shared model user ]
 
                   else
                     text ""
@@ -3908,7 +3992,7 @@ freqCreateSidebarContent shared model user =
                             model.freqCreateKindSelect.state
                             model.freqCreateKindSelect.items
                             "Виберіть тип"
-                            { defaultOptions | clearable = False }
+                            defaultOptions
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
@@ -4043,3 +4127,157 @@ freqCreateSidebarContent shared model user =
             ]
         ]
     ]
+
+
+callsignCreateSidebarContent : Shared.Model -> Model -> Auth.User -> Html Msg
+callsignCreateSidebarContent shared model user =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити позивний мережі" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позивний *" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позивний"
+                        , value (Maybe.map .callsign model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | callsign = v }
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело *" ]
+                    , let
+                        sourceMenu =
+                            model.callsignCreateSources
+                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                        
+                        selectItem =
+                            Maybe.map .sourceId model.callsignCreateState
+                                |> Maybe.andThen (\sourceId -> 
+                                    ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
+                                        |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                )
+                      in
+                      Html.map CallsignCreateSourceSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.callsignCreateSourceSelState
+                                sourceMenu
+                                "Виберіть джерело"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode
+                                    |> (\opts ->
+                                            { opts
+                                                | clearable = False
+                                            }
+                                       )
+                                )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позиція" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позицію (необов'язково)"
+                        , value (Maybe.andThen .position model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | position = if String.trim v == "" then Nothing else Just v }
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
+                    , textarea
+                        [ class "w-full p-2 border border-border rounded resize-none"
+                        , rows 3
+                        , placeholder "Введіть коментар (необов'язково)"
+                        , value (Maybe.andThen .comment model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | comment = if String.trim v == "" then Nothing else Just v }
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , if (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2 then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
+                        , input
+                            [ type_ "text"
+                            , class "w-full p-2 border border-border rounded"
+                            , placeholder "Введіть частоту (обов'язково для РО)"
+                            , value (Maybe.andThen .radioFreq model.callsignCreateState |> Maybe.withDefault "")
+                            , onInput <|
+                                UpdateCallsignCreateField
+                                    << (\v maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | radioFreq = if String.trim v == "" then Nothing else Just v }
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        ]
+                  else
+                    text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseCallsignCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.callsignCreateSaving then
+                    Button.new { label = "Створення...", onClick = CreateCallsignClicked }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Створити", onClick = CreateCallsignClicked }
+                        |> Button.withDisabled
+                            (let
+                                callsignEmpty = 
+                                    Maybe.map .callsign model.callsignCreateState
+                                        |> Maybe.map (String.trim >> (==) "")
+                                        |> Maybe.withDefault True
+                                
+                                isRO = 
+                                    (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2
+                                
+                                roFreqEmpty = 
+                                    if isRO then
+                                        Maybe.andThen .radioFreq model.callsignCreateState
+                                            |> Maybe.map (String.trim >> (==) "")
+                                            |> Maybe.withDefault True
+                                    else
+                                        False
+                             in
+                             callsignEmpty || roFreqEmpty
+                            )
+                        |> Button.view
+                ]
+            ]
+        ]
