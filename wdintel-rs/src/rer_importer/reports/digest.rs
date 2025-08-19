@@ -162,7 +162,11 @@ pub async fn report_docx_kind_digest(
                 &config,
             )]));
             for note in network_row.notes {
-                let note_txt = format!("{} {}", note.time, note.text);
+                let note_txt = format!(
+                    "{} {}",
+                    note.time.format("%H:%M").to_string(),
+                    note.text
+                );
                 let inter_cell = match note.interception_or_id {
                     Either::Left(interception) => {
                         let lines = interception
