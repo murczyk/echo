@@ -2471,6 +2471,9 @@ update user shared route msg model =
                         RTReo ->
                             "docx"
 
+                        RTDigest ->
+                            "docx"
+
                 -- filename like "report_2023-07-17-12-00_2023-07-18-12-00"
                 fname =
                     case model.zone of

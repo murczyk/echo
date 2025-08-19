@@ -536,6 +536,12 @@ filtersAndMainContent user model shared route =
                     "РЕО"
                     "Для генерування потрібні права редактора чи адміна"
                 ]
+                 , templateCard
+                    (model.reportTemplate == RTDigest)
+                    (ReportTemplateSelect RTDigest)
+                    "Дайджест"
+                    "Для генерування потрібні права редактора чи адміна"
+                ]
             , HtmlX.viewIf (List.member model.reportTemplate [ RTTags, RTBabak, RTInterception ]) <|
                 div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
                     [ div [ class "form-check" ]

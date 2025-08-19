@@ -45,3 +45,6 @@ reportTemplateToString x =
 
         RTReo ->
             "reo"
+
+        RTDigest ->
+            "digest"
