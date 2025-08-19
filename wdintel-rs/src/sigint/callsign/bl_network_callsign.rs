@@ -164,6 +164,98 @@ pub async fn bl_delete_network_callsign(
     Ok(network_callsign)
 }
 
+pub async fn bl_get_network_callsigns_list(
+    req: &ListNetworkCallsignsReq,
+    user_id: &str,
+    dbx: &DatabaseConnection,
+) -> Result<
+    (
+        Vec<(
+            sigint_network_callsign::Model,
+            Option<sigint_callsign::Model>,
+            Option<sigint_unit::Model>,
+        )>,
+        HashMap<String, CallsignCommunicationInfo>,
+    ),
+    AppError,
+> {
+    let mut query = sigint_network_callsign::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            sigint_network_callsign::Relation::SigintCallsign.def(),
+        )
+        .join_rev(
+            JoinType::LeftJoin,
+            sigint_unit::Relation::SigintCallsign.def(),
+        )
+        .select_also(sigint_callsign::Entity)
+        .select_also(sigint_unit::Entity)
+        .filter(
+            sigint_network_callsign::Column::SigintNetworkId.eq(req.network_id),
+        )
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(
+            Condition::any()
+                .add(sigint_callsign::Column::Deleted.eq(false))
+                .add(sigint_callsign::Column::Deleted.is_null()),
+        );
+
+    // Apply sorting based on request
+    query = if let Some(sort_by) = &req.sort_by {
+        sort_by.iter().fold(
+            query,
+            |query, sort_by: &ListNetworkCallsignsSortBy| match sort_by {
+                ListNetworkCallsignsSortBy::NetworkCallsignAsc => query
+                    .order_by_asc(
+                        sigint_network_callsign::Column::SigintCallsign,
+                    ),
+                ListNetworkCallsignsSortBy::NetworkCallsignDesc => query
+                    .order_by_desc(
+                        sigint_network_callsign::Column::SigintCallsign,
+                    ),
+                ListNetworkCallsignsSortBy::NetworkCallsignCreatedAtAsc => {
+                    query.order_by_asc(
+                        sigint_network_callsign::Column::CreatedAt,
+                    )
+                }
+                ListNetworkCallsignsSortBy::NetworkCallsignCreatedAtDesc => {
+                    query.order_by_desc(
+                        sigint_network_callsign::Column::CreatedAt,
+                    )
+                }
+            },
+        )
+    } else {
+        // Default sorting (original behavior)
+        query.order_by_asc(sigint_network_callsign::Column::SigintCallsign)
+    };
+
+    // debug!(
+    //     "network_callsigns query sql: {}",
+    //     query.build(DbBackend::Postgres).to_string()
+    // );
+
+    let network_callsigns: Vec<(
+        sigint_network_callsign::Model,
+        Option<sigint_callsign::Model>,
+        Option<sigint_unit::Model>,
+    )> = query.all(dbx).await.context(h!())?;
+
+    let comm_info = get_callsigns_communication_info(
+        dbx,
+        user_id,
+        req.network_id,
+        &network_callsigns
+            .iter()
+            .map(|(nc, _, _)| nc.sigint_callsign.clone())
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .context(h!())?;
+
+    Ok((network_callsigns, comm_info))
+}
+
 pub async fn find_network_callsign_one<'a, 'async_trait, C>(
     network_callsign_id: i64,
     txn: &'a C,
