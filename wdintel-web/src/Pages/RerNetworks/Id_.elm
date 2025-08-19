@@ -3825,6 +3825,31 @@ view user shared model =
                         ]
                   in
                   ModalDialog.modalDialog isOpen DeleteFreqCanceledByUser [] deleteFreqDialogContent
+                , let
+                    deleteCallsignDialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-6" ]
+                                [ h2 [] [ text "Видалити позивний" ]
+                                , p [] [ text "Ви впевнені, що хочете видалити цей позивний з мережі?" ]
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Скасувати", onClick = DeleteCallsignCanceled } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Видалити", onClick = DeleteCallsignConfirmed (Maybe.withDefault 0 model.deleteCallsignConfirmation) }
+                                    |> Button.withStyleDanger
+                                    |> (if model.deleteCallsignLoading then
+                                            Button.withIcon
+                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                ]
+
+                                        else
+                                            identity
+                                       )
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+                  in
+                  ModalDialog.modalDialog (model.deleteCallsignConfirmation /= Nothing) DeleteCallsignCanceled [] deleteCallsignDialogContent
                 ]
             ]
         ]
