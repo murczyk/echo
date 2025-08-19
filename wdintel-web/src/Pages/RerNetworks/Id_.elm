@@ -2144,6 +2144,22 @@ callsignsTableConfig shared model user =
         , toMsg = SetCallsignsTableState
         , columns =
             [ Table.veryCustomColumn
+                { name = ""
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                            [ Checkbox.new 
+                                { isChecked = Set.member row.callsign model.callsignsSelected
+                                , onToggle = \_ -> ToggleCallsignSelection row.callsign
+                                }
+                                |> Checkbox.view
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "5%"
+            , Table.veryCustomColumn
                 { name = "Позивний"
                 , viewData =
                     \row ->
@@ -3319,6 +3335,38 @@ contentBlock user shared network model =
                 Le.Block.Spinner.loadingSpinnerSm
         , div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Всі позивні" ]
+            , div [ class "flex items-center gap-3" ]
+                [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
+                    [ i [ class "bi bi-check-square" ] []
+                    , span [] 
+                        [ text (if Set.isEmpty model.callsignsSelected then 
+                                  "Виберіть позивні"
+                                else 
+                                  "Виділено: " ++ String.fromInt (Set.size model.callsignsSelected)
+                              )
+                        ]
+                    ]
+                , Button.new 
+                    { label = "Додати"
+                    , onClick = AddSelectedCallsignsToNetwork
+                    }
+                    |> (if Set.isEmpty model.callsignsSelected then
+                            Button.withStyleSecondary
+                        else
+                            Button.withPrimary
+                       )
+                    |> (if model.callsignsAddLoading then
+                            Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
+                        else
+                            identity
+                       )
+                    |> (if Set.isEmpty model.callsignsSelected then
+                            Button.withDisabled True
+                        else
+                            identity
+                       )
+                    |> Button.view
+                ]
             ]
         , case model.callsigns of
             Success callsigns ->
