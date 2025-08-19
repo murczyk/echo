@@ -1,6 +1,5 @@
 use self::types::*;
 use crate::config::*;
-use crate::entities::login::Model;
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::error::AppError;
@@ -33,6 +32,10 @@ pub async fn has_any_role(
     roles_list: Vec<&str>,
 ) -> Result<(), AppError> {
     let login_obj = validate_login(dbx, user_id).await.context(h!())?;
+    if let Some(e) = login_obj.validation_error {
+        return Err(e);
+    };
+    let login_obj = login_obj.login_model.context(h!())?;
     let roles: Vec<String> =
         serde_json::from_value(login_obj.roles).context(h!())?;
     let mut is_any_good = false;
@@ -584,6 +587,10 @@ pub async fn user_login(
             // )])));
         }
     };
+    if let Some(err) = login_obj.validation_error {
+        return Err(err);
+    }
+    let login_obj = login_obj.login_model.context(h!())?;
     let password = login_obj.password.clone().ok_or(AppError::Form(
         BTreeMap::from_iter([(
             "login".to_string(),
@@ -943,46 +950,81 @@ where
 pub async fn validate_login(
     dbx: &DatabaseConnection,
     login: &str,
-) -> Result<Model, AppError> {
-    let Some((login_obj, organisms)) = login::Entity::find()
+) -> Result<UserValidationResult, AppError> {
+    let login_result = login::Entity::find()
         .filter(login::Column::Login.eq(login))
         .find_with_related(organism::Entity)
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
         .all(dbx)
         .await
-        .context(h!())?
-        .into_iter()
-        .next()
-    else {
+        .context(h!());
+    let login_data = match login_result {
+        Ok(data) => data,
+        Err(e) => {
+            error!("failed to load login {login}: {e:?}");
+            return Ok(UserValidationResult {
+                login_model: None,
+                is_valid: false,
+                deactivation_reason: None,
+                validation_error: Some(AppError::Unauthenticated),
+            });
+        }
+    };
+    let Some((login_obj, organisms)) = login_data.into_iter().next() else {
         println!("user not found: {login}");
-        return Err(AppError::Unauthenticated);
+        return Ok(UserValidationResult {
+            login_model: None,
+            is_valid: false,
+            deactivation_reason: None,
+            validation_error: Some(AppError::Unauthenticated),
+        });
     };
     if let Some(organism) = organisms.into_iter().next() {
         if !organism.enabled {
             println!("user {} not authorized, reason: organism {} (id {}) was disabled", login, organism.name, organism.id);
-            return Err(AppError::Unauthenticated);
+            return Ok(UserValidationResult {
+                login_model: None,
+                is_valid: true,
+                deactivation_reason: None,
+                validation_error: Some(AppError::Unauthenticated),
+            });
         }
     }
 
     if login_obj.deleted {
-        let msg = match login_obj.deactivation_reason {
-            Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive) => {
-                format!("Користувача \"{login}\" було заблоковано як не автивного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора")
+        let (msg, reason) = match login_obj.deactivation_reason {
+            Some(DeactivationReasonEnum::Inactive) => {
+                let message = format!("Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора");
+                (message, Some(DeactivationReasonEnum::Inactive))
             }
-            Some(sea_orm_active_enums::DeactivationReasonEnum::Admin) => {
-                format!("Користувач \"{login}\" заблокований адміністратором")
+            Some(DeactivationReasonEnum::Admin) => {
+                let message = format!(
+                    "Користувач \"{login}\" заблокований адміністратором"
+                );
+                (message, Some(DeactivationReasonEnum::Admin))
             }
-            _ => format!("Користувача було видалено: {login}"),
+            _ => (format!("Користувача було видалено: {login}"), None),
         };
         warn!("{msg}");
-        return Err(AppError::Form(BTreeMap::from_iter([(
+        let err = AppError::Form(BTreeMap::from_iter([(
             "login".to_string(),
             msg.to_string(),
-        )])));
+        )]));
+        return Ok(UserValidationResult {
+            login_model: None,
+            is_valid: true,
+            deactivation_reason: reason,
+            validation_error: Some(err),
+        });
     }
 
-    Ok(login_obj)
+    Ok(UserValidationResult {
+        login_model: Some(login_obj),
+        is_valid: true,
+        deactivation_reason: None,
+        validation_error: None,
+    })
 }
 
 async fn register_delta_user(

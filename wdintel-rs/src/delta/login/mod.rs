@@ -5,9 +5,9 @@ use crate::types::*;
 use crate::users::validate_login;
 use actix_identity::Identity;
 
+use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use actix_web::web::{Data, Json};
 use actix_web::{get, HttpMessage, HttpRequest, HttpResponse};
-use anyhow::Error;
 use echo_migration::Expr;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
@@ -50,9 +50,20 @@ pub async fn handle_redirect(
         Ok(user_info) => {
             let user_name = user_info.user_name.clone();
             match perform_login(&env, &req_clone, user_info).await {
-                Ok(_) => HttpResponse::Found()
-                    .insert_header(("Location", "/"))
-                    .body("Success. Redirecting.."),
+                Ok(reason) => {
+                    if let Some(_reason) = reason {
+                        HttpResponse::Found()
+                            .insert_header((
+                                "Location",
+                                "/login?api_error=err_delta_login_3278",
+                            ))
+                            .body("err_delta_login_3278")
+                    } else {
+                        HttpResponse::Found()
+                            .insert_header(("Location", "/"))
+                            .body("Success. Redirecting..")
+                    }
+                }
                 Err(e) => {
                     error!("Failed to login, probably EXO account is missing: user_name: {user_name}; error: {e:?}");
                     HttpResponse::Found()
@@ -80,7 +91,7 @@ async fn perform_login(
     env: &Data<Env>,
     req: &HttpRequest,
     user_info: UserInfo,
-) -> Result<(), Error> {
+) -> Result<Option<DeactivationReasonEnum>, AppError> {
     let username = user_info.user_name;
     info!("delta: logging in as '{username}'");
 
@@ -111,10 +122,23 @@ async fn perform_login(
     }
 
     let login = result_login.context(h!())?;
-    let login = validate_login(&env.dbx, &login.login).await.context(h!())?;
-    {
-        let extensions = req.extensions();
-        Identity::login(&extensions, login.login)?;
+    let login_validation =
+        validate_login(&env.dbx, &login.login).await.context(h!())?;
+    if let Some(reason) = login_validation.deactivation_reason {
+        return Ok(Some(reason));
     }
-    Ok(())
+    if let Some(err) = login_validation.validation_error {
+        return Err(err);
+    }
+    if let Some(login) = login_validation.login_model {
+        let extensions = req.extensions();
+        Identity::login(&extensions, login.login).context(h!())?;
+        return Ok(None);
+    }
+    let mut login_obfuscated = login.clone();
+    login_obfuscated.password = login_obfuscated
+        .password
+        .clone()
+        .map(|_| "<...>".to_string());
+    Err(AppError::BL{ msg: format!("unexpected error occurred on login attempt, login={login_obfuscated:?}") })
 }
