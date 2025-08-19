@@ -1,6 +1,15 @@
 use crate::entities::sea_orm_active_enums::*;
+use crate::error::AppError;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug)]
+pub struct UserValidationResult {
+    pub login_model: Option<crate::entities::login::Model>,
+    pub is_valid: bool,
+    pub deactivation_reason: Option<DeactivationReasonEnum>,
+    pub validation_error: Option<AppError>,
+}
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
