@@ -171,6 +171,8 @@ type alias CallsignResModified =
 
 
 
+
+
 -- Нова структура для рядка таблиці позивних
 
 
@@ -253,6 +255,12 @@ type alias Model =
     -- Callsign selection and adding functionality
     , callsignsSelected : Set Int    -- Виділені позивні (known_callsign_id)
     , callsignsAddLoading : Bool     -- Стан завантаження при додаванні позивних
+    
+    -- Network callsign creation sidebar
+    , callsignCreateSidebar : Bool
+    , callsignCreateState : Maybe B.CreateNetworkCallsignReq
+    , callsignCreateSaving : Bool
+    , callsignCreateErrors : Dict String String
     }
 
 
@@ -384,6 +392,12 @@ init route shared () =
       -- Callsign selection and adding functionality
       , callsignsSelected = Set.empty
       , callsignsAddLoading = False
+      
+      -- Network callsign creation sidebar
+      , callsignCreateSidebar = False
+      , callsignCreateState = Nothing
+      , callsignCreateSaving = False
+      , callsignCreateErrors = Dict.empty
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -490,6 +504,11 @@ type Msg
     | DeleteFreqConfirmedByUser
     | DeleteFreqCanceledByUser
     | DeleteFreqReturnedByApi (Result ApiError B.Network)
+    
+    -- Network callsign creation messages
+    | OpenCallsignCreateSidebar
+    | CloseCallsignCreateSidebar
+    | UpdateCallsignCreateField (B.CreateNetworkCallsignReq -> B.CreateNetworkCallsignReq)
     
     -- Callsign selection and adding functionality
     | ToggleCallsignSelection Int                    -- Перемикання виділення позивного
@@ -1526,6 +1545,42 @@ update shared msg model =
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
+        
+        -- Network callsign creation messages
+        OpenCallsignCreateSidebar ->
+            case model.network of
+                Success network ->
+                    let
+                        updatedState =
+                            { networkId = network.id
+                            , callsign = ""
+                            , position = Nothing
+                            , comment = Nothing
+                            , sourceId = 1  -- Default source ID
+                            , radioFreq = Nothing
+                            }
+                    in
+                    ( { model 
+                        | callsignCreateSidebar = True
+                        , callsignCreateState = Just updatedState
+                        , callsignCreateErrors = Dict.empty
+                      }
+                    , E.none )
+                
+                _ ->
+                    ( model, E.none )
+        
+        CloseCallsignCreateSidebar ->
+            ( { model
+                | callsignCreateSidebar = False
+                , callsignCreateState = Nothing
+                , callsignCreateErrors = Dict.empty
+              }
+            , E.none )
+        
+        UpdateCallsignCreateField updateFunc ->
+            ( { model | callsignCreateState = Maybe.map updateFunc model.callsignCreateState }
+            , E.none )
 
         DeleteNetworkClickedByUser ->
             case model.network of
