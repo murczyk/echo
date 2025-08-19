@@ -749,6 +749,7 @@ map fn effect =
 
         GetNetworksInfoByIds toMsg payload ->
             GetNetworksInfoByIds (fn << toMsg) payload
+
         AddMultipleCallsignsToNetwork toMsg payload ->
             AddMultipleCallsignsToNetwork (fn << toMsg) payload
 
@@ -1137,9 +1138,10 @@ toCmd options effect =
                 , body = Http.jsonBody (Encode.list Encode.int payload)
                 , expect = leExpectJson toMsg (Decode.list B.networkDecoder)
                 }
+
         AddMultipleCallsignsToNetwork toMsg payload ->
             Http.post
-                { url = "/api/sigint/network-callsigns/add-multiple"
+                { url = "/api/sigint/network-callsign/add-as-known"
                 , body = Http.jsonBody (B.addAsKnownNetworkCallsignReqEncoder payload)
                 , expect = leExpectJson toMsg (Decode.list B.networkCallsignDecoder)
                 }
