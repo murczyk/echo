@@ -523,6 +523,9 @@ type Msg
     | ToggleCallsignSelection Int                    -- Перемикання виділення позивного
     | AddSelectedCallsignsToNetwork                     -- Додавання виділених позивних до мережі
     | CallsignsAddedToNetwork (Result ApiError (List B.NetworkCallsign))  -- Результат додавання (тепер список)
+    
+    -- Callsign deletion functionality
+    | DeleteCallsignFromNetwork Int                    -- Клік по кнопці видалення позивного з мережі
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1925,6 +1928,9 @@ update shared msg model =
                     }
             in
             ( updatedModel, E.none )
+            
+        DeleteCallsignFromNetwork callsignId ->
+            ( model, E.none ) -- TODO: Implement deletion logic
 
 
 
@@ -2441,6 +2447,25 @@ networkCallsignsTableConfig shared model user =
                 }
                 |> Table.withColumnWidth "12%"
             , Table.intColumn "К-сть повідомлень" .messageCount |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Дії"
+                , viewData =
+                    \row ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ div [ class "flex gap-[4px] text-sm" ]
+                                [ button
+                                    [ title "Видалити"
+                                    , class "icon-btn icon-btn-danger"
+                                    , onClick (DeleteCallsignFromNetwork row.id)
+                                    ]
+                                    [ i [ class "bi bi-trash" ] [] ]
+                                ]
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "5%"
             ]
         , customizations = customizations
         }
