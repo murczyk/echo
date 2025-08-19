@@ -34,24 +34,10 @@ pub async fn list_network_callsigns(
     trace!("network_callsigns; login: {user_id}; req: {req:?}");
     let req = req.into_inner();
 
-    let (network_callsigns, comm_info) =
-        bl_get_network_callsigns_list(&req, &user_id, &env.dbx)
-            .await
-            .context(h!())?;
+    let res = bl_get_network_callsigns_list(&req, &user_id, &env.dbx)
+        .await
+        .context(h!())?;
 
-    let mut res = vec![];
-    for (network_callsign, known_callsign, unit) in network_callsigns {
-        let callsing_comm_info =
-            comm_info.get(&network_callsign.sigint_callsign);
-        let nc = render_network_callsign(
-            &network_callsign,
-            known_callsign,
-            unit,
-            callsing_comm_info,
-        )?;
-
-        res.push(nc);
-    }
     Ok(Json(ListNetworkCallsignsRes {
         network_callsigns: res,
     }))

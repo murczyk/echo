@@ -168,17 +168,7 @@ pub async fn bl_get_network_callsigns_list(
     req: &ListNetworkCallsignsReq,
     user_id: &str,
     dbx: &DatabaseConnection,
-) -> Result<
-    (
-        Vec<(
-            sigint_network_callsign::Model,
-            Option<sigint_callsign::Model>,
-            Option<sigint_unit::Model>,
-        )>,
-        HashMap<String, CallsignCommunicationInfo>,
-    ),
-    AppError,
-> {
+) -> Result<Vec<NetworkCallsign>, AppError> {
     let mut query = sigint_network_callsign::Entity::find()
         .join(
             JoinType::LeftJoin,
@@ -253,7 +243,21 @@ pub async fn bl_get_network_callsigns_list(
     .await
     .context(h!())?;
 
-    Ok((network_callsigns, comm_info))
+    let mut res = vec![];
+    for (network_callsign, known_callsign, unit) in network_callsigns {
+        let callsing_comm_info =
+            comm_info.get(&network_callsign.sigint_callsign);
+        let nc = render_network_callsign(
+            &network_callsign,
+            known_callsign,
+            unit,
+            callsing_comm_info,
+        )?;
+
+        res.push(nc);
+    };
+
+    Ok(res)
 }
 
 pub async fn find_network_callsign_one<'a, 'async_trait, C>(
