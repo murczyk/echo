@@ -139,7 +139,9 @@ pub async fn add_as_known_network_callsigns(
 
     info!(
         "Adding known network callsigns {} to network {}; user={}",
-        req.known_callsign_ids.len(), req.network_id, user_id
+        req.known_callsign_ids.len(),
+        req.network_id,
+        user_id
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
@@ -157,7 +159,7 @@ pub async fn add_as_known_network_callsigns(
         &env.dbx,
         &user_id,
         req.network_id,
-        network_callsign_ids
+        network_callsign_ids,
     )
     .await
     .context(h!())?;

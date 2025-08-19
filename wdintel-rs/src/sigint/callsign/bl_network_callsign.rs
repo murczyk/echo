@@ -264,7 +264,7 @@ pub async fn bl_get_network_callsigns_list(
         )?;
 
         res.push(nc);
-    };
+    }
 
     Ok(res)
 }
