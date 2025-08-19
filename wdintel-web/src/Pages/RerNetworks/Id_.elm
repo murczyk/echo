@@ -39,7 +39,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Select
-import Set
+import Set exposing (Set)
 import Shared
 import Time
 import Time.Extra
@@ -248,6 +248,10 @@ type alias Model =
     -- Network callsigns (new table)
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
     , networkCallsignsTableState : Table.State
+    
+    -- Callsign selection and adding functionality
+    , callsignsSelected : Set String  -- Виділені позивні (callsign)
+    , callsignsAddLoading : Bool     -- Стан завантаження при додаванні позивних
     }
 
 
@@ -375,6 +379,10 @@ init route shared () =
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
+      
+      -- Callsign selection and adding functionality
+      , callsignsSelected = Set.empty
+      , callsignsAddLoading = False
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -481,6 +489,11 @@ type Msg
     | DeleteFreqConfirmedByUser
     | DeleteFreqCanceledByUser
     | DeleteFreqReturnedByApi (Result ApiError B.Network)
+    
+    -- Callsign selection and adding functionality
+    | ToggleCallsignSelection String                    -- Перемикання виділення позивного
+    | AddSelectedCallsignsToNetwork                     -- Додавання виділених позивних до мережі
+    | CallsignsAddedToNetwork (Result ApiError (List B.NetworkCallsign))  -- Результат додавання (тепер список)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1731,6 +1744,59 @@ update shared msg model =
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
+        
+        -- Callsign selection and adding functionality
+        ToggleCallsignSelection callsign ->
+            let
+                newSelected = 
+                    if Set.member callsign model.callsignsSelected then
+                        Set.remove callsign model.callsignsSelected
+                    else
+                        Set.insert callsign model.callsignsSelected
+            in
+            ( { model | callsignsSelected = newSelected }, E.none )
+
+        AddSelectedCallsignsToNetwork ->
+            let
+                networkId = 
+                    case model.network of
+                        Success network -> network.id
+                        _ -> 0
+                
+                -- Створюємо запит для додавання кількох позивних
+                payload = 
+                    { networkId = networkId
+                    , callsigns = Set.toList model.callsignsSelected
+                    }
+            in
+            ( { model | callsignsAddLoading = True }
+            , E.addMultipleCallsignsToNetwork CallsignsAddedToNetwork payload
+            )
+
+        CallsignsAddedToNetwork (Err e) ->
+            ( { model | callsignsAddLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання позивних до мережі" e
+            )
+
+        CallsignsAddedToNetwork (Ok networkCallsigns) ->
+            let
+                -- Оновлюємо networkCallsigns, додаючи нові
+                updatedNetworkCallsigns = 
+                    case model.networkCallsigns of
+                        Success existing ->
+                            Success (existing ++ networkCallsigns)
+                        _ ->
+                            Success networkCallsigns
+                
+                -- Очищаємо виділення та стан завантаження
+                updatedModel = 
+                    { model 
+                    | networkCallsigns = updatedNetworkCallsigns
+                    , callsignsAddLoading = False
+                    , callsignsSelected = Set.empty
+                    }
+            in
+            ( updatedModel, E.none )
 
 
 
