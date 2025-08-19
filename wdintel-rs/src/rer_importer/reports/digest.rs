@@ -46,26 +46,13 @@ pub struct NetworkSummary {
     pub id: i64,
     pub name: String,
     pub location: Option<String>,
-    pub freq: String,
     pub unit_name: Option<String>,
-    pub master_key: Option<String>,
-}
-
-#[derive(
-    Debug, Serialize, Deserialize, PartialEq, Eq, Clone, FromQueryResult, Hash,
-)]
-pub struct CallsignSummary {
-    pub network_id: i64,
-    pub unit_id: i64,
-    pub unit_name: String,
-    pub position: String,
-    pub callsign: String,
 }
 
 pub async fn report_docx_kind_digest(
     user: Identity,
     env: &Env,
-    _req: &super::ReportPreviewReq,
+    req: &super::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_digest started");
@@ -73,16 +60,15 @@ pub async fn report_docx_kind_digest(
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
         .context(h!())?;
-    // let messages: Vec<(i64, InboxMessage)> =
-    //     crate::rer_importer::inbox::get_inbox_messages(
-    //         &login, &logins, env, &req.req,
-    //     )
-    //     .await
-    //     .context(h!())?;
-    // let mut report = collect_report(messages.clone(), logins.clone(), env)
-    // .await
-    //     .context(h!())?;
-    let mut report = mk_report_mock();
+    let messages: Vec<(i64, InboxMessage)> =
+        crate::rer_importer::inbox::get_inbox_messages(
+            &login, &logins, env, &req.req,
+        )
+        .await
+        .context(h!())?;
+    let mut report = collect_report(messages.clone(), logins.clone(), env)
+        .await
+        .context(h!())?;
     info!("report_docx_kind_digest data collected");
 
     let config = DocxConfig {
@@ -235,179 +221,33 @@ pub async fn report_docx_kind_digest(
     Ok(())
 }
 
-fn mk_report_mock() -> Report {
-    let note_r1_1 = InterNote {
-        time: NaiveTime::from_hms(7, 9, 12),
-        text: "противник  зі   складу гсав гсадн 7 омсп 11 АК (ЛОЗОВОЄ, БЄЛГОРОДСЬКА ОБЛАСТЬ) планує переміщення особового складу.".to_string(),
-        interception_or_id: Either::Left("17.08.2025, 07:09:50
-167.2550
-НВ
-АНГЕЛ, КАБАН
-
-1— Ты к Ангелу уходишь?
-2—  К Кабану выхожу.
-1— Не будет заезжать, выходи сюда. Через пару малых он будет сюда двигаться.
-".to_string()),
-    };
-    let note_r1_2 = InterNote {
-        time: NaiveTime::from_hms(9, 12, 4),
-        text: "з метою перевірки стану справ та готовність до виконання завдань противник зі складу 6 тр 2 тб 11 тп 18 мсд 11 АК очікує прибуття посадової особи в районі: ЧЕРЕМОШНОЕ".to_string(),
-        interception_or_id: Either::Left("158.5500
-АРКАН
-ПЛАМЯ, ЧЕРНЫЙ
-— Черный, Черный, Пламя, Пламя, я Аркан, все, старший начальник выдвинулся по подразделениям, всем готовность номер 1. Как поняли?".to_string()),
-    };
-    let note_r2_1 = InterNote {
-        time: NaiveTime::from_hms(11, 55, 0),
-        text: "противник зі складу 3 мсб 82 мсп 69 мсд 6 ЗА планує нанесення вогневого ураження по позиціям СОУ в районі ВОВЧАНСЬК (37U CR 53632 73496) та ВІЛЬЧА (37U CR 53183 68322)".to_string(),
-        interception_or_id: Either::Right("ghmk-dcty".to_string()),
-    };
-    let note_r4_1 = InterNote {
-        time: NaiveTime::from_hms(0, 0, 12),
-        text: "відмічено переміщення особового складу, через позиції  3 мсб 82 мсп 69 мсд 6 А в районі пд. ГАТИЩЕ (37U CR 49203 72626)".to_string(),
-        interception_or_id: Either::Right("dggh-fefs".to_string()),
-    };
-    let row_1 = NetworkRow {
-        network_name: "гсав гсадн 7 омсп 11 АК".to_string(),
-        network_location: "район ЛОЗОВОЄ".to_string(),
-        notes: vec![note_r1_1, note_r1_2],
-    };
-    let row_2 = NetworkRow {
-        network_name: "6 тр 2 тб 11 тп 18 мсд 11 АК".to_string(),
-        network_location: "ЧЕРЕМОШНЕ, Бєлгородська область".to_string(),
-        notes: vec![note_r2_1],
-    };
-    let row_3 = NetworkRow {
-        network_name: "6 тр 2 тб 11 тп 18 мсд 11 АК".to_string(),
-        network_location: "ЧЕРЕМОШНЕ, Бєлгородська область".to_string(),
-        notes: vec![],
-    };
-    let row_4 = NetworkRow {
-        network_name: "6 тр 2 тб 11 тп 18 мсд 11 АК".to_string(),
-        network_location: "ЗАПУПЯНКА, Бєлгородська область".to_string(),
-        notes: vec![note_r4_1],
-    };
-    let aor_row1 = AorRow {
-        aor_name: "2 КНГУ".to_string(),
-        network_data: vec![row_1, row_2],
-    };
-    let aor_row2 = AorRow {
-        aor_name: "16 АК".to_string(),
-        network_data: vec![row_3],
-    };
-    let aor_row3 = AorRow {
-        aor_name: "17 АК".to_string(),
-        network_data: vec![],
-    };
-    let aor_row4 = AorRow {
-        aor_name: "18 АК".to_string(),
-        network_data: vec![row_4],
-    };
-    Report {
-        datetime: Utc::now(),
-        aor_data: vec![aor_row1, aor_row2],
-    }
-}
-
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
     _logins: Vec<String>,
     env: &Env,
 ) -> anyhow::Result<Report> {
-    let groups = messages
-        .iter()
-        .flat_map(|(_, m)| m.group_master_key.clone())
-        .unique()
-        .collect::<Vec<_>>();
-    let freqs = messages
-        .iter()
-        .flat_map(|(_, m)| m.freq.clone())
-        .unique()
-        .collect::<Vec<_>>();
-
     let all_networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
-            sigint_network::Relation::SigintNetworkFreq.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
         )
         .join(
-            JoinType::LeftJoin,
+            JoinType::InnerJoin,
             sigint_network_unit::Relation::SigintUnit.def(),
         )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Name.is_not_null())
         .select_only()
         .column(sigint_network::Column::Id)
         .column(sigint_network::Column::Name)
         .column(sigint_network::Column::Location)
-        .column(sigint_network_freq::Column::Freq)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .into_model::<NetworkSummary>()
         .all(&env.dbx)
         .await
         .context(h!())?
         .into_iter()
-        .map(|s| ((s.freq.clone(), None), s))
-        .collect::<HashMap<_, _>>();
-
-    let mut networks = sigint_network::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkFreq.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network_aor::Relation::AreaOfResponsibility.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            area_of_responsibility::Relation::SignalGroupAor.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network::Relation::SigintNetworkUnit.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_network_unit::Relation::SigintUnit.def(),
-        )
-        .filter(sigint_network_freq::Column::Freq.is_in(freqs))
-        .filter(
-            signal_group_aor::Column::Id
-                .is_null()
-                .or(signal_group_aor::Column::MasterKey.is_in(groups)),
-        )
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(
-            area_of_responsibility::Column::Id
-                .is_null()
-                .or(area_of_responsibility::Column::Deleted.eq(false)),
-        )
-        .filter(sigint_network::Column::Name.is_not_null())
-        .filter(sigint_network_freq::Column::Freq.is_not_null())
-        .select_only()
-        .column(sigint_network::Column::Id)
-        .column(sigint_network::Column::Name)
-        .column(sigint_network::Column::Location)
-        .column(sigint_network_freq::Column::Freq)
-        .column(signal_group_aor::Column::MasterKey)
-        .column_as(sigint_unit::Column::Name, "unit_name")
-        .into_model::<NetworkSummary>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|s| ((s.freq.clone(), s.master_key.clone()), s))
-        .collect::<HashMap<_, _>>();
+        .collect::<Vec<_>>();
 
     let message_ids = messages
         .iter()
