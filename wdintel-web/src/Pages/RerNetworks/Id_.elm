@@ -263,6 +263,10 @@ type alias Model =
         , callsignCreateErrors : Dict String String
         , callsignCreateSourceSelState : Select.State
         , callsignCreateSources : List B.Source
+        
+        -- Callsign deletion confirmation dialog
+        , deleteCallsignConfirmation : Maybe Int  -- ID позивного для видалення
+        , deleteCallsignLoading : Bool           -- Стан завантаження видалення
     }
 
 
@@ -402,6 +406,10 @@ init route shared () =
         , callsignCreateErrors = Dict.empty
         , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
         , callsignCreateSources = []
+        
+        -- Callsign deletion confirmation dialog initialization
+        , deleteCallsignConfirmation = Nothing
+        , deleteCallsignLoading = False
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -526,6 +534,9 @@ type Msg
     
     -- Callsign deletion functionality
     | DeleteCallsignFromNetwork Int                    -- Клік по кнопці видалення позивного з мережі
+    | DeleteCallsignConfirmed Int                      -- Підтвердження видалення позивного
+    | DeleteCallsignCanceled                           -- Скасування видалення позивного
+    | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1930,7 +1941,35 @@ update shared msg model =
             ( updatedModel, E.none )
             
         DeleteCallsignFromNetwork callsignId ->
-            ( model, E.none ) -- TODO: Implement deletion logic
+            ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
+            
+        DeleteCallsignConfirmed callsignId ->
+            ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
+            , E.none ) -- TODO: Add API call
+            
+        DeleteCallsignCanceled ->
+            ( { model | deleteCallsignConfirmation = Nothing }, E.none )
+            
+        CallsignDeletedFromNetwork (Ok deletedCallsign) ->
+            let
+                -- Видаляємо позивний зі списку networkCallsigns
+                updatedNetworkCallsigns = 
+                    case model.networkCallsigns of
+                        Success existingCallsigns ->
+                            Success (List.filter (\c -> c.id /= deletedCallsign.id) existingCallsigns)
+                        _ ->
+                            model.networkCallsigns
+            in
+            ( { model 
+                | deleteCallsignLoading = False
+                , networkCallsigns = updatedNetworkCallsigns
+              }
+            , E.none )
+            
+        CallsignDeletedFromNetwork (Err error) ->
+            ( { model | deleteCallsignLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного з мережі" error
+            )
 
 
 
