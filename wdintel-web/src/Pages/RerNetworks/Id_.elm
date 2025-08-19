@@ -267,6 +267,13 @@ type alias Model =
         -- Callsign deletion confirmation dialog
         , deleteCallsignConfirmation : Maybe Int  -- ID позивного для видалення
         , deleteCallsignLoading : Bool           -- Стан завантаження видалення
+        
+        -- Callsign editing functionality
+        , editCallsignSidebar : Maybe Int        -- ID позивного для редагування
+        , editCallsignState : Maybe B.UpdateNetworkCallsignReq -- Стан форми редагування
+        , editCallsignSaving : Bool             -- Стан збереження редагування
+        , editCallsignErrors : Dict String String -- Помилки валідації редагування
+        , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
     }
 
 
@@ -410,6 +417,13 @@ init route shared () =
         -- Callsign deletion confirmation dialog initialization
         , deleteCallsignConfirmation = Nothing
         , deleteCallsignLoading = False
+        
+        -- Callsign editing functionality initialization
+        , editCallsignSidebar = Nothing
+        , editCallsignState = Nothing
+        , editCallsignSaving = False
+        , editCallsignErrors = Dict.empty
+        , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -534,6 +548,7 @@ type Msg
     
     -- Callsign deletion functionality
     | DeleteCallsignFromNetwork Int                    -- Клік по кнопці видалення позивного з мережі
+    | EditCallsignClicked Int                          -- Клік по кнопці редагування позивного з мережі
     | DeleteCallsignConfirmed Int                      -- Підтвердження видалення позивного
     | DeleteCallsignCanceled                           -- Скасування видалення позивного
     | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
@@ -1943,6 +1958,9 @@ update shared msg model =
         DeleteCallsignFromNetwork callsignId ->
             ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
             
+        EditCallsignClicked callsignId ->
+            ( model, E.none ) -- TODO: Implement edit functionality
+            
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
             , E.deleteNetworkCallsign CallsignDeletedFromNetwork callsignId )
@@ -2494,6 +2512,12 @@ networkCallsignsTableConfig shared model user =
                         , children =
                             [ div [ class "flex gap-[4px] text-sm" ]
                                 [ button
+                                    [ title "Редагувати"
+                                    , class "icon-btn icon-btn-primary"
+                                    , onClick (EditCallsignClicked row.id)
+                                    ]
+                                    [ i [ class "bi bi-pencil" ] [] ]
+                                , button
                                     [ title "Видалити"
                                     , class "icon-btn icon-btn-danger"
                                     , onClick (DeleteCallsignFromNetwork row.id)
