@@ -2407,9 +2407,29 @@ networkCallsignsTableConfig shared model user =
         { toId = String.fromInt << .id
         , toMsg = SetNetworkCallsignsTableState
         , columns =
-            [ Table.stringColumn "Позивний" .callsign |> Table.withColumnWidth "20%"
-            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "25%"
-            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "30%"
+            [ Table.stringColumn "Позивний" .callsign |> Table.withColumnWidth "18%"
+            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Джерело"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = 
+                            [ case row.sourceId of
+                                Just sourceId ->
+                                    case ListX.find (\s -> s.id == sourceId) model.callsignCreateSources of
+                                        Just source ->
+                                            text source.name
+                                        Nothing ->
+                                            text (String.fromInt sourceId)
+                                Nothing ->
+                                    text "-"
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "12%"
             , Table.veryCustomColumn
                 { name = "Дата створення"
                 , viewData =
@@ -2419,8 +2439,8 @@ networkCallsignsTableConfig shared model user =
                         }
                 , sorter = TableSorter.increasingOrDecreasingBy .createdAt
                 }
-                |> Table.withColumnWidth "15%"
-            , Table.intColumn "К-сть повідомлень" .messageCount |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "12%"
+            , Table.intColumn "К-сть повідомлень" .messageCount |> Table.withColumnWidth "8%"
             ]
         , customizations = customizations
         }
