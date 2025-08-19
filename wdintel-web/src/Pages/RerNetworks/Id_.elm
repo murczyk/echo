@@ -1945,7 +1945,7 @@ update shared msg model =
             
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
-            , E.none ) -- TODO: Add API call
+            , E.deleteNetworkCallsign CallsignDeletedFromNetwork callsignId )
             
         DeleteCallsignCanceled ->
             ( { model | deleteCallsignConfirmation = Nothing }, E.none )
