@@ -58,7 +58,6 @@ macro_rules! h {
     };
 }
 
-#[actix_web::main]
 pub async fn renew_tailscale_cert(
     mode: Mode,
     force: Option<bool>,
@@ -530,7 +529,9 @@ async fn main() -> Result<(), AppError> {
         }
         Cmd::SigintWorker => crate::sigint::worker::sigint_worker(mode).await,
         Cmd::Migration => crate::migration::run_migration(mode).await,
-        Cmd::RenewTailscaleCert(ps) => renew_tailscale_cert(mode, ps.force),
+        Cmd::RenewTailscaleCert(ps) => {
+            renew_tailscale_cert(mode, ps.force).await
+        }
         Cmd::Backup => crate::backup::backup(mode).await,
         Cmd::OneoffSigintImportMouse(ps) => {
             crate::sigint::oneoff_sigint_import_mouse(mode, &ps).await
