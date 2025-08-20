@@ -146,6 +146,14 @@ pub async fn generate_networks_docx_report(
     let all_known_callsigns =
         find_all_known_callsigns(&env.dbx).await.context(h!())?;
 
+    let sources: HashMap<i64, String> =
+        crate::sigint::source::bl_list_sources(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|s| (s.id, s.name))
+            .collect();
+
     let storage_dir =
         std::path::PathBuf::from_str(&env.config.storage_dir).context(h!())?;
     let outfolder = storage_dir.join("reports_log");
@@ -340,60 +348,60 @@ pub async fn generate_networks_docx_report(
                 &correspondents_number,
             );
             doc = add_field(doc, "5. Позивні: ", "");
+            let mut is_network_callsigns_table_added = false;
             if !net_callsigns.is_empty() {
                 // add callsigns assignet to the network
                 if let Some(table) = build_network_callsigns_table(
                     &net_callsigns,
+                    &sources,
                     width_unit,
                     &table_header_style_id,
                     settings.networks_only,
                 ) {
                     doc = doc.add_table(table);
+                    is_network_callsigns_table_added = true;
+                }
+            }
+            if !settings.networks_only && !callsigns.is_empty() {
+                // Add known callsigns in table
+                if let Some(table) = build_callsigns_table(
+                    &callsigns,
+                    width_unit,
+                    &table_header_style_id,
+                ) {
+                    if is_network_callsigns_table_added {
+                        doc = doc.add_paragraph(Paragraph::new());
+                    }
+                    doc = doc.add_table(table);
                 }
             }
 
-            // if !settings.networks_only && !callsigns.is_empty() {
-            //     // Add known callsigns in table
-            //     if let Some(table) = build_callsigns_table(
-            //         &callsigns,
-            //         width_unit,
-            //         &table_header_style_id,
-            //     ) {
-            //         doc = doc.add_table(table);
-            //     }
-            // }
+            if !callsigns.is_empty() {
+                // add all other callsigns in text
+                let callsigns_other = callsigns
+                    .iter()
+                    .filter(|callsign| {
+                        callsign.known_callsigns.is_none()
+                            || settings.networks_only
+                    })
+                    .map(|callsign| callsign.callsign.to_uppercase().clone())
+                    .collect::<Vec<String>>()
+                    .join(", ");
 
-            // if !callsigns.is_empty() {
-            //     // add all other callsigns in text
-            //     let callsigns_other = callsigns
-            //         .iter()
-            //         .filter(|callsign| {
-            //             callsign.known_callsigns.is_none()
-            //                 || (settings.networks_only
-            //                     && callsign.known_callsigns.is_some()
-            //                     && !callsigns_reporting
-            //                         .get(&callsign.callsign)
-            //                         .cloned()
-            //                         .unwrap_or(false))
-            //         })
-            //         .map(|callsign| callsign.callsign.to_uppercase().clone())
-            //         .collect::<Vec<String>>()
-            //         .join(", ");
-
-            //     if !callsigns_other.is_empty() {
-            //         doc = doc.add_paragraph(
-            //             Paragraph::new()
-            //                 .add_run(
-            //                     Run::new()
-            //                         .add_text("Приналежність встановлюється - ")
-            //                         .bold(),
-            //                 )
-            //                 .add_run(Run::new().add_text(callsigns_other)), // .align(
-            //                                                                 //     docx_rs::alignment_type::AlignmentType::Justified,
-            //                                                                 // ),
-            //         );
-            //     }
-            // }
+                if !callsigns_other.is_empty() {
+                    doc = doc.add_paragraph(
+                        Paragraph::new()
+                            .add_run(
+                                Run::new()
+                                    .add_text("Приналежність встановлюється - ")
+                                    .bold(),
+                            )
+                            .add_run(Run::new().add_text(callsigns_other)), // .align(
+                                                                            //     docx_rs::alignment_type::AlignmentType::Justified,
+                                                                            // ),
+                    );
+                }
+            }
             doc = add_field(doc, "6. Робочі частоти: ", "");
             if let Some(table) = build_freqs_table(
                 &freqs,
@@ -565,6 +573,7 @@ pub async fn generate_networks_docx_report(
 /// Helper: Generate the network callsigns table
 fn build_network_callsigns_table(
     net_callsigns: &[NetworkCallsign],
+    sources: &HashMap<i64, String>,
     width_unit: usize,
     table_header_style_id: &str,
     networks_only: bool,
@@ -734,12 +743,10 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 5,
-                        String::default().as_str(), // get_unique_field_as_string(
-                        // get_unique_field_as_string(
-                        //     &callsign.known_callsigns,
-                        //     |item| item.source_name.clone(),
-                        // )
-                        // .as_str(),
+                        callsign
+                            .source_id
+                            .and_then(|id| sources.get(&id))
+                            .map_or("", |s| s.as_str()),
                         None,
                         false,
                     ),
@@ -764,188 +771,178 @@ fn build_network_callsigns_table(
     )
 }
 
-// Helper: Generate the callsigns table
-// fn build_callsigns_table(
-//     callsigns: &[CallsignRes],
-//     width_unit: usize,
-//     table_header_style_id: &str,
-// ) -> Option<Table> {
-//     let filtered_callsigns: Vec<&CallsignRes> = callsigns
-//         .iter()
-//         .filter(|callsign| {
-//             let has_known = callsign
-//                 .known_callsigns
-//                 .as_ref()
-//                 .is_some_and(|v| !v.is_empty());
+/// Helper: Generate the callsigns table
+fn build_callsigns_table(
+    callsigns: &[CallsignRes],
+    width_unit: usize,
+    table_header_style_id: &str,
+) -> Option<Table> {
+    let filtered_callsigns: Vec<&CallsignRes> = callsigns
+        .iter()
+        .filter(|callsign| {
+            callsign
+                .known_callsigns
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+        })
+        .collect();
 
-//             if networks_only {
-//                 has_known
-//                     && callsigns_reporting
-//                         .get(&callsign.callsign)
-//                         .cloned()
-//                         .unwrap_or(false)
-//             } else {
-//                 has_known
-//             }
-//         })
-//         .collect();
+    if filtered_callsigns.is_empty() {
+        return None;
+    }
 
-//     if filtered_callsigns.is_empty() {
-//         return None;
-//     }
+    let (headers, row_builder): (
+        Vec<TableCell>,
+        Box<dyn Fn(&CallsignRes) -> Vec<TableCell>>,
+    ) = {
+        (
+            vec![
+                create_table_header_cell(
+                    width_unit * 6,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Позивний",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 10,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Приналежність",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 10,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Коментар",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "К-ть перехоплень",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 3,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Частоти",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 7,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Останній раз в етері",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 7,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Дата прив'язки",
+                    false,
+                ),
+                create_table_header_cell(
+                    width_unit * 5,
+                    Some(DEFAULT_TABLE_HEADER_COLOR),
+                    table_header_style_id,
+                    "Джерело",
+                    false,
+                ),
+            ],
+            Box::new(move |callsign: &CallsignRes| {
+                vec![
+                    create_table_data_cell(
+                        width_unit * 6,
+                        &callsign.callsign.to_uppercase(),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 10,
+                        get_unique_field_as_string(
+                            &callsign.known_callsigns,
+                            |item| item.position.clone(),
+                        )
+                        .as_str(),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 10,
+                        get_unique_field_as_string(
+                            &callsign.known_callsigns,
+                            |item| item.comment.clone(),
+                        )
+                        .as_str(),
+                        None,
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit,
+                        &callsign.message_count.to_string(),
+                        get_color(callsign.is_old),
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 3,
+                        get_unique_field_as_string(&callsign.freqs, |f| {
+                            f.clone()
+                        })
+                        .as_str(),
+                        get_color(callsign.is_old),
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 7,
+                        format_datetime_field(callsign.last_datetime).as_str(),
+                        get_color(callsign.is_old),
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 7,
+                        get_unique_field_as_string(
+                            &callsign.known_callsigns,
+                            |item| format_datetime_field(Some(item.created_at)),
+                        )
+                        .as_str(),
+                        get_color(callsign.is_old),
+                        false,
+                    ),
+                    create_table_data_cell(
+                        width_unit * 5,
+                        get_unique_field_as_string(
+                            &callsign.known_callsigns,
+                            |item| item.source_name.clone(),
+                        )
+                        .as_str(),
+                        get_color(callsign.is_old),
+                        false,
+                    ),
+                ]
+            }),
+        )
+    };
 
-//     let (headers, row_builder): (
-//         Vec<TableCell>,
-//         Box<dyn Fn(&CallsignRes) -> Vec<TableCell>>,
-//     ) = {
-//         (
-//             vec![
-//                 create_table_header_cell(
-//                     width_unit * 6,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Позивний",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit * 10,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Приналежність",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit * 10,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Коментар",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "К-ть перехоплень",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit * 3,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Частоти",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit * 7,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Останній раз в етері",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit * 7,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Дата прив'язки",
-//                     false,
-//                 ),
-//                 create_table_header_cell(
-//                     width_unit * 5,
-//                     Some(DEFAULT_TABLE_HEADER_COLOR),
-//                     table_header_style_id,
-//                     "Джерело",
-//                     false,
-//                 ),
-//             ],
-//             Box::new(move |callsign: &CallsignRes| {
-//                 vec![
-//                     create_table_data_cell(
-//                         width_unit * 6,
-//                         &callsign.callsign.to_uppercase(),
-//                         None,
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit * 10,
-//                         get_unique_field_as_string(
-//                             &callsign.known_callsigns,
-//                             |item| item.position.clone(),
-//                         )
-//                         .as_str(),
-//                         None,
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit * 10,
-//                         get_unique_field_as_string(
-//                             &callsign.known_callsigns,
-//                             |item| item.comment.clone(),
-//                         )
-//                         .as_str(),
-//                         None,
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit,
-//                         &callsign.message_count.to_string(),
-//                         get_color(callsign.is_old),
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit * 3,
-//                         get_unique_field_as_string(&callsign.freqs, |f| {
-//                             f.clone()
-//                         })
-//                         .as_str(),
-//                         get_color(callsign.is_old),
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit * 7,
-//                         format_datetime_field(callsign.last_datetime).as_str(),
-//                         get_color(callsign.is_old),
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit * 7,
-//                         get_unique_field_as_string(
-//                             &callsign.known_callsigns,
-//                             |item| format_datetime_field(Some(item.created_at)),
-//                         )
-//                         .as_str(),
-//                         get_color(callsign.is_old),
-//                         false,
-//                     ),
-//                     create_table_data_cell(
-//                         width_unit * 5,
-//                         get_unique_field_as_string(
-//                             &callsign.known_callsigns,
-//                             |item| item.source_name.clone(),
-//                         )
-//                         .as_str(),
-//                         get_color(callsign.is_old),
-//                         false,
-//                     ),
-//                 ]
-//             }),
-//         )
-//     };
-
-//     Some(
-//         Table::new(
-//             std::iter::once(TableRow::new(headers))
-//                 .chain(
-//                     filtered_callsigns
-//                         .into_iter()
-//                         .map(|callsign| TableRow::new(row_builder(callsign))),
-//                 )
-//                 .collect(),
-//         )
-//         .width(width_unit * 48, WidthType::Dxa)
-//         .layout(TableLayoutType::Fixed)
-//         .set_borders(TableBorders::with_empty()),
-//     )
-// }
+    Some(
+        Table::new(
+            std::iter::once(TableRow::new(headers))
+                .chain(
+                    filtered_callsigns
+                        .into_iter()
+                        .map(|callsign| TableRow::new(row_builder(callsign))),
+                )
+                .collect(),
+        )
+        .width(width_unit * 48, WidthType::Dxa)
+        .layout(TableLayoutType::Fixed)
+        .set_borders(TableBorders::with_empty()),
+    )
+}
 
 /// Helper. Generate table with frequencies
 fn build_freqs_table(
