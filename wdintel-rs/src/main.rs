@@ -290,6 +290,12 @@ pub struct RenewTailscaleCertPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffAssignMessageIdsPs {
+    #[arg(long, value_enum)]
+    pub dry_run: Option<bool>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrintOrganismGroupsPs {
     #[arg(long, value_enum)]
     pub organism_name: String,
@@ -354,6 +360,7 @@ enum Cmd {
     OneoffExportDataSource(OneoffExportDataSourcePs),
     OneoffFixAreasOfResponsibility(OneoffFixAreasOfResponsibilityPs),
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
+    OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -658,6 +665,13 @@ async fn main() -> Result<(), AppError> {
         Cmd::OneoffPrintOrganismGroups(ps) => {
             crate::organism::oneoff::oneoff_print_organism_groups(mode, &ps)
                 .await
+        }
+        Cmd::OneoffAssignMessageIds(ps) => {
+            crate::messenger::id::oneoff_assign_message_ids(
+                mode,
+                ps.dry_run.unwrap_or(true),
+            )
+            .await
         }
     }
 }

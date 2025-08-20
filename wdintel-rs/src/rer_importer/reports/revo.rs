@@ -1,10 +1,12 @@
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+// Add this import if h!() uses anyhow::Context
+use crate::rer_importer::reports::util;
+use crate::rer_importer::reports::util::*;
 use crate::types::*;
 use actix_identity::Identity;
 use anyhow::Context;
-// Add this import if h!() uses anyhow::Context
 use chrono::prelude::*;
 use docx_rs::*;
 use sea_orm::*;
@@ -105,28 +107,42 @@ pub async fn report_docx_kind_revo(
                 report.summary.unidentified_qty
         );
 
+    let config = DocxConfig {
+        width_unit: WIDTH_UNIT,
+        highlight_color: "FF0000".to_string(),
+        split_multiline_cells: true,
+        paragraph_spacing: Some(80),
+    };
+
     let mut rows_amrp: Vec<TableRow> = vec![];
     rows_amrp.push(TableRow::new(vec![
-        mk_header_cell("Назва радіомережі"),
-        mk_header_cell("Час роботи радіомережі"),
-        mk_header_cell("Склад кореспондентів радіомережі та приналежність"),
-        mk_header_cell("Характер радіообміну"),
-        mk_header_cell("Особливості функціонування радіомереж"),
-        mk_header_cell("Що було виявлено"),
+        mk_header_cell("Назва радіомережі", &config),
+        mk_header_cell("Час роботи радіомережі", &config),
+        mk_header_cell(
+            "Склад кореспондентів радіомережі та приналежність",
+            &config,
+        ),
+        mk_header_cell("Характер радіообміну", &config),
+        mk_header_cell("Особливості функціонування радіомереж", &config),
+        mk_header_cell("Що було виявлено", &config),
     ]));
     rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
         "Російська Федерація",
         true,
+        util::ParagraphStyle::Default,
+        &config,
     )]));
     for e in report.hostile_networks {
-        rows_amrp.push(render_network_row(e));
+        rows_amrp.push(render_network_row(e, &config));
     }
     rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
         "Невизначені",
         false,
+        util::ParagraphStyle::Default,
+        &config,
     )]));
     for e in report.undefined_networks {
-        rows_amrp.push(render_network_row(e));
+        rows_amrp.push(render_network_row(e, &config));
     }
     let thin_border = TableBorder::new(TableBorderPosition::Top)
         .border_type(BorderType::Single)
@@ -135,18 +151,11 @@ pub async fn report_docx_kind_revo(
         .width(WIDTH_UNIT * 12, WidthType::Dxa)
         .set_border(thin_border);
 
-    let docx = docx_rs::Docx::new()
-        .page_orient(
-            docx_rs::page_orientation_type::PageOrientationType::Landscape,
-        )
+    let docx = Docx::new()
+        .page_orient(PageOrientationType::Landscape)
         .page_size(11906 * 2, 16838)
         .default_size(28)
-        .page_margin(
-            docx_rs::page_margin::PageMargin::new()
-                .left(600)
-                .right(300)
-                .top(1200),
-        )
+        .page_margin(PageMargin::new().left(600).right(300).top(1200))
         .add_paragraph(
             Paragraph::new()
                 .add_run(Run::new().size(32).add_text(network_summary))
@@ -162,27 +171,46 @@ pub async fn report_docx_kind_revo(
     Ok(())
 }
 
-fn render_network_row(row: NetworkRow) -> TableRow {
-    let mut network_cell = mk_bold_text_cell(&row.name);
+fn render_network_row(row: NetworkRow, config: &DocxConfig) -> TableRow {
+    let mut network_cell =
+        mk_text_cell(&row.name, util::ParagraphStyle::Bold, config);
     if let Some(location) = row.location {
-        network_cell = network_cell
-            .add_paragraph(mk_bold_paragraph(&format!("({location})")));
+        network_cell = network_cell.add_paragraph(
+            mk_paragraph(
+                &format!("({location})"),
+                util::ParagraphStyle::Default,
+                config,
+            )
+            .bold(),
+        );
     }
-    network_cell = network_cell.add_paragraph(mk_paragraph(""));
+    network_cell = network_cell.add_paragraph(mk_paragraph(
+        "",
+        util::ParagraphStyle::Default,
+        config,
+    ));
     for freq in row.freqs {
-        network_cell =
-            network_cell.add_paragraph(mk_paragraph(&format!("\n{freq} МГц")));
+        network_cell = network_cell.add_paragraph(mk_paragraph(
+            &format!("\n{freq} МГц"),
+            util::ParagraphStyle::Default,
+            config,
+        ));
     }
-    let activity_cell =
-        mk_text_cell(&row.activity.since.format(DTM_FORMAT).to_string())
-            .add_paragraph(mk_paragraph(&format!(
-                "- {}",
-                row.activity.till.format(DTM_FORMAT),
-            )))
-            .add_paragraph(mk_paragraph(&format!(
-                "Сеанси: {}",
-                row.activity.seances_qty
-            )));
+    let activity_cell = mk_text_cell(
+        &row.activity.since.format(DTM_FORMAT).to_string(),
+        util::ParagraphStyle::Default,
+        config,
+    )
+    .add_paragraph(mk_paragraph(
+        &format!("- {}", row.activity.till.format(DTM_FORMAT),),
+        util::ParagraphStyle::Default,
+        config,
+    ))
+    .add_paragraph(mk_paragraph(
+        &format!("Сеанси: {}", row.activity.seances_qty),
+        util::ParagraphStyle::Default,
+        config,
+    ));
 
     let mut correspondents = vec![];
     let mut other_correspondents = vec![];
@@ -196,13 +224,25 @@ fn render_network_row(row: NetworkRow) -> TableRow {
         }
     }
     correspondents.push(other_correspondents.join(", "));
-    let correspondents_cell = mk_multiline_text_cell(correspondents);
+    let correspondents_cell = mk_multiline_text_cell(
+        correspondents,
+        util::ParagraphStyle::Default,
+        config,
+    );
 
-    let functionality_details_cell = mk_text_cell(&row.functionality_details);
-    let identified_details_cell = mk_bullet_list_cell(row.identified_details);
+    let functionality_details_cell = mk_text_cell(
+        &row.functionality_details,
+        util::ParagraphStyle::Default,
+        config,
+    );
+    let identified_details_cell =
+        mk_bullet_list_cell(row.identified_details, config);
 
-    let communication_kind_cell =
-        mk_text_cell(&row.communication_kind.unwrap_or("".to_string()));
+    let communication_kind_cell = mk_text_cell(
+        &row.communication_kind.unwrap_or("".to_string()),
+        util::ParagraphStyle::Default,
+        config,
+    );
     TableRow::new(vec![
         network_cell,
         activity_cell,
@@ -211,104 +251,6 @@ fn render_network_row(row: NetworkRow) -> TableRow {
         functionality_details_cell,
         identified_details_cell,
     ])
-}
-
-fn mk_header_cell(text: &str) -> TableCell {
-    TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center)
-        // .vertical_merge(VMergeType::Restart)
-        .add_paragraph(
-            Paragraph::new()
-                .add_run(Run::new().add_text(text).bold())
-                .line_spacing(LineSpacing::new().before(80).after(80))
-                .align(AlignmentType::Center),
-        )
-}
-
-fn mk_text_cell(text: &str) -> TableCell {
-    TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center)
-        .add_paragraph(
-            Paragraph::new()
-                .add_run(Run::new().add_text(text))
-                .line_spacing(LineSpacing::new().before(80).after(80)),
-        )
-}
-
-fn mk_multiline_text_cell(lines: Vec<String>) -> TableCell {
-    let mut cell = TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center);
-    let mut remaining_count: i32 = lines.len() as i32;
-    for text in lines {
-        let mut separator_line_border =
-            ParagraphBorder::new(ParagraphBorderPosition::Bottom);
-        separator_line_border.val = BorderType::Single;
-        let mut paragraph_borders_config = ParagraphBorders::with_empty();
-        paragraph_borders_config =
-            paragraph_borders_config.set(separator_line_border);
-        remaining_count -= 1;
-        let mut paragraph = Paragraph::new().add_run(Run::new().add_text(text));
-        if remaining_count > 0 {
-            paragraph.property = paragraph
-                .property
-                .set_borders(paragraph_borders_config.clone());
-            paragraph.property = paragraph
-                .property
-                .line_spacing(LineSpacing::new().after(20));
-        }
-        cell = cell.add_paragraph(paragraph);
-    }
-    cell
-}
-
-fn mk_bullet_list_cell(lines: Vec<String>) -> TableCell {
-    let mut cell = TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center);
-    for text in lines {
-        cell = cell.add_paragraph(mk_paragraph(&format!(" • {text}")));
-    }
-    cell
-}
-
-fn mk_bold_text_cell(text: &str) -> TableCell {
-    TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center)
-        .add_paragraph(mk_bold_paragraph(text))
-}
-
-fn mk_paragraph(text: &str) -> Paragraph {
-    Paragraph::new()
-        .add_run(Run::new().add_text(text))
-        .line_spacing(LineSpacing::new().before(80).after(80))
-}
-
-fn mk_bold_paragraph(text: &str) -> Paragraph {
-    Paragraph::new()
-        .add_run(Run::new().add_text(text).bold())
-        .line_spacing(LineSpacing::new().before(80).after(80))
-}
-
-fn mk_merged_text_cell(text: &str, is_red: bool) -> TableCell {
-    let mut text = Run::new().add_text(text).bold();
-    if is_red {
-        text = text.color("FF0000");
-    }
-    TableCell::new()
-        .width(WIDTH_UNIT * 2, WidthType::Dxa)
-        .vertical_align(VAlignType::Center)
-        .vertical_merge(VMergeType::Restart)
-        .add_paragraph(
-            Paragraph::new()
-                .add_run(text)
-                .line_spacing(LineSpacing::new().before(80).after(80))
-                .align(AlignmentType::Center),
-        )
-        .grid_span(6)
 }
 
 async fn collect_report(
@@ -656,7 +598,9 @@ async fn collect_report(
             })
         }
         for c in unlinked_callsigns {
-            if !env.callsigns_whitelist.contains(&c) {
+            if !env.callsigns_whitelist.contains(&c)
+                && !crate::rer_importer::callsigns::is_numeric_callsign(&c)
+            {
                 skipped_callsigns.insert(c);
                 continue;
             }

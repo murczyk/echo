@@ -17,6 +17,13 @@ use sea_orm::*;
 use sea_query::Expr;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub fn is_numeric_callsign(callsign: &String) -> bool {
+    let Ok(num) = callsign.trim().parse::<i64>() else {
+        return false;
+    };
+    num > 999
+}
+
 // /// Callsigns which we don't auto-guess
 // fn get_blacklist() -> BTreeSet<String> {
 //     let mut res = BTreeSet::new();
@@ -2228,6 +2235,29 @@ mod tests {
             "Бульдог".to_string(),
             "Псих".to_string(),
             "Люстра".to_string(),
+        ];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_format_hoor5() {
+        let body = r#"УКХ р/м зі складу 222 мсп (МВО)
+ ОРЛЯНСЬКЕ
+ 01.01.2025 3:3:03
+ Відправник: Бульдог
+ Отримувач(і): Псих,
+  1234
+ Перехоплення:
+ 1. Бульдог Люстра.
+ 2. Псих, сейчас наша коробочка работает по соседней посадке, ей бы правее, ещё метра на 700, там напротив работал миномёт на  Скорого.
+ 3. Не в нашу сторону, а вообще в сторону Сокола, туда работал миномёт.
+ 4. Люстра Люстра азимут можешь сказать?   "#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> = vec![
+            "Бульдог".to_string(),
+            "Псих".to_string(),
+            "1234".to_string(),
         ];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);

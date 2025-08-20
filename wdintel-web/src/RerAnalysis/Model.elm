@@ -160,6 +160,7 @@ type ReportTemplate
     | RTNaUshnom
     | RTSenders SendersType
     | RTReo
+    | RTDigest
 
 
 type FilterName
