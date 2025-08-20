@@ -249,6 +249,7 @@ type alias Model =
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
     , networkCallsignsTableState : Table.State
     , networkCallsignsPager : Pager.Model
+    , callsignsPager : Pager.Model
 
     -- Callsign selection and adding functionality
     , callsignsSelected : Set Int    -- Виділені позивні (known_callsign_id)
@@ -399,7 +400,8 @@ init route shared () =
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
-      , networkCallsignsPager = Pager.init
+              , networkCallsignsPager = Pager.init
+        , callsignsPager = Pager.init
 
       -- Callsign selection and adding functionality
       , callsignsSelected = Set.empty
@@ -503,6 +505,7 @@ type Msg
     | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
     | SetNetworkCallsignsTableState Table.State
     | NetworkCallsignsPagerMsg Pager.Msg
+    | CallsignsPagerMsg Pager.Msg
     | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
@@ -569,7 +572,31 @@ update shared msg model =
             )
 
         CallsignsReturnedByApi (Ok res) ->
-            ( { model | callsigns = Success res.callsigns }, E.none )
+            let
+                -- Обчислюємо загальну кількість позивних для пагінації
+                totalCallsigns =
+                    res.callsigns
+                        |> List.concatMap
+                            (\callsign ->
+                                case callsign.knownCallsigns of
+                                    Just knownCallsigns ->
+                                        knownCallsigns
+
+                                    Nothing ->
+                                        []
+                            )
+                        |> List.length
+
+                updatedPager =
+                    { currentPage = 1
+                    , pageSize = 10
+                    , totalItems = totalCallsigns
+                    }
+            in
+            ( { model
+                | callsigns = Success res.callsigns
+                , callsignsPager = updatedPager
+              }, E.none )
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }
@@ -1375,7 +1402,7 @@ update shared msg model =
             )
 
         NetworkCallsignsReturnedByApi (Ok res) ->
-            ( { model 
+            ( { model
                 | networkCallsigns = Success res.networkCallsigns
                 , networkCallsignsPager = { currentPage = 1, pageSize = 10, totalItems = List.length res.networkCallsigns }
               }
@@ -1387,6 +1414,9 @@ update shared msg model =
 
         NetworkCallsignsPagerMsg pagerMsg ->
             ( { model | networkCallsignsPager = Pager.update pagerMsg model.networkCallsignsPager }, E.none )
+
+        CallsignsPagerMsg pagerMsg ->
+            ( { model | callsignsPager = Pager.update pagerMsg model.callsignsPager }, E.none )
 
         OpenFreqEditSidebar freqId updateReq ->
             let
@@ -3724,7 +3754,7 @@ contentBlock user shared network model =
             _ ->
                 Le.Block.Spinner.loadingSpinnerSm
         ]
-    , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[700px] mt-[30px] p-[16px] flex flex-col" ]
+    , section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
             , Button.new
@@ -3800,63 +3830,74 @@ contentBlock user shared network model =
             ]
         , case model.callsigns of
             Success callsigns ->
-                div [ class "overflow-y-auto flex-1" ]
-                    [ let
-                        -- Перетворюємо дані у плоску структуру для таблиці
-                        callsignsTableRows =
-                            callsigns
-                                |> List.concatMap
-                                    (\callsign ->
-                                        case callsign.knownCallsigns of
-                                            Just knownCallsigns ->
-                                                List.map
-                                                    (\knownCallsign ->
-                                                        { id = knownCallsign.id
-                                                        , callsign = callsign.callsign
-                                                        , messageCount = callsign.messageCount
-                                                        , lastDatetime = callsign.lastDatetime
-                                                        , position = knownCallsign.position
-                                                        , unitName = knownCallsign.unitName
-                                                        , comment = knownCallsign.comment
-                                                        , createdAt = knownCallsign.createdAt
-                                                        , sourceName = knownCallsign.sourceName
-                                                        }
-                                                    )
-                                                    knownCallsigns
+                div [ class "flex flex-col flex-1" ]
+                    [ div [ class "overflow-y-auto flex-1" ]
+                        [ let
+                            -- Перетворюємо дані у плоску структуру для таблиці
+                            allCallsignsTableRows =
+                                callsigns
+                                    |> List.concatMap
+                                        (\callsign ->
+                                            case callsign.knownCallsigns of
+                                                Just knownCallsigns ->
+                                                    List.map
+                                                        (\knownCallsign ->
+                                                            { id = knownCallsign.id
+                                                            , callsign = callsign.callsign
+                                                            , messageCount = callsign.messageCount
+                                                            , lastDatetime = callsign.lastDatetime
+                                                            , position = knownCallsign.position
+                                                            , unitName = knownCallsign.unitName
+                                                            , comment = knownCallsign.comment
+                                                            , createdAt = knownCallsign.createdAt
+                                                            , sourceName = knownCallsign.sourceName
+                                                            }
+                                                        )
+                                                        knownCallsigns
 
-                                            Nothing ->
-                                                []
-                                    )
+                                                Nothing ->
+                                                    []
+                                        )
 
-                        callsignsUnknown =
-                            callsigns
-                                |> List.filterMap
-                                    (\callsign ->
-                                        case callsign.knownCallsigns of
-                                            Just knownCallsigns ->
-                                                if List.isEmpty knownCallsigns then
+                            -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
+                            sortedCallsigns =
+                                Table.getSortedData (callsignsTableConfig shared model user) model.callsignsTableState allCallsignsTableRows
+
+                            paginatedCallsigns =
+                                Pager.getPageData model.callsignsPager sortedCallsigns
+
+                            callsignsUnknown =
+                                callsigns
+                                    |> List.filterMap
+                                        (\callsign ->
+                                            case callsign.knownCallsigns of
+                                                Just knownCallsigns ->
+                                                    if List.isEmpty knownCallsigns then
+                                                        Just callsign.callsign
+
+                                                    else
+                                                        Nothing
+
+                                                Nothing ->
                                                     Just callsign.callsign
-
-                                                else
-                                                    Nothing
-
-                                            Nothing ->
-                                                Just callsign.callsign
-                                    )
-                      in
-                      div [ class "table-responsive-modern" ]
-                        [ Table.view (callsignsTableConfig shared model user) model.callsignsTableState callsignsTableRows
-                        , div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
-                            [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                            , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c ->
-                                button
-                                    [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
-                                    , onClick (OpenAddFromUnknownSidebar c)
-                                    ]
-                                    [ text <| String.toUpper c ]
-                                ) callsignsUnknown)
+                                        )
+                          in
+                          div [ class "table-responsive-modern" ]
+                            [ Table.view (callsignsTableConfig shared model user) model.callsignsTableState paginatedCallsigns
+                            , div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                                [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
+                                , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c ->
+                                    button
+                                        [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
+                                        , onClick (OpenAddFromUnknownSidebar c)
+                                        ]
+                                        [ text <| String.toUpper c ]
+                                    ) callsignsUnknown)
+                                ]
                             ]
                         ]
+                    , Pager.view model.callsignsPager
+                        |> Html.map CallsignsPagerMsg
                     ]
 
             _ ->
