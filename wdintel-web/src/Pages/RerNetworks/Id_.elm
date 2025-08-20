@@ -1720,15 +1720,28 @@ update shared msg model =
 
         CallsignCreated (Ok networkCallsign) ->
             let
+                -- Отримуємо callsign з створеного позивного
+                createdCallsign = networkCallsign.callsign
+                
+                -- Оновлюємо список "Приналежність встановлюється" - видаляємо створений позивний
+                updatedCallsigns =
+                    case model.callsigns of
+                        Success existingCallsigns ->
+                            existingCallsigns
+                                |> List.filter (\callsignGroup -> callsignGroup.callsign /= createdCallsign)
+                                |> Success
+                        
+                        _ ->
+                            model.callsigns
+                
                 -- Оновлюємо список позивних мережі
                 updatedNetworkCallsigns =
                     case model.networkCallsigns of
                         Success existingCallsigns ->
                             Success (networkCallsign :: existingCallsigns)
-
                         _ ->
                             Success [ networkCallsign ]
-
+                
                 -- Оновлюємо пагінацію
                 updatedPager =
                     case updatedNetworkCallsigns of
@@ -1737,7 +1750,6 @@ update shared msg model =
                                 currentPager = model.networkCallsignsPager
                             in
                             { currentPager | totalItems = List.length callsigns }
-
                         _ ->
                             model.networkCallsignsPager
             in
@@ -1749,6 +1761,7 @@ update shared msg model =
                 , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
                 , networkCallsigns = updatedNetworkCallsigns
                 , networkCallsignsPager = updatedPager
+                , callsigns = updatedCallsigns
               }
             , E.none
             )
