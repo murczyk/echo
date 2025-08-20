@@ -400,7 +400,7 @@ init route shared () =
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
-              , networkCallsignsPager = Pager.init
+              , networkCallsignsPager = { currentPage = 1, pageSize = 5, totalItems = 0 }
         , callsignsPager = Pager.init
 
       -- Callsign selection and adding functionality
@@ -1404,7 +1404,7 @@ update shared msg model =
         NetworkCallsignsReturnedByApi (Ok res) ->
             ( { model
                 | networkCallsigns = Success res.networkCallsigns
-                , networkCallsignsPager = { currentPage = 1, pageSize = 10, totalItems = List.length res.networkCallsigns }
+                , networkCallsignsPager = { currentPage = 1, pageSize = 5, totalItems = List.length res.networkCallsigns }
               }
             , E.none
             )
@@ -1415,9 +1415,9 @@ update shared msg model =
         NetworkCallsignsPagerMsg pagerMsg ->
             let
                 updatedPager = Pager.update pagerMsg model.networkCallsignsPager
-                
+
                 -- Якщо змінюється розмір сторінки, перевіряємо поточну сторінку
-                finalPager = 
+                finalPager =
                     case pagerMsg of
                         Pager.ChangePageSize newPageSize ->
                             let
@@ -1425,7 +1425,7 @@ update shared msg model =
                                 newCurrentPage = Basics.min updatedPager.currentPage maxPage
                             in
                             { updatedPager | currentPage = newCurrentPage }
-                        
+
                         _ ->
                             updatedPager
             in
@@ -1434,9 +1434,9 @@ update shared msg model =
         CallsignsPagerMsg pagerMsg ->
             let
                 updatedPager = Pager.update pagerMsg model.callsignsPager
-                
+
                 -- Якщо змінюється розмір сторінки, перевіряємо поточну сторінку
-                finalPager = 
+                finalPager =
                     case pagerMsg of
                         Pager.ChangePageSize newPageSize ->
                             let
@@ -1444,7 +1444,7 @@ update shared msg model =
                                 newCurrentPage = Basics.min updatedPager.currentPage maxPage
                             in
                             { updatedPager | currentPage = newCurrentPage }
-                        
+
                         _ ->
                             updatedPager
             in
@@ -1728,16 +1728,16 @@ update shared msg model =
 
                         _ ->
                             Success [ networkCallsign ]
-                
+
                 -- Оновлюємо пагінацію
-                updatedPager = 
+                updatedPager =
                     case updatedNetworkCallsigns of
                         Success callsigns ->
                             let
                                 currentPager = model.networkCallsignsPager
                             in
                             { currentPager | totalItems = List.length callsigns }
-                        
+
                         _ ->
                             model.networkCallsignsPager
             in
@@ -2101,9 +2101,9 @@ update shared msg model =
                             Success (List.filter (\c -> c.id /= deletedCallsign.id) existingCallsigns)
                         _ ->
                             model.networkCallsigns
-                
+
                 -- Оновлюємо пагінацію та перевіряємо поточну сторінку
-                updatedPager = 
+                updatedPager =
                     case updatedNetworkCallsigns of
                         Success callsigns ->
                             let
@@ -2113,7 +2113,7 @@ update shared msg model =
                                 newCurrentPage = Basics.min currentPager.currentPage maxPage
                             in
                             { currentPager | totalItems = totalItems, currentPage = newCurrentPage }
-                        
+
                         _ ->
                             model.networkCallsignsPager
             in
@@ -2162,9 +2162,9 @@ update shared msg model =
                             Success (List.map (\c -> if c.id == updatedCallsign.id then updatedCallsign else c) existingCallsigns)
                         _ ->
                             model.networkCallsigns
-                
+
                 -- Оновлюємо пагінацію (totalItems залишається тим же, але перевіряємо currentPage)
-                updatedPager = 
+                updatedPager =
                     case updatedNetworkCallsigns of
                         Success callsigns ->
                             let
@@ -2174,7 +2174,7 @@ update shared msg model =
                                 newCurrentPage = Basics.min currentPager.currentPage maxPage
                             in
                             { currentPager | currentPage = newCurrentPage }
-                        
+
                         _ ->
                             model.networkCallsignsPager
             in
@@ -2219,7 +2219,7 @@ update shared msg model =
                     let
                         updatedState =
                             { networkId = network.id
-                            , callsign = callsign
+                            , callsign = String.toUpper callsign
                             , position = Nothing
                             , comment = Nothing
                             , sourceId = 1  -- Default source ID
@@ -2735,10 +2735,10 @@ networkCallsignsTableConfig shared model user =
                                 }
                 , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
                 }
-                |> Table.withColumnWidth "10%"
-            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "12%"
-            , Table.stringColumn "Підрозділ" (.unitName >> Maybe.withDefault "-") |> Table.withColumnWidth "10%"
-            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "18%"
+                |> Table.withColumnWidth "8%"
+            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "14%"
+            , Table.stringColumn "Підрозділ" (.unitName >> Maybe.withDefault "-") |> Table.withColumnWidth "16%"
+            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Дата створення"
                 , viewData =
@@ -2748,7 +2748,7 @@ networkCallsignsTableConfig shared model user =
                         }
                 , sorter = TableSorter.increasingOrDecreasingBy .createdAt
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = "Джерело"
                 , viewData =
@@ -2776,21 +2776,6 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
-            , Table.veryCustomColumn
-                { name = "Активний"
-                , viewData =
-                    \row ->
-                        { attributes = []
-                        , children =
-                            [ if row.active then
-                                span [ class "text-green-600" ] [ text "✅" ]
-                              else
-                                span [ class "text-red-600" ] [ text "❌" ]
-                            ]
-                        }
-                , sorter = TableSorter.unsortable
-                }
-                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -3838,12 +3823,16 @@ contentBlock user shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
-            , Button.new
-                { label = "+"
-                , onClick = OpenCallsignCreateSidebar
-                }
-                |> Button.withStyleSecondary
-                |> Button.view
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                button
+                    [ title "Додати позивний"
+                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                    , onClick OpenCallsignCreateSidebar
+                    ]
+                    [ i [ class "bi bi-plus-lg" ] [] ]
+
+              else
+                text ""
             ]
         , case model.networkCallsigns of
             Success networkCallsigns ->
@@ -4603,7 +4592,7 @@ callsignCreateSidebarContent shared model user =
                                 << (\v maybeState ->
                                         case maybeState of
                                             Just s ->
-                                                Just { s | callsign = v }
+                                                Just { s | callsign = String.toUpper v }
                                             Nothing ->
                                                 Nothing
                                    )
@@ -4757,7 +4746,7 @@ editCallsignSidebarContent shared model user =
                                 << (\v maybeState ->
                                         case maybeState of
                                             Just s ->
-                                                Just { s | callsign = v }
+                                                Just { s | callsign = String.toUpper v }
                                             Nothing ->
                                                 Nothing
                                    )
