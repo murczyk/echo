@@ -611,11 +611,10 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 27,
-                        get_network_callsign_field(
-                            callsign,
-                            |n| &n.position,
-                            |kc| &kc.position,
-                            |s| s.clone(),
+                        format!(
+                            "{} {}",
+                            callsign.position.as_deref().unwrap_or_default(),
+                            callsign.unit_name.as_deref().unwrap_or_default()
                         )
                         .as_str(),
                         None,
@@ -700,11 +699,10 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 10,
-                        get_network_callsign_field(
-                            callsign,
-                            |n| &n.position,
-                            |kc| &kc.position,
-                            |s| s.clone(),
+                        format!(
+                            "{} {}",
+                            callsign.position.as_deref().unwrap_or_default(),
+                            callsign.unit_name.as_deref().unwrap_or_default()
                         )
                         .as_str(),
                         None,
@@ -712,13 +710,7 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 10,
-                        get_network_callsign_field(
-                            callsign,
-                            |n| &n.comment,
-                            |kc| &kc.comment,
-                            |s| s.clone(),
-                        )
-                        .as_str(),
+                        callsign.comment.as_deref().unwrap_or_default(),
                         None,
                         false,
                     ),

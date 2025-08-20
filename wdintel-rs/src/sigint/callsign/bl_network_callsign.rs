@@ -257,7 +257,7 @@ pub async fn bl_get_network_callsigns_list(
         let callsing_comm_info =
             comm_info.get(&network_callsign.sigint_callsign);
         let nc = render_network_callsign(
-            &network_callsign,
+            network_callsign,
             known_callsign,
             unit,
             callsing_comm_info,
@@ -368,7 +368,7 @@ where
         let callsing_comm_info =
             comm_info.get(&network_callsign.sigint_callsign);
         let nc = render_network_callsign(
-            &network_callsign,
+            network_callsign,
             known_callsign,
             unit,
             callsing_comm_info,
@@ -407,48 +407,30 @@ where
     Ok(callsigns_comm_info)
 }
 
-pub fn get_network_callsign_field<F, FK, T, M>(
-    network_callsign: &NetworkCallsign,
-    get_field: F,
-    get_known_field: FK,
-    map: M,
-) -> String
-where
-    F: Fn(&NetworkCallsign) -> &Option<T>,
-    FK: Fn(&Callsign) -> &T,
-    M: Fn(&T) -> String,
-{
-    get_field(network_callsign)
-        .as_ref()
-        .map(&map)
-        .or_else(|| {
-            network_callsign
-                .known_callsign
-                .as_ref()
-                .map(|kc| map(get_known_field(kc)))
-        })
-        .unwrap_or_default()
-}
-
 pub fn render_network_callsign(
-    network_callsign: &sigint_network_callsign::Model,
+    network_callsign: sigint_network_callsign::Model,
     known_callsign: Option<sigint_callsign::Model>,
     unit: Option<sigint_unit::Model>,
     comm_info: Option<&CallsignCommunicationInfo>,
 ) -> Result<NetworkCallsign, AppError> {
-    let known_callsign = known_callsign.and_then(|cs| {
-        crate::sigint::callsign::render_callsign(&cs, unit).ok()
-    });
-
     Ok(NetworkCallsign {
         id: network_callsign.id,
         network_id: network_callsign.sigint_network_id,
         callsign: network_callsign.sigint_callsign.clone(),
         known_callsign_id: network_callsign.sigint_callsign_id,
-        known_callsign,
-        position: network_callsign.position.clone(),
-        comment: network_callsign.comment.clone(),
+        position: network_callsign
+            .position
+            .or_else(|| known_callsign.as_ref().map(|kc| kc.position.clone())),
+        comment: network_callsign
+            .comment
+            .or_else(|| known_callsign.as_ref().map(|kc| kc.comment.clone())),
+        unit_id: unit.as_ref().map(|u| u.id),
+        unit_name: unit.as_ref().map(|u| u.name.clone()),
         source_id: network_callsign.source_id,
+        // source_name: None,
+        radio_freq: network_callsign.radio_freq.or_else(|| {
+            known_callsign.as_ref().map(|kc| kc.radio_freq.clone())
+        }),
         created_at: network_callsign.created_at.and_utc().timestamp_millis(),
         active: !network_callsign.deleted,
         message_count: comm_info.map_or(0, |c| c.message_count),
