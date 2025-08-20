@@ -268,8 +268,6 @@ pub struct NetworkCallsignRes {
     pub freqs: Option<Vec<String>>,
     pub network_names: Option<Vec<String>>,
     pub is_old: bool,
-    /// To put or not to put into a special report. See [issue](https://github.com/echoua/echo/issues/894)
-    pub is_reported: bool,
 }
 
 #[derive(

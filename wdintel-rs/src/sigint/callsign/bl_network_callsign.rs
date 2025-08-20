@@ -407,6 +407,29 @@ where
     Ok(callsigns_comm_info)
 }
 
+pub fn get_network_callsign_field<F, FK, T, M>(
+    network_callsign: &NetworkCallsign,
+    get_field: F,
+    get_known_field: FK,
+    map: M,
+) -> String
+where
+    F: Fn(&NetworkCallsign) -> &Option<T>,
+    FK: Fn(&Callsign) -> &T,
+    M: Fn(&T) -> String,
+{
+    get_field(network_callsign)
+        .as_ref()
+        .map(&map)
+        .or_else(|| {
+            network_callsign
+                .known_callsign
+                .as_ref()
+                .map(|kc| map(get_known_field(kc)))
+        })
+        .unwrap_or_default()
+}
+
 pub fn render_network_callsign(
     network_callsign: &sigint_network_callsign::Model,
     known_callsign: Option<sigint_callsign::Model>,
@@ -430,5 +453,6 @@ pub fn render_network_callsign(
         active: !network_callsign.deleted,
         message_count: comm_info.map_or(0, |c| c.message_count),
         last_datetime: comm_info.and_then(|c| c.last_datetime),
+        freqs: comm_info.and_then(|c| c.freqs.clone()),
     })
 }

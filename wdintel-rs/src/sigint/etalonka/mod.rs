@@ -1,4 +1,7 @@
 use crate::error::AppError;
+use crate::sigint::callsign::bl_network_callsign::*;
+use crate::sigint::callsign::types::*;
+// use crate::sigint::network::network_callsigns;
 use crate::sigint::network::types::{NetworkDescrType, NetworkDescription};
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
@@ -60,6 +63,7 @@ pub async fn report_networks(
         &env,
         &filename,
         &req.settings,
+        &user_login,
         groups,
         networks_data,
     )
@@ -109,6 +113,7 @@ pub async fn report_networks_batch_id(
         &env,
         &filename,
         &req.settings,
+        &user_login,
         groups,
         networks_data,
     )
@@ -134,6 +139,7 @@ pub async fn generate_networks_docx_report(
     env: &actix_web::web::Data<Env>,
     filename: &str,
     settings: &EtalonkaSettings,
+    user_id: &str,
     groups: Vec<String>,
     networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
 ) -> Result<PathBuf, AppError> {
@@ -259,6 +265,20 @@ pub async fn generate_networks_docx_report(
                 filter_further_investigation: None,
             };
 
+            let list_network_callsigns_req = ListNetworkCallsignsReq {
+                network_id: network.id,
+                sort_by: None,
+            };
+            // list of callsigns manually assigned to the Network
+            let net_callsigns = bl_get_network_callsigns_list(
+                &list_network_callsigns_req,
+                user_id,
+                &env.dbx,
+            )
+            .await
+            .context(h!())?;
+
+            // list of all other callsigns active per network activity period
             let callsigns = load_callsigns(
                 &env.dbx,
                 &groups,
@@ -268,29 +288,18 @@ pub async fn generate_networks_docx_report(
             .await
             .context(h!())?;
 
-            let callsigns_txt = callsigns
-                .iter()
-                .map(|c| c.callsign.clone())
-                .collect::<Vec<_>>();
-
-            let callsigns_reporting = get_network_callsings_reporting(
-                &env.dbx,
-                network.id,
-                callsigns_txt,
-            )
-            .await
-            .context(h!())?;
-
-            let correspondents_number = if callsigns.is_empty() {
-                String::new()
-            } else {
-                let unique_count = callsigns
-                    .iter()
-                    .map(|item| &item.callsign)
-                    .collect::<HashSet<_>>()
-                    .len();
-                format!("щонайменше {unique_count} ВЗ.")
-            };
+            let correspondents_number =
+                if net_callsigns.is_empty() && callsigns.is_empty() {
+                    String::new()
+                } else {
+                    let unique_count = net_callsigns
+                        .iter()
+                        .map(|item| &item.callsign)
+                        .chain(callsigns.iter().map(|item| &item.callsign))
+                        .collect::<HashSet<_>>()
+                        .len();
+                    format!("щонайменше {unique_count} ВЗ.")
+                };
 
             let freqs = load_freqs(
                 &env.dbx,
@@ -331,48 +340,60 @@ pub async fn generate_networks_docx_report(
                 &correspondents_number,
             );
             doc = add_field(doc, "5. Позивні: ", "");
-            if !callsigns.is_empty() {
-                // Add known callsigns in table
-                if let Some(table) = build_callsigns_table(
-                    &callsigns,
-                    &callsigns_reporting,
+            if !net_callsigns.is_empty() {
+                // add callsigns assignet to the network
+                if let Some(table) = build_network_callsigns_table(
+                    &net_callsigns,
                     width_unit,
                     &table_header_style_id,
                     settings.networks_only,
                 ) {
                     doc = doc.add_table(table);
                 }
-
-                // add all other callsigns in text
-                let callsigns_other = callsigns
-                    .iter()
-                    .filter(|callsign| {
-                        callsign.known_callsigns.is_none()
-                            || (settings.networks_only
-                                && callsign.known_callsigns.is_some()
-                                && !callsigns_reporting
-                                    .get(&callsign.callsign)
-                                    .cloned()
-                                    .unwrap_or(false))
-                    })
-                    .map(|callsign| callsign.callsign.to_uppercase().clone())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-
-                if !callsigns_other.is_empty() {
-                    doc = doc.add_paragraph(
-                        Paragraph::new()
-                            .add_run(
-                                Run::new()
-                                    .add_text("Приналежність встановлюється - ")
-                                    .bold(),
-                            )
-                            .add_run(Run::new().add_text(callsigns_other)), // .align(
-                                                                            //     docx_rs::alignment_type::AlignmentType::Justified,
-                                                                            // ),
-                    );
-                }
             }
+
+            // if !settings.networks_only && !callsigns.is_empty() {
+            //     // Add known callsigns in table
+            //     if let Some(table) = build_callsigns_table(
+            //         &callsigns,
+            //         width_unit,
+            //         &table_header_style_id,
+            //     ) {
+            //         doc = doc.add_table(table);
+            //     }
+            // }
+
+            // if !callsigns.is_empty() {
+            //     // add all other callsigns in text
+            //     let callsigns_other = callsigns
+            //         .iter()
+            //         .filter(|callsign| {
+            //             callsign.known_callsigns.is_none()
+            //                 || (settings.networks_only
+            //                     && callsign.known_callsigns.is_some()
+            //                     && !callsigns_reporting
+            //                         .get(&callsign.callsign)
+            //                         .cloned()
+            //                         .unwrap_or(false))
+            //         })
+            //         .map(|callsign| callsign.callsign.to_uppercase().clone())
+            //         .collect::<Vec<String>>()
+            //         .join(", ");
+
+            //     if !callsigns_other.is_empty() {
+            //         doc = doc.add_paragraph(
+            //             Paragraph::new()
+            //                 .add_run(
+            //                     Run::new()
+            //                         .add_text("Приналежність встановлюється - ")
+            //                         .bold(),
+            //                 )
+            //                 .add_run(Run::new().add_text(callsigns_other)), // .align(
+            //                                                                 //     docx_rs::alignment_type::AlignmentType::Justified,
+            //                                                                 // ),
+            //         );
+            //     }
+            // }
             doc = add_field(doc, "6. Робочі частоти: ", "");
             if let Some(table) = build_freqs_table(
                 &freqs,
@@ -541,41 +562,20 @@ pub async fn generate_networks_docx_report(
     Ok(outpath)
 }
 
-/// Helper: Generate the callsigns table
-fn build_callsigns_table(
-    callsigns: &[CallsignRes],
-    callsigns_reporting: &BTreeMap<String, bool>,
+/// Helper: Generate the network callsigns table
+fn build_network_callsigns_table(
+    net_callsigns: &[NetworkCallsign],
     width_unit: usize,
     table_header_style_id: &str,
     networks_only: bool,
 ) -> Option<Table> {
-    let filtered_callsigns: Vec<&CallsignRes> = callsigns
-        .iter()
-        .filter(|callsign| {
-            let has_known = callsign
-                .known_callsigns
-                .as_ref()
-                .is_some_and(|v| !v.is_empty());
-
-            if networks_only {
-                has_known
-                    && callsigns_reporting
-                        .get(&callsign.callsign)
-                        .cloned()
-                        .unwrap_or(false)
-            } else {
-                has_known
-            }
-        })
-        .collect();
-
-    if filtered_callsigns.is_empty() {
+    if net_callsigns.is_empty() {
         return None;
     }
 
     let (headers, row_builder): (
         Vec<TableCell>,
-        Box<dyn Fn(&CallsignRes) -> Vec<TableCell>>,
+        Box<dyn Fn(&NetworkCallsign) -> Vec<TableCell>>,
     ) = if networks_only {
         (
             vec![
@@ -601,7 +601,7 @@ fn build_callsigns_table(
                     false,
                 ),
             ],
-            Box::new(move |callsign: &CallsignRes| {
+            Box::new(move |callsign: &NetworkCallsign| {
                 vec![
                     create_table_data_cell(
                         width_unit * 11,
@@ -611,15 +611,11 @@ fn build_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 27,
-                        get_unique_field_as_string(
-                            &callsign.known_callsigns,
-                            |item| {
-                                format!(
-                                    "{} {}",
-                                    item.position.clone(),
-                                    item.unit_name.clone()
-                                )
-                            },
+                        get_network_callsign_field(
+                            callsign,
+                            |n| &n.position,
+                            |kc| &kc.position,
+                            |s| s.clone(),
                         )
                         .as_str(),
                         None,
@@ -628,7 +624,7 @@ fn build_callsigns_table(
                     create_table_data_cell(
                         width_unit * 10,
                         format_datetime_field(callsign.last_datetime).as_str(),
-                        get_color(callsign.is_old),
+                        None,
                         false,
                     ),
                 ]
@@ -694,7 +690,7 @@ fn build_callsigns_table(
                     false,
                 ),
             ],
-            Box::new(move |callsign: &CallsignRes| {
+            Box::new(move |callsign: &NetworkCallsign| {
                 vec![
                     create_table_data_cell(
                         width_unit * 6,
@@ -704,9 +700,11 @@ fn build_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 10,
-                        get_unique_field_as_string(
-                            &callsign.known_callsigns,
-                            |item| item.position.clone(),
+                        get_network_callsign_field(
+                            callsign,
+                            |n| &n.position,
+                            |kc| &kc.position,
+                            |s| s.clone(),
                         )
                         .as_str(),
                         None,
@@ -714,9 +712,11 @@ fn build_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 10,
-                        get_unique_field_as_string(
-                            &callsign.known_callsigns,
-                            |item| item.comment.clone(),
+                        get_network_callsign_field(
+                            callsign,
+                            |n| &n.comment,
+                            |kc| &kc.comment,
+                            |s| s.clone(),
                         )
                         .as_str(),
                         None,
@@ -725,7 +725,7 @@ fn build_callsigns_table(
                     create_table_data_cell(
                         width_unit,
                         &callsign.message_count.to_string(),
-                        get_color(callsign.is_old),
+                        None,
                         false,
                     ),
                     create_table_data_cell(
@@ -734,33 +734,37 @@ fn build_callsigns_table(
                             f.clone()
                         })
                         .as_str(),
-                        get_color(callsign.is_old),
+                        None,
                         false,
                     ),
                     create_table_data_cell(
                         width_unit * 7,
                         format_datetime_field(callsign.last_datetime).as_str(),
-                        get_color(callsign.is_old),
+                        None,
                         false,
                     ),
                     create_table_data_cell(
                         width_unit * 7,
-                        get_unique_field_as_string(
-                            &callsign.known_callsigns,
-                            |item| format_datetime_field(Some(item.created_at)),
-                        )
-                        .as_str(),
-                        get_color(callsign.is_old),
+                        String::default().as_str(),
+                        // get_network_callsign_field(
+                        //     &callsign,
+                        //     |n| &Some(n.created_at),
+                        //     |kc| &kc.created_at,
+                        //     |ts| format_datetime_field(Some(*ts)),
+                        // )
+                        // .as_str(),
+                        None,
                         false,
                     ),
                     create_table_data_cell(
                         width_unit * 5,
-                        get_unique_field_as_string(
-                            &callsign.known_callsigns,
-                            |item| item.source_name.clone(),
-                        )
-                        .as_str(),
-                        get_color(callsign.is_old),
+                        String::default().as_str(), // get_unique_field_as_string(
+                        // get_unique_field_as_string(
+                        //     &callsign.known_callsigns,
+                        //     |item| item.source_name.clone(),
+                        // )
+                        // .as_str(),
+                        None,
                         false,
                     ),
                 ]
@@ -772,8 +776,8 @@ fn build_callsigns_table(
         Table::new(
             std::iter::once(TableRow::new(headers))
                 .chain(
-                    filtered_callsigns
-                        .into_iter()
+                    net_callsigns
+                        .iter()
                         .map(|callsign| TableRow::new(row_builder(callsign))),
                 )
                 .collect(),
@@ -783,6 +787,189 @@ fn build_callsigns_table(
         .set_borders(TableBorders::with_empty()),
     )
 }
+
+// Helper: Generate the callsigns table
+// fn build_callsigns_table(
+//     callsigns: &[CallsignRes],
+//     width_unit: usize,
+//     table_header_style_id: &str,
+// ) -> Option<Table> {
+//     let filtered_callsigns: Vec<&CallsignRes> = callsigns
+//         .iter()
+//         .filter(|callsign| {
+//             let has_known = callsign
+//                 .known_callsigns
+//                 .as_ref()
+//                 .is_some_and(|v| !v.is_empty());
+
+//             if networks_only {
+//                 has_known
+//                     && callsigns_reporting
+//                         .get(&callsign.callsign)
+//                         .cloned()
+//                         .unwrap_or(false)
+//             } else {
+//                 has_known
+//             }
+//         })
+//         .collect();
+
+//     if filtered_callsigns.is_empty() {
+//         return None;
+//     }
+
+//     let (headers, row_builder): (
+//         Vec<TableCell>,
+//         Box<dyn Fn(&CallsignRes) -> Vec<TableCell>>,
+//     ) = {
+//         (
+//             vec![
+//                 create_table_header_cell(
+//                     width_unit * 6,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Позивний",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit * 10,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Приналежність",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit * 10,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Коментар",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "К-ть перехоплень",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit * 3,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Частоти",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit * 7,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Останній раз в етері",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit * 7,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Дата прив'язки",
+//                     false,
+//                 ),
+//                 create_table_header_cell(
+//                     width_unit * 5,
+//                     Some(DEFAULT_TABLE_HEADER_COLOR),
+//                     table_header_style_id,
+//                     "Джерело",
+//                     false,
+//                 ),
+//             ],
+//             Box::new(move |callsign: &CallsignRes| {
+//                 vec![
+//                     create_table_data_cell(
+//                         width_unit * 6,
+//                         &callsign.callsign.to_uppercase(),
+//                         None,
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit * 10,
+//                         get_unique_field_as_string(
+//                             &callsign.known_callsigns,
+//                             |item| item.position.clone(),
+//                         )
+//                         .as_str(),
+//                         None,
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit * 10,
+//                         get_unique_field_as_string(
+//                             &callsign.known_callsigns,
+//                             |item| item.comment.clone(),
+//                         )
+//                         .as_str(),
+//                         None,
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit,
+//                         &callsign.message_count.to_string(),
+//                         get_color(callsign.is_old),
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit * 3,
+//                         get_unique_field_as_string(&callsign.freqs, |f| {
+//                             f.clone()
+//                         })
+//                         .as_str(),
+//                         get_color(callsign.is_old),
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit * 7,
+//                         format_datetime_field(callsign.last_datetime).as_str(),
+//                         get_color(callsign.is_old),
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit * 7,
+//                         get_unique_field_as_string(
+//                             &callsign.known_callsigns,
+//                             |item| format_datetime_field(Some(item.created_at)),
+//                         )
+//                         .as_str(),
+//                         get_color(callsign.is_old),
+//                         false,
+//                     ),
+//                     create_table_data_cell(
+//                         width_unit * 5,
+//                         get_unique_field_as_string(
+//                             &callsign.known_callsigns,
+//                             |item| item.source_name.clone(),
+//                         )
+//                         .as_str(),
+//                         get_color(callsign.is_old),
+//                         false,
+//                     ),
+//                 ]
+//             }),
+//         )
+//     };
+
+//     Some(
+//         Table::new(
+//             std::iter::once(TableRow::new(headers))
+//                 .chain(
+//                     filtered_callsigns
+//                         .into_iter()
+//                         .map(|callsign| TableRow::new(row_builder(callsign))),
+//                 )
+//                 .collect(),
+//         )
+//         .width(width_unit * 48, WidthType::Dxa)
+//         .layout(TableLayoutType::Fixed)
+//         .set_borders(TableBorders::with_empty()),
+//     )
+// }
 
 /// Helper. Generate table with frequencies
 fn build_freqs_table(

@@ -122,6 +122,7 @@ pub struct NetworkCallsign {
     pub active: bool,
     pub message_count: i64,
     pub last_datetime: Option<i64>,
+    pub freqs: Option<Vec<String>>,
 }
 
 #[derive(

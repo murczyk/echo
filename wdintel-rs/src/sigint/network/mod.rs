@@ -2051,7 +2051,8 @@ pub async fn network_callsigns_list(
         .await
         .context(h!())?;
 
-    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
+    let _network =
+        find_network(&env.dbx, req.network_id).await.context(h!())?;
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -2069,33 +2070,16 @@ pub async fn network_callsigns_list(
             .await
             .context(h!())?;
 
-    let callsigns_txt = callsigns_raw
-        .iter()
-        .map(|c| c.callsign.clone())
-        .collect::<Vec<_>>();
-
-    let callsigns_reporting =
-        get_network_callsings_reporting(&env.dbx, network.id, callsigns_txt)
-            .await
-            .context(h!())?;
-
     let callsigns = callsigns_raw
         .into_iter()
-        .map(|callsign| {
-            let is_reported = callsigns_reporting
-                .get(&callsign.callsign)
-                .cloned()
-                .unwrap_or(false);
-            NetworkCallsignRes {
-                is_reported,
-                callsign: callsign.callsign,
-                known_callsigns: callsign.known_callsigns,
-                message_count: callsign.message_count,
-                last_datetime: callsign.last_datetime,
-                freqs: callsign.freqs,
-                network_names: callsign.network_names,
-                is_old: callsign.is_old,
-            }
+        .map(|callsign| NetworkCallsignRes {
+            callsign: callsign.callsign,
+            known_callsigns: callsign.known_callsigns,
+            message_count: callsign.message_count,
+            last_datetime: callsign.last_datetime,
+            freqs: callsign.freqs,
+            network_names: callsign.network_names,
+            is_old: callsign.is_old,
         })
         .collect();
 

@@ -1423,25 +1423,3 @@ pub async fn load_networks_by_id(
 
     Ok(res)
 }
-
-pub async fn get_network_callsings_reporting(
-    db: &DatabaseConnection,
-    network_id: i64,
-    callsigns_txt: Vec<String>,
-) -> Result<BTreeMap<String, bool>, AppError> {
-    let callsigns_reporting = sigint_network_callsign::Entity::find()
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
-        .filter(
-            sigint_network_callsign::Column::SigintCallsign
-                .is_in(callsigns_txt),
-        )
-        .all(db)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|x| (x.sigint_callsign, true))
-        .collect::<BTreeMap<_, _>>();
-
-    Ok(callsigns_reporting)
-}
