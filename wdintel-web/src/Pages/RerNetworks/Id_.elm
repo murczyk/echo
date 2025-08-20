@@ -549,6 +549,11 @@ type Msg
     -- Callsign deletion functionality
     | DeleteCallsignFromNetwork Int                    -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int                          -- Клік по кнопці редагування позивного з мережі
+    | CloseEditCallsignSidebar                         -- Закриття сайдбару редагування
+    | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
+    | SaveEditCallsignClicked                          -- Збереження змін редагування
+    | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
+    | EditCallsignSourceSelMsg (Select.Msg Int)        -- Повідомлення від селекта джерела для редагування
     | DeleteCallsignConfirmed Int                      -- Підтвердження видалення позивного
     | DeleteCallsignCanceled                           -- Скасування видалення позивного
     | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
@@ -1959,7 +1964,37 @@ update shared msg model =
             ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
             
         EditCallsignClicked callsignId ->
-            ( model, E.none ) -- TODO: Implement edit functionality
+            case model.networkCallsigns of
+                Success networkCallsigns ->
+                    case ListX.find (\c -> c.id == callsignId) networkCallsigns of
+                        Just callsign ->
+                            let
+                                editState = 
+                                    { id = callsign.id
+                                    , networkId = 
+                                        case model.network of
+                                            Success network -> network.id
+                                            _ -> 0
+                                    , callsign = callsign.callsign
+                                    , position = callsign.position
+                                    , comment = callsign.comment
+                                    , sourceId = Maybe.withDefault 1 callsign.sourceId
+                                    , radioFreq = Nothing  -- TODO: Get from API or store separately
+                                    }
+                            in
+                            ( { model 
+                                | editCallsignSidebar = Just callsignId
+                                , editCallsignState = Just editState
+                                , editCallsignErrors = Dict.empty
+                              }
+                            , E.none
+                            )
+                        
+                        Nothing ->
+                            ( model, E.none )
+                
+                _ ->
+                    ( model, E.none )
             
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
@@ -1987,6 +2022,74 @@ update shared msg model =
         CallsignDeletedFromNetwork (Err error) ->
             ( { model | deleteCallsignLoading = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного з мережі" error
+            )
+
+        -- Edit callsign handlers
+        CloseEditCallsignSidebar ->
+            ( { model
+                | editCallsignSidebar = Nothing
+                , editCallsignState = Nothing
+                , editCallsignErrors = Dict.empty
+                , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+              }
+            , E.none )
+
+        UpdateEditCallsignField updateFunc ->
+            ( { model | editCallsignState = updateFunc model.editCallsignState }
+            , E.none )
+
+        SaveEditCallsignClicked ->
+            case model.editCallsignState of
+                Just updateReq ->
+                    ( { model | editCallsignSaving = True }
+                    , E.none -- TODO: Add effect for updating callsign
+                    )
+                
+                Nothing ->
+                    ( model, E.none )
+
+        CallsignUpdated (Ok updatedCallsign) ->
+            let
+                -- Update the callsign in networkCallsigns list
+                updatedNetworkCallsigns = 
+                    case model.networkCallsigns of
+                        Success existingCallsigns ->
+                            Success (List.map (\c -> if c.id == updatedCallsign.id then updatedCallsign else c) existingCallsigns)
+                        _ ->
+                            model.networkCallsigns
+            in
+            ( { model 
+                | editCallsignSaving = False
+                , editCallsignSidebar = Nothing
+                , editCallsignState = Nothing
+                , editCallsignErrors = Dict.empty
+                , networkCallsigns = updatedNetworkCallsigns
+              }
+            , E.none
+            )
+
+        CallsignUpdated (Err error) ->
+            ( { model 
+                | editCallsignSaving = False
+                , editCallsignErrors = Dict.singleton "general" (Le.ErrorHandling.formatErrorForShowError "Помилка оновлення позивного" error)
+              }
+            , E.none
+            )
+
+        EditCallsignSourceSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.editCallsignSourceSelState
+
+                updatedSourceId =
+                    Le.Block.Select.singleUpd mAction (Maybe.map .sourceId model.editCallsignState)
+            in
+            ( { model
+                | editCallsignSourceSelState = imodel2
+                , editCallsignState = 
+                    Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.editCallsignState
+              }
+            , E.sendCmd <| Cmd.map EditCallsignSourceSelMsg icmd
             )
 
 
@@ -3701,6 +3804,12 @@ view user shared model =
 
                   else
                     text ""
+            
+                , if model.editCallsignSidebar /= Nothing then
+                    Sidebar.view True CloseEditCallsignSidebar [ editCallsignSidebarContent shared model user ]
+
+                  else
+                    text ""
                 , case model.freqDetailPopup of
                     Just freqId ->
                         let
@@ -4403,6 +4512,169 @@ callsignCreateSidebarContent shared model user =
                                 roFreqEmpty = 
                                     if isRO then
                                         Maybe.andThen .radioFreq model.callsignCreateState
+                                            |> Maybe.map (String.trim >> (==) "")
+                                            |> Maybe.withDefault True
+                                    else
+                                        False
+                             in
+                             callsignEmpty || roFreqEmpty
+                            )
+                        |> Button.view
+                ]
+            ]
+        ]
+
+
+editCallsignSidebarContent : Shared.Model -> Model -> B.User -> Html Msg
+editCallsignSidebarContent shared model user =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати позивний мережі" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позивний *" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позивний"
+                        , value (Maybe.map .callsign model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | callsign = v }
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело *" ]
+                    , let
+                        sourceMenu =
+                            model.callsignCreateSources
+                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                        
+                        selectItem =
+                            Maybe.map .sourceId model.editCallsignState
+                                |> Maybe.andThen (\sourceId -> 
+                                    ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
+                                        |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                )
+                      in
+                      Html.map EditCallsignSourceSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.editCallsignSourceSelState
+                                sourceMenu
+                                "Виберіть джерело"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode
+                                    |> (\opts ->
+                                            { opts
+                                                | clearable = False
+                                            }
+                                       )
+                                )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позиція" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позицію (необов'язково)"
+                        , value (Maybe.andThen .position model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | position = if String.trim v == "" then Nothing else Just v }
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
+                    , textarea
+                        [ class "w-full p-2 border border-border rounded resize-none"
+                        , rows 3
+                        , placeholder "Введіть коментар (необов'язково)"
+                        , value (Maybe.andThen .comment model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | comment = if String.trim v == "" then Nothing else Just v }
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , if (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2 then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
+                        , input
+                            [ type_ "text"
+                            , class "w-full p-2 border border-border rounded"
+                            , placeholder "Введіть частоту (обов'язково для РО)"
+                            , value (Maybe.andThen .radioFreq model.editCallsignState |> Maybe.withDefault "")
+                            , onInput <|
+                                UpdateEditCallsignField
+                                    << (\v maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | radioFreq = if String.trim v == "" then Nothing else Just v }
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        ]
+                  else
+                    text ""
+                
+                -- Display errors if any
+                , case Dict.get "general" model.editCallsignErrors of
+                    Just error ->
+                        div [ class "p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm" ]
+                            [ text error ]
+                    
+                    Nothing ->
+                        text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditCallsignSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.editCallsignSaving then
+                    Button.new { label = "Збереження...", onClick = SaveEditCallsignClicked }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Зберегти", onClick = SaveEditCallsignClicked }
+                        |> Button.withDisabled
+                            (let
+                                callsignEmpty = 
+                                    Maybe.map .callsign model.editCallsignState
+                                        |> Maybe.map (String.trim >> (==) "")
+                                        |> Maybe.withDefault True
+                                
+                                isRO = 
+                                    (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2
+                                
+                                roFreqEmpty = 
+                                    if isRO then
+                                        Maybe.andThen .radioFreq model.editCallsignState
                                             |> Maybe.map (String.trim >> (==) "")
                                             |> Maybe.withDefault True
                                     else
