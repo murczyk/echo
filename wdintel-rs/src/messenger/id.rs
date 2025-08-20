@@ -20,7 +20,7 @@ pub struct MessageMeta {
 pub fn generate_message_id(message: MessageMeta) -> String {
     let user_id_mod = message.user_id % 99;
     let group_id_mod = message.group_id % 99;
-    let id_mod = message.id.abs() as u64 % 9999999;
+    let id_mod = message.id.unsigned_abs() % 9999999;
 
     // A simple, predictable hash combining a, b, and c
     let mut hash: u64 =
@@ -43,7 +43,7 @@ pub fn generate_message_id(message: MessageMeta) -> String {
         part2.push(letters.chars().nth(index).unwrap());
         hash /= 26;
     }
-    format!("{}-{}", part1, part2)
+    format!("{part1}-{part2}")
 }
 
 fn fnv1a_hash(input: &str) -> u64 {

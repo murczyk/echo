@@ -12,6 +12,7 @@ use docx_rs::*;
 use itertools::Either;
 use sea_orm::*;
 use std::path::Path;
+use syn::parse::Parser;
 
 const DOC_NAME: &str = "Форма №1.2.17/ОСУВ";
 const DOC_HEADER: &str =
@@ -156,11 +157,9 @@ pub async fn report_docx_kind_digest(
             for note in network_row.notes {
                 let note_txt = match note.time {
                     None => note.comment,
-                    Some(time) => format!(
-                        "{} {}",
-                        time.format("%H:%M").to_string(),
-                        note.comment
-                    ),
+                    Some(time) => {
+                        format!("{} {}", time.format("%H:%M"), note.comment)
+                    }
                 };
                 let inter_cell = match note.interception_or_id {
                     Either::Left(interception) => {
@@ -235,15 +234,15 @@ async fn collect_report(
     _logins: Vec<String>,
     env: &Env,
 ) -> anyhow::Result<Report> {
+    let (comments, messages) =
+        load_messages_with_comments(messages, env).await?;
+    debug!("loaded {} messages with comments {}", messages.len(), h!());
     let report_ts = messages
         .iter()
         .flat_map(|(_, m)| m.timestamp)
         .max()
-        .map(chrono::DateTime::from_timestamp_millis)
-        .flatten()
+        .and_then(chrono::DateTime::from_timestamp_millis)
         .unwrap_or(Utc::now());
-    let (comments, messages) =
-        load_messages_with_comments(messages, env).await?;
 
     let freqs = messages
         .iter()
@@ -478,8 +477,7 @@ async fn collect_report(
                 let interception_or_id = Either::Left(message.text);
                 let time = message
                     .timestamp
-                    .map(chrono::DateTime::from_timestamp_millis)
-                    .flatten()
+                    .and_then(chrono::DateTime::from_timestamp_millis)
                     .map(|ts| {
                         ts.with_timezone(&crate::config::get_tz())
                             .naive_local()
@@ -514,7 +512,7 @@ async fn load_aors(
     env: &Env,
 ) -> anyhow::Result<HashMap<i64, String>> {
     let mut aor_ids = HashSet::new();
-    for (_, n) in networks {
+    for n in networks.values() {
         if let Some(id) = &n.aor_id {
             aor_ids.insert(*id);
         }
@@ -522,7 +520,7 @@ async fn load_aors(
             aor_ids.insert(*id);
         }
     }
-    for (_, id) in group_aors {
+    for id in group_aors.values() {
         aor_ids.insert(*id);
     }
     let aor_ids = aor_ids.into_iter().collect_vec();
@@ -565,7 +563,7 @@ async fn load_messages_with_comments(
     }
     let mut messages = messages
         .into_iter()
-        .filter(|(id, _)| !messages_with_comment.contains(&id))
+        .filter(|(id, _)| messages_with_comment.contains(id))
         .collect::<Vec<_>>();
     messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
     Ok((comments, messages))

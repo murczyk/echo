@@ -58,15 +58,13 @@ pub fn mk_multiline_text_cell(
             paragraph_borders_config.set(separator_line_border);
         remaining_count -= 1;
         let mut paragraph = Paragraph::new().add_run(mk_text(&text, &style));
-        if remaining_count > 0 {
-            if config.split_multiline_cells {
-                paragraph.property = paragraph
-                    .property
-                    .set_borders(paragraph_borders_config.clone());
-                paragraph.property = paragraph
-                    .property
-                    .line_spacing(LineSpacing::new().after(20));
-            }
+        if remaining_count > 0 && config.split_multiline_cells {
+            paragraph.property = paragraph
+                .property
+                .set_borders(paragraph_borders_config.clone());
+            paragraph.property = paragraph
+                .property
+                .line_spacing(LineSpacing::new().after(20));
         }
         cell = cell.add_paragraph(paragraph);
     }
@@ -105,13 +103,12 @@ pub fn mk_paragraph(
 
 fn mk_text(text: &str, style: &ParagraphStyle) -> Run {
     let text = Run::new().add_text(text);
-    let text = match style {
+    match style {
         ParagraphStyle::Default => text,
         ParagraphStyle::Bold => text.bold(),
         ParagraphStyle::Italic => text.italic(),
         ParagraphStyle::BoldAndItalic => text.bold().italic(),
-    };
-    text
+    }
 }
 
 pub fn mk_merged_text_cell(
