@@ -268,12 +268,15 @@ type alias Model =
         , deleteCallsignConfirmation : Maybe Int  -- ID позивного для видалення
         , deleteCallsignLoading : Bool           -- Стан завантаження видалення
         
-        -- Callsign editing functionality
-        , editCallsignSidebar : Maybe Int        -- ID позивного для редагування
-        , editCallsignState : Maybe B.UpdateNetworkCallsignReq -- Стан форми редагування
-        , editCallsignSaving : Bool             -- Стан збереження редагування
-        , editCallsignErrors : Dict String String -- Помилки валідації редагування
-        , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
+            -- Callsign editing functionality
+    , editCallsignSidebar : Maybe Int        -- ID позивного для редагування
+    , editCallsignState : Maybe B.UpdateNetworkCallsignReq -- Стан форми редагування
+    , editCallsignSaving : Bool             -- Стан збереження редагування
+    , editCallsignErrors : Dict String String -- Помилки валідації редагування
+    , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
+    
+    -- Add from unknown callsigns functionality
+    , addFromUnknownSidebar : Maybe String   -- Назва позивного зі списку "Приналежність встановлюється"
     }
 
 
@@ -424,6 +427,9 @@ init route shared () =
         , editCallsignSaving = False
         , editCallsignErrors = Dict.empty
         , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+        
+        -- Add from unknown callsigns functionality initialization
+        , addFromUnknownSidebar = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -554,6 +560,7 @@ type Msg
     | SaveEditCallsignClicked                          -- Збереження змін редагування
     | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
     | EditCallsignSourceSelMsg (Select.Msg Int)        -- Повідомлення від селекта джерела для редагування
+    | OpenAddFromUnknownSidebar String                  -- Відкриття сайдбару додавання зі списку "Приналежність встановлюється"
     | DeleteCallsignConfirmed Int                      -- Підтвердження видалення позивного
     | DeleteCallsignCanceled                           -- Скасування видалення позивного
     | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
@@ -2092,6 +2099,31 @@ update shared msg model =
               }
             , E.sendCmd <| Cmd.map EditCallsignSourceSelMsg icmd
             )
+
+        OpenAddFromUnknownSidebar callsign ->
+            case model.network of
+                Success network ->
+                    let
+                        updatedState =
+                            { networkId = network.id
+                            , callsign = callsign
+                            , position = Nothing
+                            , comment = Nothing
+                            , sourceId = 1  -- Default source ID
+                            , radioFreq = Nothing
+                            }
+                        
+                    in
+                    ( { model 
+                        | addFromUnknownSidebar = Just callsign
+                        , callsignCreateSidebar = True
+                        , callsignCreateState = Just updatedState
+                        , callsignCreateErrors = Dict.empty
+                      }
+                    , E.none )
+                
+                _ ->
+                    ( model, E.none )
 
 
 
@@ -3764,7 +3796,13 @@ contentBlock user shared network model =
                         [ Table.view (callsignsTableConfig shared model user) model.callsignsTableState callsignsTableRows
                         , div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
                             [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                            , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c -> span [] [ text <| String.toUpper c ]) callsignsUnknown)
+                            , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c -> 
+                                button 
+                                    [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
+                                    , onClick (OpenAddFromUnknownSidebar c)
+                                    ] 
+                                    [ text <| String.toUpper c ]
+                                ) callsignsUnknown)
                             ]
                         ]
                     ]
