@@ -158,19 +158,15 @@ type Mode updateReq
     | Editing updateReq
 
 
-type alias CallsignResModified =
-    { callsign : String
-    , knownCallsigns : List B.KnownCallsignShortRes
-    , messageCount : Int
-    , lastDatetime : Maybe Int
-    , freqs : Maybe (List String)
-    , networkNames : Maybe (List String)
-    , isOld : Bool
-    , isReported : Bool
-    }
 
 
 
+
+
+-- Кастомний тип для режимів створення позивних
+type CallsignCreateMode
+    = CreateFromScratch           -- Створення "з нуля" (кнопка + в таблиці)
+    | CreateFromUnknown String    -- Створення зі списку "Приналежність встановлюється"
 
 
 -- Нова структура для рядка таблиці позивних
@@ -256,8 +252,8 @@ type alias Model =
     , callsignsSelected : Set Int    -- Виділені позивні (known_callsign_id)
     , callsignsAddLoading : Bool     -- Стан завантаження при додаванні позивних
     
-    -- Network callsign creation sidebar
-            , callsignCreateSidebar : Bool
+        -- Network callsign creation sidebar
+    , callsignCreateSidebar : Maybe CallsignCreateMode
         , callsignCreateState : Maybe B.CreateNetworkCallsignReq
         , callsignCreateSaving : Bool
         , callsignCreateErrors : Dict String String
@@ -274,9 +270,6 @@ type alias Model =
     , editCallsignSaving : Bool             -- Стан збереження редагування
     , editCallsignErrors : Dict String String -- Помилки валідації редагування
     , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
-    
-    -- Add from unknown callsigns functionality
-    , addFromUnknownSidebar : Maybe String   -- Назва позивного зі списку "Приналежність встановлюється"
     }
 
 
@@ -410,7 +403,7 @@ init route shared () =
       , callsignsAddLoading = False
       
       -- Network callsign creation sidebar
-              , callsignCreateSidebar = False
+              , callsignCreateSidebar = Nothing
         , callsignCreateState = Nothing
         , callsignCreateSaving = False
         , callsignCreateErrors = Dict.empty
@@ -427,9 +420,6 @@ init route shared () =
         , editCallsignSaving = False
         , editCallsignErrors = Dict.empty
         , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
-        
-        -- Add from unknown callsigns functionality initialization
-        , addFromUnknownSidebar = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -1622,7 +1612,7 @@ update shared msg model =
                         
                     in
                     ( { model 
-                        | callsignCreateSidebar = True
+                        | callsignCreateSidebar = Just CreateFromScratch
                         , callsignCreateState = Just updatedState
                         , callsignCreateErrors = Dict.empty
                       }
@@ -1633,7 +1623,7 @@ update shared msg model =
         
         CloseCallsignCreateSidebar ->
             ( { model
-                | callsignCreateSidebar = False
+                | callsignCreateSidebar = Nothing
                 , callsignCreateState = Nothing
                 , callsignCreateErrors = Dict.empty
                 , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
@@ -1658,7 +1648,7 @@ update shared msg model =
         CallsignCreated (Ok networkCallsign) ->
             ( { model 
                 | callsignCreateSaving = False
-                , callsignCreateSidebar = False
+                , callsignCreateSidebar = Nothing
                 , callsignCreateState = Nothing
                 , callsignCreateErrors = Dict.empty
                 , networkCallsigns = 
@@ -2115,8 +2105,7 @@ update shared msg model =
                         
                     in
                     ( { model 
-                        | addFromUnknownSidebar = Just callsign
-                        , callsignCreateSidebar = True
+                        | callsignCreateSidebar = Just (CreateFromUnknown callsign)
                         , callsignCreateState = Just updatedState
                         , callsignCreateErrors = Dict.empty
                       }
@@ -3838,11 +3827,12 @@ view user shared model =
 
                   else
                     text ""
-                , if model.callsignCreateSidebar then
-                    Sidebar.view True CloseCallsignCreateSidebar [ callsignCreateSidebarContent shared model user ]
+                , case model.callsignCreateSidebar of
+                    Just _ ->
+                        Sidebar.view True CloseCallsignCreateSidebar [ callsignCreateSidebarContent shared model user ]
 
-                  else
-                    text ""
+                    Nothing ->
+                        text ""
             
                 , if model.editCallsignSidebar /= Nothing then
                     Sidebar.view True CloseEditCallsignSidebar [ editCallsignSidebarContent shared model user ]
