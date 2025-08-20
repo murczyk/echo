@@ -455,7 +455,7 @@ async fn collect_report(
             let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
             let mut network_name = network.name.clone();
             if network_name.trim().is_empty() {
-                network_name = format!("Радіомережа {}", network.freq.clone());
+                network_name = format!("Невизначена радіомережа {}МГц", network.freq.clone());
             }
             let network_location = network
                 .location
