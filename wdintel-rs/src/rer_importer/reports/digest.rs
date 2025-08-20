@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
@@ -446,12 +445,17 @@ async fn collect_report(
         data.push(id);
         aor_dictionary.insert(aor_id, data);
     }
-    aors.insert(default_aor.id, default_aor.name);
+    aors.insert(default_aor.id, default_aor);
+    let mut aors = aors.values().cloned().collect::<Vec<_>>();
+    aors.sort_by_key(|a| (a.right_bound * 1000.0).ceil() as i64);
 
     let mut aor_data = vec![];
     let messages = messages.into_iter().collect::<HashMap<_, _>>();
-    for (aor_id, network_ids) in aor_dictionary {
-        let aor_name = aors.get(&aor_id).cloned().context(h!())?;
+    for aor in aors {
+        let Some(network_ids) = aor_dictionary.remove(&aor.id) else {
+            continue;
+        };
+        let aor_name = aor.name;
         let mut network_data = vec![];
         let mut network_order = 1;
         for id in network_ids {
@@ -492,7 +496,8 @@ async fn collect_report(
                             .naive_local()
                             .time()
                     });
-                let order = time.map(|t| t.num_seconds_from_midnight()).unwrap_or(0);
+                let order =
+                    time.map(|t| t.num_seconds_from_midnight()).unwrap_or(0);
                 notes.push(InterNote {
                     order,
                     time,
@@ -500,7 +505,7 @@ async fn collect_report(
                     interception_or_id,
                 });
             }
-            notes.sort_by_key(|n| Reverse(n.order));
+            notes.sort_by_key(|n| n.order);
             network_data.push(NetworkRow {
                 network_name,
                 network_location,
@@ -524,7 +529,7 @@ async fn load_aors(
     group_aors: &HashMap<String, i64>,
     networks: &HashMap<(String, Option<String>), NetworkSummary>,
     env: &Env,
-) -> anyhow::Result<HashMap<i64, String>> {
+) -> anyhow::Result<HashMap<i64, area_of_responsibility::Model>> {
     let mut aor_ids = HashSet::new();
     for n in networks.values() {
         if let Some(id) = &n.aor_id {
@@ -544,7 +549,7 @@ async fn load_aors(
         .await
         .context(h!())?
         .into_iter()
-        .map(|a| (a.id, a.name))
+        .map(|a| (a.id, a))
         .collect::<HashMap<_, _>>();
     Ok(areas)
 }
