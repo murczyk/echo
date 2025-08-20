@@ -2474,7 +2474,7 @@ callsignsTableConfig shared model user =
                         }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "5%"
+                |> Table.withColumnWidth "3%"
             , Table.veryCustomColumn
                 { name = "Позивний"
                 , viewData =
@@ -2495,8 +2495,8 @@ callsignsTableConfig shared model user =
                         }
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
                 }
-                |> Table.withColumnWidth "12%"
-            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "8%"
+                |> Table.withColumnWidth "13%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Останній раз в етері"
                 , viewData =
@@ -2513,10 +2513,10 @@ callsignsTableConfig shared model user =
                                 }
                 , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
                 }
-                |> Table.withColumnWidth "12%"
+                |> Table.withColumnWidth "8%"
             , Table.stringColumn "Посада" .position |> Table.withColumnWidth "25%"
-            , Table.stringColumn "Підрозділ" .unitName |> Table.withColumnWidth "16%"
-            , Table.stringColumn "Коментар" .comment |> Table.withColumnWidth "20%"
+            , Table.stringColumn "Підрозділ" .unitName |> Table.withColumnWidth "18%"
+            , Table.stringColumn "Коментар" .comment |> Table.withColumnWidth "25%"
             , Table.veryCustomColumn
                 { name = "Дата прив'язки"
                 , viewData =
@@ -2640,7 +2640,7 @@ networkCallsignsTableConfig shared model user =
                                                 [ text source.name
                                                 , if sourceId == 2 && row.radioFreq /= Nothing then
                                                     div [ class "text-xs text-muted-foreground mt-1" ]
-                                                        [ text ("Частота: " ++ Maybe.withDefault "" row.radioFreq) ]
+                                                        [ text <| Maybe.withDefault "" row.radioFreq ]
                                                   else
                                                     text ""
                                                 ]
