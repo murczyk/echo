@@ -1986,6 +1986,7 @@ update shared msg model =
                                 | editCallsignSidebar = Just callsignId
                                 , editCallsignState = Just editState
                                 , editCallsignErrors = Dict.empty
+                                , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
                               }
                             , E.none
                             )
@@ -2042,7 +2043,7 @@ update shared msg model =
             case model.editCallsignState of
                 Just updateReq ->
                     ( { model | editCallsignSaving = True }
-                    , E.none -- TODO: Add effect for updating callsign
+                    , E.updateNetworkCallsign CallsignUpdated updateReq
                     )
                 
                 Nothing ->
@@ -4426,11 +4427,11 @@ callsignCreateSidebarContent shared model user =
                                 )
                     ]
                 , div []
-                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позиція" ]
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
                     , input
                         [ type_ "text"
                         , class "w-full p-2 border border-border rounded"
-                        , placeholder "Введіть позицію (необов'язково)"
+                        , placeholder "Введіть посаду (необов'язково)"
                         , value (Maybe.andThen .position model.callsignCreateState |> Maybe.withDefault "")
                         , onInput <|
                             UpdateCallsignCreateField
@@ -4580,11 +4581,11 @@ editCallsignSidebarContent shared model user =
                                 )
                     ]
                 , div []
-                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позиція" ]
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
                     , input
                         [ type_ "text"
                         , class "w-full p-2 border border-border rounded"
-                        , placeholder "Введіть позицію (необов'язково)"
+                        , placeholder "Введіть посаду (необов'язково)"
                         , value (Maybe.andThen .position model.editCallsignState |> Maybe.withDefault "")
                         , onInput <|
                             UpdateEditCallsignField

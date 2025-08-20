@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkCallsignsList, getNetworkFreqsActivity, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
+    , CallsignsByNetwork, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkCallsignsList, getNetworkFreqsActivity, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
     )
 
 {-|
@@ -101,6 +101,7 @@ type Effect msg
     | AddMultipleCallsignsToNetwork (Result ApiError (List B.NetworkCallsign) -> msg) B.AddAsKnownNetworkCallsignReq
     | CreateNetworkCallsign (Result ApiError B.NetworkCallsign -> msg) B.CreateNetworkCallsignReq
     | DeleteNetworkCallsign (Result ApiError B.NetworkCallsign -> msg) Int
+    | UpdateNetworkCallsign (Result ApiError B.NetworkCallsign -> msg) B.UpdateNetworkCallsignReq
     | DownloadKmz (Result ApiError Bytes -> msg) AnalysisStatsReq
     | DownloadGeojson (Result ApiError Bytes -> msg) B.AnalysisStatsReq
     | GetCorrelatedFreqs (Result ApiError B.CorrelatedFreqsRsp -> msg) B.AnalysisStatsReq
@@ -761,6 +762,9 @@ map fn effect =
         DeleteNetworkCallsign toMsg callsignId ->
             DeleteNetworkCallsign (fn << toMsg) callsignId
 
+        UpdateNetworkCallsign toMsg payload ->
+            UpdateNetworkCallsign (fn << toMsg) payload
+
         DownloadKmz toMsg payload ->
             DownloadKmz (fn << toMsg) payload
 
@@ -1168,6 +1172,13 @@ toCmd options effect =
                 , expect = leExpectJson toMsg B.networkCallsignDecoder
                 }
 
+        UpdateNetworkCallsign toMsg payload ->
+            Http.post
+                { url = "/api/sigint/network-callsign/update"
+                , body = Http.jsonBody (B.updateNetworkCallsignReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkCallsignDecoder
+                }
+
         DownloadKmz toMsg payload ->
             Http.post
                 { url = "/api/rer/analysis/download-kmz"
@@ -1501,6 +1512,10 @@ createNetworkCallsign toMsg payload =
 deleteNetworkCallsign : (Result ApiError B.NetworkCallsign -> msg) -> Int -> Effect msg
 deleteNetworkCallsign toMsg callsignId =
     DeleteNetworkCallsign toMsg callsignId
+
+updateNetworkCallsign : (Result ApiError B.NetworkCallsign -> msg) -> B.UpdateNetworkCallsignReq -> Effect msg
+updateNetworkCallsign toMsg payload =
+    UpdateNetworkCallsign toMsg payload
 
 
 
