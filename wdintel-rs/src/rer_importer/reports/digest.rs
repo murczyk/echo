@@ -30,6 +30,7 @@ pub struct AorRow {
 }
 
 pub struct NetworkRow {
+    pub order: i64,
     pub network_name: String,
     pub network_location: Option<String>,
     pub notes: Vec<InterNote>,
@@ -450,12 +451,16 @@ async fn collect_report(
     for (aor_id, network_ids) in aor_dictionary {
         let aor_name = aors.get(&aor_id).cloned().context(h!())?;
         let mut network_data = vec![];
+        let mut network_order = 1;
         for id in network_ids {
+            let mut order = network_order;
+            network_order += 1;
             let network = networks_dictionary.get(&id).context(h!())?;
             let comments = network_comments_map.remove(&id).unwrap_or(vec![]);
             let mut network_name = network.name.clone();
             if network_name.trim().is_empty() {
                 network_name = format!("Невизначена радіомережа {}МГц", network.freq.clone());
+                order += 1000000; // all undefined networks go to the end of list
             }
             let network_location = network
                 .location
@@ -492,8 +497,10 @@ async fn collect_report(
                 network_name,
                 network_location,
                 notes,
+                order,
             });
         }
+        network_data.sort_by_key(|n| n.order);
         aor_data.push(AorRow {
             aor_name,
             network_data,
