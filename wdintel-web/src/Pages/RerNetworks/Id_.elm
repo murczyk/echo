@@ -1627,7 +1627,6 @@ update shared msg model =
                 , callsignCreateState = Nothing
                 , callsignCreateErrors = Dict.empty
                 , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
-                , callsignCreateSources = []
               }
             , E.none )
 
@@ -1651,6 +1650,7 @@ update shared msg model =
                 , callsignCreateSidebar = Nothing
                 , callsignCreateState = Nothing
                 , callsignCreateErrors = Dict.empty
+                , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
                 , networkCallsigns =
                     case model.networkCallsigns of
                         Success existingCallsigns ->
