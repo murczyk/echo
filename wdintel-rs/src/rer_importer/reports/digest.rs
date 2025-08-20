@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
@@ -37,6 +38,7 @@ pub struct NetworkRow {
 }
 
 pub struct InterNote {
+    pub order: u32,
     pub time: Option<NaiveTime>,
     pub comment: String,
     pub interception_or_id: Either<String, String>,
@@ -490,12 +492,15 @@ async fn collect_report(
                             .naive_local()
                             .time()
                     });
+                let order = time.map(|t| t.num_seconds_from_midnight()).unwrap_or(0);
                 notes.push(InterNote {
+                    order,
                     time,
                     comment,
                     interception_or_id,
                 });
             }
+            notes.sort_by_key(|n| Reverse(n.order));
             network_data.push(NetworkRow {
                 network_name,
                 network_location,
