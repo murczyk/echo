@@ -79,7 +79,7 @@ pub async fn oneoff_assign_message_ids(
     let mut id_set = HashMap::new();
     let mut collisions = vec![];
     loop {
-        let mut records = signal_message::Entity::find()
+        let records = signal_message::Entity::find()
             .select_only()
             .column(signal_message::Column::Id)
             .column(signal_message::Column::GroupMasterKey)
