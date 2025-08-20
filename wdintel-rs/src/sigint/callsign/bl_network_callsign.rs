@@ -426,7 +426,11 @@ pub fn render_network_callsign(
             .or_else(|| known_callsign.as_ref().map(|kc| kc.comment.clone())),
         unit_id: unit.as_ref().map(|u| u.id),
         unit_name: unit.as_ref().map(|u| u.name.clone()),
-        source_id: network_callsign.source_id,
+        source_id: network_callsign.source_id.or_else(|| {
+            known_callsign
+                .as_ref()
+                .map(|kc| kc.source_id.clone() as i64)
+        }),
         // source_name: None,
         radio_freq: network_callsign.radio_freq.or_else(|| {
             known_callsign.as_ref().map(|kc| kc.radio_freq.clone())
