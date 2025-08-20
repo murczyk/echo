@@ -1099,7 +1099,7 @@ fn build_aors_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
-        req.include_peleng_locations.clone().unwrap_or(false);
+        req.include_peleng_locations.unwrap_or(false);
     let aors_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -1112,18 +1112,21 @@ fn build_aors_query(
         .join(
             JoinType::LeftJoin,
             signal_message::Relation::SignalGroup.def(),
-        )        
+        )
         .join(
             JoinType::LeftJoin,
             signal_group::Relation::SignalGroupAor.def(),
-        )             
+        )
         .join(
             JoinType::LeftJoin,
             signal_group_aor::Relation::AreaOfResponsibility.def(),
-        )                 
+        )
         .select_only()
         .column_as(
-            Expr::col((area_of_responsibility::Entity, area_of_responsibility::Column::Id)),
+            Expr::col((
+                area_of_responsibility::Entity,
+                area_of_responsibility::Column::Id,
+            )),
             "aor_id",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
@@ -1133,8 +1136,8 @@ fn build_aors_query(
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
         .group_by(Expr::cust("1"));
-    let aors_res = filter_selected_groups(aors_res, &req.selected_groups)
-        .context(h!())?;
+    let aors_res =
+        filter_selected_groups(aors_res, &req.selected_groups).context(h!())?;
     let aors_res = filter_selected_senders(aors_res, &req.selected_senders)
         .context(h!())?;
     let aors_res =
@@ -1147,9 +1150,8 @@ fn build_aors_query(
         include_peleng_locations,
     )
     .context(h!())?;
-    let aors_res =
-        filter_selected_callsigns(aors_res, &req.selected_callsigns)
-            .context(h!())?;
+    let aors_res = filter_selected_callsigns(aors_res, &req.selected_callsigns)
+        .context(h!())?;
     let aors_res = filter_selected_tags(
         aors_res,
         &req.selected_tags,

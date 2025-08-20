@@ -95,7 +95,7 @@ pub(crate) async fn build_inbox_query(
 
     trace!(
         "inbox items query sql: {}",
-        q.build(DbBackend::Postgres).to_string()
+        q.build(DbBackend::Postgres)
     );
     Ok(q)
 }

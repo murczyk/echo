@@ -1940,8 +1940,7 @@ async fn location_stats(
     Ok(Json(LocationStatsRsp { locations }))
 }
 
-
-/// Отримання доступних значень для фільтра смуг відповідальності (AORs) зі статистикою. 
+/// Отримання доступних значень для фільтра смуг відповідальності (AORs) зі статистикою.
 ///
 /// # API URL
 /// - POST: /api/sigint/network-list
@@ -1971,13 +1970,8 @@ async fn aor_stats(
     let aors = stats::fetch_aors(&req, &user, &env, master_keys)
         .await
         .context(h!())?;
-    let aor_names = collect_aor_names(&aors, &env.dbx)
-        .await
-        .context(h!())?;
-    Ok(Json(AreaOfResponsibilityStatsRsp {
-        aors,
-        aor_names,
-    }))
+    let aor_names = collect_aor_names(&aors, &env.dbx).await.context(h!())?;
+    Ok(Json(AreaOfResponsibilityStatsRsp { aors, aor_names }))
 }
 
 async fn fetch_locations(
@@ -2215,7 +2209,7 @@ async fn location_stats_count(
     Ok(Json(locations_count))
 }
 
-/// Отримання загальної кількості повідомлень по фільтру смуг відповідальності (AORs). 
+/// Отримання загальної кількості повідомлень по фільтру смуг відповідальності (AORs).
 ///
 /// # API URL
 /// - POST: /api/sigint/network-list
@@ -2451,7 +2445,7 @@ async fn collect_aor_names(
             area_of_responsibility::Column::Name,
         ])
         .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
-        .into_tuple::<(i64, String)>() 
+        .into_tuple::<(i64, String)>()
         .all(txn)
         .await
         .context(h!())?;
