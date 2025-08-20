@@ -611,12 +611,7 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 27,
-                        format!(
-                            "{} {}",
-                            callsign.position.as_deref().unwrap_or_default(),
-                            callsign.unit_name.as_deref().unwrap_or_default()
-                        )
-                        .as_str(),
+                        callsign.position.as_deref().unwrap_or_default(),
                         None,
                         false,
                     ),
@@ -699,12 +694,7 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 10,
-                        format!(
-                            "{} {}",
-                            callsign.position.as_deref().unwrap_or_default(),
-                            callsign.unit_name.as_deref().unwrap_or_default()
-                        )
-                        .as_str(),
+                        callsign.position.as_deref().unwrap_or_default(),
                         None,
                         false,
                     ),
@@ -737,14 +727,8 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 7,
-                        String::default().as_str(),
-                        // get_network_callsign_field(
-                        //     &callsign,
-                        //     |n| &Some(n.created_at),
-                        //     |kc| &kc.created_at,
-                        //     |ts| format_datetime_field(Some(*ts)),
-                        // )
-                        // .as_str(),
+                        format_datetime_field(Some(callsign.created_at))
+                            .as_str(),
                         None,
                         false,
                     ),
@@ -1342,13 +1326,7 @@ fn create_table_data_cell(
 
     TableCell::new()
         .width(width, WidthType::Dxa)
-        .add_paragraph(Paragraph::new().add_run({
-            let mut run = Run::new().add_text(text);
-            if let Some(color) = color {
-                run = run.color(color);
-            }
-            run
-        }))
+        .add_paragraph(paragraph_with_linebreaks(text, color.as_deref()))
         .set_borders(table_cell_borders)
 }
 
@@ -1376,4 +1354,26 @@ where
     } else {
         String::new()
     }
+}
+
+fn paragraph_with_linebreaks(text: &str, color: Option<&str>) -> Paragraph {
+    let mut paragraph = Paragraph::new();
+    let lines: Vec<&str> = text.split('\n').collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        let mut run = Run::new().add_text(line.to_string());
+
+        if let Some(c) = color {
+            run = run.color(c);
+        }
+
+        paragraph = paragraph.add_run(run);
+
+        if i < lines.len() - 1 {
+            paragraph = paragraph
+                .add_run(Run::new().add_break(BreakType::TextWrapping));
+        }
+    }
+
+    paragraph
 }

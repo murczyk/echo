@@ -429,7 +429,7 @@ pub fn render_network_callsign(
         source_id: network_callsign.source_id.or_else(|| {
             known_callsign
                 .as_ref()
-                .map(|kc| kc.source_id.clone() as i64)
+                .map(|kc| kc.source_id as i64)
         }),
         // source_name: None,
         radio_freq: network_callsign.radio_freq.or_else(|| {
