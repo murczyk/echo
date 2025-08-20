@@ -2129,13 +2129,21 @@ update shared msg model =
 
                         _ ->
                             model.networkCallsignsPager
+                
+                -- Перезавантажуємо нижню таблицю "Всі позивні"
+                reloadEffect =
+                    case model.network of
+                        Success network ->
+                            E.getNetworkCallsigns CallsignsReturnedByApi { networkId = network.id }
+                        _ ->
+                            E.none
             in
             ( { model
                 | deleteCallsignLoading = False
                 , networkCallsigns = updatedNetworkCallsigns
                 , networkCallsignsPager = updatedPager
               }
-            , E.none )
+            , reloadEffect )
 
         CallsignDeletedFromNetwork (Err error) ->
             ( { model | deleteCallsignLoading = False }
