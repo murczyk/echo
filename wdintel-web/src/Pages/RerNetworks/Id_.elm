@@ -2275,19 +2275,19 @@ freqsTableConfig shared model user =
                                         "var(--color-text-muted)"
                                     )
                                 ]
-                                [ text " ↓" ]
+                                [ text " ⇓" ]
 
                         TableConfig.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
 
                         TableConfig.Reversible (Just isReversed) ->
                             span [ style "color" "var(--ochre-normal)" ]
                                 [ text
                                     (if isReversed then
-                                        " ↑"
+                                        " ⇑"
 
                                      else
-                                        " ↓"
+                                        " ⇓"
                                     )
                                 ]
 
@@ -2297,7 +2297,7 @@ freqsTableConfig shared model user =
                         , sortIcon
                         ]
             in
-            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+            Html.th [ click ] [ headerContent ]
 
         customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
         customThead headers =
@@ -2326,7 +2326,7 @@ freqsTableConfig shared model user =
             , Table.customColumn
                 { name = "Модуляція"
                 , viewData = \freq -> Maybe.withDefault "" freq.modulation
-                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.modulation)
+                , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"
             , Table.customColumn
@@ -2336,7 +2336,7 @@ freqsTableConfig shared model user =
                         Maybe.withDefault "" freq.kind
                             |> NetworksUtils.networkKindFromString
                             |> NetworksUtils.networkKindToLabel
-                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.kind)
+                , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
             , Table.intColumn "Кількість перехоплень" .messageCount |> Table.withColumnWidth "6%"
@@ -2544,19 +2544,19 @@ callsignsTableConfig shared model user =
                                         "var(--color-text-muted)"
                                     )
                                 ]
-                                [ text " ↓" ]
+                                [ text " ⇓" ]
 
                         TableConfig.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
 
                         TableConfig.Reversible (Just isReversed) ->
                             span [ style "color" "var(--ochre-normal)" ]
                                 [ text
                                     (if isReversed then
-                                        " ↑"
+                                        " ⇑"
 
                                      else
-                                        " ↓"
+                                        " ⇓"
                                     )
                                 ]
 
@@ -2566,7 +2566,7 @@ callsignsTableConfig shared model user =
                         , sortIcon
                         ]
             in
-            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+            Html.th [ click  ] [ headerContent ]
 
         customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
         customThead headers =
@@ -2637,9 +2637,24 @@ callsignsTableConfig shared model user =
                 , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
                 }
                 |> Table.withColumnWidth "8%"
-            , Table.stringColumn "Посада" .position |> Table.withColumnWidth "25%"
-            , Table.stringColumn "Підрозділ" .unitName |> Table.withColumnWidth "18%"
-            , Table.stringColumn "Коментар" .comment |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Посада"
+                , viewData = \row -> { attributes = [], children = [ text row.position ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData = \row -> { attributes = [], children = [ text row.unitName ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "18%"
+            , Table.veryCustomColumn
+                { name = "Коментар"
+                , viewData = \row -> { attributes = [], children = [ text row.comment ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "25%"
             , Table.veryCustomColumn
                 { name = "Дата прив'язки"
                 , viewData =
@@ -2650,7 +2665,12 @@ callsignsTableConfig shared model user =
                 , sorter = TableSorter.increasingOrDecreasingBy .createdAt
                 }
                 |> Table.withColumnWidth "12%"
-            , Table.stringColumn "Джерело" .sourceName |> Table.withColumnWidth "10%"
+            , Table.veryCustomColumn
+                { name = "Джерело"
+                , viewData = \row -> { attributes = [], children = [ span [ class "text-sm" ] [ text row.sourceName ] ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "10%"
             ]
         , customizations = customizations
         }
@@ -2680,19 +2700,19 @@ networkCallsignsTableConfig shared model user =
                                         "var(--color-text-muted)"
                                     )
                                 ]
-                                [ text " ↓" ]
+                                [ text " ⇓" ]
 
                         TableConfig.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
 
                         TableConfig.Reversible (Just isReversed) ->
                             span [ style "color" "var(--ochre-normal)" ]
                                 [ text
                                     (if isReversed then
-                                        " ↑"
+                                        " ⇑"
 
                                      else
-                                        " ↓"
+                                        " ⇓"
                                     )
                                 ]
 
@@ -2702,7 +2722,7 @@ networkCallsignsTableConfig shared model user =
                         , sortIcon
                         ]
             in
-            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+            Html.th [ click ] [ headerContent ]
 
         customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
         customThead headers =
@@ -2718,7 +2738,12 @@ networkCallsignsTableConfig shared model user =
         { toId = String.fromInt << .id
         , toMsg = SetNetworkCallsignsTableState
         , columns =
-            [ Table.stringColumn "Позивний" .callsign |> Table.withColumnWidth "12%"
+            [ Table.veryCustomColumn
+                { name = "Позивний"
+                , viewData = \row -> { attributes = [], children = [ text (String.toUpper row.callsign) ] }
+                , sorter = TableSorter.increasingOrDecreasingBy .callsign
+                }
+                |> Table.withColumnWidth "12%"
             , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "7%"
             , Table.veryCustomColumn
                 { name = "Остання активність"
@@ -2736,9 +2761,24 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
                 }
                 |> Table.withColumnWidth "8%"
-            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "14%"
-            , Table.stringColumn "Підрозділ" (.unitName >> Maybe.withDefault "-") |> Table.withColumnWidth "16%"
-            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Посада"
+                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.position) ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.unitName) ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "16%"
+            , Table.veryCustomColumn
+                { name = "Коментар"
+                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.comment) ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Дата створення"
                 , viewData =
@@ -2760,15 +2800,15 @@ networkCallsignsTableConfig shared model user =
                                     case ListX.find (\s -> s.id == sourceId) model.callsignCreateSources of
                                         Just source ->
                                             div []
-                                                [ text source.name
+                                                [ span [ class "text-sm" ] [ text source.name ]
                                                 , if sourceId == 2 && row.radioFreq /= Nothing then
-                                                    div [ class "text-xs text-muted-foreground mt-1" ]
+                                                    span [ class "text-xs text-muted-foreground ml-1" ]
                                                         [ text <| Maybe.withDefault "" row.radioFreq ]
                                                   else
                                                     text ""
                                                 ]
                                         Nothing ->
-                                            text (String.fromInt sourceId)
+                                            span [ class "text-sm" ] [ text (String.fromInt sourceId) ]
                                 Nothing ->
                                     text "-"
                             ]
