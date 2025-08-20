@@ -10,6 +10,7 @@ import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
 import Components.SegmentedControl as SegmentedControl
 import Components.Sidebar as Sidebar
+import Components.Pager as Pager
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
@@ -247,6 +248,7 @@ type alias Model =
     -- Network callsigns (new table)
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
     , networkCallsignsTableState : Table.State
+    , networkCallsignsPager : Pager.Model
 
     -- Callsign selection and adding functionality
     , callsignsSelected : Set Int    -- Виділені позивні (known_callsign_id)
@@ -397,6 +399,7 @@ init route shared () =
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
+      , networkCallsignsPager = Pager.init
 
       -- Callsign selection and adding functionality
       , callsignsSelected = Set.empty
@@ -499,6 +502,7 @@ type Msg
     | SetCallsignsTableState Table.State
     | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
     | SetNetworkCallsignsTableState Table.State
+    | NetworkCallsignsPagerMsg Pager.Msg
     | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
@@ -1371,10 +1375,18 @@ update shared msg model =
             )
 
         NetworkCallsignsReturnedByApi (Ok res) ->
-            ( { model | networkCallsigns = Success res.networkCallsigns }, E.none )
+            ( { model 
+                | networkCallsigns = Success res.networkCallsigns
+                , networkCallsignsPager = { currentPage = 1, pageSize = 10, totalItems = List.length res.networkCallsigns }
+              }
+            , E.none
+            )
 
         SetNetworkCallsignsTableState newState ->
             ( { model | networkCallsignsTableState = newState }, E.none )
+
+        NetworkCallsignsPagerMsg pagerMsg ->
+            ( { model | networkCallsignsPager = Pager.update pagerMsg model.networkCallsignsPager }, E.none )
 
         OpenFreqEditSidebar freqId updateReq ->
             let
@@ -3712,7 +3724,7 @@ contentBlock user shared network model =
             _ ->
                 Le.Block.Spinner.loadingSpinnerSm
         ]
-    , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
+    , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[700px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
             , Button.new
@@ -3724,8 +3736,20 @@ contentBlock user shared network model =
             ]
         , case model.networkCallsigns of
             Success networkCallsigns ->
-                div [ class "overflow-y-auto grow-1 mb-4" ]
-                    [ Table.view (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState networkCallsigns
+                let
+                    -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
+                    sortedCallsigns =
+                        Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState networkCallsigns
+
+                    paginatedCallsigns =
+                        Pager.getPageData model.networkCallsignsPager sortedCallsigns
+                in
+                div [ class "flex flex-col flex-1 mb-4" ]
+                    [ div [ class "overflow-y-auto flex-1" ]
+                        [ Table.view (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState paginatedCallsigns
+                        ]
+                    , Pager.view model.networkCallsignsPager
+                        |> Html.map NetworkCallsignsPagerMsg
                     ]
 
             Loading ->
@@ -3776,7 +3800,7 @@ contentBlock user shared network model =
             ]
         , case model.callsigns of
             Success callsigns ->
-                div [ class "overflow-y-auto grow-1" ]
+                div [ class "overflow-y-auto flex-1" ]
                     [ let
                         -- Перетворюємо дані у плоску структуру для таблиці
                         callsignsTableRows =
