@@ -247,11 +247,11 @@ type alias Model =
     -- Network callsigns (new table)
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
     , networkCallsignsTableState : Table.State
-    
+
     -- Callsign selection and adding functionality
     , callsignsSelected : Set Int    -- Виділені позивні (known_callsign_id)
     , callsignsAddLoading : Bool     -- Стан завантаження при додаванні позивних
-    
+
         -- Network callsign creation sidebar
     , callsignCreateSidebar : Maybe CallsignCreateMode
         , callsignCreateState : Maybe B.CreateNetworkCallsignReq
@@ -259,11 +259,11 @@ type alias Model =
         , callsignCreateErrors : Dict String String
         , callsignCreateSourceSelState : Select.State
         , callsignCreateSources : List B.Source
-        
+
         -- Callsign deletion confirmation dialog
         , deleteCallsignConfirmation : Maybe Int  -- ID позивного для видалення
         , deleteCallsignLoading : Bool           -- Стан завантаження видалення
-        
+
             -- Callsign editing functionality
     , editCallsignSidebar : Maybe Int        -- ID позивного для редагування
     , editCallsignState : Maybe B.UpdateNetworkCallsignReq -- Стан форми редагування
@@ -397,11 +397,11 @@ init route shared () =
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
-      
+
       -- Callsign selection and adding functionality
       , callsignsSelected = Set.empty
       , callsignsAddLoading = False
-      
+
       -- Network callsign creation sidebar
               , callsignCreateSidebar = Nothing
         , callsignCreateState = Nothing
@@ -409,11 +409,11 @@ init route shared () =
         , callsignCreateErrors = Dict.empty
         , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
         , callsignCreateSources = []
-        
+
         -- Callsign deletion confirmation dialog initialization
         , deleteCallsignConfirmation = Nothing
         , deleteCallsignLoading = False
-        
+
         -- Callsign editing functionality initialization
         , editCallsignSidebar = Nothing
         , editCallsignState = Nothing
@@ -528,7 +528,7 @@ type Msg
     | DeleteFreqConfirmedByUser
     | DeleteFreqCanceledByUser
     | DeleteFreqReturnedByApi (Result ApiError B.Network)
-    
+
     -- Network callsign creation messages
     | OpenCallsignCreateSidebar
     | CloseCallsignCreateSidebar
@@ -536,12 +536,12 @@ type Msg
             | CreateCallsignClicked
         | CallsignCreated (Result ApiError B.NetworkCallsign)
         | CallsignCreateSourceSelMsg (Select.Msg Int)
-    
+
     -- Callsign selection and adding functionality
     | ToggleCallsignSelection Int                    -- Перемикання виділення позивного
     | AddSelectedCallsignsToNetwork                     -- Додавання виділених позивних до мережі
     | CallsignsAddedToNetwork (Result ApiError (List B.NetworkCallsign))  -- Результат додавання (тепер список)
-    
+
     -- Callsign deletion functionality
     | DeleteCallsignFromNetwork Int                    -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int                          -- Клік по кнопці редагування позивного з мережі
@@ -1595,7 +1595,7 @@ update shared msg model =
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
-        
+
         -- Network callsign creation messages
         OpenCallsignCreateSidebar ->
             case model.network of
@@ -1609,18 +1609,18 @@ update shared msg model =
                             , sourceId = 1  -- Default source ID
                             , radioFreq = Nothing
                             }
-                        
+
                     in
-                    ( { model 
+                    ( { model
                         | callsignCreateSidebar = Just CreateFromScratch
                         , callsignCreateState = Just updatedState
                         , callsignCreateErrors = Dict.empty
                       }
                     , E.none )
-                
+
                 _ ->
                     ( model, E.none )
-        
+
         CloseCallsignCreateSidebar ->
             ( { model
                 | callsignCreateSidebar = Nothing
@@ -1630,40 +1630,40 @@ update shared msg model =
                 , callsignCreateSources = []
               }
             , E.none )
-        
+
         UpdateCallsignCreateField updateFunc ->
             ( { model | callsignCreateState = updateFunc model.callsignCreateState }
             , E.none )
-        
+
         CreateCallsignClicked ->
             case model.callsignCreateState of
                 Just createReq ->
                     ( { model | callsignCreateSaving = True }
                     , E.createNetworkCallsign CallsignCreated createReq
                     )
-                
+
                 Nothing ->
                     ( model, E.none )
-        
+
         CallsignCreated (Ok networkCallsign) ->
-            ( { model 
+            ( { model
                 | callsignCreateSaving = False
                 , callsignCreateSidebar = Nothing
                 , callsignCreateState = Nothing
                 , callsignCreateErrors = Dict.empty
-                , networkCallsigns = 
+                , networkCallsigns =
                     case model.networkCallsigns of
                         Success existingCallsigns ->
                             Success (networkCallsign :: existingCallsigns)
-                        
+
                         _ ->
                             Success [ networkCallsign ]
               }
             , E.none
             )
-        
+
         CallsignCreated (Err error) ->
-            ( { model 
+            ( { model
                 | callsignCreateSaving = False
                 , callsignCreateErrors = Dict.singleton "general" (Le.ErrorHandling.formatErrorForShowError "Помилка створення позивного" error)
               }
@@ -1680,7 +1680,7 @@ update shared msg model =
             in
             ( { model
                 | callsignCreateSourceSelState = imodel2
-                , callsignCreateState = 
+                , callsignCreateState =
                     Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.callsignCreateState
               }
             , E.sendCmd <| Cmd.map CallsignCreateSourceSelMsg icmd
@@ -1908,7 +1908,7 @@ update shared msg model =
         -- Callsign selection and adding functionality
         ToggleCallsignSelection knownCallsignId ->
             let
-                newSelected = 
+                newSelected =
                     if Set.member knownCallsignId model.callsignsSelected then
                         Set.remove knownCallsignId model.callsignsSelected
                     else
@@ -1918,12 +1918,12 @@ update shared msg model =
 
         AddSelectedCallsignsToNetwork ->
             let
-                networkId = 
+                networkId =
                     case model.network of
                         Success network -> network.id
                         _ -> 0
-                
-                payload = 
+
+                payload =
                     { networkId = networkId
                     , knownCallsignIds = Set.toList model.callsignsSelected
                     }
@@ -1940,35 +1940,35 @@ update shared msg model =
         CallsignsAddedToNetwork (Ok networkCallsigns) ->
             let
                 -- Оновлюємо networkCallsigns, додаючи нові
-                updatedNetworkCallsigns = 
+                updatedNetworkCallsigns =
                     case model.networkCallsigns of
                         Success existing ->
                             Success (existing ++ networkCallsigns)
                         _ ->
                             Success networkCallsigns
-                
+
                 -- Очищаємо виділення та стан завантаження
-                updatedModel = 
-                    { model 
+                updatedModel =
+                    { model
                     | networkCallsigns = updatedNetworkCallsigns
                     , callsignsAddLoading = False
                     , callsignsSelected = Set.empty
                     }
             in
             ( updatedModel, E.none )
-            
+
         DeleteCallsignFromNetwork callsignId ->
             ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
-            
+
         EditCallsignClicked callsignId ->
             case model.networkCallsigns of
                 Success networkCallsigns ->
                     case ListX.find (\c -> c.id == callsignId) networkCallsigns of
                         Just callsign ->
                             let
-                                editState = 
+                                editState =
                                     { id = callsign.id
-                                    , networkId = 
+                                    , networkId =
                                         case model.network of
                                             Success network -> network.id
                                             _ -> 0
@@ -1979,7 +1979,7 @@ update shared msg model =
                                     , radioFreq = Nothing  -- TODO: Get from API or store separately
                                     }
                             in
-                            ( { model 
+                            ( { model
                                 | editCallsignSidebar = Just callsignId
                                 , editCallsignState = Just editState
                                 , editCallsignErrors = Dict.empty
@@ -1987,36 +1987,36 @@ update shared msg model =
                               }
                             , E.none
                             )
-                        
+
                         Nothing ->
                             ( model, E.none )
-                
+
                 _ ->
                     ( model, E.none )
-            
+
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
             , E.deleteNetworkCallsign CallsignDeletedFromNetwork callsignId )
-            
+
         DeleteCallsignCanceled ->
             ( { model | deleteCallsignConfirmation = Nothing }, E.none )
-            
+
         CallsignDeletedFromNetwork (Ok deletedCallsign) ->
             let
                 -- Видаляємо позивний зі списку networkCallsigns
-                updatedNetworkCallsigns = 
+                updatedNetworkCallsigns =
                     case model.networkCallsigns of
                         Success existingCallsigns ->
                             Success (List.filter (\c -> c.id /= deletedCallsign.id) existingCallsigns)
                         _ ->
                             model.networkCallsigns
             in
-            ( { model 
+            ( { model
                 | deleteCallsignLoading = False
                 , networkCallsigns = updatedNetworkCallsigns
               }
             , E.none )
-            
+
         CallsignDeletedFromNetwork (Err error) ->
             ( { model | deleteCallsignLoading = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного з мережі" error
@@ -2042,21 +2042,21 @@ update shared msg model =
                     ( { model | editCallsignSaving = True }
                     , E.updateNetworkCallsign CallsignUpdated updateReq
                     )
-                
+
                 Nothing ->
                     ( model, E.none )
 
         CallsignUpdated (Ok updatedCallsign) ->
             let
                 -- Update the callsign in networkCallsigns list
-                updatedNetworkCallsigns = 
+                updatedNetworkCallsigns =
                     case model.networkCallsigns of
                         Success existingCallsigns ->
                             Success (List.map (\c -> if c.id == updatedCallsign.id then updatedCallsign else c) existingCallsigns)
                         _ ->
                             model.networkCallsigns
             in
-            ( { model 
+            ( { model
                 | editCallsignSaving = False
                 , editCallsignSidebar = Nothing
                 , editCallsignState = Nothing
@@ -2067,7 +2067,7 @@ update shared msg model =
             )
 
         CallsignUpdated (Err error) ->
-            ( { model 
+            ( { model
                 | editCallsignSaving = False
                 , editCallsignErrors = Dict.singleton "general" (Le.ErrorHandling.formatErrorForShowError "Помилка оновлення позивного" error)
               }
@@ -2084,7 +2084,7 @@ update shared msg model =
             in
             ( { model
                 | editCallsignSourceSelState = imodel2
-                , editCallsignState = 
+                , editCallsignState =
                     Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.editCallsignState
               }
             , E.sendCmd <| Cmd.map EditCallsignSourceSelMsg icmd
@@ -2102,15 +2102,15 @@ update shared msg model =
                             , sourceId = 1  -- Default source ID
                             , radioFreq = Nothing
                             }
-                        
+
                     in
-                    ( { model 
+                    ( { model
                         | callsignCreateSidebar = Just (CreateFromUnknown callsign)
                         , callsignCreateState = Just updatedState
                         , callsignCreateErrors = Dict.empty
                       }
                     , E.none )
-                
+
                 _ ->
                     ( model, E.none )
 
@@ -2465,7 +2465,7 @@ callsignsTableConfig shared model user =
                     \row ->
                         { attributes = []
                         , children =
-                            [ Checkbox.new 
+                            [ Checkbox.new
                                 { isChecked = Set.member row.id model.callsignsSelected
                                 , onToggle = \_ -> ToggleCallsignSelection row.id
                                 }
@@ -2603,7 +2603,7 @@ networkCallsignsTableConfig shared model user =
                 , viewData =
                     \row ->
                         { attributes = []
-                        , children = 
+                        , children =
                             [ case row.sourceId of
                                 Just sourceId ->
                                     case ListX.find (\s -> s.id == sourceId) model.callsignCreateSources of
@@ -3676,7 +3676,7 @@ contentBlock user shared network model =
     , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
-            , Button.new 
+            , Button.new
                 { label = "+"
                 , onClick = OpenCallsignCreateSidebar
                 }
@@ -3705,15 +3705,15 @@ contentBlock user shared network model =
             , div [ class "flex items-center gap-3" ]
                 [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
                     [ i [ class "bi bi-check-square" ] []
-                    , span [] 
-                        [ text (if Set.isEmpty model.callsignsSelected then 
+                    , span []
+                        [ text (if Set.isEmpty model.callsignsSelected then
                                   "Виберіть позивні"
-                                else 
+                                else
                                   "Виділено: " ++ String.fromInt (Set.size model.callsignsSelected)
                               )
                         ]
                     ]
-                , Button.new 
+                , Button.new
                     { label = "Додати"
                     , onClick = AddSelectedCallsignsToNetwork
                     }
@@ -3785,11 +3785,11 @@ contentBlock user shared network model =
                         [ Table.view (callsignsTableConfig shared model user) model.callsignsTableState callsignsTableRows
                         , div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
                             [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                            , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c -> 
-                                button 
+                            , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c ->
+                                button
                                     [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
                                     , onClick (OpenAddFromUnknownSidebar c)
-                                    ] 
+                                    ]
                                     [ text <| String.toUpper c ]
                                 ) callsignsUnknown)
                             ]
@@ -3833,7 +3833,7 @@ view user shared model =
 
                     Nothing ->
                         text ""
-            
+
                 , if model.editCallsignSidebar /= Nothing then
                     Sidebar.view True CloseEditCallsignSidebar [ editCallsignSidebarContent shared model user ]
 
@@ -4431,10 +4431,10 @@ callsignCreateSidebarContent shared model user =
                         sourceMenu =
                             model.callsignCreateSources
                                 |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
-                        
+
                         selectItem =
                             Maybe.map .sourceId model.callsignCreateState
-                                |> Maybe.andThen (\sourceId -> 
+                                |> Maybe.andThen (\sourceId ->
                                     ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
                                         |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
                                 )
@@ -4530,15 +4530,15 @@ callsignCreateSidebarContent shared model user =
                     Button.new { label = "Створити", onClick = CreateCallsignClicked }
                         |> Button.withDisabled
                             (let
-                                callsignEmpty = 
+                                callsignEmpty =
                                     Maybe.map .callsign model.callsignCreateState
                                         |> Maybe.map (String.trim >> (==) "")
                                         |> Maybe.withDefault True
-                                
-                                isRO = 
+
+                                isRO =
                                     (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2
-                                
-                                roFreqEmpty = 
+
+                                roFreqEmpty =
                                     if isRO then
                                         Maybe.andThen .radioFreq model.callsignCreateState
                                             |> Maybe.map (String.trim >> (==) "")
@@ -4585,10 +4585,10 @@ editCallsignSidebarContent shared model user =
                         sourceMenu =
                             model.callsignCreateSources
                                 |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
-                        
+
                         selectItem =
                             Maybe.map .sourceId model.editCallsignState
-                                |> Maybe.andThen (\sourceId -> 
+                                |> Maybe.andThen (\sourceId ->
                                     ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
                                         |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
                                 )
@@ -4668,13 +4668,13 @@ editCallsignSidebarContent shared model user =
                         ]
                   else
                     text ""
-                
+
                 -- Display errors if any
                 , case Dict.get "general" model.editCallsignErrors of
                     Just error ->
                         div [ class "p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm" ]
                             [ text error ]
-                    
+
                     Nothing ->
                         text ""
                 ]
@@ -4693,15 +4693,15 @@ editCallsignSidebarContent shared model user =
                     Button.new { label = "Зберегти", onClick = SaveEditCallsignClicked }
                         |> Button.withDisabled
                             (let
-                                callsignEmpty = 
+                                callsignEmpty =
                                     Maybe.map .callsign model.editCallsignState
                                         |> Maybe.map (String.trim >> (==) "")
                                         |> Maybe.withDefault True
-                                
-                                isRO = 
+
+                                isRO =
                                     (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2
-                                
-                                roFreqEmpty = 
+
+                                roFreqEmpty =
                                     if isRO then
                                         Maybe.andThen .radioFreq model.editCallsignState
                                             |> Maybe.map (String.trim >> (==) "")
