@@ -3707,14 +3707,17 @@ type alias NetworkCallsign =
     , networkId : Int
     , callsign : String
     , knownCallsignId : Maybe Int
-    , knownCallsign : Maybe Callsign
     , position : Maybe String
     , comment : Maybe String
+    , unitId : Maybe Int
+    , unitName : Maybe String
     , sourceId : Maybe Int
+    , radioFreq : Maybe String
     , createdAt : Int
     , active : Bool
     , messageCount : Int
     , lastDatetime : Maybe Int
+    , freqs : Maybe (List String)
     }
 
 
@@ -3725,14 +3728,17 @@ networkCallsignEncoder struct =
         , ( "network_id", Json.Encode.int struct.networkId )
         , ( "callsign", Json.Encode.string struct.callsign )
         , ( "known_callsign_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.knownCallsignId )
-        , ( "known_callsign", (Maybe.withDefault Json.Encode.null << Maybe.map callsignEncoder) struct.knownCallsign )
         , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.position )
         , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
+        , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.unitId )
+        , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.unitName )
         , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
+        , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "active", Json.Encode.bool struct.active )
         , ( "message_count", Json.Encode.int struct.messageCount )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
+        , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
         ]
 
 
@@ -4847,7 +4853,6 @@ type alias NetworkCallsignRes =
     , freqs : Maybe (List String)
     , networkNames : Maybe (List String)
     , isOld : Bool
-    , isReported : Bool
     }
 
 
@@ -4861,7 +4866,6 @@ networkCallsignResEncoder struct =
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
         , ( "network_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.networkNames )
         , ( "is_old", Json.Encode.bool struct.isOld )
-        , ( "is_reported", Json.Encode.bool struct.isReported )
         ]
 
 
@@ -7799,14 +7803,17 @@ networkCallsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_id" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign" (Json.Decode.nullable callsignDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
 
 
 updateNetworkCallsignReqDecoder : Json.Decode.Decoder UpdateNetworkCallsignReq
@@ -8466,7 +8473,6 @@ networkCallsignResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_old" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
 
 
 postDecoder : Json.Decode.Decoder Post

@@ -1976,7 +1976,7 @@ update shared msg model =
                                     , position = callsign.position
                                     , comment = callsign.comment
                                     , sourceId = Maybe.withDefault 1 callsign.sourceId
-                                    , radioFreq = Nothing  -- TODO: Get from API or store separately
+                                    , radioFreq = callsign.radioFreq  -- Тепер це окреме поле
                                     }
                             in
                             ( { model
@@ -2595,9 +2595,37 @@ networkCallsignsTableConfig shared model user =
         { toId = String.fromInt << .id
         , toMsg = SetNetworkCallsignsTableState
         , columns =
-            [ Table.stringColumn "Позивний" .callsign |> Table.withColumnWidth "18%"
-            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "20%"
-            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "25%"
+            [ Table.stringColumn "Позивний" .callsign |> Table.withColumnWidth "12%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "7%"
+            , Table.veryCustomColumn
+                { name = "Остання активність"
+                , viewData =
+                    \row ->
+                        case row.lastDatetime of
+                            Just lastDatetime ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
+                                }
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "-" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
+                }
+                |> Table.withColumnWidth "10%"
+            , Table.stringColumn "Посада" (.position >> Maybe.withDefault "-") |> Table.withColumnWidth "12%"
+            , Table.stringColumn "Підрозділ" (.unitName >> Maybe.withDefault "-") |> Table.withColumnWidth "10%"
+            , Table.stringColumn "Коментар" (.comment >> Maybe.withDefault "-") |> Table.withColumnWidth "18%"
+            , Table.veryCustomColumn
+                { name = "Дата створення"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
                 { name = "Джерело"
                 , viewData =
@@ -2608,7 +2636,14 @@ networkCallsignsTableConfig shared model user =
                                 Just sourceId ->
                                     case ListX.find (\s -> s.id == sourceId) model.callsignCreateSources of
                                         Just source ->
-                                            text source.name
+                                            div []
+                                                [ text source.name
+                                                , if sourceId == 2 && row.radioFreq /= Nothing then
+                                                    div [ class "text-xs text-muted-foreground mt-1" ]
+                                                        [ text ("Частота: " ++ Maybe.withDefault "" row.radioFreq) ]
+                                                  else
+                                                    text ""
+                                                ]
                                         Nothing ->
                                             text (String.fromInt sourceId)
                                 Nothing ->
@@ -2617,18 +2652,22 @@ networkCallsignsTableConfig shared model user =
                         }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "12%"
+                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
-                { name = "Дата створення"
+                { name = "Активний"
                 , viewData =
                     \row ->
                         { attributes = []
-                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                        , children =
+                            [ if row.active then
+                                span [ class "text-green-600" ] [ text "✅" ]
+                              else
+                                span [ class "text-red-600" ] [ text "❌" ]
+                            ]
                         }
-                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "12%"
-            , Table.intColumn "К-сть повідомлень" .messageCount |> Table.withColumnWidth "8%"
+                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -2653,7 +2692,7 @@ networkCallsignsTableConfig shared model user =
                         }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "5%"
+                |> Table.withColumnWidth "7%"
             ]
         , customizations = customizations
         }
