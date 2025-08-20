@@ -12,7 +12,6 @@ use docx_rs::*;
 use itertools::Either;
 use sea_orm::*;
 use std::path::Path;
-use syn::parse::Parser;
 
 const DOC_NAME: &str = "Форма №1.2.17/ОСУВ";
 const DOC_HEADER: &str =

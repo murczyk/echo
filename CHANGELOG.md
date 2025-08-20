@@ -1,5 +1,6 @@
 ## NEXT
 
+- [#1281](https://github.com/echoua/echo/issues/1281) Звіт ДАЙДЖЕСТ
 - [#1295](https://github.com/echoua/echo/issues/1295) Видалення частоти мережі
 - [#1299](https://github.com/echoua/echo/issues/1299) Виправлено дДублювання мережі повідомлення якщо марежа або група в декількох смугах
 - [#1292](https://github.com/echoua/echo/issues/1292) Фільтр мереж за смугою
