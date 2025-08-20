@@ -1413,10 +1413,42 @@ update shared msg model =
             ( { model | networkCallsignsTableState = newState }, E.none )
 
         NetworkCallsignsPagerMsg pagerMsg ->
-            ( { model | networkCallsignsPager = Pager.update pagerMsg model.networkCallsignsPager }, E.none )
+            let
+                updatedPager = Pager.update pagerMsg model.networkCallsignsPager
+                
+                -- Якщо змінюється розмір сторінки, перевіряємо поточну сторінку
+                finalPager = 
+                    case pagerMsg of
+                        Pager.ChangePageSize newPageSize ->
+                            let
+                                maxPage = Basics.max 1 (ceiling (toFloat updatedPager.totalItems / toFloat newPageSize))
+                                newCurrentPage = Basics.min updatedPager.currentPage maxPage
+                            in
+                            { updatedPager | currentPage = newCurrentPage }
+                        
+                        _ ->
+                            updatedPager
+            in
+            ( { model | networkCallsignsPager = finalPager }, E.none )
 
         CallsignsPagerMsg pagerMsg ->
-            ( { model | callsignsPager = Pager.update pagerMsg model.callsignsPager }, E.none )
+            let
+                updatedPager = Pager.update pagerMsg model.callsignsPager
+                
+                -- Якщо змінюється розмір сторінки, перевіряємо поточну сторінку
+                finalPager = 
+                    case pagerMsg of
+                        Pager.ChangePageSize newPageSize ->
+                            let
+                                maxPage = Basics.max 1 (ceiling (toFloat updatedPager.totalItems / toFloat newPageSize))
+                                newCurrentPage = Basics.min updatedPager.currentPage maxPage
+                            in
+                            { updatedPager | currentPage = newCurrentPage }
+                        
+                        _ ->
+                            updatedPager
+            in
+            ( { model | callsignsPager = finalPager }, E.none )
 
         OpenFreqEditSidebar freqId updateReq ->
             let
@@ -1687,19 +1719,36 @@ update shared msg model =
                     ( model, E.none )
 
         CallsignCreated (Ok networkCallsign) ->
-            ( { model
-                | callsignCreateSaving = False
-                , callsignCreateSidebar = Nothing
-                , callsignCreateState = Nothing
-                , callsignCreateErrors = Dict.empty
-                , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
-                , networkCallsigns =
+            let
+                -- Оновлюємо список позивних мережі
+                updatedNetworkCallsigns =
                     case model.networkCallsigns of
                         Success existingCallsigns ->
                             Success (networkCallsign :: existingCallsigns)
 
                         _ ->
                             Success [ networkCallsign ]
+                
+                -- Оновлюємо пагінацію
+                updatedPager = 
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            let
+                                currentPager = model.networkCallsignsPager
+                            in
+                            { currentPager | totalItems = List.length callsigns }
+                        
+                        _ ->
+                            model.networkCallsignsPager
+            in
+            ( { model
+                | callsignCreateSaving = False
+                , callsignCreateSidebar = Nothing
+                , callsignCreateState = Nothing
+                , callsignCreateErrors = Dict.empty
+                , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+                , networkCallsigns = updatedNetworkCallsigns
+                , networkCallsignsPager = updatedPager
               }
             , E.none
             )
@@ -2052,10 +2101,26 @@ update shared msg model =
                             Success (List.filter (\c -> c.id /= deletedCallsign.id) existingCallsigns)
                         _ ->
                             model.networkCallsigns
+                
+                -- Оновлюємо пагінацію та перевіряємо поточну сторінку
+                updatedPager = 
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            let
+                                currentPager = model.networkCallsignsPager
+                                totalItems = List.length callsigns
+                                maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat currentPager.pageSize))
+                                newCurrentPage = Basics.min currentPager.currentPage maxPage
+                            in
+                            { currentPager | totalItems = totalItems, currentPage = newCurrentPage }
+                        
+                        _ ->
+                            model.networkCallsignsPager
             in
             ( { model
                 | deleteCallsignLoading = False
                 , networkCallsigns = updatedNetworkCallsigns
+                , networkCallsignsPager = updatedPager
               }
             , E.none )
 
@@ -2097,6 +2162,21 @@ update shared msg model =
                             Success (List.map (\c -> if c.id == updatedCallsign.id then updatedCallsign else c) existingCallsigns)
                         _ ->
                             model.networkCallsigns
+                
+                -- Оновлюємо пагінацію (totalItems залишається тим же, але перевіряємо currentPage)
+                updatedPager = 
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            let
+                                currentPager = model.networkCallsignsPager
+                                totalItems = List.length callsigns
+                                maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat currentPager.pageSize))
+                                newCurrentPage = Basics.min currentPager.currentPage maxPage
+                            in
+                            { currentPager | currentPage = newCurrentPage }
+                        
+                        _ ->
+                            model.networkCallsignsPager
             in
             ( { model
                 | editCallsignSaving = False
@@ -2104,6 +2184,7 @@ update shared msg model =
                 , editCallsignState = Nothing
                 , editCallsignErrors = Dict.empty
                 , networkCallsigns = updatedNetworkCallsigns
+                , networkCallsignsPager = updatedPager
               }
             , E.none
             )
