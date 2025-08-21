@@ -5,6 +5,7 @@ module Components.Pager exposing
     , update
     , view
     , getPageData
+    , updateForNewTotalItems
     )
 
 {-| A reusable pagination component for tables and lists.
@@ -214,6 +215,19 @@ viewPageNumber { page, isCurrent, isEllipsis } =
             , onClick (GoToPage page)
             ]
             [ text (String.fromInt page) ]
+
+
+{-| Update pagination when total items count changes
+This function recalculates totalItems and adjusts currentPage if needed
+-}
+updateForNewTotalItems : Int -> Model -> Model
+updateForNewTotalItems newTotalItems model =
+    let
+        totalItems = newTotalItems
+        maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat model.pageSize))
+        newCurrentPage = Basics.min model.currentPage maxPage
+    in
+    { model | totalItems = totalItems, currentPage = newCurrentPage }
 
 
 {-| Get page numbers to display with ellipsis

@@ -1404,7 +1404,7 @@ update shared msg model =
         NetworkCallsignsReturnedByApi (Ok res) ->
             ( { model
                 | networkCallsigns = Success res.networkCallsigns
-                , networkCallsignsPager = { currentPage = 1, pageSize = 5, totalItems = List.length res.networkCallsigns }
+                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length res.networkCallsigns) { currentPage = 1, pageSize = 5, totalItems = 0 }
               }
             , E.none
             )
@@ -1420,11 +1420,7 @@ update shared msg model =
                 finalPager =
                     case pagerMsg of
                         Pager.ChangePageSize newPageSize ->
-                            let
-                                maxPage = Basics.max 1 (ceiling (toFloat updatedPager.totalItems / toFloat newPageSize))
-                                newCurrentPage = Basics.min updatedPager.currentPage maxPage
-                            in
-                            { updatedPager | currentPage = newCurrentPage }
+                            Pager.updateForNewTotalItems updatedPager.totalItems { updatedPager | pageSize = newPageSize }
 
                         _ ->
                             updatedPager
@@ -1439,11 +1435,7 @@ update shared msg model =
                 finalPager =
                     case pagerMsg of
                         Pager.ChangePageSize newPageSize ->
-                            let
-                                maxPage = Basics.max 1 (ceiling (toFloat updatedPager.totalItems / toFloat newPageSize))
-                                newCurrentPage = Basics.min updatedPager.currentPage maxPage
-                            in
-                            { updatedPager | currentPage = newCurrentPage }
+                            Pager.updateForNewTotalItems updatedPager.totalItems { updatedPager | pageSize = newPageSize }
 
                         _ ->
                             updatedPager
@@ -1746,10 +1738,7 @@ update shared msg model =
                 updatedPager =
                     case updatedNetworkCallsigns of
                         Success callsigns ->
-                            let
-                                currentPager = model.networkCallsignsPager
-                            in
-                            { currentPager | totalItems = List.length callsigns }
+                            Pager.updateForNewTotalItems (List.length callsigns) model.networkCallsignsPager
                         _ ->
                             model.networkCallsignsPager
             in
@@ -2055,13 +2044,7 @@ update shared msg model =
                 updatedPager =
                     case updatedNetworkCallsigns of
                         Success callsigns ->
-                            let
-                                currentPager = model.networkCallsignsPager
-                                totalItems = List.length callsigns
-                                maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat currentPager.pageSize))
-                                newCurrentPage = Basics.min currentPager.currentPage maxPage
-                            in
-                            { currentPager | totalItems = totalItems, currentPage = newCurrentPage }
+                            Pager.updateForNewTotalItems (List.length callsigns) model.networkCallsignsPager
                         
                         _ ->
                             model.networkCallsignsPager
@@ -2143,13 +2126,7 @@ update shared msg model =
                 updatedPager =
                     case updatedNetworkCallsigns of
                         Success callsigns ->
-                            let
-                                currentPager = model.networkCallsignsPager
-                                totalItems = List.length callsigns
-                                maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat currentPager.pageSize))
-                                newCurrentPage = Basics.min currentPager.currentPage maxPage
-                            in
-                            { currentPager | totalItems = totalItems, currentPage = newCurrentPage }
+                            Pager.updateForNewTotalItems (List.length callsigns) model.networkCallsignsPager
 
                         _ ->
                             model.networkCallsignsPager

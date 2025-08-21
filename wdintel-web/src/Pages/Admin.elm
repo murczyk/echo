@@ -992,8 +992,7 @@ update msg model =
 
         GotOrphanGroups (Ok groups) ->
             let
-                currentPager = model.orphanGroupsPager
-                updatedPager = { currentPager | totalItems = List.length groups }
+                updatedPager = Pager.updateForNewTotalItems (List.length groups) model.orphanGroupsPager
             in
             ( { model
                 | orphanGroups = RD.Success groups
