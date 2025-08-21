@@ -124,6 +124,7 @@ mod m20250816_160937_default_big_aor;
 mod m20250817_172424_add_modulation;
 mod m20250818_080807_add_radio_freq_to_network_callsign;
 mod m20250818_124718_sigint_network_freq_deleted;
+mod m20250821_173159_add_developing_field_to_network_callsign;
 mod m20250823_115254_trim_callsigns;
 mod m20250823_182737_fix_network_freqs_format;
 
@@ -257,6 +258,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250817_172424_add_modulation::Migration),
             Box::new(m20250818_080807_add_radio_freq_to_network_callsign::Migration),
             Box::new(m20250818_124718_sigint_network_freq_deleted::Migration),
+            Box::new(m20250821_173159_add_developing_field_to_network_callsign::Migration),
             Box::new(m20250823_115254_trim_callsigns::Migration),
             Box::new(m20250823_182737_fix_network_freqs_format::Migration),
         ]
