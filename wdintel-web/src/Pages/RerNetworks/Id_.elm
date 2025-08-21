@@ -2749,7 +2749,25 @@ networkCallsignsTableConfig shared model user =
         { toId = String.fromInt << .id
         , toMsg = SetNetworkCallsignsTableState
         , columns =
-            [ Table.veryCustomColumn
+            [
+                Table.veryCustomColumn
+                { name = ""
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                            [ button
+                                [ class "icon-btn icon-btn-danger"
+                                , title "Від'єднати від мережі"
+                                , onClick (DeleteCallsignFromNetwork row.id)
+                                ]
+                                [ i [ class "bi bi-dash" ] [] ]
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "5%"
+            ,Table.veryCustomColumn
                 { name = "Позивний"
                 , viewData = \row -> { attributes = [], children = [ text (String.toUpper row.callsign) ] }
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
@@ -2831,6 +2849,7 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
+
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -2844,18 +2863,12 @@ networkCallsignsTableConfig shared model user =
                                     , onClick (EditCallsignClicked row.id)
                                     ]
                                     [ i [ class "bi bi-pencil" ] [] ]
-                                , button
-                                    [ title "Видалити"
-                                    , class "icon-btn icon-btn-danger"
-                                    , onClick (DeleteCallsignFromNetwork row.id)
-                                    ]
-                                    [ i [ class "bi bi-trash" ] [] ]
                                 ]
                             ]
                         }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "7%"
+                |> Table.withColumnWidth "5%"
             ]
         , customizations = customizations
         }
