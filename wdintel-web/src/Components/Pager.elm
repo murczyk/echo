@@ -172,48 +172,51 @@ getPaginationInfo model =
 -}
 view : Model -> Html Msg
 view model =
-    let
-        info =
-            getPaginationInfo model
+    if model.totalItems == 0 then
+        text ""
+    else
+        let
+            info =
+                getPaginationInfo model
 
-        pageNumbers =
-            getPageNumbers model.currentPage info.totalPages
-    in
-    div [ Attr.class "pager-container" ]
-        [ div [ Attr.class "pager-nav" ]
-            [ div []
-                [ p [ Attr.class "pager-info" ]
-                    [ text "Показано "
-                    , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt info.startItem) ]
-                    , text " до "
-                    , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt info.endItem) ]
-                    , text " з "
-                    , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt model.totalItems) ]
-                    , text " результатів"
+            pageNumbers =
+                getPageNumbers model.currentPage info.totalPages
+        in
+        div [ Attr.class "pager-container" ]
+            [ div [ Attr.class "pager-nav" ]
+                [ div []
+                    [ p [ Attr.class "pager-info" ]
+                        [ text "Показано "
+                        , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt info.startItem) ]
+                        , text " до "
+                        , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt info.endItem) ]
+                        , text " з "
+                        , span [ Attr.class "pager-info-highlight" ] [ text (String.fromInt model.totalItems) ]
+                        , text " результатів"
+                        ]
                     ]
-                ]
-            , div []
-                [ nav [ Attr.class "pager-nav-controls" ]
-                    [ -- Previous button
-                      button
-                        [ Attr.class "pager-nav-button pager-nav-button-prev"
-                        , onClick PreviousPage
-                        , Attr.disabled (not info.hasPrevious)
+                , div []
+                    [ nav [ Attr.class "pager-nav-controls" ]
+                        [ -- Previous button
+                          button
+                            [ Attr.class "pager-nav-button pager-nav-button-prev"
+                            , onClick PreviousPage
+                            , Attr.disabled (not info.hasPrevious)
+                            ]
+                            [ i [ Attr.class "bi bi-chevron-left" ] [] ]
+                        , -- Page numbers
+                          div [] (List.map viewPageNumber pageNumbers)
+                        , -- Next button
+                          button
+                            [ Attr.class "pager-nav-button pager-nav-button-next"
+                            , onClick NextPage
+                            , Attr.disabled (not info.hasNext)
+                            ]
+                            [ i [ Attr.class "bi bi-chevron-right" ] [] ]
                         ]
-                        [ i [ Attr.class "bi bi-chevron-left" ] [] ]
-                    , -- Page numbers
-                      div [] (List.map viewPageNumber pageNumbers)
-                    , -- Next button
-                      button
-                        [ Attr.class "pager-nav-button pager-nav-button-next"
-                        , onClick NextPage
-                        , Attr.disabled (not info.hasNext)
-                        ]
-                        [ i [ Attr.class "bi bi-chevron-right" ] [] ]
                     ]
                 ]
             ]
-        ]
 
 
 {-| View a single page number button

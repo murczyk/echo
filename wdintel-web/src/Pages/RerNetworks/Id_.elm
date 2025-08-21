@@ -251,9 +251,10 @@ type alias Model =
     , networkCallsignsPager : Pager.Model
     , callsignsPager : Pager.Model
 
-    -- Callsign selection and adding functionality
-    , callsignsSelected : Set Int -- Виділені позивні (known_callsign_id)
-    , callsignsAddLoading : Bool -- Стан завантаження при додаванні позивних
+    -- Callsign adding functionality
+    , callsignAddingInProgress : Set Int -- Позивні, які зараз додаються до мережі
+    , callsignsSearchQuery : String -- Пошуковий запит для таблиці "Всі позивні"
+    , networkCallsignsSearchQuery : String -- Пошуковий запит для таблиці "Позивні мережі"
 
     -- Network callsign creation sidebar
     , callsignCreateSidebar : Maybe CallsignCreateMode
@@ -404,9 +405,10 @@ init route shared () =
       , networkCallsignsPager = Pager.initWithPageSize 5
       , callsignsPager = Pager.initWithPageSize 5
 
-      -- Callsign selection and adding functionality
-      , callsignsSelected = Set.empty
-      , callsignsAddLoading = False
+      -- Callsign adding functionality
+      , callsignAddingInProgress = Set.empty
+      , callsignsSearchQuery = ""
+      , networkCallsignsSearchQuery = ""
 
       -- Network callsign creation sidebar
       , callsignCreateSidebar = Nothing
@@ -543,10 +545,11 @@ type Msg
     | CreateCallsignClicked
     | CallsignCreated (Result ApiError B.NetworkCallsign)
     | CallsignCreateSourceSelMsg (Select.Msg Int)
-      -- Callsign selection and adding functionality
-    | ToggleCallsignSelection Int -- Перемикання виділення позивного
-    | AddSelectedCallsignsToNetwork -- Додавання виділених позивних до мережі
-    | CallsignsAddedToNetwork (Result ApiError (List B.NetworkCallsign)) -- Результат додавання (тепер список)
+      -- Callsign adding functionality
+    | AddCallsignToNetwork Int -- Додавання позивного до мережі
+    | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign)) -- Результат додавання позивного
+    | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
+    | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
       -- Callsign deletion functionality
     | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
@@ -2002,43 +2005,32 @@ update shared msg model =
                 ]
             )
 
-        -- Callsign selection and adding functionality
-        ToggleCallsignSelection knownCallsignId ->
-            let
-                newSelected =
-                    if Set.member knownCallsignId model.callsignsSelected then
-                        Set.remove knownCallsignId model.callsignsSelected
+                  -- Callsign adding functionality
+        AddCallsignToNetwork knownCallsignId ->
+            -- Перевіряємо, чи не додається вже цей позивний
+            if Set.member knownCallsignId model.callsignAddingInProgress then
+                ( model, E.none )
+            else
+                case model.network of
+                    Success network ->
+                        let
+                            payload =
+                                { networkId = network.id
+                                , knownCallsignIds = [ knownCallsignId ]
+                                }
+                        in
+                        ( { model | callsignAddingInProgress = Set.insert knownCallsignId model.callsignAddingInProgress }
+                        , E.addMultipleCallsignsToNetwork CallsignAddedToNetwork payload
+                        )
+                    _ ->
+                        ( model, E.none )
 
-                    else
-                        Set.insert knownCallsignId model.callsignsSelected
-            in
-            ( { model | callsignsSelected = newSelected }, E.none )
-
-        AddSelectedCallsignsToNetwork ->
-            let
-                networkId =
-                    case model.network of
-                        Success network ->
-                            network.id
-
-                        _ ->
-                            0
-
-                payload =
-                    { networkId = networkId
-                    , knownCallsignIds = Set.toList model.callsignsSelected
-                    }
-            in
-            ( { model | callsignsAddLoading = True }
-            , E.addMultipleCallsignsToNetwork CallsignsAddedToNetwork payload
+        CallsignAddedToNetwork (Err e) ->
+            ( { model | callsignAddingInProgress = Set.empty }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання позивного до мережі" e
             )
 
-        CallsignsAddedToNetwork (Err e) ->
-            ( { model | callsignsAddLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання позивних до мережі" e
-            )
-
-        CallsignsAddedToNetwork (Ok networkCallsigns) ->
+        CallsignAddedToNetwork (Ok networkCallsigns) ->
             let
                 -- Оновлюємо networkCallsigns, додаючи нові
                 updatedNetworkCallsigns =
@@ -2058,13 +2050,12 @@ update shared msg model =
                         _ ->
                             model.networkCallsignsPager
 
-                -- Очищаємо виділення та стан завантаження
+                -- Оновлюємо модель
                 updatedModel =
                     { model
                         | networkCallsigns = updatedNetworkCallsigns
                         , networkCallsignsPager = updatedPager
-                        , callsignsAddLoading = False
-                        , callsignsSelected = Set.empty
+                        , callsignAddingInProgress = Set.empty
                     }
 
                 -- Перезавантажуємо тільки таблицю "Всі позивні" для прибирання доданих позивних
@@ -2078,24 +2069,21 @@ update shared msg model =
             in
             ( updatedModel, reloadEffect )
 
+
+
         DeleteCallsignFromNetwork callsignId ->
             ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
 
         EditCallsignClicked callsignId ->
-            case model.networkCallsigns of
-                Success networkCallsigns ->
+            case (model.networkCallsigns, model.network) of
+                (Success networkCallsigns, Success network) ->
                     case ListX.find (\c -> c.id == callsignId) networkCallsigns of
                         Just callsign ->
                             let
                                 editState =
                                     { id = callsign.id
                                     , networkId =
-                                        case model.network of
-                                            Success network ->
-                                                network.id
-
-                                            _ ->
-                                                0
+                                        network.id
                                     , callsign = callsign.callsign
                                     , position = callsign.position
                                     , comment = callsign.comment
@@ -2272,6 +2260,13 @@ update shared msg model =
 
                 _ ->
                     ( model, E.none )
+
+        -- Search functionality
+        CallsignsSearchChanged query ->
+            ( { model | callsignsSearchQuery = query }, E.none )
+
+        NetworkCallsignsSearchChanged query ->
+            ( { model | networkCallsignsSearchQuery = query }, E.none )
 
 
 
@@ -2623,16 +2618,35 @@ callsignsTableConfig shared model user =
                     \row ->
                         { attributes = []
                         , children =
-                            [ Checkbox.new
-                                { isChecked = Set.member row.id model.callsignsSelected
-                                , onToggle = \_ -> ToggleCallsignSelection row.id
-                                }
-                                |> Checkbox.view
+                            [ let
+                                isAdding = Set.member row.id model.callsignAddingInProgress
+                              in
+                              button
+                                [ class <|
+                                    if isAdding then
+                                        "icon-btn icon-btn-primary opacity-50 cursor-not-allowed"
+                                    else
+                                        "icon-btn icon-btn-primary"
+                                , title <|
+                                    if isAdding then
+                                        "Додається до мережі..."
+                                    else
+                                        "Додати до мережі"
+                                , if isAdding then
+                                    attribute "disabled" "true"
+                                  else
+                                    onClick (AddCallsignToNetwork row.id)
+                                ]
+                                [ if isAdding then
+                                    Le.Block.Spinner.loadingSpinner2Sm
+                                  else
+                                    i [ class "bi bi-plus" ] []
+                                ]
                             ]
                         }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "3%"
+                |> Table.withColumnWidth "4%"
             , Table.veryCustomColumn
                 { name = "Позивний"
                 , viewData =
@@ -2677,7 +2691,7 @@ callsignsTableConfig shared model user =
                 , viewData = \row -> { attributes = [], children = [ text row.position ] }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "25%"
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Підрозділ"
                 , viewData = \row -> { attributes = [], children = [ text row.unitName ] }
@@ -2689,7 +2703,7 @@ callsignsTableConfig shared model user =
                 , viewData = \row -> { attributes = [], children = [ text row.comment ] }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "25%"
+                |> Table.withColumnWidth "20%"
             , Table.veryCustomColumn
                 { name = "Дата прив'язки"
                 , viewData =
@@ -2773,7 +2787,25 @@ networkCallsignsTableConfig shared model user =
         { toId = String.fromInt << .id
         , toMsg = SetNetworkCallsignsTableState
         , columns =
-            [ Table.veryCustomColumn
+            [
+                Table.veryCustomColumn
+                { name = ""
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                                                            [ button
+                                    [ class "icon-btn icon-btn-danger"
+                                    , title "Відв'язати від мережі"
+                                    , onClick (DeleteCallsignFromNetwork row.id)
+                                    ]
+                                    [ i [ class "bi bi-dash" ] [] ]
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "4%"
+            ,Table.veryCustomColumn
                 { name = "Позивний"
                 , viewData = \row -> { attributes = [], children = [ text (String.toUpper row.callsign) ] }
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
@@ -2814,7 +2846,7 @@ networkCallsignsTableConfig shared model user =
                 , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.comment) ] }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "20%"
+                |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
                 { name = "Дата створення"
                 , viewData =
@@ -2855,6 +2887,7 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
+
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -2868,18 +2901,12 @@ networkCallsignsTableConfig shared model user =
                                     , onClick (EditCallsignClicked row.id)
                                     ]
                                     [ i [ class "bi bi-pencil" ] [] ]
-                                , button
-                                    [ title "Видалити"
-                                    , class "icon-btn icon-btn-danger"
-                                    , onClick (DeleteCallsignFromNetwork row.id)
-                                    ]
-                                    [ i [ class "bi bi-trash" ] [] ]
                                 ]
                             ]
                         }
                 , sorter = TableSorter.unsortable
                 }
-                |> Table.withColumnWidth "7%"
+                |> Table.withColumnWidth "5%"
             ]
         , customizations = customizations
         }
@@ -3871,12 +3898,9 @@ contentBlock user shared network model =
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Частоти" ]
             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                button
-                    [ title "Додати частоту"
-                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
-                    , onClick OpenFreqCreateSidebar
-                    ]
-                    [ i [ class "bi bi-plus-lg" ] [] ]
+                Button.new { label = "Створити", onClick = OpenFreqCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
 
               else
                 text ""
@@ -3903,12 +3927,9 @@ contentBlock user shared network model =
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                button
-                    [ title "Додати позивний"
-                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
-                    , onClick OpenCallsignCreateSidebar
-                    ]
-                    [ i [ class "bi bi-plus-lg" ] [] ]
+                Button.new { label = "Створити", onClick = OpenCallsignCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
 
               else
                 text ""
@@ -3944,43 +3965,6 @@ contentBlock user shared network model =
                 Le.Block.Spinner.loadingSpinnerSm
         , div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Всі позивні" ]
-            , div [ class "flex items-center gap-3" ]
-                [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
-                    [ i [ class "bi bi-check-square" ] []
-                    , span []
-                        [ text
-                            (if Set.isEmpty model.callsignsSelected then
-                                "Виберіть позивні"
-
-                             else
-                                "Виділено: " ++ String.fromInt (Set.size model.callsignsSelected)
-                            )
-                        ]
-                    ]
-                , Button.new
-                    { label = "Додати"
-                    , onClick = AddSelectedCallsignsToNetwork
-                    }
-                    |> (if Set.isEmpty model.callsignsSelected then
-                            Button.withStyleSecondary
-
-                        else
-                            Button.withPrimary
-                       )
-                    |> (if model.callsignsAddLoading then
-                            Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
-
-                        else
-                            identity
-                       )
-                    |> (if Set.isEmpty model.callsignsSelected then
-                            Button.withDisabled True
-
-                        else
-                            identity
-                       )
-                    |> Button.view
-                ]
             ]
         , case model.callsigns of
             Success callsigns ->
@@ -4256,12 +4240,12 @@ view user shared model =
                     deleteCallsignDialogContent =
                         [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
                             [ div [ class "pb-6" ]
-                                [ h2 [] [ text "Видалити позивний" ]
-                                , p [] [ text "Ви впевнені, що хочете видалити цей позивний з мережі?" ]
+                                [ h2 [] [ text "Відв'язати позивний" ]
+                                , p [] [ text "Ви впевнені, що хочете відв'язати цей позивний від мережі?" ]
                                 ]
                             , div [ class "flex justify-between" ]
                                 [ Button.new { label = "Скасувати", onClick = DeleteCallsignCanceled } |> Button.withStyleSecondary |> Button.view
-                                , Button.new { label = "Видалити", onClick = DeleteCallsignConfirmed (Maybe.withDefault 0 model.deleteCallsignConfirmation) }
+                                , Button.new { label = "Відв'язати", onClick = DeleteCallsignConfirmed (Maybe.withDefault 0 model.deleteCallsignConfirmation) }
                                     |> Button.withStyleDanger
                                     |> (if model.deleteCallsignLoading then
                                             Button.withIcon
