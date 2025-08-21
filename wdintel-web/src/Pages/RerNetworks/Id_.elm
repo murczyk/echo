@@ -2497,14 +2497,14 @@ freqsTableConfig shared model user =
                             { name = "Дії"
                             , viewData =
                                 \freq ->
-                                    { attributes = []
+                                    { attributes = [ class "col-narrow" ]
                                     , children =
                                         [ case model.network of
                                             Success network ->
-                                                div [ class "flex items-center gap-2" ]
+                                                div [ class "flex gap-[4px] text-sm" ]
                                                     [ button
-                                                    [ class "table-action-btn"
-                                                    , type_ "button"
+                                                    [ title "Редагувати"
+                                                    , class "icon-btn icon-btn-primary"
                                                     , onClick <|
                                                         OpenFreqEditSidebar freq.freq
                                                             { networkId = network.id
@@ -2517,9 +2517,8 @@ freqsTableConfig shared model user =
                                                     ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
                                                     , button
-                                                        [ class "table-action-btn text-red-600 hover:text-red-700"
-                                                        , type_ "button"
-                                                        , title "Видалити частоту"
+                                                        [ title "Видалити частоту"
+                                                        , class "icon-btn icon-btn-danger"
                                                         , onClick (DeleteFreqClickedByUser freq.networkFreqId freq.freq)
                                                         ]
                                                         [ i [ class "bi bi-trash" ] [] ]
