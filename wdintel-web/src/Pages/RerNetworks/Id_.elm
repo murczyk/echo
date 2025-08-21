@@ -2051,15 +2051,39 @@ update shared msg model =
                         _ ->
                             Success networkCallsigns
 
+                -- Оновлюємо пагінацію для таблиці "Мережеві позивні"
+                updatedPager =
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            let
+                                currentPager = model.networkCallsignsPager
+                                totalItems = List.length callsigns
+                                maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat currentPager.pageSize))
+                                newCurrentPage = Basics.min currentPager.currentPage maxPage
+                            in
+                            { currentPager | totalItems = totalItems, currentPage = newCurrentPage }
+                        
+                        _ ->
+                            model.networkCallsignsPager
+
                 -- Очищаємо виділення та стан завантаження
                 updatedModel =
                     { model
                     | networkCallsigns = updatedNetworkCallsigns
+                    , networkCallsignsPager = updatedPager
                     , callsignsAddLoading = False
                     , callsignsSelected = Set.empty
                     }
+                
+                -- Перезавантажуємо тільки таблицю "Всі позивні" для прибирання доданих позивних
+                reloadEffect =
+                    case model.network of
+                        Success network ->
+                            E.getNetworkCallsigns CallsignsReturnedByApi { networkId = network.id }
+                        _ ->
+                            E.none
             in
-            ( updatedModel, E.none )
+            ( updatedModel, reloadEffect )
 
         DeleteCallsignFromNetwork callsignId ->
             ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
@@ -2130,7 +2154,7 @@ update shared msg model =
                         _ ->
                             model.networkCallsignsPager
                 
-                -- Перезавантажуємо нижню таблицю "Всі позивні"
+                -- Перезавантажуємо тільки таблицю "Всі позивні" для додавання видаленого позивного назад
                 reloadEffect =
                     case model.network of
                         Success network ->
@@ -2183,21 +2207,6 @@ update shared msg model =
                             Success (List.map (\c -> if c.id == updatedCallsign.id then updatedCallsign else c) existingCallsigns)
                         _ ->
                             model.networkCallsigns
-
-                -- Оновлюємо пагінацію (totalItems залишається тим же, але перевіряємо currentPage)
-                updatedPager =
-                    case updatedNetworkCallsigns of
-                        Success callsigns ->
-                            let
-                                currentPager = model.networkCallsignsPager
-                                totalItems = List.length callsigns
-                                maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat currentPager.pageSize))
-                                newCurrentPage = Basics.min currentPager.currentPage maxPage
-                            in
-                            { currentPager | currentPage = newCurrentPage }
-
-                        _ ->
-                            model.networkCallsignsPager
             in
             ( { model
                 | editCallsignSaving = False
@@ -2205,7 +2214,6 @@ update shared msg model =
                 , editCallsignState = Nothing
                 , editCallsignErrors = Dict.empty
                 , networkCallsigns = updatedNetworkCallsigns
-                , networkCallsignsPager = updatedPager
               }
             , E.none
             )
