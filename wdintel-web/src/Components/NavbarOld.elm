@@ -11,6 +11,7 @@ import Le.Utils exposing (..)
 import Route
 import Route.Path
 import Shared
+import Shared.Model exposing (isDarkMode)
 
 
 
@@ -43,7 +44,7 @@ navBar user shared activeName props =
             menuItem activeName
 
         menuWithSubs =
-            menuItemWithSubs shared.isDarkMode activeName
+            menuItemWithSubs (isDarkMode shared.themeMode) activeName
 
         adminSubs =
             [ Menu (Internal Route.Path.Admin) "zones" "напрямки"
@@ -108,7 +109,7 @@ navBar user shared activeName props =
             ]
 
         exoLogoClass =
-            if not shared.isDarkMode then
+            if not (isDarkMode shared.themeMode) then
                 "invert brightness-0"
 
             else
@@ -161,7 +162,7 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-4" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                    [ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode ]
+                    [ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme (isDarkMode shared.themeMode) ]
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"
                         , onClick props.onNavbarVisibilityChange

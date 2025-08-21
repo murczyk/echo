@@ -11,6 +11,7 @@ import Le.Utils exposing (..)
 import Route
 import Route.Path
 import Shared
+import Shared.Model exposing (isDarkMode)
 
 
 type Link
@@ -149,7 +150,7 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-6" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                    [ colorThemeSwitcher props.onToggleTheme shared.isDarkMode
+                    [ colorThemeSwitcher props.onToggleTheme (isDarkMode shared.themeMode)
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"
                         , onClick props.onNavbarVisibilityChange

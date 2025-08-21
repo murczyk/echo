@@ -20,7 +20,6 @@ colorThemeSwitcher msg isDark =
                         ("bi "
                             ++ (if isDark then
                                     "bi-sun"
-
                                 else
                                     "bi-moon"
                                )

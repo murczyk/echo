@@ -28,6 +28,7 @@ import Route exposing (Route)
 import Route.Path
 import Set
 import Shared
+import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
 import Time
 import Views
@@ -360,7 +361,7 @@ filtersAndMainContent user model shared route =
                         [ i [ class "bi bi-x-octagon" ] []
                         ]
                     ]
-                , RerAnalysis.Date.dateAndPanelsBlock shared.isDarkMode model mapFeatureFlag
+                , RerAnalysis.Date.dateAndPanelsBlock (isDarkMode shared.themeMode) model mapFeatureFlag
                 ]
 
         reportConstructorBlock =

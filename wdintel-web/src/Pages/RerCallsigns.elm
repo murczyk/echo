@@ -39,6 +39,7 @@ import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
@@ -51,7 +52,7 @@ page user shared req =
     Page.new
         { init = init req
         , update = update req shared
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -928,7 +929,7 @@ update req shared msg model =
         FilterPositionMsg v ->
             let
                 ( debounce, cmd ) =
-                    Debounce.push filterPositionDebounceConfig v model.filterPositionDebounce
+                    Debounce.push filterpositionDebounceConfig v model.filterPositionDebounce
             in
             ( { model
                 | filterPosition = v

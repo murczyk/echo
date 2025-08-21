@@ -72,7 +72,11 @@ init flagsResult route =
                 , organismId = Nothing
                 , deltaLogin = Nothing
                 }
-      , isDarkMode = flags.isDark
+      , themeMode = 
+            if flags.isDark then
+                Shared.Model.Dark
+            else
+                Shared.Model.Light
       , location = Nothing
       , serverInfo = Nothing
       , masterUnits = NotAsked
@@ -146,7 +150,20 @@ update req msg model =
             )
 
         ToggleDarkMode ->
-            ( { model | isDarkMode = not model.isDarkMode }
+            ( { model | themeMode = 
+                case model.themeMode of
+                    Shared.Model.Light ->
+                        Shared.Model.Dark
+                    Shared.Model.Dark ->
+                        Shared.Model.Light
+                    Shared.Model.System ->
+                        Shared.Model.Light
+              }
+            , E.sendCmd <| Ports.shared_toggleDarkMode ()
+            )
+
+        SetThemeMode themeMode ->
+            ( { model | themeMode = themeMode }
             , E.sendCmd <| Ports.shared_toggleDarkMode ()
             )
 

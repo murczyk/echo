@@ -19,6 +19,7 @@ import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import View exposing (View)
 import Views
 
@@ -28,7 +29,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -119,9 +120,10 @@ pageBlock model =
         contentBlockKmz2Geojson =
             div []
                 [ Button.new { label = " додати kmz", onClick = UploadKmzToGeojson }
-                    |> Button.withIcon 
+                    |> Button.withIcon
                         [ if not model.convertKmzInProgress then
                             i [ class "bi bi-file-zip" ] []
+
                           else
                             div
                                 [ class "inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"

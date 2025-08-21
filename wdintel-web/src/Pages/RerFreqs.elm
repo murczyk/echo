@@ -49,6 +49,7 @@ import Route.Path
 import Select
 import Set
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
 import Time.Extra
@@ -2262,7 +2263,7 @@ page user shared _ =
     Page.new
         { init = init
         , update = update shared
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
