@@ -401,7 +401,7 @@ init route shared () =
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
               , networkCallsignsPager = { currentPage = 1, pageSize = 5, totalItems = 0 }
-        , callsignsPager = Pager.init
+                        , callsignsPager = { currentPage = 1, pageSize = 5, totalItems = 0 }
 
       -- Callsign selection and adding functionality
       , callsignsSelected = Set.empty
@@ -589,7 +589,7 @@ update shared msg model =
 
                 updatedPager =
                     { currentPage = 1
-                    , pageSize = 10
+                    , pageSize = 5
                     , totalItems = totalCallsigns
                     }
             in
@@ -4014,21 +4014,24 @@ contentBlock user shared network model =
                                         )
                           in
                           div [ class "table-responsive-modern" ]
-                            [ Table.view (callsignsTableConfig shared model user) model.callsignsTableState paginatedCallsigns
-                            , div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
-                                [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                                , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c ->
-                                    button
-                                        [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
-                                        , onClick (OpenAddFromUnknownSidebar c)
-                                        ]
-                                        [ text <| String.toUpper c ]
-                                    ) callsignsUnknown)
-                                ]
+                            [ -- Таблиця "Всі позивні" (з пагінацією)
+                              Table.view (callsignsTableConfig shared model user) model.callsignsTableState paginatedCallsigns
+                            , -- Пейджер для таблиці
+                              Pager.view model.callsignsPager
+                                  |> Html.map CallsignsPagerMsg
+                            , -- Список "Приналежність встановлюється:" (без пагінації)
+                              div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                                  [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
+                                  , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ] (List.map (\c ->
+                                      button
+                                          [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
+                                          , onClick (OpenAddFromUnknownSidebar c)
+                                          ]
+                                          [ text <| String.toUpper c ]
+                                      ) callsignsUnknown)
+                                  ]
                             ]
                         ]
-                    , Pager.view model.callsignsPager
-                        |> Html.map CallsignsPagerMsg
                     ]
 
             _ ->
