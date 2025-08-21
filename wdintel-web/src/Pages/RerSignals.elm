@@ -3,13 +3,13 @@ module Pages.RerSignals exposing (EditSignalState, Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Components.Watermark as Watermark
-import Components.Sidebar as Sidebar
 import Components.Button as Button
+import Components.ModalDialog as ModalDialog
+import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
-import Components.ModalDialog as ModalDialog
+import Components.Watermark as Watermark
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -23,11 +23,11 @@ import Le.Auth
 import Le.Block.Select
 import Le.Block.Spinner
 import Le.ErrorHandling
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
 import Le.Types exposing (ApiError)
 import Le.Utils exposing (..)
 import List.Extra as ListX
-import Le.RemoteData as RD exposing (RemoteData(..))
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
@@ -43,7 +43,7 @@ page user shared _ =
     Page.new
         { init = init
         , update = update shared
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -184,9 +184,6 @@ init _ =
     )
 
 
-
-
-
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -215,8 +212,6 @@ update shared msg model =
             ( { model | signals = rsp.signals, loading = False }
             , E.none
             )
-
-
 
         EditUnitSelMsg selMsg ->
             case model.editSignalState of
@@ -303,15 +298,16 @@ update shared msg model =
 
                 Just signal ->
                     ( { model
-                        | editSignalState = Just
-                            { inpText = signal.text
-                            , inpMeaning = Maybe.withDefault "" signal.meaning
-                            , inpCoordinates = Maybe.withDefault "" signal.coordinates
-                            , inpUnit = Maybe.withDefault 0 signal.unit
-                            , inpUnitSelState =
-                                Select.initState
-                                    (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt id)
-                            }
+                        | editSignalState =
+                            Just
+                                { inpText = signal.text
+                                , inpMeaning = Maybe.withDefault "" signal.meaning
+                                , inpCoordinates = Maybe.withDefault "" signal.coordinates
+                                , inpUnit = Maybe.withDefault 0 signal.unit
+                                , inpUnitSelState =
+                                    Select.initState
+                                        (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt id)
+                                }
                       }
                     , E.none
                     )
@@ -353,6 +349,7 @@ update shared msg model =
                                         case shared.masterUnits of
                                             Success units ->
                                                 Maybe.map (\u -> u.id) (Dict.get editState.inpUnit units)
+
                                             _ ->
                                                 Nothing
                                     }
@@ -537,21 +534,22 @@ update shared msg model =
             )
 
         OpenEditSignalSidebar signalId signal ->
-            ( { model 
+            ( { model
                 | editSignalSidebar = Just ( signalId, signal )
-                , editSignalState = Just
-                    { inpText = signal.text
-                    , inpMeaning = Maybe.withDefault "" signal.meaning
-                    , inpUnit = Maybe.withDefault 0 signal.unit
-                    , inpCoordinates = Maybe.withDefault "" signal.coordinates
-                    , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt signalId)
-                    }
+                , editSignalState =
+                    Just
+                        { inpText = signal.text
+                        , inpMeaning = Maybe.withDefault "" signal.meaning
+                        , inpUnit = Maybe.withDefault 0 signal.unit
+                        , inpCoordinates = Maybe.withDefault "" signal.coordinates
+                        , inpUnitSelState = Select.initState (Select.selectIdentifier <| "sel-unit-" ++ String.fromInt signalId)
+                        }
               }
             , E.none
             )
 
         CloseEditSignalSidebar ->
-            ( { model 
+            ( { model
                 | editSignalSidebar = Nothing
                 , editSignalState = Nothing
               }
@@ -567,13 +565,18 @@ initLoad model =
         ]
 
 
+
 -- Helper function to populate unit menu from shared masterUnits
+
+
 populateUnitMenu : Shared.Model -> List (Select.MenuItem Int)
 populateUnitMenu shared =
     case shared.masterUnits of
-        Success units -> 
+        Success units ->
             List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
-        _ -> []
+
+        _ ->
+            []
 
 
 loadUnitStats : Effect Msg
@@ -631,12 +634,17 @@ signalsTableConfig shared model user editingSignalId =
             case unitId of
                 Nothing ->
                     ""
+
                 Just id ->
                     case shared.masterUnits of
                         Success units ->
                             case Dict.get id units of
-                                Nothing -> "<НВ ID=" ++ String.fromInt id ++ ">"
-                                Just unit -> unit.name
+                                Nothing ->
+                                    "<НВ ID=" ++ String.fromInt id ++ ">"
+
+                                Just unit ->
+                                    unit.name
+
                         _ ->
                             "<НВ ID=" ++ String.fromInt id ++ ">"
 
@@ -649,19 +657,30 @@ signalsTableConfig shared model user editingSignalId =
             let
                 sortIcon =
                     case status of
-                        TableConfig.Unsortable -> text ""
+                        TableConfig.Unsortable ->
+                            text ""
+
                         TableConfig.Sortable selected ->
                             span
                                 [ style "color"
-                                    (if selected then "var(--ochre-normal)" else "var(--color-text-muted)")
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
                                 ]
                                 [ text " ↓" ]
+
                         TableConfig.Reversible Nothing ->
                             span [ style "color" "var(--color-text-muted)" ] [ text " ↓" ]
+
                         TableConfig.Reversible (Just True) ->
                             span [ style "color" "var(--ochre-normal)" ] [ text " ↓" ]
+
                         TableConfig.Reversible (Just False) ->
                             span [ style "color" "var(--ochre-normal)" ] [ text " ↑" ]
+
                 headerContent =
                     span [] [ text name, sortIcon ]
             in
@@ -671,15 +690,21 @@ signalsTableConfig shared model user editingSignalId =
         customRowAttrs signal =
             let
                 baseClass =
-                    if signal.active then "" else "disabled"
-                
+                    if signal.active then
+                        ""
+
+                    else
+                        "disabled"
+
                 editingClass =
                     case editingSignalId of
                         Just editId ->
                             if signal.id == editId then
                                 " table-row-editing"
+
                             else
                                 ""
+
                         Nothing ->
                             ""
             in
@@ -697,11 +722,14 @@ signalsTableConfig shared model user editingSignalId =
                 |> Table.withColumnWidth "20%"
             , Table.stringColumn "Координати" (\signal -> Maybe.withDefault "" signal.coordinates)
                 |> Table.withColumnWidth "15%"
-            , Table.stringColumn "Дата внесення" 
-                (\signal -> 
+            , Table.stringColumn "Дата внесення"
+                (\signal ->
                     case model.zone of
-                        Nothing -> "Loading..."
-                        Just zone -> Le.Time.renderDateTimeF1 zone (Time.millisToPosix signal.createdAt)
+                        Nothing ->
+                            "Loading..."
+
+                        Just zone ->
+                            Le.Time.renderDateTimeF1 zone (Time.millisToPosix signal.createdAt)
                 )
                 |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
@@ -712,13 +740,13 @@ signalsTableConfig shared model user editingSignalId =
                         , children =
                             if hasEditorRole then
                                 [ div [ class "flex gap-2" ]
-                                    [ button 
+                                    [ button
                                         [ title "Редагувати"
                                         , class "icon-btn icon-btn-primary"
                                         , onClick <| OpenEditSignalSidebar signal.id signal
                                         ]
                                         [ i [ class "bi bi-pencil-square" ] [] ]
-                                    , button 
+                                    , button
                                         [ title "Видалити"
                                         , class "icon-btn icon-btn-danger"
                                         , onClick <| DeleteSignal signal.id
@@ -726,6 +754,7 @@ signalsTableConfig shared model user editingSignalId =
                                         [ i [ class "bi bi-trash" ] [] ]
                                     ]
                                 ]
+
                             else
                                 []
                         }
@@ -798,17 +827,18 @@ editSignalSidebarContent shared model user signal =
                             Styled.toUnstyled <|
                                 Le.Block.Select.renderSelectSingle
                                     (case shared.masterUnits of
-                                        Success units -> 
+                                        Success units ->
                                             Dict.get currentEditState.inpUnit units
                                                 |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
-                                        _ -> Nothing
+
+                                        _ ->
+                                            Nothing
                                     )
                                     currentEditState.inpUnitSelState
                                     (populateUnitMenu shared)
                                     "підрозділ"
                                     (Le.Block.Select.defaultOptions shared.isDarkMode)
                         ]
-
                     ]
                 ]
             , div []
@@ -850,8 +880,10 @@ unitsBlock shared model =
                             case Dict.get stat.unitId units of
                                 Nothing ->
                                     "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
+
                                 Just unit ->
                                     unit.name
+
                         _ ->
                             "<НВ ID=" ++ String.fromInt stat.unitId ++ ">"
             in
@@ -945,6 +977,7 @@ renderSignalTrEdit shared model user signal editState =
                                         Select.basicMenuItem
                                             { item = unit.id, label = unit.name }
                                     )
+
                         _ ->
                             Nothing
               in
@@ -970,7 +1003,6 @@ renderSignalTrEdit shared model user signal editState =
                                 "підрозділ"
                                 options2
                     ]
-
                 ]
             ]
         , td []
@@ -1017,8 +1049,6 @@ contentBlock shared model user =
     let
         hasEditorRole =
             Le.Auth.hasRole "UnitsEditor" user
-
-
 
         filterPanel =
             div
@@ -1088,11 +1118,15 @@ contentBlock shared model user =
                     [ let
                         selectItem =
                             model.inpUnit
-                                |> Maybe.andThen (\unitId -> 
-                                    case shared.masterUnits of
-                                        Success units -> Dict.get unitId units
-                                        _ -> Nothing
-                                )
+                                |> Maybe.andThen
+                                    (\unitId ->
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Dict.get unitId units
+
+                                            _ ->
+                                                Nothing
+                                    )
                                 |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
                       in
                       div
@@ -1117,7 +1151,6 @@ contentBlock shared model user =
                                         "підрозділ"
                                         options2
                             ]
-
                         ]
                     ]
                 , input
@@ -1129,7 +1162,7 @@ contentBlock shared model user =
                     , value model.inpCoordinates
                     ]
                     []
-                , div [class "flex gap-1"]
+                , div [ class "flex gap-1" ]
                     [ Button.new { label = "Додати", onClick = AddSignal }
                         |> Button.withDisabled (not hasEditorRole)
                         |> Button.view
@@ -1209,6 +1242,7 @@ view _ shared user model =
                         ]
                         (if model.loading then
                             [ Le.Block.Spinner.loadingSpinner2Sm ]
+
                          else
                             [ i [ class "bi bi-arrow-repeat" ] [] ]
                         )

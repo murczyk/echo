@@ -14,6 +14,7 @@ import Le.Auth
 import Le.Block.Spinner
 import Le.Block.Toast
 import Le.Components exposing (googleMapsOutLink)
+import Le.ErrorHandling
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Types
 import Page exposing (Page)
@@ -23,7 +24,6 @@ import Shared
 import Task
 import Time
 import View exposing (View)
-import Le.ErrorHandling
 
 
 type alias Model =
@@ -115,7 +115,7 @@ view shared user model =
     { title = "головна"
     , body =
         [ div [ class "my-4 w-4/5 mx-auto" ]
-            [ section [class "mb-2"]
+            [ section [ class "mb-2" ]
                 [ h1 [ class "" ] [ text "Головна" ]
                 ]
             , section [ class "flex gap-4 h-[50vh]" ]

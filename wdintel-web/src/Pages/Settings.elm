@@ -142,7 +142,7 @@ update msg model =
             let
                 ( mAction, iState, iCmd ) =
                     Select.update selectMsg model.zoneSelectState
-                
+
                 mZoneId =
                     Le.Block.Select.singleUpd mAction model.zoneId
             in
@@ -159,16 +159,18 @@ view shared user model =
     let
         zoneMenuItems =
             List.map (\( zoneId, zone ) -> Select.basicMenuItem { item = zoneId, label = zone.name }) model.zones
-        
+
         selectedZoneItem =
-            Maybe.andThen (\zoneId -> 
-                List.head (List.filter (\( _, zone ) -> zoneId == zoneId) model.zones)
-                |> Maybe.map (\( _, zone ) -> Select.basicMenuItem { item = zoneId, label = zone.name })
-            ) model.zoneId
-        
+            Maybe.andThen
+                (\zoneId ->
+                    List.head (List.filter (\( _, zone ) -> zoneId == zoneId) model.zones)
+                        |> Maybe.map (\( _, zone ) -> Select.basicMenuItem { item = zoneId, label = zone.name })
+                )
+                model.zoneId
+
         versionText =
             Maybe.map .version shared.serverInfo
-            |> Maybe.withDefault "невідома версія"
+                |> Maybe.withDefault "невідома версія"
     in
     { title = "налаштування"
     , body =
@@ -178,7 +180,7 @@ view shared user model =
                     [ -- Header section
                       div [ class "mb-4" ]
                         [ div [ class "flex items-center justify-between mb-4" ]
-                            [ h1 [ class "py-4 text-[var(--text-color)]" ] 
+                            [ h1 [ class "py-4 text-[var(--text-color)]" ]
                                 [ text "налаштування" ]
                             , div [ class "flex items-center gap-4 text-sm" ]
                                 [ a
@@ -200,20 +202,20 @@ view shared user model =
                                 ]
                             ]
                         ]
-                    
+
                     -- Settings form
                     , div [ class "bg-[var(--card-color)] rounded-xl shadow-sm border border-[var(--border-color)] overflow-hidden" ]
                         [ -- Form header
                           div [ class "px-6 py-4 border-b border-[var(--border-color)] bg-[var(--color-bg-inactive)]" ]
-                            [ h2 [ class "text-lg font-semibold text-[var(--text-color)]" ] 
+                            [ h2 [ class "text-lg font-semibold text-[var(--text-color)]" ]
                                 [ text "Основні налаштування" ]
                             ]
-                        
+
                         -- Form content
                         , div [ class "p-6 space-y-6" ]
                             [ -- Zone selection
                               div []
-                                [ label 
+                                [ label
                                     [ class "block text-sm font-medium text-[var(--text-color)] mb-2" ]
                                     [ text "РЕР-напрямок" ]
                                 , p [ class "text-sm text-gray-500 mb-3" ]
@@ -221,15 +223,15 @@ view shared user model =
                                 , div [ class "w-2/5" ]
                                     [ Html.map ZoneSelectMsg <|
                                         Html.Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
-                                            selectedZoneItem
-                                            model.zoneSelectState
-                                            zoneMenuItems
-                                            "Оберіть зону"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                            Le.Block.Select.renderSelectSingle
+                                                selectedZoneItem
+                                                model.zoneSelectState
+                                                zoneMenuItems
+                                                "Оберіть зону"
+                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
                                     ]
                                 ]
-                            
+
                             -- Save button section
                             , div [ class "flex items-center justify-between pt-4 border-t border-[var(--border-color)]" ]
                                 [ div [ class "text-sm text-gray-500" ]
@@ -240,6 +242,7 @@ view shared user model =
                                             |> Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
                                             |> Button.withDisabled True
                                             |> Button.view
+
                                       else
                                         Button.new { label = "зберегти", onClick = Save }
                                             |> Button.withIcon [ i [ class "bi bi-save" ] [] ]

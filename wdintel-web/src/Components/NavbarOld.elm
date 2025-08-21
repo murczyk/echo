@@ -1,7 +1,7 @@
 module Components.NavbarOld exposing (navBar)
 
 import Auth
-import Components.ThemeSwitcher exposing (colorThemeSwitcher)
+import Components.ThemeSwitcher exposing (themeSwitcher)
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -32,6 +32,7 @@ type alias Menu =
 
 type alias Props msg =
     { onToggleTheme : msg
+    , onThemeChange : Shared.Model.ThemeMode -> msg
     , onNavbarVisibilityChange : msg
     , isRerDuty : Bool
     }
@@ -162,7 +163,11 @@ navBar user shared activeName props =
                     [ ul [ class "flex items-center space-x-4" ] menuItems
                     ]
                 , div [ class "flex gap-1 items-center" ]
-                    [ span [ class "text-white" ] [ colorThemeSwitcher props.onToggleTheme (isDarkMode shared.themeMode) ]
+                    [ span [ class "text-white" ] [ themeSwitcher 
+                    { currentTheme = shared.themeMode
+                    , onThemeChange = props.onThemeChange
+                    }
+                ]
                     , div
                         [ class "w-6 h-6 flex items-center justify-center"
                         , onClick props.onNavbarVisibilityChange

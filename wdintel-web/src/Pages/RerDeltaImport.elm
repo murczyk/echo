@@ -13,8 +13,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.ErrorHandling
 import Le.Console
+import Le.ErrorHandling
 import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Process
@@ -30,7 +30,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -173,18 +173,20 @@ contentBlock model =
         , div [ class "flex flex-col sm:flex-row gap-4" ]
             [ Button.new { label = " додати csv", onClick = UploadCSVFileToConvert }
                 |> Button.withStyleSecondary
-                |> Button.withIcon 
+                |> Button.withIcon
                     [ if not (Le.Console.isInProgress model.consoleCSV) then
                         i [ class "bi bi-file-earmark-text" ] []
+
                       else
                         Le.Block.Spinner.loadingSpinnerSm
                     ]
                 |> Button.view
             , Button.new { label = " додати kmz", onClick = UploadKMZFileToConvert }
                 |> Button.withStyleSecondary
-                |> Button.withIcon 
+                |> Button.withIcon
                     [ if not (Le.Console.isInProgress model.consoleKMZ) then
                         i [ class "bi bi-geo-alt" ] []
+
                       else
                         Le.Block.Spinner.loadingSpinnerSm
                     ]

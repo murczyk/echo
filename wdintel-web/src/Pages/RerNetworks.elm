@@ -970,14 +970,22 @@ update shared msg model =
 
         AorListReturnedByApi (Ok aors) ->
             let
-                topLevelAors = aors |> List.filter (.isTopLevel)
-                items = topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
-                oldAorSelect = model.aorFilterSelect
+                topLevelAors =
+                    aors |> List.filter .isTopLevel
+
+                items =
+                    topLevelAors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                oldAorSelect =
+                    model.aorFilterSelect
+
                 -- keep only selected AORs that are top-level
                 selectedFiltered =
                     oldAorSelect.selected
                         |> List.filter (\id -> List.any (\a -> a.id == id) topLevelAors)
-                newAorSelect = { oldAorSelect | items = items, selected = selectedFiltered }
+
+                newAorSelect =
+                    { oldAorSelect | items = items, selected = selectedFiltered }
             in
             ( { model | aorList = Success aors, aorFilterSelect = newAorSelect }, E.none )
 
@@ -996,8 +1004,10 @@ update shared msg model =
                     case mAction of
                         Just Select.Focus ->
                             Just model.aorFilterSelect.selected
+
                         Just (Select.MenuToggle Select.MenuOpen) ->
                             Just model.aorFilterSelect.selected
+
                         _ ->
                             model.aorFilterFocusedBefore
 
@@ -1007,22 +1017,35 @@ update shared msg model =
                     , selected = newSelected
                     }
 
-                m2 = { model | aorFilterSelect = newSel, aorFilterFocusedBefore = focusedBefore }
+                m2 =
+                    { model | aorFilterSelect = newSel, aorFilterFocusedBefore = focusedBefore }
 
                 shouldReload =
                     case mAction of
-                        Just Select.Blur -> True
-                        Just (Select.MenuToggle Select.MenuClose) -> True
-                        Just Select.Clear -> True
-                        _ -> False
+                        Just Select.Blur ->
+                            True
+
+                        Just (Select.MenuToggle Select.MenuClose) ->
+                            True
+
+                        Just Select.Clear ->
+                            True
+
+                        _ ->
+                            False
 
                 valueChanged =
                     case mAction of
-                        Just Select.Clear -> True
+                        Just Select.Clear ->
+                            True
+
                         _ ->
                             case m2.aorFilterFocusedBefore of
-                                Just xs -> xs /= newSelected
-                                Nothing -> False
+                                Just xs ->
+                                    xs /= newSelected
+
+                                Nothing ->
+                                    False
 
                 ( m3, eff ) =
                     if shouldReload && valueChanged then
@@ -1185,6 +1208,7 @@ networksTableConfig user shared model =
                             }
                             |> Table.withColumnWidth "10%"
                         ]
+
                     else
                         []
                    )
@@ -1212,6 +1236,7 @@ networksTableConfig user shared model =
                                                 [ text "відкрити мапу "
                                                 , i [ class "bi bi-map text-sm mr-2" ] []
                                                 ]
+
                                         Opened networkId points ->
                                             if networkId == network.id then
                                                 Html.node "small-map"
@@ -1220,6 +1245,7 @@ networksTableConfig user shared model =
                                                     , class "block w-full h-[90px]"
                                                     ]
                                                     []
+
                                             else
                                                 span [ class "cursor-pointer text-action", onClick <| MapOpenedByUser network.id ]
                                                     [ text "відкрити мапу "
@@ -1241,13 +1267,19 @@ networksTableConfig user shared model =
                                             let
                                                 callsigns =
                                                     case Dict.get (String.fromInt network.id) cbn of
-                                                        Nothing -> []
-                                                        Just v -> v
+                                                        Nothing ->
+                                                            []
+
+                                                        Just v ->
+                                                            v
 
                                                 isOpen =
                                                     case model.callsignsOpenedPopupId of
-                                                        Just openCallsignsPopup -> openCallsignsPopup == network.id
-                                                        Nothing -> False
+                                                        Just openCallsignsPopup ->
+                                                            openCallsignsPopup == network.id
+
+                                                        Nothing ->
+                                                            False
                                             in
                                             case shared.masterUnits of
                                                 Success units ->
@@ -1263,6 +1295,7 @@ networksTableConfig user shared model =
 
                                                 _ ->
                                                     Le.Block.Spinner.loadingSpinnerSm
+
                                         _ ->
                                             Le.Block.Spinner.loadingSpinnerSm
                                     ]
@@ -1293,8 +1326,10 @@ networksTableConfig user shared model =
                                                             ]
                                                             []
                                                         ]
+
                                                 Nothing ->
                                                     text "Не активні останні 10 днів"
+
                                         _ ->
                                             Le.Block.Spinner.loadingSpinnerSm
                                     ]
@@ -1313,8 +1348,10 @@ networksTableConfig user shared model =
                                             let
                                                 updatedAtString =
                                                     Le.Time.renderDateF6 zone (Time.millisToPosix updatedAt)
+
                                                 updatedByString =
                                                     Maybe.withDefault "невідомий" network.lastUpdatedBy
+
                                                 createdAtString =
                                                     Le.Time.renderDateF6 zone (Time.millisToPosix network.createdAt)
                                             in
@@ -1327,6 +1364,7 @@ networksTableConfig user shared model =
                                                 , text (" " ++ updatedAtString ++ " (" ++ updatedByString ++ ")")
                                                 ]
                                             ]
+
                                         _ ->
                                             [ text "" ]
                                 }
@@ -1466,29 +1504,29 @@ filterPanel user shared model =
           div [ class "flex gap-4 justify-start items-center" ]
             [ SegmentedControl.new model.showArchived ToggleShowArchived archiveOptions
                 |> SegmentedControl.view
-            , (if not model.showArchived then
-                    Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
-                        |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
-                        |> Checkbox.view
+            , if not model.showArchived then
+                Checkbox.new { isChecked = model.showOnlyActive, onToggle = ToggleShowOnlyActive }
+                    |> Checkbox.withContent [ span [] [ text "Тільки активні" ] ]
+                    |> Checkbox.view
 
-               else
-                    text ""
-              )
+              else
+                text ""
             , if Le.Auth.hasRole "UnitsEditor" user then
                 let
                     selectedItems =
                         model.aorFilterSelect.selected
-                            |> List.filterMap (\aid ->
-                                case model.aorList of
-                                    Success aors ->
-                                        aors
-                                            |> List.filter (\a -> a.id == aid)
-                                            |> List.head
-                                            |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+                            |> List.filterMap
+                                (\aid ->
+                                    case model.aorList of
+                                        Success aors ->
+                                            aors
+                                                |> List.filter (\a -> a.id == aid)
+                                                |> List.head
+                                                |> Maybe.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
 
-                                    _ ->
-                                        Nothing
-                            )
+                                        _ ->
+                                            Nothing
+                                )
                 in
                 div [ style "min-width" "210px", style "width" "210px" ]
                     [ Html.map AorFilterSelMsg <|
@@ -1872,7 +1910,7 @@ page user shared _ =
     Page.new
         { init = init
         , update = update shared
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)

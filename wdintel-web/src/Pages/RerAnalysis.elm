@@ -185,7 +185,6 @@ init route _ =
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
-
             }
 
         m2 =

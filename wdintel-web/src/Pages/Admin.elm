@@ -3174,7 +3174,7 @@ renderOrphanGroupsTable model groups =
         renderAreaOfResponsibilityColumn group =
             let
                 areas = group.areasOfResponsibility |> Maybe.withDefault []
-                
+
                 displayText : String
                 displayText =
                     if List.isEmpty areas then
@@ -3187,7 +3187,7 @@ renderOrphanGroupsTable model groups =
                     if List.isEmpty areas then
                         "Смуги не призначені"
                     else
-                        areas 
+                        areas
                             |> List.map (\area ->
                                 case area.description of
                                     Just desc ->
