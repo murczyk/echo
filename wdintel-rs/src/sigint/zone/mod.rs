@@ -70,7 +70,7 @@ pub async fn zones_datasources_groups_list(
 
     let res = bl_szd_groups_list(req.zone_id, req.datasource_id, &txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     Ok(Json(ZoneDatasourceGroupListRsp {
         zone_datasource_groups: res.groups,
@@ -90,12 +90,12 @@ pub async fn zones_datasources_group_update(
     let szd = sigint_zone_datasource::Entity::find_by_id(req.id)
         .one(&txn)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
-    let rsp = bl_szd_group_update(&req, &szd, &txn).await.context(h!())?;
+    let rsp = bl_szd_group_update(&req, &szd, &txn).await.c(h!())?;
 
-    txn.commit().await.context(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(ZoneDatasourceGroup {
         sigint_zone_datasource_id: szd.id,
@@ -118,7 +118,7 @@ pub async fn zones_datasources_group_add(
 ) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    let txn = env.dbx.begin().await.context(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
     let szd = sigint_zone_datasource::ActiveModel {
         sigint_zone_id: Set(req.zone_id),
@@ -128,7 +128,7 @@ pub async fn zones_datasources_group_add(
     }
     .insert(&txn)
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
@@ -139,14 +139,14 @@ pub async fn zones_datasources_group_add(
         &txn,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     // Fetch the final allowed users after update
     let allowed_users = secret_group_user::Entity::find()
         .filter(secret_group_user::Column::MasterKey.eq(&szd.group_master_key))
         .all(&txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|u| u.login)
         .collect::<Vec<_>>();
@@ -159,7 +159,7 @@ pub async fn zones_datasources_group_add(
         .into_tuple::<Option<String>>()
         .one(&txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .flatten();
 
     let (short_note, long_note) = group_admin_data::Entity::find()
@@ -174,17 +174,17 @@ pub async fn zones_datasources_group_add(
         .into_tuple::<(Option<String>, Option<String>)>()
         .one(&txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .unwrap_or((None, None));
 
     let group_master_key = szd.group_master_key.clone();
     let areas_of_responsibility =
         collect_group_aors(vec![group_master_key.clone()], &env.dbx)
             .await
-            .context(h!())?
+            .c(h!())?
             .remove(&group_master_key);
 
-    txn.commit().await.context(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(ZoneDatasourceGroupAddRsp {
         zone_id: req.zone_id,
@@ -216,9 +216,9 @@ pub async fn zones_datasources_group_delete(
     if let Some(szd) = sigint_zone_datasource::Entity::find_by_id(req.0)
         .one(&txn)
         .await
-        .context(h!())?
+        .c(h!())?
     {
-        szd.delete(&txn).await.context(h!())?;
+        szd.delete(&txn).await.c(h!())?;
     }
 
     txn.commit().await?;

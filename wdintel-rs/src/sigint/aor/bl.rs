@@ -18,7 +18,7 @@ where
         .filter(signal_group_aor::Column::MasterKey.is_in(keys.clone()))
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for (aor, signal_aors) in aors {
         for signal_aor in signal_aors.into_iter() {
             let aor = render_aor(aor.clone());

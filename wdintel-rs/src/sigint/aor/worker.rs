@@ -1,6 +1,5 @@
 use crate::entities::*;
 use crate::types::*;
-use anyhow::Context;
 use sea_orm::*;
 
 const CHECK_INTERVAL_SECS: u64 = 5 * 60; // 5 minutes
@@ -27,16 +26,13 @@ async fn check_signal_groups(dbx: &DatabaseConnection) -> anyhow::Result<()> {
     // Build counts for all group master_keys that have AoR rows
     let mut counts: std::collections::HashMap<String, i64> =
         std::collections::HashMap::new();
-    let group_aors = signal_group_aor::Entity::find()
-        .all(dbx)
-        .await
-        .context(h!())?;
+    let group_aors = signal_group_aor::Entity::find().all(dbx).await.c(h!())?;
     for ga in group_aors {
         *counts.entry(ga.master_key.clone()).or_insert(0) += 1;
     }
 
     // Iterate all groups and validate exactly 1 AoR per group
-    let groups = signal_group::Entity::find().all(dbx).await.context(h!())?;
+    let groups = signal_group::Entity::find().all(dbx).await.c(h!())?;
     for g in groups {
         let cnt = counts.get(&g.master_key).cloned().unwrap_or(0);
         if cnt == 0 {
@@ -53,10 +49,7 @@ async fn check_networks(dbx: &DatabaseConnection) -> anyhow::Result<()> {
     // Build counts map for networks that have AoR rows
     let mut counts: std::collections::HashMap<i64, i64> =
         std::collections::HashMap::new();
-    let net_aors = sigint_network_aor::Entity::find()
-        .all(dbx)
-        .await
-        .context(h!())?;
+    let net_aors = sigint_network_aor::Entity::find().all(dbx).await.c(h!())?;
     for na in net_aors {
         *counts.entry(na.network_id).or_insert(0) += 1;
     }
@@ -66,7 +59,7 @@ async fn check_networks(dbx: &DatabaseConnection) -> anyhow::Result<()> {
         .filter(sigint_network::Column::Deleted.eq(false))
         .all(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for n in networks {
         let cnt = counts.get(&n.id).cloned().unwrap_or(0);
         if cnt != 1 {

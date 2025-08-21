@@ -23,7 +23,7 @@ pub async fn aor_list(
         vec!["Admin", "UnitsEditor"],
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let aors = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
@@ -40,7 +40,7 @@ pub async fn aor_list(
         )
         .all(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(render_aor)
         .collect::<Vec<AreaOfResponsibility>>();
@@ -55,9 +55,9 @@ pub async fn create_aor(
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin")
         .await
-        .context(h!())?;
+        .c(h!())?;
     let model = map_insert(&env, &req, NotSet).await?;
-    let aor = model.insert(&env.dbx).await.context(h!())?;
+    let aor = model.insert(&env.dbx).await.c(h!())?;
     Ok(Json(render_aor(aor)))
 }
 
@@ -69,10 +69,10 @@ pub async fn update_aor(
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin")
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let model = map_insert(&env, &req.insert, Set(req.id)).await?;
-    let aor = model.update(&env.dbx).await.context(h!())?;
+    let aor = model.update(&env.dbx).await.c(h!())?;
     Ok(Json(render_aor(aor)))
 }
 
@@ -84,18 +84,18 @@ pub async fn delete_aor(
 ) -> Result<Json<()>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin")
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let aor_obj = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Id.eq(req.id))
         .one(&env.dbx)
         .await
-        .context(h!())?
+        .c(h!())?
         .ok_or(AppError::NotFound)?;
 
     let mut aor_model = aor_obj.into_active_model();
     aor_model.deleted = Set(true);
-    aor_model.update(&env.dbx).await.context(h!())?;
+    aor_model.update(&env.dbx).await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -110,9 +110,9 @@ where
         .filter(area_of_responsibility::Column::IsDefault.eq(true))
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
-    default_aor.context("No default AOR found").context(h!())
+    default_aor.c("No default AOR found").c(h!())
 }
 
 /// Get aor id from db by aor name
@@ -133,7 +133,7 @@ where
             .filter(area_of_responsibility::Column::Name.eq(aor_name))
             .one(txn)
             .await
-            .context(h!())?
+            .c(h!())?
             .map(|aor| aor.id);
 
         return Ok(aor_id);
@@ -187,7 +187,7 @@ async fn from_coordinates(
             let m_settlement =
                 find_settlement(mil_geo, coords.latitude, coords.longitude)
                     .await
-                    .context(h!())?;
+                    .c(h!())?;
             (Some(coords.latitude), Some(coords.longitude), m_settlement)
         }
         None => (None, None, None),
@@ -204,7 +204,7 @@ async fn find_settlement(
     let settlement_name =
         milgeo_rs::coord_util::map_coords(coords.clone(), mil_geo.clone(), 3)
             .await
-            .context(h!())?
+            .c(h!())?
             .get(&1)
             .and_then(|l| l.iter().next())
             .cloned()
@@ -220,12 +220,12 @@ async fn map_insert(
     let (left_lat, left_lon, left_settlement) =
         from_coordinates(req.left_coordinates.clone(), &env.mil_geo)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
     let (right_lat, right_lon, right_settlement) =
         from_coordinates(req.right_coordinates.clone(), &env.mil_geo)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
     let model = area_of_responsibility::ActiveModel {
         id,

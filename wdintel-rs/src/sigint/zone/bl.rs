@@ -26,14 +26,14 @@ pub async fn bl_szd_group_update(
         txn,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     // Fetch updated allowed users
     let allowed_users = secret_group_user::Entity::find()
         .filter(secret_group_user::Column::MasterKey.eq(&szd.group_master_key))
         .all(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .into_iter()
         .map(|u| u.login)
         .collect::<Vec<_>>();
@@ -47,7 +47,7 @@ pub async fn bl_szd_group_update(
         .into_tuple::<bool>()
         .one(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .unwrap_or(false);
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
@@ -61,7 +61,7 @@ pub async fn bl_szd_group_update(
         .into_tuple::<(Option<String>, Option<String>)>()
         .one(txn)
         .await
-        .context(h!())?
+        .c(h!())?
         .unwrap_or((None, None));
 
     let aor_ids = match &req.area_of_responsibility_ids {
@@ -74,7 +74,7 @@ pub async fn bl_szd_group_update(
         aor_ids,
     )
     .await
-    .context(h!())?;
+    .c(h!())?;
 
     let res = BlSzdGroupUpdateRes {
         is_secret,
@@ -98,7 +98,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
         .filter(signal_group::Column::MasterKey.eq(szd.group_master_key))
         .one(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     if let Some(group) = m_group {
         let master_key = group.master_key.clone();
@@ -109,7 +109,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
             )
             .one(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
         let mut group_data = match m_group {
             Some(group) => group,
             None => group_admin_data::ActiveModel {
@@ -121,25 +121,25 @@ pub async fn bl_zones_datasources_group_update_or_add(
             }
             .insert(txn)
             .await
-            .context(h!())?,
+            .c(h!())?,
         }
         .into_active_model();
 
         group_data.short_note = Set(short_note);
         group_data.long_note = Set(long_note);
-        group_data.update(txn).await.context(h!())?;
+        group_data.update(txn).await.c(h!())?;
 
         // Update the group's secret status
         let mut active_group: signal_group::ActiveModel = group.into();
         active_group.is_secret = Set(is_secret);
-        active_group.update(txn).await.context(h!())?;
+        active_group.update(txn).await.c(h!())?;
 
         // Delete all current users for this group
         secret_group_user::Entity::delete_many()
             .filter(secret_group_user::Column::MasterKey.eq(&master_key))
             .exec(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
         // Add all new users from the request
         for login in user_logins {
@@ -150,7 +150,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
             }
             .insert(txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
         }
     }
 
@@ -203,7 +203,7 @@ pub async fn bl_szd_groups_list(
         .into_model::<Res>()
         .all(txn)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     let mut res = HashMap::<
         String,
@@ -233,7 +233,7 @@ pub async fn bl_szd_groups_list(
     let group_aors =
         crate::sigint::aor::bl::collect_group_aors(keys.clone(), txn)
             .await
-            .context(h!())?;
+            .c(h!())?;
 
     let groups = res
         .into_iter()
