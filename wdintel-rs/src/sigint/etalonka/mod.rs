@@ -560,9 +560,9 @@ pub async fn generate_networks_docx_report(
             }
         }
 
-        // Add a page break after each unit if this is NOT the last
+        // Add empty paragraph after each unit if this is NOT the last
         if i < networks_data.len() - 1 {
-            doc = doc.add_paragraph(Paragraph::new().page_break_before(true));
+            doc = doc.add_paragraph(Paragraph::new());
         }
     }
 
