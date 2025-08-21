@@ -401,8 +401,8 @@ init route shared () =
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
       , networkCallsignsTableState = Table.initialSort "Позивний"
-      , networkCallsignsPager = { currentPage = 1, pageSize = 5, totalItems = 0 }
-      , callsignsPager = { currentPage = 1, pageSize = 5, totalItems = 0 }
+      , networkCallsignsPager = Pager.initWithPageSize 5
+      , callsignsPager = Pager.initWithPageSize 5
 
       -- Callsign selection and adding functionality
       , callsignsSelected = Set.empty
@@ -586,10 +586,7 @@ update shared msg model =
                         |> List.length
 
                 updatedPager =
-                    { currentPage = 1
-                    , pageSize = 5
-                    , totalItems = totalCallsigns
-                    }
+                    Pager.updateForNewTotalItems totalCallsigns model.callsignsPager
             in
             ( { model
                 | callsigns = Success res.callsigns
@@ -1404,7 +1401,7 @@ update shared msg model =
         NetworkCallsignsReturnedByApi (Ok res) ->
             ( { model
                 | networkCallsigns = Success res.networkCallsigns
-                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length res.networkCallsigns) { currentPage = 1, pageSize = 5, totalItems = 0 }
+                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length res.networkCallsigns) (Pager.initWithPageSize 5)
               }
             , E.none
             )

@@ -2,6 +2,8 @@ module Components.Pager exposing
     ( Model
     , Msg(..)
     , init
+    , initWithPageSize
+    , initCustom
     , update
     , view
     , getPageData
@@ -67,6 +69,26 @@ init =
     { currentPage = 1
     , pageSize = 10
     , totalItems = 0
+    }
+
+
+{-| Initialize pagination with custom page size
+-}
+initWithPageSize : Int -> Model
+initWithPageSize pageSize =
+    { currentPage = 1
+    , pageSize = pageSize
+    , totalItems = 0
+    }
+
+
+{-| Initialize pagination with custom values
+-}
+initCustom : Int -> Int -> Int -> Model
+initCustom currentPage pageSize totalItems =
+    { currentPage = currentPage
+    , pageSize = pageSize
+    , totalItems = totalItems
     }
 
 
