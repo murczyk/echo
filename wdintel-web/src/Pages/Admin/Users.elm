@@ -30,6 +30,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
@@ -1169,7 +1170,7 @@ mainContent shared model =
                                                 addState.inpRole.selectState
                                                 addState.inpRole.items
                                                 "роль"
-                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                                     ]
                                 ]
                             , viewFormErrors Roles addState.fieldsErrors
@@ -1184,7 +1185,7 @@ mainContent shared model =
                                                 addState.inpZone.selectState
                                                 addState.inpZone.items
                                                 "зона"
-                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                                     ]
                                 ]
                             , viewFormErrors Zone addState.fieldsErrors
@@ -1198,7 +1199,7 @@ mainContent shared model =
                                             addState.inpOrganism.selectState
                                             addState.inpOrganism.items
                                             "організм"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                            (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                                 ]
                             ]
                         , div [ class "text-center" ]
@@ -1413,7 +1414,7 @@ mainContent shared model =
                                         model.filterOrganismSelect.selectState
                                         organismMenuItems
                                         "Всі организми"
-                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                             ]
                         , div [ class "flex-1" ]
                             [ label [ class "block text-sm font-medium  mb-1" ] [ text "Статус" ]
@@ -1461,7 +1462,7 @@ mainContent shared model =
                                         model.filterStatusSelect.selectState
                                         statusMenuItems
                                         "Всі статуси"
-                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                             ]
                         , div [ class "flex-1" ]
                             [ label [ class "block text-sm font-medium mb-1" ] [ text "Роль" ]
@@ -1491,7 +1492,7 @@ mainContent shared model =
                                         model.filterRoleSelect.selectState
                                         roleMenuItems
                                         "Всі ролі"
-                                        (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                             ]
                         ]
                     , div [ class "grid grid-cols-12 gap-4 mt-4" ]
@@ -1611,7 +1612,7 @@ editLoginSidebarContent shared model loginId editState =
                                     editState.inpRole.selectState
                                     editState.inpRole.items
                                     "роль"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     , viewFormErrors Roles editState.fieldsErrors
                     ]
@@ -1625,7 +1626,7 @@ editLoginSidebarContent shared model loginId editState =
                                     editState.inpOrganism.selectState
                                     editState.inpOrganism.items
                                     "організм"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     ]
                 , div [ class "space-y-2" ]
@@ -1638,7 +1639,7 @@ editLoginSidebarContent shared model loginId editState =
                                     editState.inpZone.selectState
                                     editState.inpZone.items
                                     "зона"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     , viewFormErrors Zone editState.fieldsErrors
                     ]

@@ -19,6 +19,7 @@ import RerAnalysis.Utils exposing (updateQueryWithSelectedFreq)
 import Route exposing (Route)
 import Set
 import Shared
+import Shared.Model exposing (isDarkMode)
 
 
 sumTableHeight =
@@ -296,7 +297,7 @@ sumTableBlock2 model shared route sumTable =
                     [ tr []
                         [ th
                             [ scope "col"
-                            , classList [ ( "bg-white", not shared.isDarkMode ) ]
+                            , classList [ ( "bg-white", not (isDarkMode shared.themeMode) ) ]
                             , style "position" "sticky"
                             , style "top" "0"
                             , style "z-index" "1"
@@ -304,7 +305,7 @@ sumTableBlock2 model shared route sumTable =
                             [ text "частота" ]
                         , th
                             [ scope "col"
-                            , classList [ ( "bg-white", not shared.isDarkMode ) ]
+                            , classList [ ( "bg-white", not (isDarkMode shared.themeMode) ) ]
                             , class "text-nowrap"
                             , style "position" "sticky"
                             , style "top" "0"
@@ -320,7 +321,7 @@ sumTableBlock2 model shared route sumTable =
                             ]
                         , th
                             [ scope "col"
-                            , classList [ ( "bg-white", not shared.isDarkMode ) ]
+                            , classList [ ( "bg-white", not (isDarkMode shared.themeMode) ) ]
                             , style "position" "sticky"
                             , style "top" "0"
                             , style "z-index" "1"
@@ -328,7 +329,7 @@ sumTableBlock2 model shared route sumTable =
                             [ text "координати" ]
                         , th
                             [ scope "col"
-                            , classList [ ( "bg-white", not shared.isDarkMode ) ]
+                            , classList [ ( "bg-white", not (isDarkMode shared.themeMode) ) ]
                             , style "position" "sticky"
                             , style "top" "0"
                             , style "z-index" "1"
@@ -336,7 +337,7 @@ sumTableBlock2 model shared route sumTable =
                             [ text "позивні" ]
                         , th
                             [ scope "col"
-                            , classList [ ( "bg-white", not shared.isDarkMode ) ]
+                            , classList [ ( "bg-white", not (isDarkMode shared.themeMode) ) ]
                             , style "position" "sticky"
                             , style "top" "0"
                             , style "z-index" "1"
@@ -345,7 +346,7 @@ sumTableBlock2 model shared route sumTable =
                             [ text "підрозділи" ]
                         , th
                             [ scope "col"
-                            , classList [ ( "bg-white", not shared.isDarkMode ) ]
+                            , classList [ ( "bg-white", not (isDarkMode shared.themeMode) ) ]
                             , style "position" "sticky"
                             , style "top" "0"
                             , style "z-index" "1"

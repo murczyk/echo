@@ -387,10 +387,10 @@ filtersAndMainContent user model shared route =
                     div
                         [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between relative"
                         , classList
-                            [ ( "bg-white border-gray-200 hover:border-gray-300", not active && not shared.isDarkMode )
-                            , ( "bg-gray-800 border-gray-700 hover:border-gray-600", not active && shared.isDarkMode )
-                            , ( "bg-secondary-light border-secondary shadow-lg ring-2 ring-secondary-light-active", active && not shared.isDarkMode )
-                            , ( "bg-secondary-dark border-secondary shadow-lg ring-2 ring-secondary-light-active", active && shared.isDarkMode )
+                            [ ( "bg-white border-gray-200 hover:border-gray-300", not active && not (isDarkMode shared.themeMode) )
+                            , ( "bg-gray-800 border-gray-700 hover:border-gray-600", not active && isDarkMode shared.themeMode )
+                            , ( "bg-secondary-light border-secondary shadow-lg ring-2 ring-secondary-light-active", active && not (isDarkMode shared.themeMode) )
+                            , ( "bg-secondary-dark border-secondary shadow-lg ring-2 ring-secondary-light-active", active && isDarkMode shared.themeMode )
                             ]
                         , onClick <| toMsg
                         ]
@@ -398,16 +398,16 @@ filtersAndMainContent user model shared route =
                             [ h5
                                 [ class "text-lg font-semibold mb-3"
                                 , classList
-                                    [ ( "text-gray-900", not shared.isDarkMode )
-                                    , ( "text-gray-100", shared.isDarkMode )
+                                    [ ( "text-gray-900", not (isDarkMode shared.themeMode) )
+                                    , ( "text-gray-100", isDarkMode shared.themeMode )
                                     ]
                                 ]
                                 [ text title ]
                             , p
                                 [ class "text-sm leading-relaxed"
                                 , classList
-                                    [ ( "text-gray-600", not shared.isDarkMode )
-                                    , ( "text-gray-400", shared.isDarkMode )
+                                    [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                    , ( "text-gray-400", isDarkMode shared.themeMode )
                                     ]
                                 ]
                                 [ text description ]
@@ -417,25 +417,25 @@ filtersAndMainContent user model shared route =
                                 div
                                     [ class "px-2 py-1 rounded-full text-xs font-medium"
                                     , classList
-                                        [ ( "bg-secondary-light text-secondary-dark", not shared.isDarkMode )
-                                        , ( "bg-secondary-light-active text-secondary-dark", shared.isDarkMode )
+                                        [ ( "bg-secondary-light text-secondary-dark", not (isDarkMode shared.themeMode) )
+                                        , ( "bg-secondary-light-active text-secondary-dark", isDarkMode shared.themeMode )
                                         ]
                                     ]
                                     [ text "Обрано" ]
                             , div
                                 [ class "w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-200"
                                 , classList
-                                    [ ( "bg-gray-100", not active && not shared.isDarkMode )
-                                    , ( "bg-gray-700", not active && shared.isDarkMode )
-                                    , ( "bg-secondary", active && not shared.isDarkMode )
-                                    , ( "bg-secondary", active && shared.isDarkMode )
+                                    [ ( "bg-gray-100", not active && not (isDarkMode shared.themeMode) )
+                                    , ( "bg-gray-700", not active && isDarkMode shared.themeMode )
+                                    , ( "bg-secondary", active && not (isDarkMode shared.themeMode) )
+                                    , ( "bg-secondary", active && isDarkMode shared.themeMode )
                                     ]
                                 ]
                                 [ i
                                     [ class "text-xs"
                                     , classList
-                                        [ ( "text-gray-400", not active && not shared.isDarkMode )
-                                        , ( "text-gray-500", not active && shared.isDarkMode )
+                                        [ ( "text-gray-400", not active && not (isDarkMode shared.themeMode) )
+                                        , ( "text-gray-500", not active && isDarkMode shared.themeMode )
                                         , ( "text-white", active )
                                         ]
                                     , class "bi bi-check"
@@ -448,8 +448,8 @@ filtersAndMainContent user model shared route =
             [ h4
                 [ class "text-lg font-semibold mb-6"
                 , classList
-                    [ ( "text-gray-900", not shared.isDarkMode )
-                    , ( "text-gray-100", shared.isDarkMode )
+                    [ ( "text-gray-900", not (isDarkMode shared.themeMode) )
+                    , ( "text-gray-100", isDarkMode shared.themeMode )
                     ]
                 ]
                 [ text "шаблон" ]
@@ -487,8 +487,8 @@ filtersAndMainContent user model shared route =
                 , a
                     [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between no-underline"
                     , classList
-                        [ ( "bg-white border-gray-200 hover:border-gray-300", not shared.isDarkMode )
-                        , ( "bg-gray-800 border-gray-700 hover:border-gray-600", shared.isDarkMode )
+                        [ ( "bg-white border-gray-200 hover:border-gray-300", not (isDarkMode shared.themeMode) )
+                        , ( "bg-gray-800 border-gray-700 hover:border-gray-600", isDarkMode shared.themeMode )
                         ]
                     , Route.href { path = Route.Path.RerFreqs, hash = Nothing, query = Dict.empty }
                     , target "_blank"
@@ -497,16 +497,16 @@ filtersAndMainContent user model shared route =
                         [ h5
                             [ class "text-lg font-semibold mb-3"
                             , classList
-                                [ ( "text-gray-900", not shared.isDarkMode )
-                                , ( "text-gray-100", shared.isDarkMode )
+                                [ ( "text-gray-900", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-100", isDarkMode shared.themeMode )
                                 ]
                             ]
                             [ text "Еталонний опис р/м" ]
                         , p
                             [ class "text-sm leading-relaxed"
                             , classList
-                                [ ( "text-gray-600", not shared.isDarkMode )
-                                , ( "text-gray-400", shared.isDarkMode )
+                                [ ( "text-gray-600", not (isDarkMode shared.themeMode) )
+                                , ( "text-gray-400", isDarkMode shared.themeMode )
                                 ]
                             ]
                             [ text "Еталонний опис радіомереж" ]
@@ -515,15 +515,15 @@ filtersAndMainContent user model shared route =
                         [ div
                             [ class "w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-200"
                             , classList
-                                [ ( "bg-gray-100", not shared.isDarkMode )
-                                , ( "bg-gray-700", shared.isDarkMode )
+                                [ ( "bg-gray-100", not (isDarkMode shared.themeMode) )
+                                , ( "bg-gray-700", isDarkMode shared.themeMode )
                                 ]
                             ]
                             [ i
                                 [ class "text-xs"
                                 , classList
-                                    [ ( "text-gray-400", not shared.isDarkMode )
-                                    , ( "text-gray-500", shared.isDarkMode )
+                                    [ ( "text-gray-400", not (isDarkMode shared.themeMode) )
+                                    , ( "text-gray-500", isDarkMode shared.themeMode )
                                     ]
                                 , class "bi bi-box-arrow-up-right"
                                 ]
@@ -715,7 +715,7 @@ filtersAndMainContent user model shared route =
                 [ class "self-stretch overflow-auto text-sm w-[260px] min-w-[260px]"
                 , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
                 ]
-                [ RerAnalysis.Filters.leftColumn shared.isDarkMode model ]
+                [ RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) model ]
             , div
                 [ class "border-l border-border self-stretch flex-grow mt-4"
                 , id "messages-div"

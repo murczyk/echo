@@ -929,7 +929,7 @@ update req shared msg model =
         FilterPositionMsg v ->
             let
                 ( debounce, cmd ) =
-                    Debounce.push filterpositionDebounceConfig v model.filterPositionDebounce
+                    Debounce.push filterPositionDebounceConfig v model.filterPositionDebounce
             in
             ( { model
                 | filterPosition = v
@@ -1820,7 +1820,7 @@ editSidebarContent model shared user =
                                             editState.inpUnitSelState
                                             editState.inpUnitSelMenu
                                             "жоден"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                            (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                                 ]
                             , div []
                                 [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
@@ -1996,7 +1996,7 @@ contentBlock shared model user =
                             [ div [ class "flex-grow" ]
                                 [ let
                                     options =
-                                        Le.Block.Select.defaultOptions shared.isDarkMode
+                                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
 
                                     options2 =
                                         { options | disabled = not hasEditorRole }
@@ -2031,7 +2031,7 @@ contentBlock shared model user =
                                                 |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
                                             )
                                             "жоден"
-                                            (Le.Block.Select.defaultOptions shared.isDarkMode
+                                            (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                                                 |> (\opts ->
                                                         { opts
                                                             | disabled =

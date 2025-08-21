@@ -29,6 +29,7 @@ import Route exposing (Route)
 import Route.Path
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Time
 import Time.Extra
 import View exposing (View)
@@ -67,13 +68,19 @@ isFormValid req =
     let
         hasAor =
             case req.areaOfResponsibilityIds of
-                Just ids -> not (List.isEmpty ids)
-                Nothing -> False
+                Just ids ->
+                    not (List.isEmpty ids)
+
+                Nothing ->
+                    False
     in
-    not (String.trim req.name == ""
-        || String.trim req.location == ""
-        || List.isEmpty req.freqs
-        || not hasAor
+    not
+        (String.trim req.name
+            == ""
+            || String.trim req.location
+            == ""
+            || List.isEmpty req.freqs
+            || not hasAor
         )
 
 
@@ -425,8 +432,11 @@ update shared msg model =
 
         AorListReturnedByApi (Ok aors) ->
             let
-                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
-                sel = model.aorSelect
+                items =
+                    aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                sel =
+                    model.aorSelect
             in
             ( { model | aorList = RD.Success aors, aorSelect = { sel | items = items } }, E.none )
 
@@ -861,7 +871,7 @@ viewMissingFieldsBlock shared model =
                                     )
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map AorSelectMsg <|
                         Styled.toUnstyled <|
@@ -894,7 +904,7 @@ viewMissingFieldsBlock shared model =
                                     )
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map UnitSelectMsg <|
                         Styled.toUnstyled <|
@@ -929,7 +939,7 @@ viewMissingFieldsBlock shared model =
                                     )
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map PostsSelectMsg <|
                         Styled.toUnstyled <|
@@ -1181,7 +1191,7 @@ viewFreqSidebar shared model =
                             }
 
                     defaultOptions =
-                        Le.Block.Select.defaultOptions shared.isDarkMode
+                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                   in
                   Html.map FreqKindSelectMsg <|
                     Styled.toUnstyled <|
@@ -1213,7 +1223,7 @@ viewFreqSidebar shared model =
                                     model.freqModulationSelect.selected
 
                             defaultOptions =
-                                Le.Block.Select.defaultOptions shared.isDarkMode
+                                Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                         in
                         Html.map FreqModulationSelectMsg <|
                             Styled.toUnstyled <|

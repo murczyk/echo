@@ -1537,7 +1537,7 @@ filterPanel user shared model =
                                 model.aorFilterSelect.state
                                 model.aorFilterSelect.items
                                 "смуги"
-                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                     ]
 
               else

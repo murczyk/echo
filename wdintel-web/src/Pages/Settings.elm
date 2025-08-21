@@ -229,7 +229,7 @@ view shared user model =
                                                 model.zoneSelectState
                                                 zoneMenuItems
                                                 "Оберіть зону"
-                                                (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                                     ]
                                 ]
 

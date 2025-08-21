@@ -838,7 +838,7 @@ editSignalSidebarContent shared model user signal =
                                     currentEditState.inpUnitSelState
                                     (populateUnitMenu shared)
                                     "підрозділ"
-                                    (Le.Block.Select.defaultOptions shared.isDarkMode)
+                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     ]
                 ]
@@ -990,7 +990,7 @@ renderSignalTrEdit shared model user signal editState =
                 [ div [ class "flex-grow-1" ]
                     [ let
                         options =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
 
                         options2 =
                             { options | disabled = not hasEditorRole }
@@ -1138,7 +1138,7 @@ contentBlock shared model user =
                         [ div [ class "flex-grow-1" ]
                             [ let
                                 options =
-                                    Le.Block.Select.defaultOptions shared.isDarkMode
+                                    Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
 
                                 options2 =
                                     { options | disabled = not hasEditorRole }

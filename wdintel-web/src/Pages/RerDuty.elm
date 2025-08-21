@@ -5,7 +5,7 @@ import Auth
 import Bindings as B exposing (..)
 import Browser.Events
 import Components.Navbar exposing (navBar)
-import Components.ThemeSwitcher exposing (colorThemeSwitcher)
+import Components.ThemeSwitcher exposing (themeSwitcher)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)

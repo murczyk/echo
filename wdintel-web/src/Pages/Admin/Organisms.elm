@@ -29,6 +29,7 @@ import Route exposing (Route)
 import Select
 import Set
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
@@ -42,7 +43,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -1346,7 +1347,7 @@ body dark shared user model =
         sidebarContent =
             case model.editOrganism of
                 Just ( organismId, editState ) ->
-                    editOrganismSidebarContent shared.isDarkMode model organismId editState
+                    editOrganismSidebarContent (isDarkMode shared.themeMode) model organismId editState
 
                 Nothing ->
                     []
