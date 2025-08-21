@@ -70,64 +70,9 @@ pub struct CreateCallsignReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct ListCallsignBindsReq {
-    pub callsign_ids: Vec<i64>,
-    pub since_date_inclusive_ms: Option<i64>,
-    pub till_date_inclusive_ms: Option<i64>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CallsignBind {
-    pub id: i64,
-    pub freq: String,
-    pub comment: Option<String>,
-    pub date: Option<String>,
-    pub updated_by: String,
-    pub updated_at: i64,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CallsignBindOneReq {
-    pub freq: String,
-    pub comment: Option<String>,
-    pub date: Option<String>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CreateCallsignsBindReq {
-    pub callsign_id: i64,
-    pub bindings: Vec<CallsignBindOneReq>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct UpdateCallsignReportingReq {
-    pub callsign: String,
-    pub network_id: i64,
-    pub is_reported: bool,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
 pub struct CallsignReportingItem {
     pub callsign: String,
     pub is_reported: bool,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct UpdateCallsignReportingBatchReq {
-    pub network_id: i64,
-    pub items: Vec<CallsignReportingItem>,
 }
 
 #[derive(
@@ -159,4 +104,85 @@ pub struct GetCallsignsWithUnitsFromInboxReq {
 )]
 pub struct GetCallsignsWithUnitsFromInboxRsp {
     pub callsigns_with_units: Vec<(String, Vec<String>)>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkCallsign {
+    pub id: i64,
+    pub network_id: i64,
+    pub callsign: String,
+    pub known_callsign_id: Option<i64>,
+    pub position: Option<String>,
+    pub comment: Option<String>,
+    pub unit_id: Option<i64>,
+    pub unit_name: Option<String>,
+    pub source_id: Option<i64>,
+    // pub source_name: Option<String>,
+    /// Set when source_id points to "radio" (id=2)
+    pub radio_freq: Option<String>,
+    pub created_at: i64,
+    pub active: bool,
+    pub message_count: i64,
+    pub last_datetime: Option<i64>,
+    pub freqs: Option<Vec<String>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum ListNetworkCallsignsSortBy {
+    NetworkCallsignAsc,
+    NetworkCallsignDesc,
+    NetworkCallsignCreatedAtAsc,
+    NetworkCallsignCreatedAtDesc,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListNetworkCallsignsReq {
+    pub network_id: i64,
+    pub sort_by: Option<Vec<ListNetworkCallsignsSortBy>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListNetworkCallsignsRes {
+    pub network_callsigns: Vec<NetworkCallsign>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateNetworkCallsignReq {
+    pub network_id: i64,
+    pub callsign: String,
+    pub position: Option<String>,
+    pub comment: Option<String>,
+    pub source_id: i64,
+    pub radio_freq: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateNetworkCallsignReq {
+    pub id: i64,
+    pub network_id: i64,
+    pub callsign: String,
+    pub position: Option<String>,
+    pub comment: Option<String>,
+    pub source_id: i64,
+    pub radio_freq: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AddAsKnownNetworkCallsignReq {
+    pub network_id: i64,
+    pub known_callsign_ids: Vec<i64>,
 }

@@ -99,10 +99,6 @@ async fn collect_reported_networks_per_callsign(
         .filter(
             crate::entities::sigint_network_callsign::Column::Deleted.eq(false),
         )
-        .filter(
-            crate::entities::sigint_network_callsign::Column::IsReported
-                .eq(true),
-        )
         .all(dbx)
         .await
         .context(h!())?;

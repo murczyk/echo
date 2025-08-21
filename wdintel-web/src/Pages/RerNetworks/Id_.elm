@@ -4,9 +4,11 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.ModalDialog as ModalDialog
+import Components.Pager as Pager
 import Components.SegmentedControl as SegmentedControl
 import Components.Sidebar as Sidebar
 import Components.Table as Table
@@ -38,13 +40,12 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Select
-import Set
+import Set exposing (Set)
 import Shared
 import Time
 import Time.Extra
 import Url.Builder
 import View exposing (View)
-import Char
 
 
 page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
@@ -158,15 +159,29 @@ type Mode updateReq
     | Editing updateReq
 
 
-type alias CallsignResModified =
-    { callsign : String
-    , knownCallsigns : List B.KnownCallsignShortRes
+
+-- Кастомний тип для режимів створення позивних
+
+
+type CallsignCreateMode
+    = CreateFromScratch -- Створення "з нуля" (кнопка + в таблиці)
+    | CreateFromUnknown String -- Створення зі списку "Приналежність встановлюється"
+
+
+
+-- Нова структура для рядка таблиці позивних
+
+
+type alias CallsignTableRow =
+    { id : Int
+    , callsign : String
     , messageCount : Int
     , lastDatetime : Maybe Int
-    , freqs : Maybe (List String)
-    , networkNames : Maybe (List String)
-    , isOld : Bool
-    , isReported : Bool
+    , position : String
+    , unitName : String
+    , comment : String
+    , createdAt : Int
+    , sourceName : String
     }
 
 
@@ -208,6 +223,7 @@ type alias Model =
     , reportIncludeConfirmation : Bool
     , freqsActivityFilter : FreqActivityFilter
     , freqsTableState : Table.State
+    , callsignsTableState : Table.State
     , freqEditSidebar : Maybe ( String, B.UpdateNetworkFreqReq )
     , freqDetailPopup : Maybe String
     , modulations : RemoteData ApiError (List B.ModulationRec)
@@ -219,6 +235,7 @@ type alias Model =
     , deleteNetworkLoading : Bool
     , deleteFreqConfirmation : Maybe ( Int, String )
     , deleteFreqLoading : Bool
+
     -- Frequency creation sidebar
     , freqCreateSidebar : Bool
     , freqCreateState : B.AddNetworkFreq
@@ -227,6 +244,35 @@ type alias Model =
     , freqCreateDescriptionInp : String
     , freqCreateFormatError : Maybe String
     , freqCreateShowActiveTo : Bool
+
+    -- Network callsigns (new table)
+    , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
+    , networkCallsignsTableState : Table.State
+    , networkCallsignsPager : Pager.Model
+    , callsignsPager : Pager.Model
+
+    -- Callsign selection and adding functionality
+    , callsignsSelected : Set Int -- Виділені позивні (known_callsign_id)
+    , callsignsAddLoading : Bool -- Стан завантаження при додаванні позивних
+
+    -- Network callsign creation sidebar
+    , callsignCreateSidebar : Maybe CallsignCreateMode
+    , callsignCreateState : Maybe B.CreateNetworkCallsignReq
+    , callsignCreateSaving : Bool
+    , callsignCreateErrors : Dict String String
+    , callsignCreateSourceSelState : Select.State
+    , callsignCreateSources : List B.Source
+
+    -- Callsign deletion confirmation dialog
+    , deleteCallsignConfirmation : Maybe Int -- ID позивного для видалення
+    , deleteCallsignLoading : Bool -- Стан завантаження видалення
+
+    -- Callsign editing functionality
+    , editCallsignSidebar : Maybe Int -- ID позивного для редагування
+    , editCallsignState : Maybe B.UpdateNetworkCallsignReq -- Стан форми редагування
+    , editCallsignSaving : Bool -- Стан збереження редагування
+    , editCallsignErrors : Dict String String -- Помилки валідації редагування
+    , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
     }
 
 
@@ -291,6 +337,7 @@ init route shared () =
       , reportIncludeConfirmation = True
       , freqsActivityFilter = AllFreqs
       , freqsTableState = Table.initialSort "Частота"
+      , callsignsTableState = Table.initialSort "Позивний"
       , freqEditSidebar = Nothing
       , freqDetailPopup = Nothing
       , modulations = NotAsked
@@ -318,6 +365,7 @@ init route shared () =
       , deleteNetworkLoading = False
       , deleteFreqConfirmation = Nothing
       , deleteFreqLoading = False
+
       -- Frequency creation sidebar
       , freqCreateSidebar = False
       , freqCreateState =
@@ -349,6 +397,35 @@ init route shared () =
       , freqCreateDescriptionInp = ""
       , freqCreateFormatError = Nothing
       , freqCreateShowActiveTo = False
+
+      -- Network callsigns (new table)
+      , networkCallsigns = NotAsked
+      , networkCallsignsTableState = Table.initialSort "Позивний"
+      , networkCallsignsPager = Pager.initWithPageSize 5
+      , callsignsPager = Pager.initWithPageSize 5
+
+      -- Callsign selection and adding functionality
+      , callsignsSelected = Set.empty
+      , callsignsAddLoading = False
+
+      -- Network callsign creation sidebar
+      , callsignCreateSidebar = Nothing
+      , callsignCreateState = Nothing
+      , callsignCreateSaving = False
+      , callsignCreateErrors = Dict.empty
+      , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+      , callsignCreateSources = []
+
+      -- Callsign deletion confirmation dialog initialization
+      , deleteCallsignConfirmation = Nothing
+      , deleteCallsignLoading = False
+
+      -- Callsign editing functionality initialization
+      , editCallsignSidebar = Nothing
+      , editCallsignState = Nothing
+      , editCallsignSaving = False
+      , editCallsignErrors = Dict.empty
+      , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -356,6 +433,7 @@ init route shared () =
                 [ E.getSingleNetwork NetworkReturnedByApi id
                 , E.getModulations ModulationsReturnedByApi
                 , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
+                , E.sendCmd (Api.sigint_list_sources GotSources ())
                 ]
 
         Nothing ->
@@ -392,9 +470,6 @@ type Msg
     | FreqsEditStartedByUser
     | FreqsEditSavedByUser
     | FreqsEditCanceledByUser
-    | CallsignsEditStartedByUser
-    | CallsignsEditSavedByUser
-    | CallsignsEditCanceledByUser
     | FreqUpdatedByApi (Result ApiError B.Network)
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
@@ -416,8 +491,6 @@ type Msg
     | DescriptionEditedByUser Int String
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
-    | CallsignReportingStatusToggledByUser CallsignResModified Bool
-    | CallsignReportingStatusUpdatedByApi (Result ApiError Bool)
     | ReportModalOpenedByUser
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
@@ -429,6 +502,11 @@ type Msg
     | ReportIncludeSigintSignsCheckedByUser Bool
     | FreqsActivityFilterChangedByUser FreqActivityFilter
     | SetFreqsTableState Table.State
+    | SetCallsignsTableState Table.State
+    | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
+    | SetNetworkCallsignsTableState Table.State
+    | NetworkCallsignsPagerMsg Pager.Msg
+    | CallsignsPagerMsg Pager.Msg
     | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
     | CloseFreqEditSidebar
     | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
@@ -436,6 +514,7 @@ type Msg
     | OpenFreqDetailPopup String
     | CloseFreqDetailPopup
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | GotSources (Result ApiError B.ListSourcesRsp)
     | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | FreqModulationSelectMsg (Select.Msg Int)
     | ToggleFreqEditShowActiveTo
@@ -443,7 +522,7 @@ type Msg
     | DeleteNetworkConfirmedByUser
     | DeleteNetworkCanceledByUser
     | DeleteNetworkReturnedByApi (Result ApiError B.Network)
-    -- Frequency creation messages
+      -- Frequency creation messages
     | OpenFreqCreateSidebar
     | CloseFreqCreateSidebar
     | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
@@ -457,6 +536,29 @@ type Msg
     | DeleteFreqConfirmedByUser
     | DeleteFreqCanceledByUser
     | DeleteFreqReturnedByApi (Result ApiError B.Network)
+      -- Network callsign creation messages
+    | OpenCallsignCreateSidebar
+    | CloseCallsignCreateSidebar
+    | UpdateCallsignCreateField (Maybe B.CreateNetworkCallsignReq -> Maybe B.CreateNetworkCallsignReq)
+    | CreateCallsignClicked
+    | CallsignCreated (Result ApiError B.NetworkCallsign)
+    | CallsignCreateSourceSelMsg (Select.Msg Int)
+      -- Callsign selection and adding functionality
+    | ToggleCallsignSelection Int -- Перемикання виділення позивного
+    | AddSelectedCallsignsToNetwork -- Додавання виділених позивних до мережі
+    | CallsignsAddedToNetwork (Result ApiError (List B.NetworkCallsign)) -- Результат додавання (тепер список)
+      -- Callsign deletion functionality
+    | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
+    | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
+    | CloseEditCallsignSidebar -- Закриття сайдбару редагування
+    | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
+    | SaveEditCallsignClicked -- Збереження змін редагування
+    | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
+    | EditCallsignSourceSelMsg (Select.Msg Int) -- Повідомлення від селекта джерела для редагування
+    | OpenAddFromUnknownSidebar String -- Відкриття сайдбару додавання зі списку "Приналежність встановлюється"
+    | DeleteCallsignConfirmed Int -- Підтвердження видалення позивного
+    | DeleteCallsignCanceled -- Скасування видалення позивного
+    | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -468,7 +570,30 @@ update shared msg model =
             )
 
         CallsignsReturnedByApi (Ok res) ->
-            ( { model | callsigns = Success res.callsigns }, E.none )
+            let
+                -- Обчислюємо загальну кількість позивних для пагінації
+                totalCallsigns =
+                    res.callsigns
+                        |> List.concatMap
+                            (\callsign ->
+                                case callsign.knownCallsigns of
+                                    Just knownCallsigns ->
+                                        knownCallsigns
+
+                                    Nothing ->
+                                        []
+                            )
+                        |> List.length
+
+                updatedPager =
+                    Pager.updateForNewTotalItems totalCallsigns model.callsignsPager
+            in
+            ( { model
+                | callsigns = Success res.callsigns
+                , callsignsPager = updatedPager
+              }
+            , E.none
+            )
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }
@@ -499,7 +624,8 @@ update shared msg model =
                     case model.aorList of
                         Success aors ->
                             let
-                                sel0 = model.editAorSelect
+                                sel0 =
+                                    model.editAorSelect
                             in
                             { state = sel0.state
                             , items = List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name }) aors
@@ -518,6 +644,7 @@ update shared msg model =
               }
             , E.batch
                 [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = res.id }
+                , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = res.id, sortBy = Nothing }
                 , E.getNetworkPoints MapPointsReturnedByApi
                     { networkId = res.id
                     , sinceDateInclusiveMs = res.activeFrom
@@ -578,8 +705,11 @@ update shared msg model =
 
         AorListReturnedByApi (Ok aors) ->
             let
-                items = aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
-                sel = model.editAorSelect
+                items =
+                    aors |> List.map (\a -> Select.basicMenuItem { item = a.id, label = a.name })
+
+                sel =
+                    model.editAorSelect
             in
             ( { model | aorList = Success aors, editAorSelect = { sel | items = items } }, E.none )
 
@@ -670,7 +800,8 @@ update shared msg model =
                                             []
                             in
                             let
-                                sel0 = model.editAorSelect
+                                sel0 =
+                                    model.editAorSelect
                             in
                             { state = sel0.state
                             , items = items
@@ -717,8 +848,15 @@ update shared msg model =
 
         NetworkUnitsUpdatedByApi editState (Ok _) ->
             let
-                aorIds = if List.isEmpty model.editAorSelect.selected then Nothing else Just model.editAorSelect.selected
-                editWithAors = { editState | areaOfResponsibilityIds = aorIds }
+                aorIds =
+                    if List.isEmpty model.editAorSelect.selected then
+                        Nothing
+
+                    else
+                        Just model.editAorSelect.selected
+
+                editWithAors =
+                    { editState | areaOfResponsibilityIds = aorIds }
             in
             ( model, E.updateNetwork NetworkUpdatedByApi editWithAors )
 
@@ -885,7 +1023,8 @@ update shared msg model =
 
                         aorSelect2 =
                             let
-                                sel0 = model.editAorSelect
+                                sel0 =
+                                    model.editAorSelect
                             in
                             { state = imodel
                             , selected = updatedAors
@@ -896,7 +1035,8 @@ update shared msg model =
                         | editAorSelect = aorSelect2
                         , missingFieldsMode = Editing editNetworkState
                       }
-                    , E.sendCmd <| Cmd.map NetworkEditAorSelMsg icmd )
+                    , E.sendCmd <| Cmd.map NetworkEditAorSelMsg icmd
+                    )
 
                 _ ->
                     ( model, E.none )
@@ -1171,69 +1311,6 @@ update shared msg model =
             , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
             )
 
-        CallsignReportingStatusToggledByUser callsign isChecked ->
-            ( { model
-                | callsignsEditingState =
-                    case model.callsignsEditingState of
-                        Readonly ->
-                            model.callsignsEditingState
-
-                        Editing editingDict ->
-                            Editing (Dict.insert callsign.callsign isChecked editingDict)
-              }
-            , E.none
-            )
-
-        CallsignReportingStatusUpdatedByApi (Err e) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення статусу позивного" e
-            )
-
-        CallsignReportingStatusUpdatedByApi (Ok res) ->
-            case ( model.network, model.callsigns, model.callsignsEditingState ) of
-                ( Success network, Success callsigns, Editing editingDict ) ->
-                    let
-                        updatedCallsigns =
-                            List.map
-                                (\c ->
-                                    case Dict.get c.callsign editingDict of
-                                        Just newIsReported ->
-                                            { c | isReported = newIsReported }
-
-                                        Nothing ->
-                                            c
-                                )
-                                callsigns
-                    in
-                    ( { model | callsignsEditingState = Readonly, callsigns = Success updatedCallsigns }, E.none )
-
-                ( Success network, Success callsigns, _ ) ->
-                    ( { model | callsignsEditingState = Readonly }, E.none )
-
-                _ ->
-                    ( model, E.none )
-
-        CallsignsEditStartedByUser ->
-            ( { model | callsignsEditingState = Editing Dict.empty }, E.none )
-
-        CallsignsEditSavedByUser ->
-            case ( model.network, model.callsignsEditingState ) of
-                ( Success network, Editing editingDict ) ->
-                    ( model
-                    , E.updateCallsignReportingBatch CallsignReportingStatusUpdatedByApi
-                        { networkId = network.id
-                        , items =
-                            Dict.toList editingDict
-                                |> List.map (\( callsign, isReported ) -> { callsign = callsign, isReported = isReported })
-                        }
-                    )
-
-                _ ->
-                    ( model, E.none )
-
-        CallsignsEditCanceledByUser ->
-            ( { model | callsignsEditingState = Readonly }, E.none )
-
         ReportModalOpenedByUser ->
             ( { model | reportModalOpened = True }, E.none )
 
@@ -1313,6 +1390,57 @@ update shared msg model =
         SetFreqsTableState newState ->
             ( { model | freqsTableState = newState }, E.none )
 
+        SetCallsignsTableState newState ->
+            ( { model | callsignsTableState = newState }, E.none )
+
+        NetworkCallsignsReturnedByApi (Err e) ->
+            ( { model | networkCallsigns = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних мережі" e
+            )
+
+        NetworkCallsignsReturnedByApi (Ok res) ->
+            ( { model
+                | networkCallsigns = Success res.networkCallsigns
+                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length res.networkCallsigns) (Pager.initWithPageSize 5)
+              }
+            , E.none
+            )
+
+        SetNetworkCallsignsTableState newState ->
+            ( { model | networkCallsignsTableState = newState }, E.none )
+
+        NetworkCallsignsPagerMsg pagerMsg ->
+            let
+                updatedPager =
+                    Pager.update pagerMsg model.networkCallsignsPager
+
+                -- Якщо змінюється розмір сторінки, перевіряємо поточну сторінку
+                finalPager =
+                    case pagerMsg of
+                        Pager.ChangePageSize newPageSize ->
+                            Pager.updateForNewTotalItems updatedPager.totalItems { updatedPager | pageSize = newPageSize }
+
+                        _ ->
+                            updatedPager
+            in
+            ( { model | networkCallsignsPager = finalPager }, E.none )
+
+        CallsignsPagerMsg pagerMsg ->
+            let
+                updatedPager =
+                    Pager.update pagerMsg model.callsignsPager
+
+                -- Якщо змінюється розмір сторінки, перевіряємо поточну сторінку
+                finalPager =
+                    case pagerMsg of
+                        Pager.ChangePageSize newPageSize ->
+                            Pager.updateForNewTotalItems updatedPager.totalItems { updatedPager | pageSize = newPageSize }
+
+                        _ ->
+                            updatedPager
+            in
+            ( { model | callsignsPager = finalPager }, E.none )
+
         OpenFreqEditSidebar freqId updateReq ->
             let
                 -- Оновлюємо селекти з даними з частоти
@@ -1391,6 +1519,16 @@ update shared msg model =
                 , freqEditModulationSelect = updatedModulationSelect
                 , freqCreateModulationSelect = updatedFreqCreateModulationSelect
               }
+            , E.none
+            )
+
+        GotSources (Err err) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел" err
+            )
+
+        GotSources (Ok rsp) ->
+            ( { model | callsignCreateSources = rsp.sources }
             , E.none
             )
 
@@ -1523,6 +1661,128 @@ update shared msg model =
                 ]
             )
 
+        -- Network callsign creation messages
+        OpenCallsignCreateSidebar ->
+            case model.network of
+                Success network ->
+                    let
+                        updatedState =
+                            { networkId = network.id
+                            , callsign = ""
+                            , position = Nothing
+                            , comment = Nothing
+                            , sourceId = 1 -- Default source ID
+                            , radioFreq = Nothing
+                            }
+                    in
+                    ( { model
+                        | callsignCreateSidebar = Just CreateFromScratch
+                        , callsignCreateState = Just updatedState
+                        , callsignCreateErrors = Dict.empty
+                      }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        CloseCallsignCreateSidebar ->
+            ( { model
+                | callsignCreateSidebar = Nothing
+                , callsignCreateState = Nothing
+                , callsignCreateErrors = Dict.empty
+                , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+              }
+            , E.none
+            )
+
+        UpdateCallsignCreateField updateFunc ->
+            ( { model | callsignCreateState = updateFunc model.callsignCreateState }
+            , E.none
+            )
+
+        CreateCallsignClicked ->
+            case model.callsignCreateState of
+                Just createReq ->
+                    ( { model | callsignCreateSaving = True }
+                    , E.createNetworkCallsign CallsignCreated createReq
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        CallsignCreated (Ok networkCallsign) ->
+            let
+                -- Отримуємо callsign з створеного позивного
+                createdCallsign =
+                    networkCallsign.callsign
+
+                -- Оновлюємо список "Приналежність встановлюється" - видаляємо створений позивний
+                updatedCallsigns =
+                    case model.callsigns of
+                        Success existingCallsigns ->
+                            existingCallsigns
+                                |> List.filter (\callsignGroup -> callsignGroup.callsign /= createdCallsign)
+                                |> Success
+
+                        _ ->
+                            model.callsigns
+
+                -- Оновлюємо список позивних мережі
+                updatedNetworkCallsigns =
+                    case model.networkCallsigns of
+                        Success existingCallsigns ->
+                            Success (networkCallsign :: existingCallsigns)
+
+                        _ ->
+                            Success [ networkCallsign ]
+
+                -- Оновлюємо пагінацію
+                updatedPager =
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            Pager.updateForNewTotalItems (List.length callsigns) model.networkCallsignsPager
+
+                        _ ->
+                            model.networkCallsignsPager
+            in
+            ( { model
+                | callsignCreateSaving = False
+                , callsignCreateSidebar = Nothing
+                , callsignCreateState = Nothing
+                , callsignCreateErrors = Dict.empty
+                , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+                , networkCallsigns = updatedNetworkCallsigns
+                , networkCallsignsPager = updatedPager
+                , callsigns = updatedCallsigns
+              }
+            , E.none
+            )
+
+        CallsignCreated (Err error) ->
+            ( { model
+                | callsignCreateSaving = False
+                , callsignCreateErrors = Dict.singleton "general" (Le.ErrorHandling.formatErrorForShowError "Помилка створення позивного" error)
+              }
+            , E.none
+            )
+
+        CallsignCreateSourceSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.callsignCreateSourceSelState
+
+                updatedSourceId =
+                    Le.Block.Select.singleUpd mAction (Maybe.map .sourceId model.callsignCreateState)
+            in
+            ( { model
+                | callsignCreateSourceSelState = imodel2
+                , callsignCreateState =
+                    Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.callsignCreateState
+              }
+            , E.sendCmd <| Cmd.map CallsignCreateSourceSelMsg icmd
+            )
+
         DeleteNetworkClickedByUser ->
             case model.network of
                 Success network ->
@@ -1588,8 +1848,10 @@ update shared msg model =
                 formatError =
                     if String.trim newFreqState.freq == "" then
                         Nothing
-                                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
-                    Just "Невірний формат частоти (наприклад: 146.5000)"
+
+                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
+                        Just "Невірний формат частоти (наприклад: 146.5000)"
+
                     else
                         Nothing
             in
@@ -1660,9 +1922,11 @@ update shared msg model =
                     if not newShowActiveTo then
                         -- очистити activeTo при знятті чекбокса
                         let
-                            freqState = model.freqCreateState
+                            freqState =
+                                model.freqCreateState
                         in
                         { freqState | activeTo = Nothing }
+
                     else
                         model.freqCreateState
             in
@@ -1681,6 +1945,7 @@ update shared msg model =
                         description =
                             if String.trim model.freqCreateDescriptionInp == "" then
                                 Nothing
+
                             else
                                 Just
                                     { descrType = B.Confirmation
@@ -1701,7 +1966,8 @@ update shared msg model =
                                 }
                             }
                     in
-                    ( { model | freqEditSaving = True } -- Reuse existing loading state
+                    ( { model | freqEditSaving = True }
+                      -- Reuse existing loading state
                     , E.addFreqToNetwork FreqAddedToNetwork addFreqReq
                     )
 
@@ -1733,11 +1999,279 @@ update shared msg model =
             , E.batch
                 [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
-
                 ]
             )
 
+        -- Callsign selection and adding functionality
+        ToggleCallsignSelection knownCallsignId ->
+            let
+                newSelected =
+                    if Set.member knownCallsignId model.callsignsSelected then
+                        Set.remove knownCallsignId model.callsignsSelected
 
+                    else
+                        Set.insert knownCallsignId model.callsignsSelected
+            in
+            ( { model | callsignsSelected = newSelected }, E.none )
+
+        AddSelectedCallsignsToNetwork ->
+            let
+                networkId =
+                    case model.network of
+                        Success network ->
+                            network.id
+
+                        _ ->
+                            0
+
+                payload =
+                    { networkId = networkId
+                    , knownCallsignIds = Set.toList model.callsignsSelected
+                    }
+            in
+            ( { model | callsignsAddLoading = True }
+            , E.addMultipleCallsignsToNetwork CallsignsAddedToNetwork payload
+            )
+
+        CallsignsAddedToNetwork (Err e) ->
+            ( { model | callsignsAddLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання позивних до мережі" e
+            )
+
+        CallsignsAddedToNetwork (Ok networkCallsigns) ->
+            let
+                -- Оновлюємо networkCallsigns, додаючи нові
+                updatedNetworkCallsigns =
+                    case model.networkCallsigns of
+                        Success existing ->
+                            Success (existing ++ networkCallsigns)
+
+                        _ ->
+                            Success networkCallsigns
+
+                -- Оновлюємо пагінацію для таблиці "Мережеві позивні"
+                updatedPager =
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            Pager.updateForNewTotalItems (List.length callsigns) model.networkCallsignsPager
+
+                        _ ->
+                            model.networkCallsignsPager
+
+                -- Очищаємо виділення та стан завантаження
+                updatedModel =
+                    { model
+                        | networkCallsigns = updatedNetworkCallsigns
+                        , networkCallsignsPager = updatedPager
+                        , callsignsAddLoading = False
+                        , callsignsSelected = Set.empty
+                    }
+
+                -- Перезавантажуємо тільки таблицю "Всі позивні" для прибирання доданих позивних
+                reloadEffect =
+                    case model.network of
+                        Success network ->
+                            E.getNetworkCallsigns CallsignsReturnedByApi { networkId = network.id }
+
+                        _ ->
+                            E.none
+            in
+            ( updatedModel, reloadEffect )
+
+        DeleteCallsignFromNetwork callsignId ->
+            ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
+
+        EditCallsignClicked callsignId ->
+            case model.networkCallsigns of
+                Success networkCallsigns ->
+                    case ListX.find (\c -> c.id == callsignId) networkCallsigns of
+                        Just callsign ->
+                            let
+                                editState =
+                                    { id = callsign.id
+                                    , networkId =
+                                        case model.network of
+                                            Success network ->
+                                                network.id
+
+                                            _ ->
+                                                0
+                                    , callsign = callsign.callsign
+                                    , position = callsign.position
+                                    , comment = callsign.comment
+                                    , sourceId = Maybe.withDefault 1 callsign.sourceId
+                                    , radioFreq = callsign.radioFreq -- Тепер це окреме поле
+                                    }
+                            in
+                            ( { model
+                                | editCallsignSidebar = Just callsignId
+                                , editCallsignState = Just editState
+                                , editCallsignErrors = Dict.empty
+                                , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+                              }
+                            , E.none
+                            )
+
+                        Nothing ->
+                            ( model, E.none )
+
+                _ ->
+                    ( model, E.none )
+
+        DeleteCallsignConfirmed callsignId ->
+            ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
+            , E.deleteNetworkCallsign CallsignDeletedFromNetwork callsignId
+            )
+
+        DeleteCallsignCanceled ->
+            ( { model | deleteCallsignConfirmation = Nothing }, E.none )
+
+        CallsignDeletedFromNetwork (Ok deletedCallsign) ->
+            let
+                -- Видаляємо позивний зі списку networkCallsigns
+                updatedNetworkCallsigns =
+                    case model.networkCallsigns of
+                        Success existingCallsigns ->
+                            Success (List.filter (\c -> c.id /= deletedCallsign.id) existingCallsigns)
+
+                        _ ->
+                            model.networkCallsigns
+
+                -- Оновлюємо пагінацію та перевіряємо поточну сторінку
+                updatedPager =
+                    case updatedNetworkCallsigns of
+                        Success callsigns ->
+                            Pager.updateForNewTotalItems (List.length callsigns) model.networkCallsignsPager
+
+                        _ ->
+                            model.networkCallsignsPager
+
+                -- Перезавантажуємо тільки таблицю "Всі позивні" для додавання видаленого позивного назад
+                reloadEffect =
+                    case model.network of
+                        Success network ->
+                            E.getNetworkCallsigns CallsignsReturnedByApi { networkId = network.id }
+
+                        _ ->
+                            E.none
+            in
+            ( { model
+                | deleteCallsignLoading = False
+                , networkCallsigns = updatedNetworkCallsigns
+                , networkCallsignsPager = updatedPager
+              }
+            , reloadEffect
+            )
+
+        CallsignDeletedFromNetwork (Err error) ->
+            ( { model | deleteCallsignLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного з мережі" error
+            )
+
+        -- Edit callsign handlers
+        CloseEditCallsignSidebar ->
+            ( { model
+                | editCallsignSidebar = Nothing
+                , editCallsignState = Nothing
+                , editCallsignErrors = Dict.empty
+                , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+              }
+            , E.none
+            )
+
+        UpdateEditCallsignField updateFunc ->
+            ( { model | editCallsignState = updateFunc model.editCallsignState }
+            , E.none
+            )
+
+        SaveEditCallsignClicked ->
+            case model.editCallsignState of
+                Just updateReq ->
+                    ( { model | editCallsignSaving = True }
+                    , E.updateNetworkCallsign CallsignUpdated updateReq
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        CallsignUpdated (Ok updatedCallsign) ->
+            let
+                -- Update the callsign in networkCallsigns list
+                updatedNetworkCallsigns =
+                    case model.networkCallsigns of
+                        Success existingCallsigns ->
+                            Success
+                                (List.map
+                                    (\c ->
+                                        if c.id == updatedCallsign.id then
+                                            updatedCallsign
+
+                                        else
+                                            c
+                                    )
+                                    existingCallsigns
+                                )
+
+                        _ ->
+                            model.networkCallsigns
+            in
+            ( { model
+                | editCallsignSaving = False
+                , editCallsignSidebar = Nothing
+                , editCallsignState = Nothing
+                , editCallsignErrors = Dict.empty
+                , networkCallsigns = updatedNetworkCallsigns
+              }
+            , E.none
+            )
+
+        CallsignUpdated (Err error) ->
+            ( { model
+                | editCallsignSaving = False
+                , editCallsignErrors = Dict.singleton "general" (Le.ErrorHandling.formatErrorForShowError "Помилка оновлення позивного" error)
+              }
+            , E.none
+            )
+
+        EditCallsignSourceSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.editCallsignSourceSelState
+
+                updatedSourceId =
+                    Le.Block.Select.singleUpd mAction (Maybe.map .sourceId model.editCallsignState)
+            in
+            ( { model
+                | editCallsignSourceSelState = imodel2
+                , editCallsignState =
+                    Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.editCallsignState
+              }
+            , E.sendCmd <| Cmd.map EditCallsignSourceSelMsg icmd
+            )
+
+        OpenAddFromUnknownSidebar callsign ->
+            case model.network of
+                Success network ->
+                    let
+                        updatedState =
+                            { networkId = network.id
+                            , callsign = String.toUpper callsign
+                            , position = Nothing
+                            , comment = Nothing
+                            , sourceId = 1 -- Default source ID
+                            , radioFreq = Nothing
+                            }
+                    in
+                    ( { model
+                        | callsignCreateSidebar = Just (CreateFromUnknown callsign)
+                        , callsignCreateState = Just updatedState
+                        , callsignCreateErrors = Dict.empty
+                      }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
 
 
 
@@ -1777,19 +2311,19 @@ freqsTableConfig shared model user =
                                         "var(--color-text-muted)"
                                     )
                                 ]
-                                [ text " ↓" ]
+                                [ text " ⇓" ]
 
                         TableConfig.Reversible Nothing ->
-                            span [ style "color" "var(--color-text-muted)" ] [ text " ↕" ]
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
 
                         TableConfig.Reversible (Just isReversed) ->
                             span [ style "color" "var(--ochre-normal)" ]
                                 [ text
                                     (if isReversed then
-                                        " ↑"
+                                        " ⇑"
 
                                      else
-                                        " ↓"
+                                        " ⇓"
                                     )
                                 ]
 
@@ -1799,7 +2333,7 @@ freqsTableConfig shared model user =
                         , sortIcon
                         ]
             in
-            Html.th [ click, style "padding" "1rem 1.5rem" ] [ headerContent ]
+            Html.th [ click ] [ headerContent ]
 
         customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
         customThead headers =
@@ -1828,7 +2362,7 @@ freqsTableConfig shared model user =
             , Table.customColumn
                 { name = "Модуляція"
                 , viewData = \freq -> Maybe.withDefault "" freq.modulation
-                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.modulation)
+                , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "10%"
             , Table.customColumn
@@ -1838,7 +2372,7 @@ freqsTableConfig shared model user =
                         Maybe.withDefault "" freq.kind
                             |> NetworksUtils.networkKindFromString
                             |> NetworksUtils.networkKindToLabel
-                , sorter = TableSorter.increasingOrDecreasingBy (\freq -> Maybe.withDefault "" freq.kind)
+                , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
             , Table.intColumn "Кількість перехоплень" .messageCount |> Table.withColumnWidth "6%"
@@ -1978,14 +2512,14 @@ freqsTableConfig shared model user =
                             { name = "Дії"
                             , viewData =
                                 \freq ->
-                                    { attributes = []
+                                    { attributes = [ class "col-narrow" ]
                                     , children =
                                         [ case model.network of
                                             Success network ->
-                                                div [ class "flex items-center gap-2" ]
+                                                div [ class "flex gap-[4px] text-sm" ]
                                                     [ button
-                                                        [ class "table-action-btn"
-                                                        , type_ "button"
+                                                        [ title "Редагувати"
+                                                        , class "icon-btn icon-btn-primary"
                                                         , onClick <|
                                                             OpenFreqEditSidebar freq.freq
                                                                 { networkId = network.id
@@ -1998,9 +2532,8 @@ freqsTableConfig shared model user =
                                                         ]
                                                         [ i [ class "bi bi-pencil-square" ] [] ]
                                                     , button
-                                                        [ class "table-action-btn text-red-600 hover:text-red-700"
-                                                        , type_ "button"
-                                                        , title "Видалити частоту"
+                                                        [ title "Видалити частоту"
+                                                        , class "icon-btn icon-btn-danger"
                                                         , onClick (DeleteFreqClickedByUser freq.networkFreqId freq.freq)
                                                         ]
                                                         [ i [ class "bi bi-trash" ] [] ]
@@ -2018,6 +2551,336 @@ freqsTableConfig shared model user =
                     else
                         []
                    )
+        , customizations = customizations
+        }
+
+
+callsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config CallsignTableRow Msg
+callsignsTableConfig shared model user =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ⇓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ⇑"
+
+                                     else
+                                        " ⇓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
+        { toId = .callsign
+        , toMsg = SetCallsignsTableState
+        , columns =
+            [ Table.veryCustomColumn
+                { name = ""
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                            [ Checkbox.new
+                                { isChecked = Set.member row.id model.callsignsSelected
+                                , onToggle = \_ -> ToggleCallsignSelection row.id
+                                }
+                                |> Checkbox.view
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "3%"
+            , Table.veryCustomColumn
+                { name = "Позивний"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex items-center flex-wrap" ]
+                                [ text <| String.toUpper row.callsign
+                                , a
+                                    [ href (createAnalysisUrl shared model row.callsign)
+                                    , target "_blank"
+                                    , title "Відкрити позивний в аналізі"
+                                    , class "ml-2"
+                                    ]
+                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
+                                ]
+                            ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .callsign
+                }
+                |> Table.withColumnWidth "13%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "6%"
+            , Table.veryCustomColumn
+                { name = "Останній раз в етері"
+                , viewData =
+                    \row ->
+                        case row.lastDatetime of
+                            Just lastDatetime ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
+                                }
+
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Посада"
+                , viewData = \row -> { attributes = [], children = [ text row.position ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData = \row -> { attributes = [], children = [ text row.unitName ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "18%"
+            , Table.veryCustomColumn
+                { name = "Коментар"
+                , viewData = \row -> { attributes = [], children = [ text row.comment ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "25%"
+            , Table.veryCustomColumn
+                { name = "Дата прив'язки"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.veryCustomColumn
+                { name = "Джерело"
+                , viewData = \row -> { attributes = [], children = [ span [ class "text-sm" ] [ text row.sourceName ] ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "10%"
+            ]
+        , customizations = customizations
+        }
+
+
+networkCallsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkCallsign Msg
+networkCallsignsTableConfig shared model user =
+    let
+        defaultCustomizations =
+            Table.defaultCustomizations
+
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp ( name, status, click ) =
+            let
+                sortIcon =
+                    case status of
+                        TableConfig.Unsortable ->
+                            text ""
+
+                        TableConfig.Sortable selected ->
+                            span
+                                [ style "color"
+                                    (if selected then
+                                        "var(--ochre-normal)"
+
+                                     else
+                                        "var(--color-text-muted)"
+                                    )
+                                ]
+                                [ text " ⇓" ]
+
+                        TableConfig.Reversible Nothing ->
+                            span [ style "color" "var(--color-text-muted)" ] [ text " ⇕" ]
+
+                        TableConfig.Reversible (Just isReversed) ->
+                            span [ style "color" "var(--ochre-normal)" ]
+                                [ text
+                                    (if isReversed then
+                                        " ⇑"
+
+                                     else
+                                        " ⇓"
+                                    )
+                                ]
+
+                headerContent =
+                    div [ class "table-header-content", title name ]
+                        [ span [] [ text name ]
+                        , sortIcon
+                        ]
+            in
+            Html.th [ click ] [ headerContent ]
+
+        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead headers =
+            TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
+
+        customizations =
+            { defaultCustomizations
+                | tableAttrs = [ class "base-table" ]
+                , thead = customThead
+            }
+    in
+    Table.customConfig
+        { toId = String.fromInt << .id
+        , toMsg = SetNetworkCallsignsTableState
+        , columns =
+            [ Table.veryCustomColumn
+                { name = "Позивний"
+                , viewData = \row -> { attributes = [], children = [ text (String.toUpper row.callsign) ] }
+                , sorter = TableSorter.increasingOrDecreasingBy .callsign
+                }
+                |> Table.withColumnWidth "12%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "7%"
+            , Table.veryCustomColumn
+                { name = "Остання активність"
+                , viewData =
+                    \row ->
+                        case row.lastDatetime of
+                            Just lastDatetime ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
+                                }
+
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "-" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Посада"
+                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.position) ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.unitName) ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "16%"
+            , Table.veryCustomColumn
+                { name = "Коментар"
+                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.comment) ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Дата створення"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix row.createdAt) ]
+                        }
+                , sorter = TableSorter.increasingOrDecreasingBy .createdAt
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Джерело"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children =
+                            [ case row.sourceId of
+                                Just sourceId ->
+                                    case ListX.find (\s -> s.id == sourceId) model.callsignCreateSources of
+                                        Just source ->
+                                            div []
+                                                [ span [ class "text-sm" ] [ text source.name ]
+                                                , if sourceId == 2 && row.radioFreq /= Nothing then
+                                                    span [ class "text-xs text-muted-foreground ml-1" ]
+                                                        [ text <| Maybe.withDefault "" row.radioFreq ]
+
+                                                  else
+                                                    text ""
+                                                ]
+
+                                        Nothing ->
+                                            span [ class "text-sm" ] [ text (String.fromInt sourceId) ]
+
+                                Nothing ->
+                                    text "-"
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.veryCustomColumn
+                { name = "Дії"
+                , viewData =
+                    \row ->
+                        { attributes = [ class "col-narrow" ]
+                        , children =
+                            [ div [ class "flex gap-[4px] text-sm" ]
+                                [ button
+                                    [ title "Редагувати"
+                                    , class "icon-btn icon-btn-primary"
+                                    , onClick (EditCallsignClicked row.id)
+                                    ]
+                                    [ i [ class "bi bi-pencil" ] [] ]
+                                , button
+                                    [ title "Видалити"
+                                    , class "icon-btn icon-btn-danger"
+                                    , onClick (DeleteCallsignFromNetwork row.id)
+                                    ]
+                                    [ i [ class "bi bi-trash" ] [] ]
+                                ]
+                            ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "7%"
+            ]
         , customizations = customizations
         }
 
@@ -2753,12 +3616,12 @@ contentBlock user shared network model =
             [ NetworksUtils.renderNetworkNameWithoutType network (RD.withDefault Dict.empty shared.masterUnits)
             ]
         , div [ class "flex gap-[8px]" ]
-            [
-             Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
-             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+            [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
                     |> Button.withStyleDanger
                     |> Button.view
+
               else
                 text ""
             ]
@@ -3014,6 +3877,7 @@ contentBlock user shared network model =
                     , onClick OpenFreqCreateSidebar
                     ]
                     [ i [ class "bi bi-plus-lg" ] [] ]
+
               else
                 text ""
             ]
@@ -3035,245 +3899,163 @@ contentBlock user shared network model =
             _ ->
                 Le.Block.Spinner.loadingSpinnerSm
         ]
-    , section [ class "bg-w dark:bg-[#1C1C21] w-full h-[500px] mt-[30px] p-[16px] flex flex-col" ]
+    , section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
-            [ h4 [ class "" ] [ text "Позивні" ]
-            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "CallsignsEditor" user then
-                case model.callsignsEditingState of
-                    Readonly ->
-                        i [ class "bi bi-pencil-square text-action cursor-pointer text-[20px]", onClick CallsignsEditStartedByUser ] []
-
-                    Editing _ ->
-                        div [ class "flex gap-[8px]" ]
-                            [ i [ class "bi bi-x-square text-action cursor-pointer text-[20px]", onClick CallsignsEditCanceledByUser ] []
-                            , i [ class "bi bi-check-square text-action cursor-pointer text-[20px]", onClick CallsignsEditSavedByUser ] []
-                            ]
+            [ h4 [ class "" ] [ text "Позивні мережі" ]
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                button
+                    [ title "Додати позивний"
+                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
+                    , onClick OpenCallsignCreateSidebar
+                    ]
+                    [ i [ class "bi bi-plus-lg" ] [] ]
 
               else
                 text ""
             ]
+        , case model.networkCallsigns of
+            Success networkCallsigns ->
+                let
+                    -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
+                    sortedCallsigns =
+                        Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState networkCallsigns
+
+                    paginatedCallsigns =
+                        Pager.getPageData model.networkCallsignsPager sortedCallsigns
+                in
+                div [ class "flex flex-col flex-1 mb-4" ]
+                    [ div [ class "overflow-y-auto flex-1" ]
+                        [ Table.view (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState paginatedCallsigns
+                        ]
+                    , Pager.view model.networkCallsignsPager
+                        |> Html.map NetworkCallsignsPagerMsg
+                    ]
+
+            Loading ->
+                Le.Block.Spinner.loadingSpinnerSm
+
+            Failure e ->
+                div [ class "text-red-500" ] [ text "Помилка завантаження позивних мережі" ]
+
+            NotAsked ->
+                text ""
+
+            NeedsReload _ ->
+                Le.Block.Spinner.loadingSpinnerSm
+        , div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h4 [ class "" ] [ text "Всі позивні" ]
+            , div [ class "flex items-center gap-3" ]
+                [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
+                    [ i [ class "bi bi-check-square" ] []
+                    , span []
+                        [ text
+                            (if Set.isEmpty model.callsignsSelected then
+                                "Виберіть позивні"
+
+                             else
+                                "Виділено: " ++ String.fromInt (Set.size model.callsignsSelected)
+                            )
+                        ]
+                    ]
+                , Button.new
+                    { label = "Додати"
+                    , onClick = AddSelectedCallsignsToNetwork
+                    }
+                    |> (if Set.isEmpty model.callsignsSelected then
+                            Button.withStyleSecondary
+
+                        else
+                            Button.withPrimary
+                       )
+                    |> (if model.callsignsAddLoading then
+                            Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                        else
+                            identity
+                       )
+                    |> (if Set.isEmpty model.callsignsSelected then
+                            Button.withDisabled True
+
+                        else
+                            identity
+                       )
+                    |> Button.view
+                ]
+            ]
         , case model.callsigns of
             Success callsigns ->
-                div [ class "overflow-y-auto  grow-1" ]
-                    [ let
-                        renderCallsignMainRow :
-                            Shared.Model
-                            -> Model
-                            -> CallsignResModified
-                            -> List (Html Msg)
-                        renderCallsignMainRow sharedModel modelState callsign =
-                            let
-                                rowCount =
-                                    List.length callsign.knownCallsigns
-                            in
-                            case callsign.knownCallsigns of
-                                x :: xs ->
-                                    tr [ class "" ]
-                                        [ td [ rowspan rowCount ]
-                                            [ div [ class "flex items-center flex-wrap" ]
-                                                [ text <| String.toUpper callsign.callsign
-                                                , a
-                                                    [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
-                                                    , target "_blank"
-                                                    , title "Відкрити позивний в аналізі"
-                                                    , class "ml-2"
-                                                    ]
-                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
-                                                ]
-                                            ]
-                                        , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
-                                        , td [ rowspan rowCount ]
-                                            [ case callsign.lastDatetime of
-                                                Just lastDatetime ->
-                                                    text <|
-                                                        Le.Time.renderDateF6 sharedModel.timeZone
-                                                            (Time.millisToPosix lastDatetime)
+                div [ class "flex flex-col flex-1" ]
+                    [ div [ class "overflow-y-auto flex-1" ]
+                        [ let
+                            -- Перетворюємо дані у плоску структуру для таблиці
+                            allCallsignsTableRows =
+                                callsigns
+                                    |> List.concatMap
+                                        (\callsign ->
+                                            case callsign.knownCallsigns of
+                                                Just knownCallsigns ->
+                                                    List.map
+                                                        (\knownCallsign ->
+                                                            { id = knownCallsign.id
+                                                            , callsign = callsign.callsign
+                                                            , messageCount = callsign.messageCount
+                                                            , lastDatetime = callsign.lastDatetime
+                                                            , position = knownCallsign.position
+                                                            , unitName = knownCallsign.unitName
+                                                            , comment = knownCallsign.comment
+                                                            , createdAt = knownCallsign.createdAt
+                                                            , sourceName = knownCallsign.sourceName
+                                                            }
+                                                        )
+                                                        knownCallsigns
 
                                                 Nothing ->
-                                                    text ""
-                                            ]
-                                        , td [ rowspan rowCount ]
-                                            [ --Toggle.new { onToggle = CallsignReportingStatusToggledByUser callsign, label = "" }
-                                              --|> Toggle.view callsign.isReported
-                                              if callsign.isReported then
-                                                i [ class "bi bi-check" ] []
+                                                    []
+                                        )
 
-                                              else
-                                                text ""
-                                            ]
-                                        , td [] [ text x.position ]
-                                        , td [] [ text x.unitName ]
-                                        , td [] [ text x.comment ]
-                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                        , td [] [ text <| x.sourceName ]
-                                        ]
-                                        :: List.map
-                                            (\knownCallsign ->
-                                                tr []
-                                                    [ td [] [ text knownCallsign.position ]
-                                                    , td [] [ text knownCallsign.unitName ]
-                                                    , td [] [ text knownCallsign.comment ]
-                                                    , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                                    , td [] [ text <| knownCallsign.sourceName ]
-                                                    ]
-                                            )
-                                            xs
+                            -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
+                            sortedCallsigns =
+                                Table.getSortedData (callsignsTableConfig shared model user) model.callsignsTableState allCallsignsTableRows
 
-                                [] ->
-                                    [ text "" ]
+                            paginatedCallsigns =
+                                Pager.getPageData model.callsignsPager sortedCallsigns
 
-                        renderCallsignEdit :
-                            Shared.Model
-                            -> Model
-                            -> Dict String Bool
-                            -> CallsignResModified
-                            -> List (Html Msg)
-                        renderCallsignEdit sharedModel modelState editingDict callsign =
-                            let
-                                rowCount =
-                                    List.length callsign.knownCallsigns
+                            callsignsUnknown =
+                                callsigns
+                                    |> List.filterMap
+                                        (\callsign ->
+                                            case callsign.knownCallsigns of
+                                                Just knownCallsigns ->
+                                                    if List.isEmpty knownCallsigns then
+                                                        Just callsign.callsign
 
-                                isReported =
-                                    Dict.get callsign.callsign editingDict
-                                        |> Maybe.withDefault callsign.isReported
-                            in
-                            case callsign.knownCallsigns of
-                                x :: xs ->
-                                    tr [ class "" ]
-                                        [ td [ rowspan rowCount ]
-                                            [ div [ class "flex items-center flex-wrap" ]
-                                                [ span [] [ text <| String.toUpper callsign.callsign ]
-                                                , a
-                                                    [ href (createAnalysisUrl sharedModel modelState callsign.callsign)
-                                                    , target "_blank"
-                                                    , title "Відкрити позивний в аналізі"
-                                                    , class "ml-2"
-                                                    ]
-                                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
-                                                ]
-                                            ]
-                                        , td [ rowspan rowCount ] [ text <| String.fromInt callsign.messageCount ]
-                                        , td [ rowspan rowCount ]
-                                            [ case callsign.lastDatetime of
-                                                Just lastDatetime ->
-                                                    text <|
-                                                        Le.Time.renderDateF6 sharedModel.timeZone
-                                                            (Time.millisToPosix lastDatetime)
+                                                    else
+                                                        Nothing
 
                                                 Nothing ->
-                                                    text ""
-                                            ]
-                                        , td [ rowspan rowCount ]
-                                            [ Checkbox.new { isChecked = isReported, onToggle = CallsignReportingStatusToggledByUser callsign } |> Checkbox.view
-                                            ]
-                                        , td [] [ text x.position ]
-                                        , td [] [ text x.unitName ]
-                                        , td [] [ text x.comment ]
-                                        , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                        , td [] [ text <| x.sourceName ]
-                                        ]
-                                        :: List.map
-                                            (\knownCallsign ->
-                                                tr []
-                                                    [ td [] [ text knownCallsign.position ]
-                                                    , td [] [ text knownCallsign.unitName ]
-                                                    , td [] [ text knownCallsign.comment ]
-                                                    , td [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix x.createdAt) ]
-                                                    , td [] [ text <| knownCallsign.sourceName ]
-                                                    ]
-                                            )
-                                            xs
-
-                                [] ->
-                                    [ text "" ]
-
-                        ( callsignsWithUnits, callsignsUnknown ) =
-                            callsigns
-                                |> List.partition
-                                    (\callsign ->
-                                        case callsign.knownCallsigns of
-                                            Just _ ->
-                                                True
-
-                                            Nothing ->
-                                                False
+                                                    Just callsign.callsign
+                                        )
+                          in
+                          div [ class "table-responsive-modern" ]
+                            [ -- Таблиця "Всі позивні" (з пагінацією)
+                              Table.view (callsignsTableConfig shared model user) model.callsignsTableState paginatedCallsigns
+                            , -- Пейджер для таблиці
+                              Pager.view model.callsignsPager
+                                |> Html.map CallsignsPagerMsg
+                            , -- Список "Приналежність встановлюється:" (без пагінації)
+                              div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                                [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
+                                , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
+                                    (List.map
+                                        (\c ->
+                                            button
+                                                [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
+                                                , onClick (OpenAddFromUnknownSidebar c)
+                                                ]
+                                                [ text <| String.toUpper c ]
+                                        )
+                                        callsignsUnknown
                                     )
-
-                        callsignsWithUnits2 =
-                            List.map
-                                (\callsign ->
-                                    { knownCallsigns = Maybe.withDefault [] callsign.knownCallsigns
-                                    , callsign = callsign.callsign
-                                    , messageCount = callsign.messageCount
-                                    , lastDatetime = callsign.lastDatetime
-                                    , freqs = callsign.freqs
-                                    , networkNames = callsign.networkNames
-                                    , isOld = callsign.isOld
-                                    , isReported = callsign.isReported
-                                    }
-                                )
-                                callsignsWithUnits
-                      in
-                      table [ class "table-fixed w-full" ]
-                        [ thead [ class "text-[13px]/[110%] font-medium sticky bg-w dark:bg-[#1C1C21]", style "inset-block-start" "0" ]
-                            [ tr [ class "" ]
-                                [ th [ class "w-[10%]" ] [ text "Позивний" ]
-                                , th [ class "w-[7%]" ]
-                                    [ Html.node
-                                        "sl-tooltip"
-                                        [ attribute "content" "Кількість перехоплень з позивним"
-                                        , attribute "placement" "right"
-                                        , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
-                                        ]
-                                        [ text "К-сть"
-                                        , sup [ class "ml-[2px]" ]
-                                            [ i
-                                                [ class "bi-question-circle" ]
-                                                []
-                                            ]
-                                        ]
-                                    ]
-                                , th [ class "w-[10%]" ] [ text "Останній раз в етері" ]
-                                , th [ class "w-[8%]" ]
-                                    [ Html.node
-                                        "sl-tooltip"
-                                        [ attribute "content" "Якщо опція вибрана - позивний потрапить в звіт \"Згідно форми\""
-                                        , attribute "placement" "right"
-                                        , class "sl-tooltip-delay sl-tooltip-max-w-250 text-sm"
-                                        ]
-                                        [ text "Звітний"
-                                        , sup [ class "ml-[2px]" ]
-                                            [ i
-                                                [ class "bi-question-circle" ]
-                                                []
-                                            ]
-                                        ]
-                                    ]
-                                , th [ class "w-[22%]" ] [ text "Посада" ]
-                                , th [ class "w-[14%]" ] [ text "Підрозділ" ]
-                                , th [ class "w-[19%]" ] [ text "Коментар" ]
-                                , th [ class "w-[10%]" ] [ text "Дата прив'язки" ]
-                                , th [ class "w-[8%]" ] [ text "Джерело" ]
-                                ]
-                            ]
-                        , tbody []
-                            (List.concatMap
-                                (\callsign ->
-                                    case model.callsignsEditingState of
-                                        Readonly ->
-                                            renderCallsignMainRow shared model callsign
-
-                                        Editing editingDict ->
-                                            renderCallsignEdit shared model editingDict callsign
-                                )
-                                callsignsWithUnits2
-                            )
-                        , tfoot []
-                            [ tr []
-                                [ td [ colspan 8 ]
-                                    [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
-                                    , div [ class "flex flex-wrap gap-[4px] text-[13px]" ] (List.map (\c -> span [] [ text <| String.toUpper c.callsign ]) callsignsUnknown)
-                                    ]
                                 ]
                             ]
                         ]
@@ -3307,6 +4089,17 @@ view user shared model =
                         text ""
                 , if model.freqCreateSidebar then
                     Sidebar.view True CloseFreqCreateSidebar (freqCreateSidebarContent shared model user)
+
+                  else
+                    text ""
+                , case model.callsignCreateSidebar of
+                    Just _ ->
+                        Sidebar.view True CloseCallsignCreateSidebar [ callsignCreateSidebarContent shared model user ]
+
+                    Nothing ->
+                        text ""
+                , if model.editCallsignSidebar /= Nothing then
+                    Sidebar.view True CloseEditCallsignSidebar [ editCallsignSidebarContent shared model user ]
 
                   else
                     text ""
@@ -3449,6 +4242,7 @@ view user shared model =
                                     |> Button.withStyleDanger
                                     |> (if model.deleteFreqLoading then
                                             Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
+
                                         else
                                             identity
                                        )
@@ -3458,6 +4252,31 @@ view user shared model =
                         ]
                   in
                   ModalDialog.modalDialog isOpen DeleteFreqCanceledByUser [] deleteFreqDialogContent
+                , let
+                    deleteCallsignDialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-6" ]
+                                [ h2 [] [ text "Видалити позивний" ]
+                                , p [] [ text "Ви впевнені, що хочете видалити цей позивний з мережі?" ]
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Скасувати", onClick = DeleteCallsignCanceled } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Видалити", onClick = DeleteCallsignConfirmed (Maybe.withDefault 0 model.deleteCallsignConfirmation) }
+                                    |> Button.withStyleDanger
+                                    |> (if model.deleteCallsignLoading then
+                                            Button.withIcon
+                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                ]
+
+                                        else
+                                            identity
+                                       )
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+                  in
+                  ModalDialog.modalDialog (model.deleteCallsignConfirmation /= Nothing) DeleteCallsignCanceled [] deleteCallsignDialogContent
                 ]
             ]
         ]
@@ -3496,7 +4315,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                                                 aors
                                                     |> List.filter (\a -> a.id == aorId)
                                                     |> List.head
-                                                    |> Maybe.map (.name)
+                                                    |> Maybe.map .name
                                                     |> Maybe.withDefault ""
 
                                             _ ->
@@ -3644,13 +4463,9 @@ updateActiveToFromInput input timeZone currentValue =
                 |> Just
 
 
+
 -- VALIDATION
-
-
-
-
-
-
+-- Frequency format validation
 -- FREQUENCY CREATION SIDEBAR CONTENT
 
 
@@ -3670,6 +4485,7 @@ freqCreateSidebarContent shared model user =
                         "w-full p-2 border rounded "
                             ++ (if String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing then
                                     "border-red-500"
+
                                 else
                                     "border-border"
                                )
@@ -3682,11 +4498,13 @@ freqCreateSidebarContent shared model user =
                     [ if String.trim model.freqCreateState.freq == "" then
                         div [ class "text-sm text-red-600" ]
                             [ text "Це поле обов'язкове" ]
+
                       else
                         case model.freqCreateFormatError of
                             Just error ->
                                 div [ class "text-sm text-red-600" ]
                                     [ text error ]
+
                             Nothing ->
                                 text ""
                     ]
@@ -3710,7 +4528,7 @@ freqCreateSidebarContent shared model user =
                             model.freqCreateKindSelect.state
                             model.freqCreateKindSelect.items
                             "Виберіть тип"
-                            { defaultOptions | clearable = False }
+                            defaultOptions
                 ]
             , div []
                 [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
@@ -3788,8 +4606,7 @@ freqCreateSidebarContent shared model user =
                     []
                 ]
             , div []
-                [
-                 Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
+                [ Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
                     |> Checkbox.withContent [ text "Частота вже не активна" ]
                     |> Checkbox.view
                 ]
@@ -3823,6 +4640,7 @@ freqCreateSidebarContent shared model user =
                         ]
                         []
                     ]
+
               else
                 text ""
             ]
@@ -3835,6 +4653,7 @@ freqCreateSidebarContent shared model user =
                     Button.new { label = "Додавання...", onClick = AddFreqToNetwork }
                         |> Button.withDisabled True
                         |> Button.view
+
                   else
                     Button.new { label = "Додати", onClick = AddFreqToNetwork }
                         |> Button.withDisabled
@@ -3844,3 +4663,382 @@ freqCreateSidebarContent shared model user =
             ]
         ]
     ]
+
+
+callsignCreateSidebarContent : Shared.Model -> Model -> Auth.User -> Html Msg
+callsignCreateSidebarContent shared model user =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити позивний мережі" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позивний *" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позивний"
+                        , value (Maybe.map .callsign model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | callsign = String.toUpper v }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело *" ]
+                    , let
+                        sourceMenu =
+                            model.callsignCreateSources
+                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+
+                        selectItem =
+                            Maybe.map .sourceId model.callsignCreateState
+                                |> Maybe.andThen
+                                    (\sourceId ->
+                                        ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
+                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                    )
+                      in
+                      Html.map CallsignCreateSourceSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.callsignCreateSourceSelState
+                                sourceMenu
+                                "Виберіть джерело"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode
+                                    |> (\opts ->
+                                            { opts
+                                                | clearable = False
+                                            }
+                                       )
+                                )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть посаду (необов'язково)"
+                        , value (Maybe.andThen .position model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | position =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
+                    , textarea
+                        [ class "w-full p-2 border border-border rounded resize-none"
+                        , rows 3
+                        , placeholder "Введіть коментар (необов'язково)"
+                        , value (Maybe.andThen .comment model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | comment =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , if (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2 then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
+                        , input
+                            [ type_ "text"
+                            , class "w-full p-2 border border-border rounded"
+                            , placeholder "Введіть частоту (обов'язково для РО)"
+                            , value (Maybe.andThen .radioFreq model.callsignCreateState |> Maybe.withDefault "")
+                            , onInput <|
+                                UpdateCallsignCreateField
+                                    << (\v maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just
+                                                        { s
+                                                            | radioFreq =
+                                                                if String.trim v == "" then
+                                                                    Nothing
+
+                                                                else
+                                                                    Just v
+                                                        }
+
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        ]
+
+                  else
+                    text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseCallsignCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.callsignCreateSaving then
+                    Button.new { label = "Створення...", onClick = CreateCallsignClicked }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Створити", onClick = CreateCallsignClicked }
+                        |> Button.withDisabled
+                            (let
+                                callsignEmpty =
+                                    Maybe.map .callsign model.callsignCreateState
+                                        |> Maybe.map (String.trim >> (==) "")
+                                        |> Maybe.withDefault True
+
+                                isRO =
+                                    (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2
+
+                                roFreqEmpty =
+                                    if isRO then
+                                        Maybe.andThen .radioFreq model.callsignCreateState
+                                            |> Maybe.map (String.trim >> (==) "")
+                                            |> Maybe.withDefault True
+
+                                    else
+                                        False
+                             in
+                             callsignEmpty || roFreqEmpty
+                            )
+                        |> Button.view
+                ]
+            ]
+        ]
+
+
+editCallsignSidebarContent : Shared.Model -> Model -> B.User -> Html Msg
+editCallsignSidebarContent shared model user =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати позивний мережі" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позивний *" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позивний"
+                        , value (Maybe.map .callsign model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | callsign = String.toUpper v }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело *" ]
+                    , let
+                        sourceMenu =
+                            model.callsignCreateSources
+                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+
+                        selectItem =
+                            Maybe.map .sourceId model.editCallsignState
+                                |> Maybe.andThen
+                                    (\sourceId ->
+                                        ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
+                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                    )
+                      in
+                      Html.map EditCallsignSourceSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.editCallsignSourceSelState
+                                sourceMenu
+                                "Виберіть джерело"
+                                (Le.Block.Select.defaultOptions shared.isDarkMode
+                                    |> (\opts ->
+                                            { opts
+                                                | clearable = False
+                                            }
+                                       )
+                                )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть посаду (необов'язково)"
+                        , value (Maybe.andThen .position model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | position =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
+                    , textarea
+                        [ class "w-full p-2 border border-border rounded resize-none"
+                        , rows 3
+                        , placeholder "Введіть коментар (необов'язково)"
+                        , value (Maybe.andThen .comment model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | comment =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , if (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2 then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
+                        , input
+                            [ type_ "text"
+                            , class "w-full p-2 border border-border rounded"
+                            , placeholder "Введіть частоту (обов'язково для РО)"
+                            , value (Maybe.andThen .radioFreq model.editCallsignState |> Maybe.withDefault "")
+                            , onInput <|
+                                UpdateEditCallsignField
+                                    << (\v maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just
+                                                        { s
+                                                            | radioFreq =
+                                                                if String.trim v == "" then
+                                                                    Nothing
+
+                                                                else
+                                                                    Just v
+                                                        }
+
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        ]
+
+                  else
+                    text ""
+
+                -- Display errors if any
+                , case Dict.get "general" model.editCallsignErrors of
+                    Just error ->
+                        div [ class "p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm" ]
+                            [ text error ]
+
+                    Nothing ->
+                        text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditCallsignSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.editCallsignSaving then
+                    Button.new { label = "Збереження...", onClick = SaveEditCallsignClicked }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Зберегти", onClick = SaveEditCallsignClicked }
+                        |> Button.withDisabled
+                            (let
+                                callsignEmpty =
+                                    Maybe.map .callsign model.editCallsignState
+                                        |> Maybe.map (String.trim >> (==) "")
+                                        |> Maybe.withDefault True
+
+                                isRO =
+                                    (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2
+
+                                roFreqEmpty =
+                                    if isRO then
+                                        Maybe.andThen .radioFreq model.editCallsignState
+                                            |> Maybe.map (String.trim >> (==) "")
+                                            |> Maybe.withDefault True
+
+                                    else
+                                        False
+                             in
+                             callsignEmpty || roFreqEmpty
+                            )
+                        |> Button.view
+                ]
+            ]
+        ]

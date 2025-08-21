@@ -83,6 +83,15 @@ pub enum SigintNetworkFreq {
 }
 
 #[derive(Iden)]
+pub enum SigintNetworkCallsign {
+    Table,
+    Id,
+    SigintNetworkId,
+    SigintCallsign,
+    Deleted,
+}
+
+#[derive(Iden)]
 pub enum SigintUnit {
     Table,
     Id,
@@ -109,10 +118,10 @@ pub enum Callsigns {
 pub async fn load_freqs(
     db: &DatabaseConnection,
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
     active_freqs_only: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
-    trace!("> load freqs for network: {:?}", filter.network_id);
+    trace!("> load freqs for network: {network_id:?}");
 
     let mut q: SelectStatement = Query::select();
     q.expr_as(
@@ -157,7 +166,10 @@ pub async fn load_freqs(
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
     )
     .and_where(
-        Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(filter.network_id),
+        Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted)).eq(false),
+    )
+    .and_where(
+        Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
     )
     .and_where(
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
@@ -282,8 +294,11 @@ pub async fn load_freqs(
                 .eq(false),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id))
-                .eq(filter.network_id),
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintUnit::Id)).eq(network_id),
         )
         .order_by_expr(Expr::cust("freq"), Order::Asc)
         .to_owned();
@@ -384,6 +399,7 @@ pub async fn find_all_known_callsigns(
             Alias::new("source"),
         )
         .select_only()
+        .column(sigint_callsign::Column::Id)
         .column(sigint_callsign::Column::Callsign)
         .column(sigint_callsign::Column::Comment)
         .column(sigint_callsign::Column::Position)
@@ -414,74 +430,54 @@ pub async fn find_all_known_callsigns(
 }
 
 #[derive(Debug, Clone)]
-struct CallsignCommunicationInfo {
-    message_count: i64,
-    last_datetime: Option<i64>,
-    freqs: Option<Vec<String>>,
-    network_names: Option<Vec<String>>,
+pub struct CallsignCommunicationInfo {
+    pub message_count: i64,
+    pub last_datetime: Option<i64>,
+    pub freqs: Option<Vec<String>>,
+    pub network_names: Option<Vec<String>>,
 }
 
 pub async fn load_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
     known_callsigns: &Vec<KnownCallsignRes>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
-    trace!("> load_callsigns for network: {:?}", filter.network_id);
+    trace!("> load_callsigns for network: {network_id:?}");
 
     let (base_with, callsigns_select) =
-        build_callsigns_queries(groups, filter).context(h!())?;
+        build_callsigns_queries(groups, network_id).context(h!())?;
 
     // Step 1. Get all active callsigns for the given network
-    let active_callsigns =
-        get_active_callsigns(db, base_with.clone(), callsigns_select.clone())
-            .await
-            .context(h!())?;
+    let active_callsigns = get_active_callsigns(
+        db,
+        base_with.clone(),
+        callsigns_select.clone(),
+        network_id,
+    )
+    .await
+    .context(h!())?;
 
     let mut res: Vec<CallsignRes> = active_callsigns
         .iter()
         .map(|row| {
             let callsign = row.callsign.clone();
             let unit_id = row.unit_id.unwrap_or_default();
-            let regiment = row.regiment.clone();
-            let division = row.division.clone();
-            let army = row.army.clone();
 
-            // Collect all matching known_callsigns based on the same Regiment
+            // Callsign + UnitId matching
             let matched_known_callsigns = known_callsigns
                 .iter()
-                .filter(|kc| {
-                    kc.callsign == callsign
-                        && kc.regiment.is_some()
-                        && kc.regiment == regiment
-                        && kc.division == division
-                        && kc.army == army
-                })
+                .filter(|kc| kc.callsign == callsign && kc.unit_id == unit_id)
                 .cloned()
                 .collect::<Vec<KnownCallsignRes>>();
-
-            // If no match found, fallback to Callsign + UnitId matching when Regiment is empty
-            let matched_known_callsigns = if matched_known_callsigns.is_empty()
-            {
-                known_callsigns
-                    .iter()
-                    .filter(|kc| {
-                        kc.callsign == callsign
-                            && kc.regiment.is_none()
-                            && kc.unit_id == unit_id
-                    })
-                    .cloned()
-                    .collect()
-            } else {
-                matched_known_callsigns
-            };
 
             let short_known_callsigns: Vec<KnownCallsignShortRes> =
                 matched_known_callsigns
                     .into_iter()
                     .map(|kc| KnownCallsignShortRes {
+                        id: kc.id,
                         callsign: kc.callsign,
                         position: kc.position,
                         comment: kc.comment,
@@ -541,17 +537,15 @@ pub async fn load_callsigns(
 
     let duration = start.elapsed();
     trace!(
-        "[load_callsigns] Execution time: {:.2?} (network: {:?})",
-        duration,
-        filter.network_id
+        "[load_callsigns] Execution time: {duration:.2?} (network: {network_id:?})"        
     );
 
     Ok(res)
 }
 
-fn build_callsigns_queries(
+pub fn build_callsigns_queries(
     groups: &Vec<String>,
-    filter: &EtalonkaFilter,
+    network_id: i64,
 ) -> Result<(WithClause, SelectStatement), AppError> {
     let callsigns_lateral_sub_query = Query::select()
         .expr_as(
@@ -596,8 +590,11 @@ fn build_callsigns_queries(
                 .eq(false),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
-                .eq(filter.network_id),
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id)).eq(network_id),
         )
         .to_owned();
 
@@ -725,8 +722,8 @@ fn build_callsigns_queries(
                 .or(Expr::col((SigintUnit::Table, SigintUnit::Id)).is_null()),
         )
         .and_where(
-            Expr::col((SigintNetwork::Table, SigintUnit::Id))
-                .eq(filter.network_id),
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
+                .eq(network_id),
         )
         .to_owned();
 
@@ -738,24 +735,57 @@ fn build_callsigns_queries(
     Ok((base_with, callsigns_select))
 }
 
+/// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
     base_with: WithClause,
     callsigns_select: SelectStatement,
+    network_id: i64,
 ) -> Result<Vec<CallsignQueryResult>, AppError> {
     let callsigns_cte = CommonTableExpression::new()
         .query(callsigns_select)
         .table_name(Alias::new("callsigns"))
         .to_owned();
 
+    let network_callsign_alias = Alias::new("nc");
+    let callsigns_alias = Alias::new("callsigns");
+    let callsign_alias = Alias::new("callsign");
+    let network_callsigns_subquery: SelectStatement = Query::select()
+        .expr(Expr::value(1)) // SELECT 1
+        .from_as(SigintNetworkCallsign::Table, network_callsign_alias.clone()) // FROM network_callsign
+        .and_where(
+            Expr::col((
+                network_callsign_alias.clone(),
+                SigintNetworkCallsign::SigintNetworkId,
+            ))
+            .eq(network_id),
+        ) // WHERE network_id = ?
+        .and_where(
+            Expr::col((
+                network_callsign_alias.clone(),
+                SigintNetworkCallsign::Deleted,
+            ))
+            .eq(false),
+        ) // WHERE network_id = ?
+        .and_where(
+            Expr::col((
+                network_callsign_alias.clone(),
+                SigintNetworkCallsign::SigintCallsign,
+            ))
+            .eq(Expr::col((callsigns_alias.clone(), callsign_alias.clone()))),
+        )
+        .to_owned();
+
     let active_callsigns_select = Query::select()
-        .expr_as(Expr::cust("DISTINCT callsign"), Alias::new("callsign"))
+        .expr_as(Expr::cust("DISTINCT callsign"), callsign_alias)
         .expr_as(Expr::cust("unit_id"), Alias::new("unit_id"))
         .expr_as(Expr::cust("unit_name"), Alias::new("unit_name"))
         .expr_as(Expr::cust("regiment"), Alias::new("regiment"))
         .expr_as(Expr::cust("division"), Alias::new("division"))
         .expr_as(Expr::cust("army"), Alias::new("army"))
-        .from(Alias::new("callsigns"))
+        .from(callsigns_alias.clone())
+        // виключаємо позивні, які вже прив'язані до мережі
+        .and_where(Expr::exists(network_callsigns_subquery).not())
         .order_by_expr(Expr::cust("callsign"), Order::Asc)
         .to_owned();
 
@@ -791,12 +821,15 @@ pub async fn get_active_callsigns(
     Ok(records)
 }
 
-async fn get_communication_info_for_callsigns(
-    db: &DatabaseConnection,
+pub async fn get_communication_info_for_callsigns<'a, 'async_trait, C>(
+    txn: &'a C,
     base_with: WithClause,
     callsigns_select: SelectStatement,
     callsigns: &[String],
-) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError> {
+) -> Result<HashMap<String, CallsignCommunicationInfo>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     if callsigns.is_empty() {
         return Ok(HashMap::new());
     }
@@ -829,7 +862,7 @@ async fn get_communication_info_for_callsigns(
 
     let combined_query = base_with.clone().cte(callsigns_cte).clone().query(q);
 
-    let rows = db
+    let rows = txn
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query.to_string(PostgresQueryBuilder),
@@ -1389,26 +1422,4 @@ pub async fn load_networks_by_id(
     }
 
     Ok(res)
-}
-
-pub async fn get_network_callsings_reporting(
-    db: &DatabaseConnection,
-    network_id: i64,
-    callsigns_txt: Vec<String>,
-) -> Result<BTreeMap<String, bool>, AppError> {
-    let callsigns_reporting = sigint_network_callsign::Entity::find()
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
-        .filter(
-            sigint_network_callsign::Column::SigintCallsign
-                .is_in(callsigns_txt),
-        )
-        .all(db)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|x| (x.sigint_callsign, x.is_reported))
-        .collect::<BTreeMap<_, _>>();
-
-    Ok(callsigns_reporting)
 }

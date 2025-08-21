@@ -15,14 +15,9 @@ pub async fn list_sources(
     _req: Json<()>,
 ) -> Result<Json<ListSourcesRsp>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    let sources = source::Entity::find()
-        .filter(source::Column::Deleted.eq(false))
-        .all(&env.dbx)
-        .await?;
-    let mut res = vec![];
-    for source in sources {
-        res.push(render_source(&source)?);
-    }
+
+    let res = bl_list_sources(&env.dbx).await.context(h!())?;
+
     Ok(Json(ListSourcesRsp { sources: res }))
 }
 
@@ -32,4 +27,18 @@ pub fn render_source(source: &source::Model) -> Result<Source, AppError> {
         name: source.name.clone(),
         created_at: source.created_at.and_utc().timestamp_millis(),
     })
+}
+
+pub async fn bl_list_sources(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<Source>, AppError> {
+    let sources = source::Entity::find()
+        .filter(source::Column::Deleted.eq(false))
+        .all(dbx)
+        .await?;
+    let mut res = vec![];
+    for source in sources {
+        res.push(render_source(&source)?);
+    }
+    Ok(res)
 }

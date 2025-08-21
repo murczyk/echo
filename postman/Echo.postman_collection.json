@@ -7,6 +7,851 @@
 	},
 	"item": [
 		{
+			"name": "etalonka",
+			"item": [
+				{
+					"name": "sigint/etalonka/report-networks-batch-id",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"network_ids\":[2830],\n    \"sort_by\":null,\n    \"settings\":\n    {\n        \"networks_only\":true,\n        \"active_freqs_only\":true,\n        \"include_pelengs_map\":false,\n        \"include_sigint_signs\":false,\n        \"include_confirmation\":false\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/etalonka/report-networks-batch-id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"etalonka",
+								"report-networks-batch-id"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/etalonka/report-networks",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"since_date_inclusive_ms\":1751016081543,\n    \"till_date_noninclusive_ms\":1751620881543,\n    \"filter_freq\":null,\n    \"filter_unit\":\"291 мсп 42 мсд\",\n    \"sort_by\":null,\n    \"settings\":\n        {\n            \"networks_only\":false,\n            \"active_freqs_only\":true,\n            \"include_pelengs_map\":false,\n            \"include_sigint_signs\":true,\n            \"include_confirmation\":true\n        }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/etalonka/report-networks",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"etalonka",
+								"report-networks"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "network",
+			"item": [
+				{
+					"name": "sigint/network-info-one",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "2832",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-info-one",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-info-one"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-freqs-list",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"network_id\": 580\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-freqs-list",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-freqs-list"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-freqs-activity-one",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"network_id\": 566\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-freqs-activity-one",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-freqs-activity-one"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-callsigns-list",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\"network_id\":39}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsigns-list",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsigns-list"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/delete-network/",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"network_id\":691\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/delete-network",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"delete-network"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network/update-units",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"network_id\":2854,\n\"unit_ids\":[370, 248, 35]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network/update-units",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network",
+								"update-units"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/create-network",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"freqs\":[\n        {\"freq\":\"129.9000\",\n        \"kind\":\"VHF\",\n        \"modulation_id\":3,\n        \"description\":{\n            \"descr_type\":\"Confirmation\",\n            \"description\":\"Обґрунтування прив'язки  - тестове без підроздіру\",\n            \"freq\":\"129.9000\"},\n        \"active_from\":1749243600000,\n        \"active_to\":null}],\n    // \"unit_ids\":[3],\n    \"name\":\"Тестування\",\n    \"location\":\"\",\n    \"comment\":\"\",\n    \"radio_station\":null,\n    \"purpose\":\"для управління підлеглим особовим складом\",\n    \"operation_mode\":\"цілодобово, за потреби\",\n    \"operation_type\":\"дуплексний\",\n    \"operation_period\":null,\n    \"post_ids\":[6],\n    \"descriptions\":[]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/create-network",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"create-network"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-list",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\"since_date_inclusive_ms\":1752419460000,\n\"till_date_noninclusive_ms\":1754493077913,\n\"filter_freq\":null,\n\"filter_unit\":null,\n\"filter_further_investigation\":false,\n\"show_deleted\":false,\n\"show_inactive\":null,\n\"sort_by\":null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-list",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-list"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-callsigns",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"network_ids\": [\n\t\t23,\n\t\t32,\n\t\t41,\n\t\t34,\n\t\t8,\n\t\t13,\n\t\t14,\n\t\t16,\n\t\t29,\n\t\t47,\n\t\t44,\n\t\t31,\n\t\t39,\n\t\t48,\n\t\t21,\n\t\t22,\n\t\t24,\n\t\t12,\n\t\t37,\n\t\t58,\n\t\t40,\n\t\t52,\n\t\t19,\n\t\t25,\n\t\t4,\n\t\t56,\n\t\t38,\n\t\t15,\n\t\t17,\n\t\t36,\n\t\t43,\n\t\t46,\n\t\t60,\n\t\t55,\n\t\t59,\n\t\t54,\n\t\t53,\n\t\t57,\n\t\t51,\n\t\t5,\n\t\t7,\n\t\t33,\n\t\t20,\n\t\t26,\n\t\t27,\n\t\t42,\n\t\t6,\n\t\t49\n\t]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsigns",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsigns"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "tags",
+			"item": [
+				{
+					"name": "tags/tags-list",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/tags/tags-list",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tags",
+								"tags-list"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "tags/tags-add",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message_id\": 13,\n    \"tag_id\": 23\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/tags/tags-add",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tags",
+								"tags-add"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "tags/tags-rm",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message_id\": 13,\n    \"tag_id\": 23\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/tags/tags-rm",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"tags",
+								"tags-rm"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "zones",
+			"item": [
+				{
+					"name": "sigint/zones/zone-datasource-groups",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"zone_id\": 1,\n    \"datasource_id\": 1\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "sigint/zones/zone-datasource-groups",
+							"host": [
+								"sigint"
+							],
+							"path": [
+								"zones",
+								"zone-datasource-groups"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/zones/zone-datasource-group-update",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"id\": 2,\n    \"is_secret\": true,\n    \"user_logins\": [\"btc\", \"taras\"]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/zones/zone-datasource-group-update",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"zones",
+								"zone-datasource-group-update"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/zones/zone-datasource-group-add",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sigint/zones/zone-datasource-group-add",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"zones",
+								"zone-datasource-group-add"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "network callsigns",
+			"item": [
+				{
+					"name": "sigint/network-callsigns/list",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\"network_id\":39}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsigns/list",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsigns",
+								"list"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-callsign/create",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"network_id\":39,\n    \"callsign\": \"Олень\",\n    \"position\": \"Оператор БпЛА\",\n    \"comment\": \"Олень, превее лесополки 50 малих, подлетай по тихоньку\",\n    \"source_id\": 2\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsign/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsign",
+								"create"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-callsign/add-as-known",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"network_id\":39,\n    \"known_callsign_ids\":[1015,1026]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsign/add-as-known",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsign",
+								"add-as-known"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-callsign/update",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"id\":9,\n    \"network_id\":8,\n    \"callsign\": \"Олень\",\n    \"position\": \"Оператор БпЛА\",\n    \"comment\": \"Олень, превее лесополки 50 малих, подлетай потихоньку.\",\n    \"source_id\": 2\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsign/update",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsign",
+								"update"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/network-callsign/delete",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "14",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/network-callsign/delete",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"network-callsign",
+								"delete"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "callsigns",
+			"item": [
+				{
+					"name": "sigint/callsigns",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/callsigns",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"callsigns"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "sigint/callsign/create",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"callsign\": \"хр\",\n    \"position\": \"kursk\",\n    \"comment\": \"wefwefwf\",\n    \"unit_id\": 123,\n    \"source_id\": 1,\n    \"developing\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sigint/callsign/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sigint",
+								"callsign",
+								"create"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "login",
+			"item": [
+				{
+					"name": "login/create",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"login\": \"lys2\",\n    \"password\": \"lys2\",\n    \"roles\": [\"Admin\"]\n\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login/create",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"login",
+								"create"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "login/update",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"login\": \"Vitamin\",\n    \"roles\":[\"Rer\"],\n    \"sigint_zone_id\":1,\n    \"organism_id\":3,\n    \"deleted\":true,\n    \"password\": \"Vitamin\",\n    \"delta_login\":\"Vitamin\",\n    \"deactivation_reason\":\"Inactive\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login/update",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"login",
+								"update"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "logins",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"sort_by\": \"LoginCreatedAtDesc\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/logins",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"logins"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
 			"name": "user/login",
 			"request": {
 				"method": "POST",
@@ -35,13 +880,13 @@
 			"response": []
 		},
 		{
-			"name": "login/create",
+			"name": "server-info",
 			"request": {
 				"method": "POST",
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"login\": \"lys2\",\n    \"password\": \"lys2\",\n    \"roles\": [\"Admin\"]\n\n}",
+					"raw": "",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -49,69 +894,13 @@
 					}
 				},
 				"url": {
-					"raw": "{{base_url}}/api/login/create",
+					"raw": "{{base_url}}/api-public/server-info",
 					"host": [
 						"{{base_url}}"
 					],
 					"path": [
-						"api",
-						"login",
-						"create"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "login/update",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"login\": \"Vitamin\",\n    \"roles\":[\"Rer\"],\n    \"sigint_zone_id\":1,\n    \"organism_id\":3,\n    \"deleted\":true,\n    \"password\": \"Vitamin\",\n    \"delta_login\":\"Vitamin\",\n    \"deactivation_reason\":\"Inactive\"\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/login/update",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"login",
-						"update"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "logins",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"sort_by\": \"LoginCreatedAtDesc\"\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/logins",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"logins"
+						"api-public",
+						"server-info"
 					]
 				}
 			},
@@ -170,131 +959,6 @@
 			"response": []
 		},
 		{
-			"name": "sigint/callsigns",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/callsigns",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"callsigns"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/callsign/create",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"callsign\": \"хр\",\n    \"position\": \"kursk\",\n    \"comment\": \"wefwefwf\",\n    \"unit_id\": 123,\n    \"source_id\": 1,\n    \"developing\": true\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/callsign/create",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"callsign",
-						"create"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/create-network",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"freqs\":[\n        {\"freq\":\"129.9000\",\n        \"kind\":\"VHF\",\n        \"modulation_id\":3,\n        \"description\":{\n            \"descr_type\":\"Confirmation\",\n            \"description\":\"Обґрунтування прив'язки  - тестове без підроздіру\",\n            \"freq\":\"129.9000\"},\n        \"active_from\":1749243600000,\n        \"active_to\":null}],\n    // \"unit_ids\":[3],\n    \"name\":\"Тестування\",\n    \"location\":\"\",\n    \"comment\":\"\",\n    \"radio_station\":null,\n    \"purpose\":\"для управління підлеглим особовим складом\",\n    \"operation_mode\":\"цілодобово, за потреби\",\n    \"operation_type\":\"дуплексний\",\n    \"operation_period\":null,\n    \"post_ids\":[6],\n    \"descriptions\":[]\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/create-network",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"create-network"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/network-list",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n\"since_date_inclusive_ms\":1752419460000,\n\"till_date_noninclusive_ms\":1754493077913,\n\"filter_freq\":null,\n\"filter_unit\":null,\n\"filter_further_investigation\":false,\n\"show_deleted\":false,\n\"show_inactive\":null,\n\"sort_by\":null\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/network-list",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"network-list"
-					]
-				}
-			},
-			"response": []
-		},
-		{
 			"name": "rer-importer/get-inbox",
 			"request": {
 				"auth": {
@@ -304,7 +968,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"since_id_noninclusive\": null,\n    \"before_id_noninclusive\": null,\n    \"since_date_inclusive_ms\": 1753563600000,\n    \"till_date_inclusive_ms\": 1754168400000,\n    \"only_show_unprocessed\": null,\n    \"checked_only\": false,\n    \"selected_groups\": [\"120363418408644385@g.us\"],\n    \"selected_senders\": null,\n    \"denied_senders\": null,\n    \"selected_freqs\": [\"154.2500\"],\n    \"selected_posts\": null,\n    \"denied_posts\": null,\n    \"denied_freqs\": null,\n    \"selected_callsigns\": null,\n    \"selected_units\": null,\n    \"selected_locations\": null,\n    \"nolimit\": true,\n    \"or_with_extended_form\": false,\n    \"load_latest\": null,\n    \"return_duplicates\": null,\n    \"or_bookmarked\": false,\n    \"or_important\": false,\n    \"or_with_coords\": false,\n    \"newest_first\": true,\n    \"search\": null,\n    \"highlight_callsigns\": null,\n    \"highlight_keywords\": null,\n    \"highlight_searchres\": true,\n    \"highlight_signals\": null,\n    \"selected_tags\": null,\n    \"sort_by\": null,\n    \"report_tags_only_this_unit\": false,\n    \"ignore_imported_coords\": null,\n    \"include_peleng_locations\": true,\n    \"units_exact_match_only\": null,\n    \"calculate_freq_pelengs_summary\": null,\n    \"filter_tags_option\": \"OneOfTags\",\n    \"page_id\": \"rer-analysis\"\n}\n",
+					"raw": "{\n    \"since_id_noninclusive\":null,\n    \"before_id_noninclusive\":null,\n    \"since_date_inclusive_ms\":1752958800000,\n    \"till_date_inclusive_ms\":1754600400000,\n    \"only_show_unprocessed\":null,\n    \"checked_only\":false,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"denied_senders\":null,\n    \"selected_freqs\":[\"154.2500\"],\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n \t\"selected_units\": [\n\t\t\"10 тп 20 мсд\",\n\t\t\"123 омсбр 3 А\"\n\t],\n    \"selected_locations\":null,\n    \"nolimit\":null,\n    \"or_with_extended_form\":false,\n    \"load_latest\":null,\n    \"return_duplicates\":null,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"newest_first\":true,\n    \"search\":null,\n    \"highlight_callsigns\":null,\n    \"highlight_keywords\":null,\n    \"highlight_searchres\":true,\n    \"highlight_signals\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":[1],\n    \"sort_by\":null,\n    \"report_tags_only_this_unit\":false,\n    \"ignore_imported_coords\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"calculate_freq_pelengs_summary\":null,\n    \"filter_tags_option\":\"OneOfTags\",\n    \"page_id\":\"rer-analysis\"\n    }",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -326,7 +990,7 @@
 			"response": []
 		},
 		{
-			"name": "sigint/etalonka/report-networks-batch-id",
+			"name": "rer/analysis/stats/aors",
 			"request": {
 				"auth": {
 					"type": "noauth"
@@ -335,7 +999,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"network_ids\":[2830],\n    \"sort_by\":null,\n    \"settings\":\n    {\n        \"networks_only\":true,\n        \"active_freqs_only\":true,\n        \"include_pelengs_map\":false,\n        \"include_sigint_signs\":false,\n        \"include_confirmation\":false\n    }\n}",
+					"raw": "{\n    \"since_date_inclusive_ms\":1752958800000,\n    \"till_date_noninclusive_ms\":1754600400000,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"selected_freqs\":[\"154.2500\"],\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n    \"selected_units\":null,\n    \"selected_locations\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":[3],\n    \"or_with_extended_form\":false,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"search\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"filter_tags_option\":null\n    }",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -343,22 +1007,23 @@
 					}
 				},
 				"url": {
-					"raw": "{{base_url}}/api/sigint/etalonka/report-networks-batch-id",
+					"raw": "{{base_url}}/api/rer/analysis/stats/aors",
 					"host": [
 						"{{base_url}}"
 					],
 					"path": [
 						"api",
-						"sigint",
-						"etalonka",
-						"report-networks-batch-id"
+						"rer",
+						"analysis",
+						"stats",
+						"aors"
 					]
 				}
 			},
 			"response": []
 		},
 		{
-			"name": "sigint/etalonka/report-networks",
+			"name": "rer/analysis/stats/aors/count",
 			"request": {
 				"auth": {
 					"type": "noauth"
@@ -367,7 +1032,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"since_date_inclusive_ms\":1751016081543,\n    \"till_date_noninclusive_ms\":1751620881543,\n    \"filter_freq\":null,\n    \"filter_unit\":\"291 мсп 42 мсд\",\n    \"sort_by\":null,\n    \"settings\":\n        {\n            \"networks_only\":false,\n            \"active_freqs_only\":true,\n            \"include_pelengs_map\":false,\n            \"include_sigint_signs\":true,\n            \"include_confirmation\":true\n        }\n}",
+					"raw": "{\n    \"since_date_inclusive_ms\":1752958800000,\n    \"till_date_noninclusive_ms\":1754600400000,\n    \"selected_groups\":null,\n    \"selected_senders\":null,\n    \"selected_freqs\":[\"154.2500\"],\n    \"selected_posts\":null,\n    \"denied_posts\":null,\n    \"denied_freqs\":null,\n    \"selected_callsigns\":null,\n    \"selected_units\":null,\n    \"selected_locations\":null,\n    \"selected_tags\":null,\n    \"selected_aors\":[1],\n    \"or_with_extended_form\":false,\n    \"or_bookmarked\":false,\n    \"or_important\":false,\n    \"or_with_coords\":false,\n    \"search\":null,\n    \"include_peleng_locations\":true,\n    \"units_exact_match_only\":null,\n    \"filter_tags_option\":\"OneOfTags\"\n    }",
 					"options": {
 						"raw": {
 							"language": "json"
@@ -375,202 +1040,17 @@
 					}
 				},
 				"url": {
-					"raw": "{{base_url}}/api/sigint/etalonka/report-networks",
+					"raw": "{{base_url}}/api/rer/analysis/stats/aors/count",
 					"host": [
 						"{{base_url}}"
 					],
 					"path": [
 						"api",
-						"sigint",
-						"etalonka",
-						"report-networks"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/network-info-one",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "2832",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/network-info-one",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"network-info-one"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/network-freqs-list",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"network_id\": 2415\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/network-freqs-list",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"network-freqs-list"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/network-freqs-activity-one",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"network_id\": 2844\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/network-freqs-activity-one",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"network-freqs-activity-one"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/network-callsigns-list",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\"network_id\":2838}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/network-callsigns-list",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"network-callsigns-list"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/network/update-units",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n\"network_id\":2854,\n\"unit_ids\":[370, 248, 35]\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/network/update-units",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"network",
-						"update-units"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/delete-network/",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n\"network_id\":691\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/delete-network",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"delete-network"
+						"rer",
+						"analysis",
+						"stats",
+						"aors",
+						"count"
 					]
 				}
 			},
@@ -703,90 +1183,6 @@
 			"response": []
 		},
 		{
-			"name": "tags/tags-list",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/api/tags/tags-list",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"tags",
-						"tags-list"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "tags/tags-add",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"message_id\": 13,\n    \"tag_id\": 23\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/tags/tags-add",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"tags",
-						"tags-add"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "tags/tags-rm",
-			"request": {
-				"auth": {
-					"type": "noauth"
-				},
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"message_id\": 13,\n    \"tag_id\": 23\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/tags/tags-rm",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"tags",
-						"tags-rm"
-					]
-				}
-			},
-			"response": []
-		},
-		{
 			"name": "datasources/list",
 			"request": {
 				"auth": {
@@ -803,82 +1199,6 @@
 						"api",
 						"datasources",
 						"list"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/zones/zone-datasource-groups",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"zone_id\": 1,\n    \"datasource_id\": 1\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "sigint/zones/zone-datasource-groups",
-					"host": [
-						"sigint"
-					],
-					"path": [
-						"zones",
-						"zone-datasource-groups"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/zones/zone-datasource-group-update",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"id\": 2,\n    \"is_secret\": true,\n    \"user_logins\": [\"btc\", \"taras\"]\n}",
-					"options": {
-						"raw": {
-							"language": "json"
-						}
-					}
-				},
-				"url": {
-					"raw": "{{base_url}}/api/sigint/zones/zone-datasource-group-update",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"zones",
-						"zone-datasource-group-update"
-					]
-				}
-			},
-			"response": []
-		},
-		{
-			"name": "sigint/zones/zone-datasource-group-add",
-			"request": {
-				"method": "POST",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/api/sigint/zones/zone-datasource-group-add",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"sigint",
-						"zones",
-						"zone-datasource-group-add"
 					]
 				}
 			},

@@ -2051,23 +2051,8 @@ pub async fn network_callsigns_list(
         .await
         .context(h!())?;
 
-    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
-
-    let filter = EtalonkaFilter {
-        since_date_inclusive_ms: Some(
-            network.active_from.and_utc().timestamp_millis(),
-        ),
-        till_date_noninclusive_ms: Some(
-            network
-                .active_to
-                .map(|dt| dt.and_utc().timestamp_millis())
-                .unwrap_or_else(|| {
-                    Utc::now().naive_utc().and_utc().timestamp_millis()
-                }),
-        ),
-        network_id: req.network_id,
-        filter_further_investigation: None,
-    };
+    let _network =
+        find_network(&env.dbx, req.network_id).await.context(h!())?;
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -2081,37 +2066,20 @@ pub async fn network_callsigns_list(
         find_all_known_callsigns(&env.dbx).await.context(h!())?;
 
     let callsigns_raw =
-        load_callsigns(&env.dbx, &groups, &filter, &all_known_callsigns)
-            .await
-            .context(h!())?;
-
-    let callsigns_txt = callsigns_raw
-        .iter()
-        .map(|c| c.callsign.clone())
-        .collect::<Vec<_>>();
-
-    let callsigns_reporting =
-        get_network_callsings_reporting(&env.dbx, network.id, callsigns_txt)
+        load_callsigns(&env.dbx, &groups, req.network_id, &all_known_callsigns)
             .await
             .context(h!())?;
 
     let callsigns = callsigns_raw
         .into_iter()
-        .map(|callsign| {
-            let is_reported = callsigns_reporting
-                .get(&callsign.callsign)
-                .cloned()
-                .unwrap_or(false);
-            NetworkCallsignRes {
-                is_reported,
-                callsign: callsign.callsign,
-                known_callsigns: callsign.known_callsigns,
-                message_count: callsign.message_count,
-                last_datetime: callsign.last_datetime,
-                freqs: callsign.freqs,
-                network_names: callsign.network_names,
-                is_old: callsign.is_old,
-            }
+        .map(|callsign| NetworkCallsignRes {
+            callsign: callsign.callsign,
+            known_callsigns: callsign.known_callsigns,
+            message_count: callsign.message_count,
+            last_datetime: callsign.last_datetime,
+            freqs: callsign.freqs,
+            network_names: callsign.network_names,
+            is_old: callsign.is_old,
         })
         .collect();
 
@@ -2128,23 +2096,8 @@ pub async fn network_freqs_list(
         .await
         .context(h!())?;
 
-    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
-
-    let filter = EtalonkaFilter {
-        since_date_inclusive_ms: Some(
-            network.active_from.and_utc().timestamp_millis(),
-        ),
-        till_date_noninclusive_ms: Some(
-            network
-                .active_to
-                .map(|dt| dt.and_utc().timestamp_millis())
-                .unwrap_or_else(|| {
-                    Utc::now().naive_utc().and_utc().timestamp_millis()
-                }),
-        ),
-        network_id: req.network_id,
-        filter_further_investigation: None,
-    };
+    let _network =
+        find_network(&env.dbx, req.network_id).await.context(h!())?;
 
     let groups = crate::users::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -2154,7 +2107,7 @@ pub async fn network_freqs_list(
     .await
     .context(h!())?;
 
-    let freqs = load_freqs(&env.dbx, &groups, &filter, false)
+    let freqs = load_freqs(&env.dbx, &groups, req.network_id, false)
         .await
         .context(h!())?;
 
@@ -3035,7 +2988,7 @@ where
         .collect())
 }
 
-async fn get_network_units<'a, 'async_trait, C>(
+pub async fn get_network_units<'a, 'async_trait, C>(
     txn: &'a C,
     network_id: i64,
 ) -> Result<Option<Vec<i64>>, AppError>
@@ -3043,7 +2996,12 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let units = sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
         .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .all(txn)
         .await
         .context(h!())?
@@ -3051,11 +3009,7 @@ where
         .map(|x| x.unit_id)
         .collect::<Vec<_>>();
 
-    if units.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(units))
-    }
+    Ok(if units.is_empty() { None } else { Some(units) })
 }
 
 async fn get_network_posts<'a, 'async_trait, C>(

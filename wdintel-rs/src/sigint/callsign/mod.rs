@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use self::types::*;
 use crate::entities::*;
 use crate::event_stream::fanout;
@@ -6,14 +8,14 @@ use crate::types::*;
 use crate::utils::dt_from_millis;
 use actix_web::post;
 use actix_web::web::Json;
-use chrono::Utc;
 use sea_orm::*;
 use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
 use sea_query::{Expr, SimpleExpr};
-use std::collections::{HashMap, HashSet};
 
+pub mod bl_network_callsign;
+pub mod network_callsign;
 pub mod types;
 
 #[post("/api/sigint/callsigns")]
@@ -298,49 +300,19 @@ pub async fn create_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "CallsignsEditor").await?;
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
 
     info!("create_callsign; login: {}; req: {:?}", user.id()?, req);
 
-    let callsign = sigint_callsign::ActiveModel {
-        id: NotSet,
-        callsign: Set(req.callsign.clone().to_lowercase()),
-        position: Set(req.position.clone()),
-        unit_id: Set(req.unit_id),
-        comment: Set(req.comment.clone()),
-        deleted: Set(false),
-        source_id: Set(req.source_id),
-        created_at: NotSet,
-        developing: Set(req.developing),
-        radio_freq: Set(req.radio_freq.clone().unwrap_or("".to_string())),
-        sigint_origin_id: NotSet,
-        mothership_id: NotSet,
-    }
-    .insert(&env.dbx)
-    .await
-    .context(h!())?;
-    let callsign_json = sigint_callsign::Entity::find_by_id(callsign.id)
-        .into_json()
-        .one(&env.dbx)
+    let txn = env.dbx.begin().await?;
+    let req = req.into_inner();
+    let callsign = bl_callsign_create(&req, &user_id, &txn)
         .await
-        .context(h!())?
-        .ok_or_else(|| AppError::NotFound)?;
-    let _changelog = sigint_callsign_changelog::ActiveModel {
-        sigint_origin_id: NotSet,
-        mothership_id: NotSet,
-        id: NotSet,
-        sigint_callsign_id: Set(callsign.id),
-        login: Set(user.id().context(h!())?.to_string()),
-        action: Set("create".to_string()),
-        created_at: NotSet,
-        new_value: Set(Some(callsign_json)),
-        old_value: NotSet,
-        req: Set(Some(serde_json::to_value(&req).context(h!())?)),
-    }
-    .insert(&env.dbx)
-    .await
-    .context(h!())?;
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
 
     let event = EventMsg::new(EventType::ETCallsignChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
@@ -355,6 +327,55 @@ pub async fn create_callsign(
         )
         .context(h!())?,
     ))
+}
+
+pub async fn bl_callsign_create(
+    req: &CreateCallsignReq,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+) -> Result<sigint_callsign::Model, AppError> {
+    let callsign = sigint_callsign::ActiveModel {
+        id: NotSet,
+        callsign: Set(req.callsign.clone().to_lowercase()),
+        position: Set(req.position.clone()),
+        unit_id: Set(req.unit_id),
+        comment: Set(req.comment.clone()),
+        deleted: Set(false),
+        source_id: Set(req.source_id),
+        created_at: NotSet,
+        developing: Set(req.developing),
+        radio_freq: Set(req.radio_freq.clone().unwrap_or("".to_string())),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    let callsign_json = sigint_callsign::Entity::find_by_id(callsign.id)
+        .into_json()
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or_else(|| AppError::NotFound)?;
+
+    let _changelog = sigint_callsign_changelog::ActiveModel {
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+        id: NotSet,
+        sigint_callsign_id: Set(callsign.id),
+        login: Set(user_id.to_string()),
+        action: Set("create".to_string()),
+        created_at: NotSet,
+        new_value: Set(Some(callsign_json)),
+        old_value: NotSet,
+        req: Set(Some(serde_json::to_value(req).context(h!())?)),
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    Ok(callsign)
 }
 
 #[post("/api/sigint/callsign/update")]
@@ -455,13 +476,6 @@ pub async fn delete_callsign(
     }
     .insert(&env.dbx)
     .await?;
-    for binding in sigint_callsign_bind::Entity::find()
-        .filter(sigint_callsign_bind::Column::CallsignId.eq(callsign.id))
-        .all(&env.dbx)
-        .await?
-    {
-        delete_callsign_bind_by_id(&env.dbx, binding.id, &user.id()?).await?;
-    }
 
     Ok(Json(render_callsign(
         &callsign,
@@ -471,300 +485,18 @@ pub async fn delete_callsign(
     )?))
 }
 
-#[post("/api/sigint/callsign-binds")]
-pub async fn callsign_binds(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<ListCallsignBindsReq>,
-) -> Result<Json<HashMap<String, Vec<CallsignBind>>>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-
-    info!(
-        "delete_callsign_bind; login: {}; req: {:?}",
-        user.id()?,
-        req
-    );
-
-    let mut res_map = HashMap::new();
-    for one_callsign_id in &req.callsign_ids {
-        let mut binds = sigint_callsign_bind::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_callsign::Relation::SigintUnit.def(),
-            )
-            .filter(sigint_callsign_bind::Column::Deleted.eq(false))
-            .filter(sigint_callsign::Column::Id.eq(*one_callsign_id));
-
-        if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
-            binds = binds.filter(
-                sigint_callsign_bind::Column::Date
-                    .gte(dt_from_millis(since_date_inclusive_ms)?),
-            );
-        }
-        if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
-            binds = binds.filter(
-                sigint_callsign_bind::Column::Date
-                    .lte(dt_from_millis(till_date_inclusive_ms)?),
-            );
-        }
-        let binds = binds.all(&env.dbx).await?;
-        res_map.insert(
-            one_callsign_id.to_string(),
-            binds.into_iter().map(render_callsign_bind).collect(),
-        );
-    }
-    Ok(Json(res_map))
-}
-
-#[post("/api/sigint/callsign-bind/create")]
-pub async fn create_callsign_bind(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<CreateCallsignsBindReq>,
-) -> Result<Json<Vec<CallsignBind>>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
-
-    let mut res_vec = vec![];
-    for one_binding in &req.bindings {
-        let callsign_bind = sigint_callsign_bind::ActiveModel {
-            id: NotSet,
-            created_at: NotSet,
-            updated_at: NotSet,
-            deleted: Set(false),
-            updated_by: Set(user_id.clone()),
-            callsign_id: Set(req.callsign_id),
-            freq: Set(one_binding.freq.clone()),
-            comment: Set(one_binding.comment.clone()),
-            date: Set(one_binding.date.clone()),
-        }
-        .insert(&env.dbx)
-        .await
-        .context(h!())?;
-        res_vec.push(render_callsign_bind(callsign_bind));
-    }
-
-    let event = EventMsg::new(EventType::ETCallsignChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
-
-    Ok(Json(res_vec))
-}
-
-#[post("/api/sigint/callsign-bind/update")]
-pub async fn update_callsign_bind(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<Vec<CallsignBind>>,
-) -> Result<Json<Vec<CallsignBind>>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
-
-    let mut res_vec = vec![];
-    for one_binding in req.0 {
-        let callsign_bind = find_callsign_bind(&env.dbx, one_binding.id)
-            .await
-            .context(h!())?;
-        let mut callsign_bind = callsign_bind.into_active_model();
-        callsign_bind.updated_at = Set(Utc::now().naive_utc());
-        callsign_bind.updated_by = Set(user_id.clone());
-        callsign_bind.freq = Set(one_binding.freq);
-        callsign_bind.comment = Set(one_binding.comment);
-        callsign_bind.date = Set(one_binding.date);
-        let updated_callsign_bind = callsign_bind.update(&env.dbx).await?;
-        res_vec.push(render_callsign_bind(updated_callsign_bind));
-    }
-    Ok(Json(res_vec))
-}
-
-#[post("/api/sigint/callsign-reporting/update")]
-pub async fn update_callsign_reporting(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<UpdateCallsignReportingReq>,
-) -> Result<Json<bool>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
-
-    let callsign_text = req.callsign.clone();
-    let network_id = req.network_id;
-
-    let existing_callsign = sigint_network_callsign::Entity::find()
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(
-            sigint_network_callsign::Column::SigintCallsign.eq(&callsign_text),
-        )
-        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
-        .one(&env.dbx)
-        .await
-        .context(h!())?;
-    match existing_callsign {
-        Some(c) => {
-            let mut model = c.into_active_model();
-            model.is_reported = Set(req.is_reported);
-            model.is_reported = Set(req.is_reported);
-            model.update(&env.dbx).await.context(h!())?;
-        }
-        None => {
-            sigint_network_callsign::ActiveModel {
-                id: NotSet,
-                sigint_network_id: Set(network_id),
-                sigint_callsign: Set(callsign_text),
-                is_reported: Set(req.is_reported),
-                created_at: NotSet,
-                deleted: NotSet,
-                sigint_origin_id: NotSet,
-                mothership_id: NotSet,
-            }
-            .insert(&env.dbx)
-            .await
-            .context(h!())?;
-        }
-    }
-    Ok(Json(true))
-}
-
-#[post("/api/sigint/callsign-reporting/update-batch")]
-pub async fn update_callsign_reporting_batch(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<UpdateCallsignReportingBatchReq>,
-) -> Result<Json<bool>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
-
-    let network_id = req.network_id;
-
-    // Get all callsign texts to query for
-    let callsign_texts: Vec<String> =
-        req.items.iter().map(|item| item.callsign.clone()).collect();
-
-    // Find existing records for this network and these callsigns
-    let existing_records = sigint_network_callsign::Entity::find()
-        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
-        .filter(
-            sigint_network_callsign::Column::SigintCallsign
-                .is_in(callsign_texts.clone()),
-        )
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
-
-    // Create a map of callsign -> existing record for quick lookup
-    let mut existing_map: HashMap<String, sigint_network_callsign::Model> =
-        HashMap::new();
-    for record in existing_records {
-        existing_map.insert(record.sigint_callsign.clone(), record);
-    }
-
-    // Process each item in the batch
-    for item in &req.items {
-        match existing_map.get(&item.callsign) {
-            Some(existing_record) => {
-                // Update existing record
-                let mut model = existing_record.clone().into_active_model();
-                model.is_reported = Set(item.is_reported);
-                model.update(&env.dbx).await.context(h!())?;
-            }
-            None => {
-                // Create new record
-                sigint_network_callsign::ActiveModel {
-                    id: NotSet,
-                    sigint_network_id: Set(network_id),
-                    sigint_callsign: Set(item.callsign.clone()),
-                    is_reported: Set(item.is_reported),
-                    created_at: NotSet,
-                    deleted: NotSet,
-                    sigint_origin_id: NotSet,
-                    mothership_id: NotSet,
-                }
-                .insert(&env.dbx)
-                .await
-                .context(h!())?;
-            }
-        }
-    }
-
-    Ok(Json(true))
-}
-
-#[post("/api/sigint/callsign-bind/delete")]
-pub async fn delete_callsign_bind(
-    user: actix_identity::Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<Vec<i64>>,
-) -> Result<Json<Vec<CallsignBind>>, AppError> {
-    let user_id = user.id()?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
-
-    info!(
-        "delete_callsign_bind; login: {}; req: {:?}",
-        user.id()?,
-        req
-    );
-
-    let mut res_vec = vec![];
-    for binding_id in req.0 {
-        res_vec.push(render_callsign_bind(
-            delete_callsign_bind_by_id(&env.dbx, binding_id, &user_id).await?,
-        ));
-    }
-    Ok(Json(res_vec))
-}
-
-async fn delete_callsign_bind_by_id(
-    db: &DbConn,
-    binding_id: i64,
-    user_id: &str,
-) -> Result<sigint_callsign_bind::Model, AppError> {
-    let callsign_bind = find_callsign_bind(db, binding_id).await?;
-    let mut callsign_bind = callsign_bind.into_active_model();
-    callsign_bind.deleted = Set(true);
-    callsign_bind.updated_at = Set(Utc::now().naive_utc());
-    callsign_bind.updated_by = Set(user_id.to_string());
-    let updated_callsign_bind = callsign_bind.update(db).await?;
-    Ok(updated_callsign_bind)
-}
-
-async fn find_callsign_bind(
-    dbx: &DbConn,
-    callsign_bind_id: i64,
-) -> Result<sigint_callsign_bind::Model, AppError> {
-    let callsign_bind =
-        sigint_callsign_bind::Entity::find_by_id(callsign_bind_id)
-            .one(dbx)
-            .await?
-            .ok_or_else(|| AppError::NotFound)?;
-    Ok(callsign_bind)
-}
-
-pub async fn find_callsign(
-    dbx: &DbConn,
+pub async fn find_callsign<'a, 'async_trait, C>(
+    txn: &'a C,
     callsign_id: i64,
-) -> Result<sigint_callsign::Model, AppError> {
+) -> Result<sigint_callsign::Model, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let callsign = sigint_callsign::Entity::find_by_id(callsign_id)
-        .one(dbx)
+        .one(txn)
         .await?
         .ok_or_else(|| AppError::NotFound)?;
     Ok(callsign)
-}
-
-fn render_callsign_bind(
-    callsign_bind: sigint_callsign_bind::Model,
-) -> CallsignBind {
-    CallsignBind {
-        id: callsign_bind.id,
-        freq: callsign_bind.freq,
-        comment: callsign_bind.comment,
-        date: callsign_bind.date,
-        updated_by: callsign_bind.updated_by,
-        updated_at: callsign_bind.updated_at.and_utc().timestamp_millis(),
-    }
 }
 
 pub fn render_callsign(

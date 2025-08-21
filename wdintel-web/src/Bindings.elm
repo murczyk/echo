@@ -3434,6 +3434,20 @@ signalUnitStatRowEncoder struct =
         ]
 
 
+type alias AddAsKnownNetworkCallsignReq =
+    { networkId : Int
+    , knownCallsignIds : List Int
+    }
+
+
+addAsKnownNetworkCallsignReqEncoder : AddAsKnownNetworkCallsignReq -> Json.Encode.Value
+addAsKnownNetworkCallsignReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "known_callsign_ids", Json.Encode.list Json.Encode.int struct.knownCallsignIds )
+        ]
+
+
 type alias Callsign =
     { id : Int
     , callsign : String
@@ -3461,34 +3475,6 @@ callsignEncoder struct =
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "developing", Json.Encode.bool struct.developing )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
-        ]
-
-
-type alias GetCallsignsWithUnitsFromInboxReq =
-    { sinceDateInclusiveMs : Int
-    , tillDateInclusiveMs : Int
-    , callsigns : List String
-    }
-
-
-getCallsignsWithUnitsFromInboxReqEncoder : GetCallsignsWithUnitsFromInboxReq -> Json.Encode.Value
-getCallsignsWithUnitsFromInboxReqEncoder struct =
-    Json.Encode.object
-        [ ( "since_date_inclusive_ms", Json.Encode.int struct.sinceDateInclusiveMs )
-        , ( "till_date_inclusive_ms", Json.Encode.int struct.tillDateInclusiveMs )
-        , ( "callsigns", Json.Encode.list Json.Encode.string struct.callsigns )
-        ]
-
-
-type alias GetCallsignsWithUnitsFromInboxRsp =
-    { callsignsWithUnits : List ( String, List String )
-    }
-
-
-getCallsignsWithUnitsFromInboxRspEncoder : GetCallsignsWithUnitsFromInboxRsp -> Json.Encode.Value
-getCallsignsWithUnitsFromInboxRspEncoder struct =
-    Json.Encode.object
-        [ ( "callsigns_with_units", Json.Encode.list (\( a, b ) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.list Json.Encode.string b ]) struct.callsignsWithUnits )
         ]
 
 
@@ -3567,6 +3553,83 @@ listCallsignsRspEncoder struct =
         ]
 
 
+type ListNetworkCallsignsSortBy
+    = NetworkCallsignAsc
+    | NetworkCallsignDesc
+    | NetworkCallsignCreatedAtAsc
+    | NetworkCallsignCreatedAtDesc
+
+
+listNetworkCallsignsSortByEncoder : ListNetworkCallsignsSortBy -> Json.Encode.Value
+listNetworkCallsignsSortByEncoder enum =
+    case enum of
+        NetworkCallsignAsc ->
+            Json.Encode.string "NetworkCallsignAsc"
+
+        NetworkCallsignDesc ->
+            Json.Encode.string "NetworkCallsignDesc"
+
+        NetworkCallsignCreatedAtAsc ->
+            Json.Encode.string "NetworkCallsignCreatedAtAsc"
+
+        NetworkCallsignCreatedAtDesc ->
+            Json.Encode.string "NetworkCallsignCreatedAtDesc"
+
+
+type alias ListNetworkCallsignsReq =
+    { networkId : Int
+    , sortBy : Maybe (List ListNetworkCallsignsSortBy)
+    }
+
+
+listNetworkCallsignsReqEncoder : ListNetworkCallsignsReq -> Json.Encode.Value
+listNetworkCallsignsReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listNetworkCallsignsSortByEncoder)) struct.sortBy )
+        ]
+
+
+type alias ListNetworkCallsignsRes =
+    { networkCallsigns : List NetworkCallsign
+    }
+
+
+listNetworkCallsignsResEncoder : ListNetworkCallsignsRes -> Json.Encode.Value
+listNetworkCallsignsResEncoder struct =
+    Json.Encode.object
+        [ ( "network_callsigns", Json.Encode.list networkCallsignEncoder struct.networkCallsigns )
+        ]
+
+
+type alias GetCallsignsWithUnitsFromInboxReq =
+    { sinceDateInclusiveMs : Int
+    , tillDateInclusiveMs : Int
+    , callsigns : List String
+    }
+
+
+getCallsignsWithUnitsFromInboxReqEncoder : GetCallsignsWithUnitsFromInboxReq -> Json.Encode.Value
+getCallsignsWithUnitsFromInboxReqEncoder struct =
+    Json.Encode.object
+        [ ( "since_date_inclusive_ms", Json.Encode.int struct.sinceDateInclusiveMs )
+        , ( "till_date_inclusive_ms", Json.Encode.int struct.tillDateInclusiveMs )
+        , ( "callsigns", Json.Encode.list Json.Encode.string struct.callsigns )
+        ]
+
+
+type alias GetCallsignsWithUnitsFromInboxRsp =
+    { callsignsWithUnits : List ( String, List String )
+    }
+
+
+getCallsignsWithUnitsFromInboxRspEncoder : GetCallsignsWithUnitsFromInboxRsp -> Json.Encode.Value
+getCallsignsWithUnitsFromInboxRspEncoder struct =
+    Json.Encode.object
+        [ ( "callsigns_with_units", Json.Encode.list (\( a, b ) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.list Json.Encode.string b ]) struct.callsignsWithUnits )
+        ]
+
+
 type alias CreateCallsignReq =
     { callsign : String
     , position : String
@@ -3591,6 +3654,28 @@ createCallsignReqEncoder struct =
         ]
 
 
+type alias CreateNetworkCallsignReq =
+    { networkId : Int
+    , callsign : String
+    , position : Maybe String
+    , comment : Maybe String
+    , sourceId : Int
+    , radioFreq : Maybe String
+    }
+
+
+createNetworkCallsignReqEncoder : CreateNetworkCallsignReq -> Json.Encode.Value
+createNetworkCallsignReqEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", Json.Encode.int struct.networkId )
+        , ( "callsign", Json.Encode.string struct.callsign )
+        , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.position )
+        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
+        , ( "source_id", Json.Encode.int struct.sourceId )
+        , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
+        ]
+
+
 type alias CallsignUnitStatsRsp =
     { units : List CallsignUnitStatRow
     }
@@ -3600,102 +3685,6 @@ callsignUnitStatsRspEncoder : CallsignUnitStatsRsp -> Json.Encode.Value
 callsignUnitStatsRspEncoder struct =
     Json.Encode.object
         [ ( "units", Json.Encode.list callsignUnitStatRowEncoder struct.units )
-        ]
-
-
-type alias ListCallsignBindsReq =
-    { callsignIds : List Int
-    , sinceDateInclusiveMs : Maybe Int
-    , tillDateInclusiveMs : Maybe Int
-    }
-
-
-listCallsignBindsReqEncoder : ListCallsignBindsReq -> Json.Encode.Value
-listCallsignBindsReqEncoder struct =
-    Json.Encode.object
-        [ ( "callsign_ids", Json.Encode.list Json.Encode.int struct.callsignIds )
-        , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
-        , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateInclusiveMs )
-        ]
-
-
-type alias CallsignBind =
-    { id : Int
-    , freq : String
-    , comment : Maybe String
-    , date : Maybe String
-    , updatedBy : String
-    , updatedAt : Int
-    }
-
-
-callsignBindEncoder : CallsignBind -> Json.Encode.Value
-callsignBindEncoder struct =
-    Json.Encode.object
-        [ ( "id", Json.Encode.int struct.id )
-        , ( "freq", Json.Encode.string struct.freq )
-        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
-        , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.date )
-        , ( "updated_by", Json.Encode.string struct.updatedBy )
-        , ( "updated_at", Json.Encode.int struct.updatedAt )
-        ]
-
-
-type alias CallsignBindOneReq =
-    { freq : String
-    , comment : Maybe String
-    , date : Maybe String
-    }
-
-
-callsignBindOneReqEncoder : CallsignBindOneReq -> Json.Encode.Value
-callsignBindOneReqEncoder struct =
-    Json.Encode.object
-        [ ( "freq", Json.Encode.string struct.freq )
-        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
-        , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.date )
-        ]
-
-
-type alias CreateCallsignsBindReq =
-    { callsignId : Int
-    , bindings : List CallsignBindOneReq
-    }
-
-
-createCallsignsBindReqEncoder : CreateCallsignsBindReq -> Json.Encode.Value
-createCallsignsBindReqEncoder struct =
-    Json.Encode.object
-        [ ( "callsign_id", Json.Encode.int struct.callsignId )
-        , ( "bindings", Json.Encode.list callsignBindOneReqEncoder struct.bindings )
-        ]
-
-
-type alias UpdateCallsignReportingBatchReq =
-    { networkId : Int
-    , items : List CallsignReportingItem
-    }
-
-
-updateCallsignReportingBatchReqEncoder : UpdateCallsignReportingBatchReq -> Json.Encode.Value
-updateCallsignReportingBatchReqEncoder struct =
-    Json.Encode.object
-        [ ( "network_id", Json.Encode.int struct.networkId )
-        , ( "items", Json.Encode.list callsignReportingItemEncoder struct.items )
-        ]
-
-
-type alias CallsignReportingItem =
-    { callsign : String
-    , isReported : Bool
-    }
-
-
-callsignReportingItemEncoder : CallsignReportingItem -> Json.Encode.Value
-callsignReportingItemEncoder struct =
-    Json.Encode.object
-        [ ( "callsign", Json.Encode.string struct.callsign )
-        , ( "is_reported", Json.Encode.bool struct.isReported )
         ]
 
 
@@ -3713,19 +3702,67 @@ callsignUnitStatRowEncoder struct =
         ]
 
 
-type alias UpdateCallsignReportingReq =
-    { callsign : String
+type alias NetworkCallsign =
+    { id : Int
     , networkId : Int
-    , isReported : Bool
+    , callsign : String
+    , knownCallsignId : Maybe Int
+    , position : Maybe String
+    , comment : Maybe String
+    , unitId : Maybe Int
+    , unitName : Maybe String
+    , sourceId : Maybe Int
+    , radioFreq : Maybe String
+    , createdAt : Int
+    , active : Bool
+    , messageCount : Int
+    , lastDatetime : Maybe Int
+    , freqs : Maybe (List String)
     }
 
 
-updateCallsignReportingReqEncoder : UpdateCallsignReportingReq -> Json.Encode.Value
-updateCallsignReportingReqEncoder struct =
+networkCallsignEncoder : NetworkCallsign -> Json.Encode.Value
+networkCallsignEncoder struct =
     Json.Encode.object
-        [ ( "callsign", Json.Encode.string struct.callsign )
+        [ ( "id", Json.Encode.int struct.id )
         , ( "network_id", Json.Encode.int struct.networkId )
-        , ( "is_reported", Json.Encode.bool struct.isReported )
+        , ( "callsign", Json.Encode.string struct.callsign )
+        , ( "known_callsign_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.knownCallsignId )
+        , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.position )
+        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
+        , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.unitId )
+        , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.unitName )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
+        , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
+        , ( "created_at", Json.Encode.int struct.createdAt )
+        , ( "active", Json.Encode.bool struct.active )
+        , ( "message_count", Json.Encode.int struct.messageCount )
+        , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
+        , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
+        ]
+
+
+type alias UpdateNetworkCallsignReq =
+    { id : Int
+    , networkId : Int
+    , callsign : String
+    , position : Maybe String
+    , comment : Maybe String
+    , sourceId : Int
+    , radioFreq : Maybe String
+    }
+
+
+updateNetworkCallsignReqEncoder : UpdateNetworkCallsignReq -> Json.Encode.Value
+updateNetworkCallsignReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "network_id", Json.Encode.int struct.networkId )
+        , ( "callsign", Json.Encode.string struct.callsign )
+        , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.position )
+        , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
+        , ( "source_id", Json.Encode.int struct.sourceId )
+        , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         ]
 
 
@@ -3861,7 +3898,8 @@ callsignResEncoder struct =
 
 
 type alias KnownCallsignShortRes =
-    { callsign : String
+    { id : Int
+    , callsign : String
     , position : String
     , comment : String
     , unitId : Int
@@ -3874,7 +3912,8 @@ type alias KnownCallsignShortRes =
 knownCallsignShortResEncoder : KnownCallsignShortRes -> Json.Encode.Value
 knownCallsignShortResEncoder struct =
     Json.Encode.object
-        [ ( "callsign", Json.Encode.string struct.callsign )
+        [ ( "id", Json.Encode.int struct.id )
+        , ( "callsign", Json.Encode.string struct.callsign )
         , ( "position", Json.Encode.string struct.position )
         , ( "comment", Json.Encode.string struct.comment )
         , ( "unit_id", Json.Encode.int struct.unitId )
@@ -4814,7 +4853,6 @@ type alias NetworkCallsignRes =
     , freqs : Maybe (List String)
     , networkNames : Maybe (List String)
     , isOld : Bool
-    , isReported : Bool
     }
 
 
@@ -4828,7 +4866,6 @@ networkCallsignResEncoder struct =
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
         , ( "network_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.networkNames )
         , ( "is_old", Json.Encode.bool struct.isOld )
-        , ( "is_reported", Json.Encode.bool struct.isReported )
         ]
 
 
@@ -7540,6 +7577,13 @@ signalUnitStatRowDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
 
 
+addAsKnownNetworkCallsignReqDecoder : Json.Decode.Decoder AddAsKnownNetworkCallsignReq
+addAsKnownNetworkCallsignReqDecoder =
+    Json.Decode.succeed AddAsKnownNetworkCallsignReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_ids" (Json.Decode.list Json.Decode.int)))
+
+
 callsignDecoder : Json.Decode.Decoder Callsign
 callsignDecoder =
     Json.Decode.succeed Callsign
@@ -7643,6 +7687,65 @@ listCallsignsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list callsignDecoder)))
 
 
+listNetworkCallsignsSortByDecoder : Json.Decode.Decoder ListNetworkCallsignsSortBy
+listNetworkCallsignsSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkCallsignAsc" ->
+                            Json.Decode.succeed NetworkCallsignAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkCallsignDesc" ->
+                            Json.Decode.succeed NetworkCallsignDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkCallsignCreatedAtAsc" ->
+                            Json.Decode.succeed NetworkCallsignCreatedAtAsc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NetworkCallsignCreatedAtDesc" ->
+                            Json.Decode.succeed NetworkCallsignCreatedAtDesc
+
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+
+listNetworkCallsignsReqDecoder : Json.Decode.Decoder ListNetworkCallsignsReq
+listNetworkCallsignsReqDecoder =
+    Json.Decode.succeed ListNetworkCallsignsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listNetworkCallsignsSortByDecoder))))
+
+
+listNetworkCallsignsResDecoder : Json.Decode.Decoder ListNetworkCallsignsRes
+listNetworkCallsignsResDecoder =
+    Json.Decode.succeed ListNetworkCallsignsRes
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_callsigns" (Json.Decode.list networkCallsignDecoder)))
+
+
 getCallsignsWithUnitsFromInboxReqDecoder : Json.Decode.Decoder GetCallsignsWithUnitsFromInboxReq
 getCallsignsWithUnitsFromInboxReqDecoder =
     Json.Decode.succeed GetCallsignsWithUnitsFromInboxReq
@@ -7669,6 +7772,17 @@ createCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
 
 
+createNetworkCallsignReqDecoder : Json.Decode.Decoder CreateNetworkCallsignReq
+createNetworkCallsignReqDecoder =
+    Json.Decode.succeed CreateNetworkCallsignReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
+
+
 callsignUnitStatsRspDecoder : Json.Decode.Decoder CallsignUnitStatsRsp
 callsignUnitStatsRspDecoder =
     Json.Decode.succeed CallsignUnitStatsRsp
@@ -7682,60 +7796,36 @@ callsignUnitStatRowDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" Json.Decode.int))
 
 
-listCallsignBindsReqDecoder : Json.Decode.Decoder ListCallsignBindsReq
-listCallsignBindsReqDecoder =
-    Json.Decode.succeed ListCallsignBindsReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_ids" (Json.Decode.list Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
-
-
-callsignBindDecoder : Json.Decode.Decoder CallsignBind
-callsignBindDecoder =
-    Json.Decode.succeed CallsignBind
+networkCallsignDecoder : Json.Decode.Decoder NetworkCallsign
+networkCallsignDecoder =
+    Json.Decode.succeed NetworkCallsign
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" Json.Decode.int))
-
-
-callsignBindOneReqDecoder : Json.Decode.Decoder CallsignBindOneReq
-callsignBindOneReqDecoder =
-    Json.Decode.succeed CallsignBindOneReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable Json.Decode.string)))
-
-
-createCallsignsBindReqDecoder : Json.Decode.Decoder CreateCallsignsBindReq
-createCallsignsBindReqDecoder =
-    Json.Decode.succeed CreateCallsignsBindReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bindings" (Json.Decode.list callsignBindOneReqDecoder)))
-
-
-updateCallsignReportingReqDecoder : Json.Decode.Decoder UpdateCallsignReportingReq
-updateCallsignReportingReqDecoder =
-    Json.Decode.succeed UpdateCallsignReportingReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
-
-
-updateCallsignReportingBatchReqDecoder : Json.Decode.Decoder UpdateCallsignReportingBatchReq
-updateCallsignReportingBatchReqDecoder =
-    Json.Decode.succeed UpdateCallsignReportingBatchReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list callsignReportingItemDecoder)))
-
-
-callsignReportingItemDecoder : Json.Decode.Decoder CallsignReportingItem
-callsignReportingItemDecoder =
-    Json.Decode.succeed CallsignReportingItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_callsign_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
+
+
+updateNetworkCallsignReqDecoder : Json.Decode.Decoder UpdateNetworkCallsignReq
+updateNetworkCallsignReqDecoder =
+    Json.Decode.succeed UpdateNetworkCallsignReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
 
 
 etalonkaJimForksReqDecoder : Json.Decode.Decoder EtalonkaJimForksReq
@@ -7825,6 +7915,7 @@ callsignResDecoder =
 knownCallsignShortResDecoder : Json.Decode.Decoder KnownCallsignShortRes
 knownCallsignShortResDecoder =
     Json.Decode.succeed KnownCallsignShortRes
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
@@ -8382,7 +8473,6 @@ networkCallsignResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_old" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_reported" Json.Decode.bool))
 
 
 postDecoder : Json.Decode.Decoder Post

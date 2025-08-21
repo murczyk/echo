@@ -2,9 +2,12 @@ module Components.Pager exposing
     ( Model
     , Msg(..)
     , init
+    , initWithPageSize
+    , initCustom
     , update
     , view
     , getPageData
+    , updateForNewTotalItems
     )
 
 {-| A reusable pagination component for tables and lists.
@@ -66,6 +69,26 @@ init =
     { currentPage = 1
     , pageSize = 10
     , totalItems = 0
+    }
+
+
+{-| Initialize pagination with custom page size
+-}
+initWithPageSize : Int -> Model
+initWithPageSize pageSize =
+    { currentPage = 1
+    , pageSize = pageSize
+    , totalItems = 0
+    }
+
+
+{-| Initialize pagination with custom values
+-}
+initCustom : Int -> Int -> Int -> Model
+initCustom currentPage pageSize totalItems =
+    { currentPage = currentPage
+    , pageSize = pageSize
+    , totalItems = totalItems
     }
 
 
@@ -214,6 +237,19 @@ viewPageNumber { page, isCurrent, isEllipsis } =
             , onClick (GoToPage page)
             ]
             [ text (String.fromInt page) ]
+
+
+{-| Update pagination when total items count changes
+This function recalculates totalItems and adjusts currentPage if needed
+-}
+updateForNewTotalItems : Int -> Model -> Model
+updateForNewTotalItems newTotalItems model =
+    let
+        totalItems = newTotalItems
+        maxPage = Basics.max 1 (ceiling (toFloat totalItems / toFloat model.pageSize))
+        newCurrentPage = Basics.min model.currentPage maxPage
+    in
+    { model | totalItems = totalItems, currentPage = newCurrentPage }
 
 
 {-| Get page numbers to display with ellipsis
