@@ -253,6 +253,8 @@ type alias Model =
 
     -- Callsign adding functionality
     , callsignAddingInProgress : Set Int -- Позивні, які зараз додаються до мережі
+    , callsignsSearchQuery : String -- Пошуковий запит для таблиці "Всі позивні"
+    , networkCallsignsSearchQuery : String -- Пошуковий запит для таблиці "Позивні мережі"
 
     -- Network callsign creation sidebar
     , callsignCreateSidebar : Maybe CallsignCreateMode
@@ -405,6 +407,8 @@ init route shared () =
 
       -- Callsign adding functionality
       , callsignAddingInProgress = Set.empty
+      , callsignsSearchQuery = ""
+      , networkCallsignsSearchQuery = ""
 
       -- Network callsign creation sidebar
       , callsignCreateSidebar = Nothing
@@ -544,6 +548,8 @@ type Msg
       -- Callsign adding functionality
     | AddCallsignToNetwork Int -- Додавання позивного до мережі
     | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign)) -- Результат додавання позивного
+    | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
+    | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
       -- Callsign deletion functionality
     | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
@@ -2254,6 +2260,13 @@ update shared msg model =
 
                 _ ->
                     ( model, E.none )
+
+        -- Search functionality
+        CallsignsSearchChanged query ->
+            ( { model | callsignsSearchQuery = query }, E.none )
+
+        NetworkCallsignsSearchChanged query ->
+            ( { model | networkCallsignsSearchQuery = query }, E.none )
 
 
 
