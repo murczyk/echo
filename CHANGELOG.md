@@ -1,5 +1,6 @@
 ## NEXT
 
+- [#1329](https://github.com/echoua/echo/issues/1329) Мережі: не відображати видалені частоти в мережах
 - [#1322](https://github.com/echoua/echo/issues/1322) Звіт Еталонка. Прибрано розрив сторінок між мережами різних підрозділів
 - [#1281](https://github.com/echoua/echo/issues/1281) Звіт ДАЙДЖЕСТ
 - [#1200](https://github.com/echoua/echo/issues/1200) Мережа: привʼязані позивні

@@ -115,6 +115,7 @@ pub async fn network_list(
                     .into_simple_expr()
                     .eq(sigint_network::Column::Id.into_simple_expr()),
             )
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
             .filter(Expr::cust_with_values(
                 "sigint_network_freq.freq ilike $1",
                 vec![format!("{filter_freq}%").as_str()],
@@ -2970,6 +2971,7 @@ where
 {
     Ok(sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
         .all(txn)
         .await
         .context(h!())?
@@ -2978,7 +2980,7 @@ where
             id: x.id,
             network_id: x.network_id,
             freq: x.freq.clone(),
-            deleted: x.active_to.is_some(),
+            deleted: x.deleted,
             active_to: x.active_to.map(|d| d.and_utc().timestamp_millis()),
             active_from: x.active_from.and_utc().timestamp_millis(),
             created_at: x.created_at.and_utc().timestamp_millis(),
