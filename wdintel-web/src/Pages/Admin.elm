@@ -1,4 +1,5 @@
 module Pages.Admin exposing (Model, Msg, page)
+import Shared.Model exposing (isDarkMode)
 
 import Api
 import Auth

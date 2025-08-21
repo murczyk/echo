@@ -15,6 +15,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import View exposing (View)
 import Views
 

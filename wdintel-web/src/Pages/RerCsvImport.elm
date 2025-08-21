@@ -20,6 +20,7 @@ import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import View exposing (View)
 import Views

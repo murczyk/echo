@@ -48,6 +48,7 @@ import Route.Path
 import Select
 import Set
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
 import TimeZone

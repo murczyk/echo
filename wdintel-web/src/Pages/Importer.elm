@@ -1,4 +1,5 @@
 module Pages.Importer exposing
+import Shared.Model exposing (isDarkMode)
     ( FileWithUuid
     , Model
     , Msg

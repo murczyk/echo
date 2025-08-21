@@ -32,6 +32,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone

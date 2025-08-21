@@ -16,6 +16,7 @@ import Page exposing (Page)
 import PagePorts.HomePorts as Ports
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import View exposing (View)
 import Views
 
