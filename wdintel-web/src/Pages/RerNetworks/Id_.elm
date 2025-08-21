@@ -3871,12 +3871,9 @@ contentBlock user shared network model =
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Частоти" ]
             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                button
-                    [ title "Додати частоту"
-                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
-                    , onClick OpenFreqCreateSidebar
-                    ]
-                    [ i [ class "bi bi-plus-lg" ] [] ]
+                Button.new { label = "Створити", onClick = OpenFreqCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
 
               else
                 text ""
@@ -3903,12 +3900,9 @@ contentBlock user shared network model =
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]
             , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                button
-                    [ title "Додати позивний"
-                    , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
-                    , onClick OpenCallsignCreateSidebar
-                    ]
-                    [ i [ class "bi bi-plus-lg" ] [] ]
+                Button.new { label = "Створити", onClick = OpenCallsignCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
 
               else
                 text ""
