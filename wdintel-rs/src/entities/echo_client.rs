@@ -30,6 +30,8 @@ pub enum Relation {
     EchoOutboxMessage,
     #[sea_orm(has_many = "super::echo_outbox_message_patch::Entity")]
     EchoOutboxMessagePatch,
+    #[sea_orm(has_many = "super::echo_signal_identities::Entity")]
+    EchoSignalIdentities,
     #[sea_orm(has_many = "super::echo_whatsapp_queue::Entity")]
     EchoWhatsappQueue,
 }
@@ -67,6 +69,12 @@ impl Related<super::echo_outbox_message::Entity> for Entity {
 impl Related<super::echo_outbox_message_patch::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoOutboxMessagePatch.def()
+    }
+}
+
+impl Related<super::echo_signal_identities::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoSignalIdentities.def()
     }
 }
 

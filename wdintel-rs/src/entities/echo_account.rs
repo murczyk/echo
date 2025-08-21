@@ -41,6 +41,8 @@ pub enum Relation {
     EchoRecipient,
     #[sea_orm(has_many = "super::echo_sender::Entity")]
     EchoSender,
+    #[sea_orm(has_many = "super::echo_signal_identities::Entity")]
+    EchoSignalIdentities,
     #[sea_orm(has_many = "super::echo_whatsapp_group::Entity")]
     EchoWhatsappGroup,
     #[sea_orm(has_many = "super::echo_whatsapp_profile::Entity")]
@@ -108,6 +110,12 @@ impl Related<super::echo_recipient::Entity> for Entity {
 impl Related<super::echo_sender::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoSender.def()
+    }
+}
+
+impl Related<super::echo_signal_identities::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoSignalIdentities.def()
     }
 }
 
