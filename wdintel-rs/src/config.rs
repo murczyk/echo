@@ -109,6 +109,7 @@ pub struct Config {
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
     pub read_from_legacy_data_sources: Option<bool>,
+    pub server_id: Option<u32>,
 }
 
 impl Config {
