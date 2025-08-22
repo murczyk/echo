@@ -935,10 +935,10 @@ rightColumn ( messageId, message ) ps model =
                                                 |> List.foldl
                                                     (\callsign dict ->
                                                         let
-                                                            ( prio, nonPrio ) =
+                                                            prio =
                                                                 prioritizeCallsignsPartial callsign
                                                         in
-                                                        Dict.insert callsign ( prio, nonPrio ) dict
+                                                        Dict.insert callsign ( prio, [] ) dict
                                                     )
                                                     Dict.empty
                                     in

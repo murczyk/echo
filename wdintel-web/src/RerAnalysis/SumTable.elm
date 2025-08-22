@@ -233,15 +233,15 @@ sumTableBlock2 model shared route sumTable =
                                         prioritizeCallsignsPartial c =
                                             Le.Callsign.prioritizeCallsigns masterUnitsDict networkUnits model.callsignsInfoSumTable c
 
-                                        ( prio, nonPrio ) =
+                                        prio =
                                             prioritizeCallsignsPartial callsign
 
                                         conditionMet =
-                                            List.length prio > 0 || List.length nonPrio > 0
+                                            List.length prio > 0
 
                                         result =
                                             if conditionMet then
-                                                Le.Block.Callsign.view callsign ( prio, nonPrio )
+                                                Le.Block.Callsign.view callsign ( prio, [] )
 
                                             else
                                                 Le.Block.Callsign.viewDefault callsign False
