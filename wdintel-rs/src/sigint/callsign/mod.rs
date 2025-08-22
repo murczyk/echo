@@ -385,47 +385,18 @@ pub async fn update_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<Callsign>,
 ) -> Result<Json<Callsign>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
-    crate::users::has_role(&env.dbx, &user.id()?, "CallsignsEditor").await?;
+    let user_id = user.id()?;
+    crate::users::has_role(&env.dbx, &user_id, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor").await?;
 
-    info!("update_callsign; login: {}; req: {:?}", user.id()?, req);
+    info!("update_callsign; login: {user_id}; req: {req:?}");
+    let req = req.into_inner();
 
-    let callsign = find_callsign(&env.dbx, req.id).await?;
-    let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
-        .into_json()
-        .one(&env.dbx)
-        .await?
-        .ok_or_else(|| AppError::NotFound)?;
-    let mut callsign = callsign.into_active_model();
-    callsign.callsign = Set(req.callsign.clone().trim().to_lowercase());
-    callsign.position = Set(req.position.clone());
-    callsign.unit_id = Set(req.unit_id);
-    callsign.comment = Set(req.comment.clone());
-    callsign.source_id = Set(req.source_id);
-    callsign.developing = Set(req.developing);
-    callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
-    let callsign = callsign.update(&env.dbx).await.context(h!())?;
-    let callsign_json_new = sigint_callsign::Entity::find_by_id(callsign.id)
-        .into_json()
-        .one(&env.dbx)
+    let txn = env.dbx.begin().await?;
+    let callsign = bl_callsign_update(&req, &user_id, &txn)
         .await
-        .context(h!())?
-        .ok_or_else(|| AppError::NotFound)?;
-    let _changelog = sigint_callsign_changelog::ActiveModel {
-        id: NotSet,
-        sigint_callsign_id: Set(callsign.id),
-        login: Set(user.id()?.to_string()),
-        action: Set("update".to_string()),
-        created_at: NotSet,
-        new_value: Set(Some(callsign_json_new)),
-        old_value: Set(Some(callsign_json_old)),
-        req: Set(None),
-        sigint_origin_id: NotSet,
-        mothership_id: NotSet,
-    }
-    .insert(&env.dbx)
-    .await
-    .context(h!())?;
+        .context(h!())?;
+    txn.commit().await.context(h!())?;
 
     let event = EventMsg::new(EventType::ETCallsignChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
@@ -436,6 +407,51 @@ pub async fn update_callsign(
             .one(&env.dbx)
             .await?,
     )?))
+}
+
+pub async fn bl_callsign_update(
+    req: &Callsign,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+) -> Result<sigint_callsign::Model, AppError> {
+    let callsign = find_callsign(txn, req.id).await.context(h!())?;
+    let callsign_json_old = sigint_callsign::Entity::find_by_id(callsign.id)
+        .into_json()
+        .one(txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound)?;
+    let mut callsign = callsign.into_active_model();
+    callsign.callsign = Set(req.callsign.clone().trim().to_lowercase());
+    callsign.position = Set(req.position.clone());
+    callsign.unit_id = Set(req.unit_id);
+    callsign.comment = Set(req.comment.clone());
+    callsign.source_id = Set(req.source_id);
+    callsign.developing = Set(req.developing);
+    callsign.radio_freq = Set(req.radio_freq.clone().unwrap_or("".to_string()));
+    let callsign = callsign.update(txn).await.context(h!())?;
+    let callsign_json_new = sigint_callsign::Entity::find_by_id(callsign.id)
+        .into_json()
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or_else(|| AppError::NotFound)?;
+    let _changelog = sigint_callsign_changelog::ActiveModel {
+        id: NotSet,
+        sigint_callsign_id: Set(callsign.id),
+        login: Set(user_id.to_string()),
+        action: Set("update".to_string()),
+        created_at: NotSet,
+        new_value: Set(Some(callsign_json_new)),
+        old_value: Set(Some(callsign_json_old)),
+        req: Set(None),
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    Ok(callsign)
 }
 
 #[post("/api/sigint/callsign/delete")]
