@@ -474,7 +474,7 @@ pub async fn load_callsigns(
                     kc.callsign == callsign
                         && unit_name
                             .as_ref()
-                            .map_or(false, |u| kc.unit_name.ends_with(u))
+                            .is_some_and(|u| kc.unit_name.ends_with(u))
                 })
                 .cloned()
                 .collect::<Vec<KnownCallsignRes>>();
