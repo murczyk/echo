@@ -1,5 +1,8 @@
 use crate::entities::*;
 use crate::sigint::callsign::types::*;
+use crate::sigint::callsign::{
+    bl_callsign_create, bl_callsign_update, find_callsign,
+};
 use crate::sigint::etalonka::query::*;
 use crate::sigint::network::bl::{find_network, get_networks_units};
 use crate::types::*;
@@ -32,16 +35,13 @@ pub async fn bl_create_network_callsign(
             unit_id,
             source_id: req.source_id as i32,
             radio_freq: req.radio_freq.clone(),
-            developing: false,
+            developing: req.developing,
         };
 
-        let known_callsing = crate::sigint::callsign::bl_callsign_create(
-            &known_callsing_req,
-            user_id,
-            txn,
-        )
-        .await
-        .context(h!())?;
+        let known_callsing =
+            bl_callsign_create(&known_callsing_req, user_id, txn)
+                .await
+                .context(h!())?;
 
         bl_add_as_known_network_callsigns(
             req.network_id,
@@ -97,9 +97,7 @@ pub async fn bl_add_as_known_network_callsigns(
     let mut res = vec![];
     for known_callsign_id in known_callsign_ids {
         let known_callsign =
-            crate::sigint::callsign::find_callsign(txn, known_callsign_id)
-                .await
-                .context(h!())?;
+            find_callsign(txn, known_callsign_id).await.context(h!())?;
 
         let network_callsign = sigint_network_callsign::ActiveModel {
             id: NotSet,
@@ -148,16 +146,57 @@ pub async fn bl_update_network_callsign(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let mut network_callsign_record = network_callsign.into_active_model();
-    network_callsign_record.sigint_network_id = Set(req.network_id);
-    network_callsign_record.sigint_callsign =
-        Set(req.callsign.clone().trim().to_lowercase());
-    network_callsign_record.position = Set(req.position.clone());
-    network_callsign_record.comment = Set(req.comment.clone());
-    network_callsign_record.source_id = Set(Some(req.source_id));
+    let network_callsign_id = if let Some(network_callsign_id) =
+        network_callsign.sigint_callsign_id
+    {
+        // Network callsign is linked to known callsign, update the known callsign instead
+        let known_callsign = find_callsign(txn, network_callsign_id)
+            .await
+            .context(h!())?;
 
-    let network_callsign =
-        network_callsign_record.update(txn).await.context(h!())?;
+        let known_callsing_req = Callsign {
+            id: known_callsign.id,
+            callsign: req.callsign.clone(),
+            position: req.position.clone().unwrap_or_default(),
+            comment: req.comment.clone().unwrap_or_default(),
+            unit_id: known_callsign.unit_id,
+            active: known_callsign.deleted,
+            source_id: req.source_id as i32,
+            created_at: known_callsign.created_at.and_utc().timestamp_millis(),
+            developing: req.developing,
+            radio_freq: req.radio_freq.clone(),
+        };
+
+        let known_callsign =
+            bl_callsign_update(&known_callsing_req, user_id, txn)
+                .await
+                .context(h!())?;
+
+        // Also update the network callsign's callsign string to keep in sync
+        let mut network_callsign_record = network_callsign.into_active_model();
+        network_callsign_record.sigint_callsign =
+            Set(known_callsign.callsign.clone());
+        let network_callsign =
+            network_callsign_record.update(txn).await.context(h!())?;
+        network_callsign.id
+    } else
+    // If no known callsign assigned, update the network callsign itself
+    {
+        let mut network_callsign_record = network_callsign.into_active_model();
+        network_callsign_record.sigint_network_id = Set(req.network_id);
+        network_callsign_record.sigint_callsign =
+        Set(req.callsign.clone().trim().to_lowercase());
+        network_callsign_record.position = Set(req.position.clone());
+        network_callsign_record.comment = Set(req.comment.clone());
+        network_callsign_record.source_id = Set(Some(req.source_id));
+        network_callsign_record.radio_freq = Set(req.radio_freq.clone());
+        network_callsign_record.developing = Set(req.developing);
+
+        let network_callsign =
+            network_callsign_record.update(txn).await.context(h!())?;
+
+        network_callsign.id
+    };
 
     // Update the network's updated_at timestamp as well as new active_from and active_to
     let mut network_record = network.into_active_model();
@@ -165,7 +204,7 @@ pub async fn bl_update_network_callsign(
     network_record.updated_by = Set(Some(user_id.to_string()));
     network_record.update(txn).await.context(h!())?;
 
-    Ok(network_callsign.id)
+    Ok(network_callsign_id)
 }
 
 pub async fn bl_delete_network_callsign(
@@ -443,7 +482,7 @@ pub fn render_network_callsign(
             known_callsign.as_ref().map(|kc| kc.radio_freq.clone())
         }),
         developing: network_callsign.developing
-            || known_callsign.as_ref().map_or(false, |kc| kc.developing),
+            || known_callsign.as_ref().is_some_and(|kc| kc.developing),
         created_at: network_callsign.created_at.and_utc().timestamp_millis(),
         active: !network_callsign.deleted,
         message_count: comm_info.map_or(0, |c| c.message_count),
