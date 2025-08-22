@@ -766,6 +766,7 @@ fn build_network_callsigns_table(
                 .chain(
                     net_callsigns
                         .iter()
+                        .filter(|nc| !nc.developing)
                         .map(|callsign| TableRow::new(row_builder(callsign))),
                 )
                 .collect(),
