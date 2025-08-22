@@ -291,6 +291,8 @@ copy-db:
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-pivnich" ]]; then \
         just server={{ server }} _copy-db; \
+    elif [[ "{{ server }}" == "echo-skhid" ]]; then \
+        just server={{ server }} _copy-db; \
     else \
         just _print-servers; exit 1; \
     fi
@@ -337,12 +339,12 @@ copy-db-to-target:
     ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
     scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
     ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
-    scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/tmp/
-    rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
-    ssh -t {{ target }} '(cd /tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
+    scp ~/Downloads/wd-{{ dt1 }}.pgrestore.gz {{ target }}:/var/tmp/
+    ssh -t {{ target }} '(cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)'
     ssh -t {{ target }} "sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'"
     ssh -t {{ target }} "sudo -u postgres psql -c 'create database {{ pgdb }}'"
-    ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /tmp/wd-{{ dt1 }}.pgrestore"
+    ssh -t {{ target }} "sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore"
+    rm ~/Downloads/wd-{{ dt1 }}.pgrestore.gz | echo "ok"
 
 copy-db-local:
     #!/bin/bash
