@@ -40,7 +40,7 @@ prioritizeCallsignsConnectedToNetworkUnitsRegiment units networkUnits callsigns 
             findCallsignUnit callsigns units
 
         unitsWithSameRegiment =
-            callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.sameRegiment callsignUnit))
+            callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.isSameOrChildUnit callsignUnit))
 
         isPrioritized : List B.Unit -> B.CallsignInfo -> Bool
         isPrioritized u callsign =
