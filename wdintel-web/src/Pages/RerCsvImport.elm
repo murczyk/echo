@@ -13,13 +13,14 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
 import Le.Block.Spinner
-import Le.ErrorHandling
 import Le.Console
+import Le.ErrorHandling
 import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import View exposing (View)
 import Views
@@ -30,7 +31,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -112,7 +113,7 @@ subscriptions model =
 
 contentBlock : Model -> Html Msg
 contentBlock model =
-    div [class "mt-2"]
+    div [ class "mt-2" ]
         [ h3 []
             [ text "Приймає CSV-файл з єдиною колонкою, що містить перехоплення виду:" ]
         , div [ class "flex justify-between items-center gap-2" ]
@@ -129,9 +130,10 @@ contentBlock model =
             ]
         , div [ class "text-center" ]
             [ Button.new { label = " додати csv", onClick = UploadFileToConvert }
-                |> Button.withIcon 
+                |> Button.withIcon
                     [ if not (Le.Console.isInProgress model.console) then
                         i [ class "bi bi-file-zip" ] []
+
                       else
                         Le.Block.Spinner.loadingSpinnerSm
                     ]

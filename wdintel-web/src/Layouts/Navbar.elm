@@ -14,6 +14,7 @@ import Le.Types exposing (ApiError)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (ThemeMode(..))
 import Shared.Msg
 import Task
 import View exposing (View)
@@ -65,6 +66,7 @@ keepAliveInterval =
 
 type Msg
     = ToggleDarkTheme
+    | SetThemeMode Shared.Model.ThemeMode
     | Slept
     | KeepAliveDone (Result ApiError ())
     | ToggleNavbarVisibility
@@ -77,6 +79,11 @@ update route msg model =
         ToggleDarkTheme ->
             ( model
             , E.toggleDarkMode
+            )
+
+        SetThemeMode themeMode ->
+            ( model
+            , E.setThemeMode themeMode
             )
 
         Slept ->
@@ -132,7 +139,7 @@ view user activeName shared route { toContentMsg, model, content } =
                         "-translate-y-full"
                     )
                 ]
-                [ navbarComponent user shared activeName { onToggleTheme = ToggleDarkTheme, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
+                [ navbarComponent user shared activeName { onToggleTheme = ToggleDarkTheme, onThemeChange = SetThemeMode, onNavbarVisibilityChange = ToggleNavbarVisibility, isRerDuty = route.url.path == "/rer-duty" } ]
             , if route.url.path == "/rer-duty" && not model.isNavbarVisible then
                 div
                     [ class "fixed top-4 right-4 z-500 transition-opacity duration-300 ease-in-out opacity-100" ]

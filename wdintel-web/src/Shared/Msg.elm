@@ -4,6 +4,7 @@ import Bindings as B
 import Le.Block.Toast
 import Le.Types exposing (ApiError, LocationRes)
 import Route.Path
+import Shared.Model exposing (ThemeMode)
 import Time exposing (Posix)
 
 
@@ -13,6 +14,8 @@ type Msg
     | SignOutDone (Result ApiError ())
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
+    | SetThemeMode ThemeMode
+    | ThemeModeLoaded String
     | ToggleDarkMode
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)

@@ -1,4 +1,5 @@
 module Pages.Admin exposing (Model, Msg, page)
+import Shared.Model exposing (isDarkMode)
 
 import Api
 import Auth
@@ -34,6 +35,7 @@ import Route exposing (Route)
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import View exposing (View)
 
 
@@ -453,7 +455,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -3173,7 +3175,7 @@ renderOrphanGroupsTable model groups =
         renderAreaOfResponsibilityColumn group =
             let
                 areas = group.areasOfResponsibility |> Maybe.withDefault []
-                
+
                 displayText : String
                 displayText =
                     if List.isEmpty areas then
@@ -3186,7 +3188,7 @@ renderOrphanGroupsTable model groups =
                     if List.isEmpty areas then
                         "Смуги не призначені"
                     else
-                        areas 
+                        areas
                             |> List.map (\area ->
                                 case area.description of
                                     Just desc ->

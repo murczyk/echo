@@ -1,4 +1,5 @@
 module Pages.Login exposing (Model, Msg, page)
+import Shared.Model exposing (isDarkMode)
 
 import Api
 import Bindings as B
@@ -19,6 +20,7 @@ import Regex
 import Route exposing (Route)
 import Route.Path
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Url.Builder
 import View exposing (View)
@@ -395,5 +397,5 @@ view shared model =
                     False
     in
     { title = "логін"
-    , body = body shared.isDarkMode featureDelta model
+    , body = body (isDarkMode shared.themeMode) featureDelta model
     }

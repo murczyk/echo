@@ -5,7 +5,7 @@ import Auth
 import Bindings as B exposing (..)
 import Browser.Events
 import Components.Navbar exposing (navBar)
-import Components.ThemeSwitcher exposing (colorThemeSwitcher)
+import Components.ThemeSwitcher exposing (themeSwitcher)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -15,10 +15,10 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
 import Le.ErrorHandling
+import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import Le.Waterfall exposing (Msg(..), waterfallDivId)
-import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Waterfall.Messages as Messages
 import Le.Waterfall.Utils as Utils
 import Maybe.Extra as MaybeX exposing (isJust)
@@ -28,6 +28,7 @@ import Route exposing (Route)
 import Route.Path
 import Set exposing (Set)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import Uuid.Barebones
@@ -125,7 +126,7 @@ page user shared req =
     Page.new
         { init = init req
         , update = update shared user
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -420,12 +421,20 @@ body isDarkMode shared user model =
                             , serverInfo = shared.serverInfo
                             , user = user
                             , waterfallsAmount = List.length model.waterfalls
-                            , masterUnits = case shared.masterUnits of
-                                Success units -> units
-                                _ -> Dict.empty
-                            , networks = case shared.networks of
-                                Success networks -> networks
-                                _ -> Dict.empty
+                            , masterUnits =
+                                case shared.masterUnits of
+                                    Success units ->
+                                        units
+
+                                    _ ->
+                                        Dict.empty
+                            , networks =
+                                case shared.networks of
+                                    Success networks ->
+                                        networks
+
+                                    _ ->
+                                        Dict.empty
                             }
                             shared
                             wf

@@ -29,6 +29,7 @@ import Process
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
@@ -41,7 +42,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -722,15 +723,14 @@ contentBlock shared model =
                                                     , span [] [ text "виправити дублікати" ]
                                                     ]
                                                 , div
-                                                        [ class "d-flex align-items-center gap-2 py-2 pointer popup-action"
-                                                        , attribute "data-bs-toggle" "modal"
-                                                        , attribute "data-bs-target" "#deleteConfirmationModal"
-                                                        , onClick <| DeleteUnit unit.id
-                                                        ]
-                                                        [ i [ class "bi bi-trash", style "margin-top" "2px" ] []
-                                                        , span [] [ text "видалити" ]
-                                                        ]
-
+                                                    [ class "d-flex align-items-center gap-2 py-2 pointer popup-action"
+                                                    , attribute "data-bs-toggle" "modal"
+                                                    , attribute "data-bs-target" "#deleteConfirmationModal"
+                                                    , onClick <| DeleteUnit unit.id
+                                                    ]
+                                                    [ i [ class "bi bi-trash", style "margin-top" "2px" ] []
+                                                    , span [] [ text "видалити" ]
+                                                    ]
                                                 ]
                                     in
                                     [ Le.Block.Popup.new

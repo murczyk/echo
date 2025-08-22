@@ -30,6 +30,7 @@ import Route exposing (Route)
 import Route.Path
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Time exposing (Posix)
 import Time.Extra
 import Url.Parser exposing (query)
@@ -111,6 +112,7 @@ viewManagingLinks freq model shared =
                             [ case shared.masterUnits of
                                 Success units ->
                                     NetworksUtils.renderNetwork network_ units
+
                                 _ ->
                                     text "Завантаження..."
                             , div [ class "flex gap-2" ]
@@ -161,7 +163,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
 
                                 Nothing ->
                                     []
-                    
+
                     _ ->
                         []
           in
@@ -173,16 +175,18 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                             (\unitId ->
                                 Select.basicMenuItem
                                     { item = unitId
-                                    , label = case shared.masterUnits of
-                                        Success units ->
-                                            Unit.unitName units unitId
-                                        _ ->
-                                            "Завантаження..."
+                                    , label =
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Unit.unitName units unitId
+
+                                            _ ->
+                                                "Завантаження..."
                                     }
                             )
 
                 options =
-                    Le.Block.Select.defaultOptions shared.isDarkMode
+                    Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
               in
               div [ class "flex gap-[8px]" ]
                 [ div [ class "grow-1" ]
@@ -205,7 +209,6 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                         ]
                         [ i [ class "bi bi-plus-lg" ] []
                         ]
-
                     ]
                 ]
             , div [ class "flex items-center gap-2 mb-4 mt-2" ]
@@ -223,6 +226,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                         (case shared.masterUnits of
                             Success units ->
                                 List.map (\network -> renderNetworkSelectionItem network selectedNetworkId units) networksToShow
+
                             _ ->
                                 []
                         )

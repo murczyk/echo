@@ -26,6 +26,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Time
 import View exposing (View)
 import Views
@@ -36,7 +37,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)
@@ -152,6 +153,7 @@ getStatusText account =
             "ready" ->
                 if account.isImported then
                     "Імпортовано"
+
                 else
                     "Очікує підключення"
 
@@ -184,8 +186,10 @@ getStatusColorClass account =
             "ready" ->
                 if account.isImported then
                     "text-purple-600"
+
                 else
                     "text-orange-600"
+
             _ ->
                 "text-orange-600"
 
@@ -317,18 +321,21 @@ validateAorId maybeAorId =
             Err "Потрібно вибрати смугу відповідальності"
 
 
+
 -- Helper function to validate edit form
 
 
 validateEditForm : EditForm -> Result (Dict String String) EditForm
 validateEditForm editForm =
     let
-        errors = Dict.empty
-            |> validateDisplayNameField editForm.displayName
-            |> validateAorIdField editForm.aorId
+        errors =
+            Dict.empty
+                |> validateDisplayNameField editForm.displayName
+                |> validateAorIdField editForm.aorId
     in
     if Dict.isEmpty errors then
         Ok editForm
+
     else
         Err errors
 
@@ -336,15 +343,22 @@ validateEditForm editForm =
 validateDisplayNameField : String -> Dict String String -> Dict String String
 validateDisplayNameField name errors =
     case validateDisplayName name of
-        Ok _ -> errors
-        Err error -> Dict.insert "displayName" error errors
+        Ok _ ->
+            errors
+
+        Err error ->
+            Dict.insert "displayName" error errors
 
 
 validateAorIdField : Maybe Int -> Dict String String -> Dict String String
 validateAorIdField maybeAorId errors =
     case validateAorId maybeAorId of
-        Ok _ -> errors
-        Err error -> Dict.insert "aorId" error errors
+        Ok _ ->
+            errors
+
+        Err error ->
+            Dict.insert "aorId" error errors
+
 
 
 -- Helper function to find account by ID
@@ -353,6 +367,7 @@ validateAorIdField maybeAorId errors =
 findAccountById : Int -> List B.EchoAccountF1 -> Maybe B.EchoAccountF1
 findAccountById accountId accounts =
     List.filter (\account -> account.id == accountId) accounts |> List.head
+
 
 
 -- Helper function to build edit request
@@ -371,9 +386,11 @@ buildEditRequest editForm account =
     , description =
         if String.isEmpty editForm.description then
             Nothing
+
         else
             Just editForm.description
     }
+
 
 
 -- Helper function to submit edit form
@@ -386,7 +403,8 @@ submitEditForm model editForm =
             case findAccountById editForm.id accounts of
                 Just account ->
                     let
-                        request = buildEditRequest editForm account
+                        request =
+                            buildEditRequest editForm account
                     in
                     ( { model | editLoading = True }
                     , E.sendCmd (Api.messenger_edit_account (\result -> EditAccountResponse result editForm.id) request)
@@ -399,6 +417,7 @@ submitEditForm model editForm =
             ( model, E.none )
 
 
+
 -- Helper function to normalize description
 
 
@@ -406,8 +425,10 @@ normalizeDescription : String -> Maybe String
 normalizeDescription description =
     if String.isEmpty description then
         Nothing
+
     else
         Just description
+
 
 
 -- Helper function to find AOR by ID
@@ -420,10 +441,13 @@ findAorById maybeAorId aorList =
             case aorList of
                 RD.Success aors ->
                     List.filter (\aor -> aor.id == aorId) aors |> List.head
+
                 _ ->
                     Nothing
+
         Nothing ->
             Nothing
+
 
 
 -- Helper function to update account in list
@@ -437,8 +461,10 @@ updateAccountInList accountId editForm aorList account =
             , description = normalizeDescription editForm.description
             , areaOfResponsibility = findAorById editForm.aorId aorList
         }
+
     else
         account
+
 
 
 -- Helper function to update accounts list
@@ -449,11 +475,14 @@ updateAccountsList accountId editForm model =
     case model.accounts of
         RD.Success accounts ->
             let
-                updatedAccounts = List.map (updateAccountInList accountId editForm model.aorList) accounts
+                updatedAccounts =
+                    List.map (updateAccountInList accountId editForm model.aorList) accounts
             in
             RD.Success updatedAccounts
+
         _ ->
             model.accounts
+
 
 
 -- Helper function to clear edit form
@@ -1080,7 +1109,8 @@ update msg model =
             case model.editForm of
                 Just editForm ->
                     let
-                        updatedAccounts = updateAccountsList accountId editForm model
+                        updatedAccounts =
+                            updateAccountsList accountId editForm model
                     in
                     ( { model | accounts = updatedAccounts }
                         |> clearEditForm

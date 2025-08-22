@@ -15,6 +15,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import View exposing (View)
 import Views
 
@@ -24,7 +25,7 @@ page user shared req =
     Page.new
         { init = init
         , update = update
-        , view = view shared.isDarkMode shared user
+        , view = view (isDarkMode shared.themeMode) shared user
         , subscriptions = subscriptions
         }
         |> Page.withLayout (toLayout user)

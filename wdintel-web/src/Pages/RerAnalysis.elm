@@ -38,6 +38,7 @@ import Route.Path
 import Select
 import Set
 import Shared
+import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
 import Time exposing (Posix)
 import View exposing (View)
@@ -185,7 +186,6 @@ init route _ =
             , groupsActivityPeriod = FilterSelectedRange
             , filterTagsOption = B.OneOfTags
             , unitsExactMatchOnly = True
-
             }
 
         m2 =

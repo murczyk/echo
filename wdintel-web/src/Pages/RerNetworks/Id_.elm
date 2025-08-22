@@ -12,6 +12,8 @@ import Components.Pager as Pager
 import Components.SegmentedControl as SegmentedControl
 import Components.Sidebar as Sidebar
 import Components.Table as Table
+
+import Shared.Model exposing (isDarkMode)
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
 import Components.Table.Sorter as TableSorter
@@ -2936,7 +2938,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                     }
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map FreqKindSelectMsg <|
                         Styled.toUnstyled <|
@@ -2971,7 +2973,7 @@ freqEditSidebarContent shared model user freqId updateReq =
                                 model.freqEditModulationSelect.selected
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map FreqModulationSelectMsg <|
                         Styled.toUnstyled <|
@@ -3734,7 +3736,7 @@ contentBlock user shared network model =
                                             model.addConfirmationFreqSelect.selected
 
                                     defaultOptions =
-                                        Le.Block.Select.defaultOptions shared.isDarkMode
+                                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                                   in
                                   Html.map AddConfirmationFreqSelMsg <|
                                     Styled.toUnstyled <|
@@ -4310,7 +4312,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                             model.editAorSelect.selected
 
                     defaultOptions =
-                        Le.Block.Select.defaultOptions shared.isDarkMode
+                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                   in
                   Html.map NetworkEditAorSelMsg <|
                     Styled.toUnstyled <|
@@ -4366,7 +4368,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                                 model.editUnitsSelect.selected
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map NetworkEditUnitsSelMsg <|
                         Styled.toUnstyled <|
@@ -4399,7 +4401,7 @@ missingFieldsEditBlock user network updNetworkReq shared model =
                                 model.editPostsSelect.selected
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions shared.isDarkMode
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map NetworkEditPostsSelMsg <|
                         Styled.toUnstyled <|
@@ -4503,7 +4505,7 @@ freqCreateSidebarContent shared model user =
                             }
 
                     defaultOptions =
-                        Le.Block.Select.defaultOptions shared.isDarkMode
+                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                   in
                   Html.map FreqCreateKindSelectMsg <|
                     Styled.toUnstyled <|
@@ -4535,7 +4537,7 @@ freqCreateSidebarContent shared model user =
                                     model.freqCreateModulationSelect.selected
 
                             defaultOptions =
-                                Le.Block.Select.defaultOptions shared.isDarkMode
+                                Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                         in
                         Html.map FreqCreateModulationSelectMsg <|
                             Styled.toUnstyled <|
@@ -4697,7 +4699,7 @@ callsignCreateSidebarContent shared model user =
                                 model.callsignCreateSourceSelState
                                 sourceMenu
                                 "Виберіть джерело"
-                                (Le.Block.Select.defaultOptions shared.isDarkMode
+                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                                     |> (\opts ->
                                             { opts
                                                 | clearable = False
@@ -4882,7 +4884,7 @@ editCallsignSidebarContent shared model user =
                                 model.editCallsignSourceSelState
                                 sourceMenu
                                 "Виберіть джерело"
-                                (Le.Block.Select.defaultOptions shared.isDarkMode
+                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                                     |> (\opts ->
                                             { opts
                                                 | clearable = False

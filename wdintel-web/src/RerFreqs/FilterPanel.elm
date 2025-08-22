@@ -19,6 +19,7 @@ import RerFreqs.Msg exposing (Msg(..))
 import RerFreqs.Utils as Utils
 import Select
 import Shared
+import Shared.Model exposing (isDarkMode)
 
 
 view : Shared.Model -> Model -> Html Msg
@@ -67,7 +68,7 @@ view shared model =
                             model.selCallsignState
                             model.selCallsignMenu
                             "всі"
-                            { loading = RD.isLoading model.callsignsForFilter, disabled = False, isDark = shared.isDarkMode }
+                            { loading = RD.isLoading model.callsignsForFilter, disabled = False, isDark = isDarkMode shared.themeMode }
                     )
                 ]
     in

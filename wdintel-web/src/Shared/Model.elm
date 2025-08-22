@@ -1,4 +1,4 @@
-module Shared.Model exposing (Model)
+module Shared.Model exposing (Model, ThemeMode(..), isDarkMode, themeModeFromString, themeModeToString)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -9,9 +9,56 @@ import Le.Types exposing (ApiError, LocationRes)
 import Time exposing (Zone)
 
 
+type ThemeMode
+    = Light
+    | Dark
+    | System
+
+
+{-| Helper function to convert ThemeMode to Bool for backward compatibility
+-}
+isDarkMode : ThemeMode -> Bool
+isDarkMode themeMode =
+    case themeMode of
+        Light ->
+            False
+        Dark ->
+            True
+        System ->
+            False -- Default to light for now, will be updated in later milestones
+
+
+{-| Helper function to convert String to ThemeMode from localStorage
+-}
+themeModeFromString : String -> ThemeMode
+themeModeFromString str =
+    case str of
+        "light" ->
+            Light
+        "dark" ->
+            Dark
+        "system" ->
+            System
+        _ ->
+            Light -- Default fallback
+
+
+{-| Helper function to convert ThemeMode to String for localStorage
+-}
+themeModeToString : ThemeMode -> String
+themeModeToString themeMode =
+    case themeMode of
+        Light ->
+            "light"
+        Dark ->
+            "dark"
+        System ->
+            "system"
+
+
 type alias Model =
     { user : Maybe B.User
-    , isDarkMode : Bool
+    , themeMode : ThemeMode
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)

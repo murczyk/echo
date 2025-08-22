@@ -57,6 +57,7 @@ import Shared
 import Task
 import Time exposing (Posix)
 import TimeZone
+import Shared.Model exposing (isDarkMode)
 
 
 type Msg
@@ -2073,7 +2074,7 @@ update shared user msg model =
                                         Nothing ->
                                             []
                             in
-                            { isDarkMode = shared.isDarkMode
+                            { isDarkMode = isDarkMode shared.themeMode
                             , user = user
                             , serverInfo = shared.serverInfo
                             , waterfallId = model.id
