@@ -465,13 +465,33 @@ pub async fn load_callsigns(
         .map(|row| {
             let callsign = row.callsign.clone();
             let unit_id = row.unit_id.unwrap_or_default();
+            let unit_name = row.unit_name.clone();
 
-            // Callsign + UnitId matching
+            // Collect all matching known_callsigns based on the same top level units
             let matched_known_callsigns = known_callsigns
                 .iter()
-                .filter(|kc| kc.callsign == callsign && kc.unit_id == unit_id)
+                .filter(|kc| {
+                    kc.callsign == callsign
+                        && unit_name
+                            .as_ref()
+                            .map_or(false, |u| kc.unit_name.ends_with(u))
+                })
                 .cloned()
                 .collect::<Vec<KnownCallsignRes>>();
+
+            // If no match found, fallback to Callsign + UnitId matching
+            let matched_known_callsigns = if matched_known_callsigns.is_empty()
+            {
+                known_callsigns
+                    .iter()
+                    .filter(|kc| {
+                        kc.callsign == callsign && kc.unit_id == unit_id
+                    })
+                    .cloned()
+                    .collect()
+            } else {
+                matched_known_callsigns
+            };
 
             let short_known_callsigns: Vec<KnownCallsignShortRes> =
                 matched_known_callsigns
