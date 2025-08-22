@@ -104,7 +104,7 @@ init route _ =
             , unfoldLocationsFilter = False
             , unfoldTagsFilter = False
             , unfoldPostsFilter = False
-            , unfoldSumTable = True
+            , unfoldSumTable = False
             , unfoldCallsignGraph = False
             , unfoldGraphs = False
             , unfoldCorrelationBlock = False
@@ -290,6 +290,34 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
         E.none
 
 
+loadSumTableOnly : Model -> ( Model, Effect Msg )
+loadSumTableOnly model =
+    case ( model.from.datePosix, model.to.datePosix ) of
+        ( Just dtFromPosix, Just dtToPosix ) ->
+            let
+                analysisPs =
+                    Query.analysisStatsParams dtFromPosix dtToPosix model
+
+                loadingSumTable =
+                    not (Le.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+
+                sumTable =
+                    if loadingSumTable then
+                        Loading
+                    else
+                        NotAsked
+            in
+            ( { model | sumTable = sumTable }
+            , if loadingSumTable then
+                E.getFreqsSummaryTable GotSumTable analysisPs
+              else
+                E.none
+            )
+
+        _ ->
+            ( model, E.none )
+
+
 loadCoreStats : Model -> ( Model, Effect Msg )
 loadCoreStats model =
     case ( model.from.datePosix, model.to.datePosix ) of
@@ -298,8 +326,11 @@ loadCoreStats model =
                 analysisPs =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
-                loadingSumTableAndCounts =
+                loadingCounts =
                     not (Le.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+
+                loadingSumTable =
+                    model.unfoldSumTable && not (Le.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
 
                 cmdLoadSummaryTable isLoading =
                     if isLoading then
@@ -309,18 +340,18 @@ loadCoreStats model =
                         E.none
 
                 sumTable =
-                    if loadingSumTableAndCounts then
+                    if loadingSumTable then
                         Loading
-
+                    else if model.unfoldSumTable then
+                        model.sumTable
                     else
                         NotAsked
 
                 counts =
-                    if loadingSumTableAndCounts then
-                        model.counts
-
+                    if loadingCounts then
+                        Loading
                     else
-                        NotAsked
+                        model.counts
 
                 ( m2, eff2 ) =
                     case model.mapPoints of
@@ -417,7 +448,7 @@ loadCoreStats model =
                 , counts = counts
               }
             , E.batch
-                [ if loadingSumTableAndCounts then
+                [ if loadingCounts then
                     E.getStatsCount GotStatsCount analysisPs
 
                   else
@@ -426,7 +457,7 @@ loadCoreStats model =
                 , E.getInboxMessages Nothing
                     GotInbox
                     (getInboxReq model)
-                , cmdLoadSummaryTable loadingSumTableAndCounts
+                , cmdLoadSummaryTable loadingSumTable
                 , cmdLoadCallsignGraph model { dtFromPosix = dtFromPosix, dtToPosix = dtToPosix }
                 , E.getBookmarks GotBookmarks
                     { sinceTsMillis = Just (Time.posixToMillis dtFromPosix) }
@@ -1424,10 +1455,18 @@ update user shared route msg model =
             let
                 unfoldSumTable2 =
                     not model.unfoldSumTable
+                needsToLoad = 
+                    case model.sumTable of
+                        NotAsked -> True
+                        NeedsReload _ -> True
+                        _ -> False
+                (m2, eff2) = 
+                    if needsToLoad then
+                        loadSumTableOnly { model | unfoldSumTable = unfoldSumTable2 }
+                    else
+                        ({ model | unfoldSumTable = unfoldSumTable2 }, E.none)
             in
-            ( { model | unfoldSumTable = unfoldSumTable2 }
-            , E.none
-            )
+            (m2, eff2)
 
         ToggleUnfoldGraphs ->
             case ( model.from.datePosix, model.to.datePosix ) of

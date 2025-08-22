@@ -115,7 +115,7 @@ datasourceKind message datasources =
 
 renderImage : String -> Html msg
 renderImage image =
-    div []
+    div [ style "display" "inline-block" ]
         [ a
             [ href image
             , target "_blank"
