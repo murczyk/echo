@@ -758,7 +758,7 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
             200
 
         renderImage image =
-            div []
+            div [ style "display" "inline-block" ]
                 [ a
                     [ href image
                     , target "_blank"
