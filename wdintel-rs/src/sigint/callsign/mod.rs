@@ -4,6 +4,7 @@ use self::types::*;
 use crate::entities::*;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
+use crate::sigint::etalonka::types::{KnownCallsignRes, KnownCallsignShortRes};
 use crate::types::*;
 use crate::utils::dt_from_millis;
 use actix_web::post;
@@ -577,4 +578,48 @@ pub async fn load_whitelist_from_file(
         .into_iter()
         .collect();
     Ok(callsigns)
+}
+
+pub fn match_known_callsigns(
+    known_callsigns: &[KnownCallsignRes],
+    callsign: &str,
+    unit_id: Option<i64>,
+    unit_name: &Option<String>,
+) -> Vec<KnownCallsignShortRes> {
+    // Collect all matching known_callsigns based on the same top level units
+    let matched = known_callsigns
+        .iter()
+        .filter(|kc| {
+            kc.callsign == callsign
+                && unit_name
+                    .as_ref()
+                    .is_some_and(|u| kc.unit_name.ends_with(u))
+        })
+        .cloned()
+        .collect::<Vec<KnownCallsignRes>>();
+
+    // If no match found, fallback to Callsign + UnitId matching
+    let matched = if matched.is_empty() {
+        known_callsigns
+            .iter()
+            .filter(|kc| kc.callsign == callsign && Some(kc.unit_id) == unit_id)
+            .cloned()
+            .collect()
+    } else {
+        matched
+    };
+
+    matched
+        .into_iter()
+        .map(|kc| KnownCallsignShortRes {
+            id: kc.id,
+            callsign: kc.callsign,
+            position: kc.position,
+            comment: kc.comment,
+            unit_id: kc.unit_id,
+            unit_name: kc.unit_name,
+            source_name: kc.source_name,
+            created_at: kc.created_at.and_utc().timestamp_millis(),
+        })
+        .collect()
 }

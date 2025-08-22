@@ -464,29 +464,14 @@ pub async fn load_callsigns(
         .iter()
         .map(|row| {
             let callsign = row.callsign.clone();
-            let unit_id = row.unit_id.unwrap_or_default();
 
-            // Callsign + UnitId matching
-            let matched_known_callsigns = known_callsigns
-                .iter()
-                .filter(|kc| kc.callsign == callsign && kc.unit_id == unit_id)
-                .cloned()
-                .collect::<Vec<KnownCallsignRes>>();
-
-            let short_known_callsigns: Vec<KnownCallsignShortRes> =
-                matched_known_callsigns
-                    .into_iter()
-                    .map(|kc| KnownCallsignShortRes {
-                        id: kc.id,
-                        callsign: kc.callsign,
-                        position: kc.position,
-                        comment: kc.comment,
-                        unit_id: kc.unit_id,
-                        unit_name: kc.unit_name,
-                        source_name: kc.source_name,
-                        created_at: kc.created_at.and_utc().timestamp_millis(),
-                    })
-                    .collect();
+            let short_known_callsigns =
+                crate::sigint::callsign::match_known_callsigns(
+                    known_callsigns,
+                    &callsign,
+                    row.unit_id,
+                    &row.unit_name.clone(),
+                );
 
             CallsignRes {
                 callsign: callsign.clone(),
