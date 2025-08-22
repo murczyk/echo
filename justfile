@@ -199,6 +199,8 @@ tags:
     rusty-tags -s ./wdintel-rs emacs
     mv ./wdintel-rs/rusty-tags.emacs TAGS
     # rm ./wdintel-rs/rusty-tags.emacs || true
+    cat echo-install/rusty-tags.emacs >> TAGS
+    rm echo-install/rusty-tags.emacs || true
     find ./wdintel-web/src -type f -name '*.elm' -print0 | xargs -0 etags --regex @elm.tags  --append
 
 deploy:

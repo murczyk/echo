@@ -8,6 +8,16 @@
 - keep `cargo clippy` clean
 - run `cargo check` for rust check
 - run `just build-front` to build front-end code
+- Avoid big functions. If a function becomes too big -- turn it into a
+  chain of calls for smaller functions with a clear self-descriptive
+  name
+- Avoid naming variables `model`. Name them after their entity, prefer
+  reusing the same name by redefining it, if it is not needed in the
+  rest of the function. If you need both active and regular model
+  value -- use suffix, like `let datasource = ...` (for type
+  `datasource::Model`), `let datasource_act =
+  datasource.into_active_model()`, but prefer same `datasource` for
+  both if possible
 
 ## GIT
 

@@ -53,6 +53,10 @@ pub async fn oneoff_fix_areas_of_responsibility(
     let db = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
+    // Step 1: ensure each datasource has default_aor_id set
+    crate::datasource::fix_datasource_default_aor(&db)
+        .await
+        .context(h!())?;
     crate::messenger::group::fix_group_areas_of_responsibility(&db)
         .await
         .context(h!())?;

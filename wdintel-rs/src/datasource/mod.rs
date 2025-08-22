@@ -103,3 +103,31 @@ pub async fn datasource_group_list(
     }
     Err("impossible 7263582".into())
 }
+
+/// Ensure each datasource has `default_aor_id` set. If missing, use the global default AOR.
+pub async fn fix_datasource_default_aor(
+    db: &DatabaseConnection,
+) -> Result<(), AppError> {
+    let default_aor = crate::sigint::aor::load_default_aor(db)
+        .await
+        .context(h!())?;
+
+    let datasources = datasource::Entity::find()
+        .filter(datasource::Column::DefaultAorId.is_null())
+        .all(db)
+        .await
+        .context(h!())?;
+
+    for datasource in datasources {
+        let id = datasource.id;
+        let mut datasource = datasource.into_active_model();
+        datasource.default_aor_id = Set(Some(default_aor.id));
+        match datasource.update(db).await.context(h!()) {
+            Ok(_) => log::info!("set default_aor_id for datasource {id}"),
+            Err(e) => log::error!(
+                "failed to set default_aor_id for datasource {id}: {e:?}"
+            ),
+        }
+    }
+    Ok(())
+}
