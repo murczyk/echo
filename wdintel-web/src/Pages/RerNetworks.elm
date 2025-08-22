@@ -705,7 +705,7 @@ update shared msg model =
             let
                 m1 =
                     if isChecked then
-                        { model | reportIncludeConfirmation = False, reportIncludePelengsMap = False, reportIncludeSigintSigns = False }
+                        { model | reportIncludeConfirmation = False, reportIncludePelengsMap = False }
 
                     else
                         model
@@ -716,7 +716,17 @@ update shared msg model =
             ( { model | reportActiveFreqsOnly = isChecked }, E.none )
 
         ReportIncludePelengsMapCheckedByUser isChecked ->
-            ( { model | reportIncludePelengsMap = isChecked }, E.none )
+            let
+                -- If user tries to enable pelengs map, automatically disable "Згідно форми"
+                -- since backend doesn't support this combination
+                updatedModel =
+                    if isChecked && model.reportGUROnly then
+                        { model | reportGUROnly = False }
+
+                    else
+                        model
+            in
+            ( { updatedModel | reportIncludePelengsMap = isChecked }, E.none )
 
         ReportIncludeConfirmationCheckedByUser isChecked ->
             ( { model | reportIncludeConfirmation = isChecked }, E.none )
@@ -1584,29 +1594,25 @@ filterPanel user shared model =
                         [ h2 [] [ text "Звіт \"еталонка\"" ]
                         , p [] [ text "Еталонка по фільтру дата/частота/підрозділ" ]
                         , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
-                            ([ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
+                            [ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
                                 |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
                                 |> Checkbox.view
-                             , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
+                            , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
                                 |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
                                 |> Checkbox.view
-                             ]
-                                ++ (if not model.reportGUROnly then
-                                        [ Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
-                                            |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
-                                            |> Checkbox.view
-                                        , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
-                                            |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
-                                            |> Checkbox.view
-                                        , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
-                                            |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
-                                            |> Checkbox.view
-                                        ]
-
-                                    else
-                                        []
-                                   )
-                            )
+                            , Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
+                                |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
+                                |> Checkbox.withDisabled model.reportGUROnly
+                                |> Checkbox.view
+                            , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
+                                |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
+                                |> Checkbox.view
+                            , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
+                                |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
+                                |> Checkbox.view
+                            ]
+                        , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
+                            [ text "Якщо вибрано \"Згідно форми\", то карта пеленгів недоступна." ]
                         ]
                     , div [ class "flex justify-between" ]
                         [ Button.new { label = "Назад", onClick = ReportModalClosedByUser } |> Button.withStyleSecondary |> Button.view
