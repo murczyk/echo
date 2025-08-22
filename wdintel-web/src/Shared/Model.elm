@@ -1,4 +1,4 @@
-module Shared.Model exposing (Model, ThemeMode(..), isDarkMode)
+module Shared.Model exposing (Model, ThemeMode(..), isDarkMode, themeModeFromString, themeModeToString)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -26,6 +26,34 @@ isDarkMode themeMode =
             True
         System ->
             False -- Default to light for now, will be updated in later milestones
+
+
+{-| Helper function to convert String to ThemeMode from localStorage
+-}
+themeModeFromString : String -> ThemeMode
+themeModeFromString str =
+    case str of
+        "light" ->
+            Light
+        "dark" ->
+            Dark
+        "system" ->
+            System
+        _ ->
+            Light -- Default fallback
+
+
+{-| Helper function to convert ThemeMode to String for localStorage
+-}
+themeModeToString : ThemeMode -> String
+themeModeToString themeMode =
+    case themeMode of
+        Light ->
+            "light"
+        Dark ->
+            "dark"
+        System ->
+            "system"
 
 
 type alias Model =

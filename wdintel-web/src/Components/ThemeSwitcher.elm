@@ -21,24 +21,26 @@ themeSwitcher props =
             ]
             [ i
                 [ class
-                    ("bi text-lg "
+                    ("bi text-lg text-white "
                         ++ (case props.currentTheme of
                                 Light ->
-                                    "bi-sun text-yellow-500"
+                                    "bi-sun"
                                 Dark ->
-                                    "bi-moon text-blue-400"
+                                    "bi-moon"
                                 System ->
-                                    "bi-laptop text-gray-500"
+                                    "bi-laptop"
                            )
                     )
                 ]
                 []
             ]
-        , div [ class "absolute right-0 top-full mt-2 w-48 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200 z-50" ]
-            [ div [ class "py-2" ]
-                [ themeOption props Light "bi-sun" "Світла тема"
-                , themeOption props Dark "bi-moon" "Темна тема"
-                , themeOption props System "bi-laptop" "Авто (система)"
+        , div [ class "absolute right-0 pt-2 z-500" ]
+            [ div [ class "w-48 bg-[var(--color-card)] rounded-lg shadow-lg border border-[var(--color-border)] hidden group-hover:block transition-all duration-200" ]
+                [ div [ class "py-2" ]
+                    [ themeOption props Light "bi-sun" "Світла тема"
+                    , themeOption props Dark "bi-moon" "Темна тема"
+                    , themeOption props System "bi-laptop" "Авто (система)"
+                    ]
                 ]
             ]
         ]

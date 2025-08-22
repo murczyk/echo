@@ -31,6 +31,53 @@ import timezone from 'dayjs/plugin/timezone';
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+// Theme management functions
+function applyTheme(themeMode: string) {
+	const htmlElement = document.documentElement;
+	
+	switch (themeMode) {
+		case 'dark':
+			htmlElement.setAttribute("data-bs-theme", "dark");
+			break;
+		case 'light':
+			htmlElement.removeAttribute("data-bs-theme");
+			break;
+		case 'system':
+			// Use system preference
+			const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+			applyTheme(systemTheme);
+			break;
+		default:
+			// Default to light
+			htmlElement.removeAttribute("data-bs-theme");
+	}
+}
+
+function applyCurrentTheme() {
+	// Get current theme from localStorage or use system preference
+	const savedTheme = localStorage.getItem('echo-theme-mode');
+	if (savedTheme) {
+		applyTheme(savedTheme);
+	} else {
+		// No saved theme, use system preference
+		const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+		applyTheme(systemTheme);
+	}
+}
+
+// Listen for system theme changes
+if (window.matchMedia) {
+	const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+	mediaQuery.addEventListener('change', (e) => {
+		// Only apply system theme if current theme is set to 'system'
+		const currentTheme = localStorage.getItem('echo-theme-mode');
+		if (currentTheme === 'system') {
+			const newSystemTheme = e.matches ? 'dark' : 'light';
+			applyTheme(newSystemTheme);
+		}
+	});
+}
+
 function td_propose_icons(search, description) {
 	return search.search(description).map((x: any) => x.icon).slice(0, 8);
 };
@@ -95,10 +142,8 @@ export const flags = ({ env }) => {
 // messages from Elm
 export const onReady = ({ app, env }) => {
 
-	const isDark = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-	if (isDark) {
-		document.documentElement.setAttribute("data-bs-theme", "dark");
-	}
+	// Apply initial theme based on localStorage or system preference
+	applyCurrentTheme();
 
 	if (app.ports && app.ports.home_usk2000ToWgs84 && app.ports.home_usk2000ToWgs84Res) {
 		app.ports.home_usk2000ToWgs84.subscribe(({ coords }) => {
@@ -394,12 +439,31 @@ export const onReady = ({ app, env }) => {
 
 	if (app.ports && app.ports.shared_toggleDarkMode) {
 		app.ports.shared_toggleDarkMode.subscribe(() => {
-			const htmlElement = document.documentElement; // Get the <html> element
+			// This port is now used for applying theme changes
+			// The actual theme mode is managed by the new system
+			applyCurrentTheme();
+		});
+	}
 
-			if (!htmlElement.getAttribute("data-bs-theme")) {
-				htmlElement.setAttribute("data-bs-theme", "dark"); // Set the attribute to "dark"
+	if (app.ports && app.ports.shared_saveThemeMode) {
+		app.ports.shared_saveThemeMode.subscribe((themeMode: string) => {
+			// Save theme mode to localStorage
+			localStorage.setItem('echo-theme-mode', themeMode);
+			// Apply the theme immediately
+			applyTheme(themeMode);
+		});
+	}
+
+	if (app.ports && app.ports.shared_loadThemeMode) {
+		app.ports.shared_loadThemeMode.subscribe(() => {
+			// Load theme mode from localStorage
+			const savedTheme = localStorage.getItem('echo-theme-mode');
+			if (savedTheme) {
+				app.ports.shared_loadThemeModeRes.send(savedTheme);
 			} else {
-				htmlElement.removeAttribute("data-bs-theme"); // Remove the attribute
+				// No saved theme, use system preference
+				const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				app.ports.shared_loadThemeModeRes.send(systemTheme);
 			}
 		});
 	}

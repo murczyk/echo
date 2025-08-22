@@ -15,6 +15,7 @@ type Msg
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
     | SetThemeMode ThemeMode
+    | ThemeModeLoaded String
     | ToggleDarkMode
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)

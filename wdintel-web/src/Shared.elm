@@ -100,6 +100,7 @@ init flagsResult route =
             , beforeUnitId = Nothing
             }
         , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
+        , E.sendCmd <| Ports.shared_loadThemeMode ()
         ]
     )
 
@@ -164,7 +165,15 @@ update req msg model =
 
         SetThemeMode themeMode ->
             ( { model | themeMode = themeMode }
-            , E.sendCmd <| Ports.shared_toggleDarkMode ()
+            , E.batch
+                [ E.sendCmd <| Ports.shared_saveThemeMode (Shared.Model.themeModeToString themeMode)
+                , E.sendCmd <| Ports.shared_toggleDarkMode ()
+                ]
+            )
+
+        ThemeModeLoaded themeModeStr ->
+            ( { model | themeMode = Shared.Model.themeModeFromString themeModeStr }
+            , E.none
             )
 
         TriggerResize ->
@@ -435,7 +444,10 @@ update req msg model =
 
 subscriptions : Route () -> Model -> Sub Msg
 subscriptions _ _ =
-    Ports.shared_getLocationRes GotLocation
+    Sub.batch
+        [ Ports.shared_getLocationRes GotLocation
+        , Ports.shared_loadThemeModeRes ThemeModeLoaded
+        ]
 
 
 
