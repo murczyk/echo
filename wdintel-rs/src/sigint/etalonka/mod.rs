@@ -143,9 +143,6 @@ pub async fn generate_networks_docx_report(
     groups: Vec<String>,
     networks_data: HashMap<String, Vec<NetworkEtalonkaResult>>,
 ) -> Result<PathBuf, AppError> {
-    let all_known_callsigns =
-        find_all_known_callsigns(&env.dbx).await.context(h!())?;
-
     let sources: HashMap<i64, String> =
         crate::sigint::source::bl_list_sources(&env.dbx)
             .await
@@ -286,28 +283,16 @@ pub async fn generate_networks_docx_report(
             .await
             .context(h!())?;
 
-            // list of all other callsigns active per network activity period
-            let callsigns = load_callsigns(
-                &env.dbx,
-                &groups,
-                network.id,
-                &all_known_callsigns,
-            )
-            .await
-            .context(h!())?;
-
-            let correspondents_number =
-                if net_callsigns.is_empty() && callsigns.is_empty() {
-                    String::new()
-                } else {
-                    let unique_count = net_callsigns
-                        .iter()
-                        .map(|item| &item.callsign)
-                        .chain(callsigns.iter().map(|item| &item.callsign))
-                        .collect::<HashSet<_>>()
-                        .len();
-                    format!("щонайменше {unique_count} ВЗ.")
-                };
+            let correspondents_number = if net_callsigns.is_empty() {
+                String::new()
+            } else {
+                let unique_count = net_callsigns
+                    .iter()
+                    .map(|item| &item.callsign)
+                    .collect::<HashSet<_>>()
+                    .len();
+                format!("щонайменше {unique_count} ВЗ.")
+            };
 
             let freqs = load_freqs(
                 &env.dbx,
