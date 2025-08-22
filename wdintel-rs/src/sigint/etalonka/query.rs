@@ -464,49 +464,14 @@ pub async fn load_callsigns(
         .iter()
         .map(|row| {
             let callsign = row.callsign.clone();
-            let unit_id = row.unit_id.unwrap_or_default();
-            let unit_name = row.unit_name.clone();
 
-            // Collect all matching known_callsigns based on the same top level units
-            let matched_known_callsigns = known_callsigns
-                .iter()
-                .filter(|kc| {
-                    kc.callsign == callsign
-                        && unit_name
-                            .as_ref()
-                            .is_some_and(|u| kc.unit_name.ends_with(u))
-                })
-                .cloned()
-                .collect::<Vec<KnownCallsignRes>>();
-
-            // If no match found, fallback to Callsign + UnitId matching
-            let matched_known_callsigns = if matched_known_callsigns.is_empty()
-            {
-                known_callsigns
-                    .iter()
-                    .filter(|kc| {
-                        kc.callsign == callsign && kc.unit_id == unit_id
-                    })
-                    .cloned()
-                    .collect()
-            } else {
-                matched_known_callsigns
-            };
-
-            let short_known_callsigns: Vec<KnownCallsignShortRes> =
-                matched_known_callsigns
-                    .into_iter()
-                    .map(|kc| KnownCallsignShortRes {
-                        id: kc.id,
-                        callsign: kc.callsign,
-                        position: kc.position,
-                        comment: kc.comment,
-                        unit_id: kc.unit_id,
-                        unit_name: kc.unit_name,
-                        source_name: kc.source_name,
-                        created_at: kc.created_at.and_utc().timestamp_millis(),
-                    })
-                    .collect();
+            let short_known_callsigns =
+                crate::sigint::callsign::match_known_callsigns(
+                    known_callsigns,
+                    &callsign,
+                    row.unit_id,
+                    &row.unit_name.clone(),
+                );
 
             CallsignRes {
                 callsign: callsign.clone(),
