@@ -294,6 +294,10 @@ pub async fn bl_get_network_callsigns_list(
         req.network_id,
         &network_callsigns
             .iter()
+            .filter(|(nc, c, _)| {
+                (!nc.developing && nc.sigint_callsign_id.is_none())
+                    || (c.as_ref().is_some_and(|c| !c.developing))
+            })
             .map(|(nc, _, _)| nc.sigint_callsign.clone())
             .collect::<Vec<_>>(),
     )
