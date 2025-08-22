@@ -66,6 +66,7 @@ pub async fn bl_create_network_callsign(
             comment: Set(req.comment.clone()),
             source_id: Set(Some(req.source_id)),
             radio_freq: Set(req.radio_freq.clone()),
+            developing: Set(req.developing),
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
         }
@@ -115,6 +116,7 @@ pub async fn bl_add_as_known_network_callsigns(
             comment: NotSet,
             source_id: NotSet,
             radio_freq: NotSet,
+            developing: NotSet,
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
         }
@@ -440,6 +442,8 @@ pub fn render_network_callsign(
         radio_freq: network_callsign.radio_freq.or_else(|| {
             known_callsign.as_ref().map(|kc| kc.radio_freq.clone())
         }),
+        developing: network_callsign.developing
+            || known_callsign.as_ref().map_or(false, |kc| kc.developing),
         created_at: network_callsign.created_at.and_utc().timestamp_millis(),
         active: !network_callsign.deleted,
         message_count: comm_info.map_or(0, |c| c.message_count),

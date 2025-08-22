@@ -124,6 +124,7 @@ pub struct NetworkCallsign {
     pub radio_freq: Option<String>,
     pub created_at: i64,
     pub active: bool,
+    pub developing: bool,
     pub message_count: i64,
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
@@ -164,6 +165,7 @@ pub struct CreateNetworkCallsignReq {
     pub comment: Option<String>,
     pub source_id: i64,
     pub radio_freq: Option<String>,
+    pub developing: bool,
 }
 
 #[derive(
@@ -177,6 +179,7 @@ pub struct UpdateNetworkCallsignReq {
     pub comment: Option<String>,
     pub source_id: i64,
     pub radio_freq: Option<String>,
+    pub developing: bool,
 }
 
 #[derive(

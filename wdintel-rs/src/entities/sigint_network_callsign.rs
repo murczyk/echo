@@ -25,6 +25,7 @@ pub struct Model {
     pub source_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub radio_freq: Option<String>,
+    pub developing: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
