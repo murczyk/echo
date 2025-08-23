@@ -141,6 +141,12 @@ pub async fn receive_messages(
         config.signal_api_phone,
         crate::config::SIGNAL_MAX_MESSAGES,
     );
+    if config.signal_api_phone.is_empty() {
+        debug!(
+            "signal_api_phone is empty, returning empty messages list. url: {url}"
+        );
+        return Ok(vec![]);
+    }
     // let url = format!(
     //     "{}/v1/receive/{}?timeout=60",
     //     crate::config::SIGNAL_CLIENT_ADDR,
