@@ -1,4 +1,4 @@
-module Le.Callsign.HintStrategy exposing (HintStrategy, HintResult, determineHintStrategy, getCallsignsForStrategy, getIconClass, getTooltipText)
+module Le.Callsign.HintStrategy exposing (HintStrategy, HintResult, determineHintStrategy, getCallsignsForStrategy, getIconClass, getTooltipText, getCallsignHints)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -157,6 +157,26 @@ getTooltipText strategy =
         
         NoHints ->
             "Немає підказок"
+
+
+{-| Головна функція для отримання підказок позивного
+    Об'єднує визначення стратегії та її застосування
+-}
+getCallsignHints : 
+    { message | freq : Maybe String, networkIds : Maybe (List Int) }
+    -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit, callsignsInfo : Dict String (List B.CallsignInfo) }
+    -> String 
+    -> HintResult
+getCallsignHints message context callsign =
+    let
+        strategy = determineHintStrategy message context
+        prioritizedCallsigns = getCallsignsForStrategy strategy context.callsignsInfo callsign
+    in
+    { strategy = strategy
+    , prioritizedCallsigns = prioritizedCallsigns
+    , iconClass = getIconClass strategy
+    , tooltipText = getTooltipText strategy
+    }
 
 
 {-| Визначає стратегію підказок на основі повідомлення та контексту
