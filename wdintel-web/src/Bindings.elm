@@ -4673,7 +4673,7 @@ updFreqNetworkEncoder struct =
 type alias ListNetworksReq =
     { filterFreq : Maybe String
     , filterUnit : Maybe String
-    , filterFurtherInvestigation : Maybe Bool
+    , showOnlyFurtherInverstigation : Maybe Bool
     , showInactive : Maybe Bool
     , showOnlyDeleted : Maybe Bool
     , aorIds : Maybe (List Int)
@@ -4686,7 +4686,7 @@ listNetworksReqEncoder struct =
     Json.Encode.object
         [ ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
-        , ( "filter_further_investigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.filterFurtherInvestigation )
+        , ( "show_only_further_inverstigation", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showOnlyFurtherInverstigation )
         , ( "show_inactive", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showInactive )
         , ( "show_only_deleted", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.bool) struct.showOnlyDeleted )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.aorIds )
@@ -8310,7 +8310,7 @@ listNetworksReqDecoder =
     Json.Decode.succeed ListNetworksReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_further_investigation" (Json.Decode.nullable Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_only_further_inverstigation" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_inactive" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_only_deleted" (Json.Decode.nullable Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))

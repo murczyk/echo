@@ -195,7 +195,7 @@ loadNetworks model =
         { filterFreq = emptySToNothing model.filterState.freq
         , filterUnit = emptySToNothing model.filterState.unit
         , sortBy = Nothing
-        , filterFurtherInvestigation =
+        , showOnlyFurtherInverstigation =
             if model.showOnlyInvestigating then
                 Just True
 
@@ -220,7 +220,7 @@ loadNetworksWithTracker model tracker =
         { filterFreq = emptySToNothing model.filterState.freq
         , filterUnit = emptySToNothing model.filterState.unit
         , sortBy = Nothing
-        , filterFurtherInvestigation =
+        , showOnlyFurtherInverstigation =
             if model.showOnlyInvestigating then
                 Just True
 

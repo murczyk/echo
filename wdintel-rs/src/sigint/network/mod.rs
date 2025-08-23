@@ -84,11 +84,8 @@ pub async fn network_list(
         ))
     };
 
-    if req.filter_further_investigation.unwrap_or(false) {
+    if req.show_only_further_inverstigation.unwrap_or(false) {
         networks = networks.filter(sigint_network_unit::Column::Id.is_null());
-    } else {
-        networks =
-            networks.filter(sigint_network_unit::Column::Id.is_not_null());
     }
 
     // Optional filter by Areas of Responsibility (AOR) IDs

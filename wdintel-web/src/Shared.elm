@@ -72,9 +72,10 @@ init flagsResult route =
                 , organismId = Nothing
                 , deltaLogin = Nothing
                 }
-      , themeMode = 
+      , themeMode =
             if flags.isDark then
                 Shared.Model.Dark
+
             else
                 Shared.Model.Light
       , location = Nothing
@@ -142,7 +143,7 @@ update req msg model =
                     { sortBy = Nothing
                     , filterFreq = Nothing
                     , filterUnit = Nothing
-                    , filterFurtherInvestigation = Nothing
+                    , showOnlyFurtherInverstigation = Nothing
                     , showInactive = Nothing
                     , showOnlyDeleted = Nothing
                     , aorIds = Nothing
@@ -151,14 +152,17 @@ update req msg model =
             )
 
         ToggleDarkMode ->
-            ( { model | themeMode = 
-                case model.themeMode of
-                    Shared.Model.Light ->
-                        Shared.Model.Dark
-                    Shared.Model.Dark ->
-                        Shared.Model.Light
-                    Shared.Model.System ->
-                        Shared.Model.Light
+            ( { model
+                | themeMode =
+                    case model.themeMode of
+                        Shared.Model.Light ->
+                            Shared.Model.Dark
+
+                        Shared.Model.Dark ->
+                            Shared.Model.Light
+
+                        Shared.Model.System ->
+                            Shared.Model.Light
               }
             , E.sendCmd <| Ports.shared_toggleDarkMode ()
             )
@@ -416,7 +420,7 @@ update req msg model =
                         { sortBy = Nothing
                         , filterFreq = Nothing
                         , filterUnit = Nothing
-                        , filterFurtherInvestigation = Nothing
+                        , showOnlyFurtherInverstigation = Nothing
                         , showInactive = Nothing
                         , showOnlyDeleted = Nothing
                         , aorIds = Nothing
