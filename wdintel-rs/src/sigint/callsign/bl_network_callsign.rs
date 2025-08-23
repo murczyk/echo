@@ -58,7 +58,7 @@ pub async fn bl_create_network_callsign(
             sigint_network_id: Set(req.network_id),
             deleted: NotSet,
             created_at: NotSet,
-            sigint_callsign: Set(req.callsign.clone()),
+            sigint_callsign: Set(req.callsign.clone().trim().to_lowercase()),
             sigint_callsign_id: NotSet,
             position: Set(req.position.clone()),
             comment: Set(req.comment.clone()),
@@ -103,7 +103,7 @@ pub async fn bl_add_as_known_network_callsigns(
             sigint_network_id: Set(network_id),
             deleted: NotSet,
             created_at: NotSet,
-            sigint_callsign: Set(known_callsign.callsign.clone()),
+            sigint_callsign: Set(known_callsign.callsign.clone().trim().to_lowercase()),
             sigint_callsign_id: Set(Some(known_callsign_id)),
             position: NotSet,
             comment: NotSet,
@@ -142,7 +142,7 @@ pub async fn bl_update_network_callsign(
 
     let mut network_callsign_record = network_callsign.into_active_model();
     network_callsign_record.sigint_network_id = Set(req.network_id);
-    network_callsign_record.sigint_callsign = Set(req.callsign.clone());
+    network_callsign_record.sigint_callsign = Set(req.callsign.clone().trim().to_lowercase());
     network_callsign_record.position = Set(req.position.clone());
     network_callsign_record.comment = Set(req.comment.clone());
     network_callsign_record.source_id = Set(Some(req.source_id));

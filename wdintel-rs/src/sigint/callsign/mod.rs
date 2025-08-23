@@ -337,7 +337,7 @@ pub async fn bl_callsign_create(
 ) -> Result<sigint_callsign::Model, AppError> {
     let callsign = sigint_callsign::ActiveModel {
         id: NotSet,
-        callsign: Set(req.callsign.clone().to_lowercase()),
+        callsign: Set(req.callsign.clone().trim().to_lowercase()),
         position: Set(req.position.clone()),
         unit_id: Set(req.unit_id),
         comment: Set(req.comment.clone()),
@@ -397,7 +397,7 @@ pub async fn update_callsign(
         .await?
         .ok_or_else(|| AppError::NotFound)?;
     let mut callsign = callsign.into_active_model();
-    callsign.callsign = Set(req.callsign.clone().to_lowercase());
+    callsign.callsign = Set(req.callsign.clone().trim().to_lowercase());
     callsign.position = Set(req.position.clone());
     callsign.unit_id = Set(req.unit_id);
     callsign.comment = Set(req.comment.clone());
