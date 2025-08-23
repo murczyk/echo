@@ -498,6 +498,13 @@ where
             q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))?;
         }
 
+        if !search_parts.message_uids.is_empty() {
+            q2 = q2.filter(
+                signal_message::Column::MessageUid
+                    .is_in(search_parts.message_uids),
+            )
+        }
+
         return Ok(q2);
     }
     Ok(q2)

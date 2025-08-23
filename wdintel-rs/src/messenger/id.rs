@@ -94,7 +94,7 @@ pub async fn oneoff_assign_message_ids(
             NaiveTime::MIN,
         )
     } else {
-        Utc::now().naive_utc() - Duration::days(30)
+        Utc::now().naive_utc() - Duration::days(20)
     };
     info!("oneoff_assign_message_ids dry_run={dry_run}");
     if dry_run {

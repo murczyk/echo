@@ -153,7 +153,8 @@ pub async fn main_server(
                 .await;
             });
         }
-        if config.server_id.is_some() { // fill in missing message UIDs
+        if config.server_id.is_some() {
+            // fill in missing message UIDs
             tokio::spawn(async move {
                 if let Err(e) =
                     crate::messenger::id::oneoff_assign_message_ids(mode, false)
