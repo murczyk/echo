@@ -21,6 +21,14 @@ server$ sudo ./echo-install
 
 Setup local nginx per [deploy/README.md](deploy/README.md). Also see `just setup-dev` for notes and scripts.
 
+Git hooks (recommended):
+
+```
+just setup-git-hooks
+```
+
+This enables repo-shared hooks in `.githooks/`, including a `pre-push` check that blocks force-pushes to `main`.
+
 Front-end:
 
 ```

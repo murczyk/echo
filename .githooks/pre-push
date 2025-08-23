@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pre-push hook: disallow non-fast-forward (force) pushes to main
+# Arguments: <remote-name> <remote-url>
+remote_name="${1:-}"
+remote_url="${2:-}"
+
+is_all_zero() { test "${1:-}" = "0000000000000000000000000000000000000000"; }
+
+violations=()
+tmp_ref="refs/tmp/pre-push/${remote_name:-origin}-main"
+
+cleanup() {
+  git update-ref -d "$tmp_ref" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Skip empty lines
+  [ -z "${local_ref:-}" ] && continue
+
+  if [ "$remote_ref" = "refs/heads/main" ] || [ "$remote_ref" = "main" ]; then
+    # Reject deletion of main
+    if is_all_zero "$local_sha"; then
+      violations+=("Refusing to delete 'main' on $remote_name.")
+      continue
+    fi
+
+    # Creating new remote main is fine
+    if is_all_zero "$remote_sha"; then
+      continue
+    fi
+
+    # Ensure we have the remote commit object locally for ancestry check
+    if ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+      git fetch --no-tags --quiet "${remote_name:-origin}" "${remote_ref}":"$tmp_ref" || true
+      # After fetch, prefer the object behind tmp_ref if available
+      if git rev-parse -q --verify "$tmp_ref" >/dev/null; then
+        remote_sha=$(git rev-parse "$tmp_ref^{commit}")
+      fi
+    fi
+
+    # Non-fast-forward if remote_sha is NOT an ancestor of local_sha
+    if git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+      : # fast-forward, allowed
+    else
+      violations+=("Non-fast-forward push to 'main' detected. Force-push is blocked.")
+    fi
+  fi
+done
+
+if [ "${#violations[@]}" -gt 0 ]; then
+  printf "\n❌ Push blocked:\n" 1>&2
+  for v in "${violations[@]}"; do
+    printf " - %s\n" "$v" 1>&2
+  done
+  printf "\nTip: update 'main' via PR or merge.\n\n" 1>&2
+  exit 1
+fi
+
+exit 0
+

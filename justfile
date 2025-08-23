@@ -198,6 +198,25 @@ tags:
     rm TAGS || true
     rusty-tags -s ./wdintel-rs emacs
     mv ./wdintel-rs/rusty-tags.emacs TAGS
+
+# Set repo hooks path so everyone uses shared hooks
+setup-git-hooks:
+    #!/bin/bash
+    set -euo pipefail
+    mkdir -p .githooks
+    chmod +x .githooks/* 2>/dev/null || true
+    git config core.hooksPath .githooks
+    echo "core.hooksPath set to .githooks"
+
+check-git-hooks:
+    #!/bin/bash
+    set -euo pipefail
+    hooks_path=$(git config core.hooksPath || true)
+    echo "core.hooksPath=${hooks_path:-<unset>}"
+    if [ "${hooks_path:-}" != ".githooks" ]; then
+      echo "Run: just setup-git-hooks" && exit 1
+    fi
+    echo "Shared git hooks are enabled."
     # rm ./wdintel-rs/rusty-tags.emacs || true
     cat echo-install/rusty-tags.emacs >> TAGS
     rm echo-install/rusty-tags.emacs || true
