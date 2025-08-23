@@ -704,18 +704,24 @@ sl-tooltip {
     animation-duration: 1s;
 }
 
+/* Додатковий відступ для попапу */
 .popup-body {
-    display: flex;
-    gap: 6px;
-    border-radius: 8px;
-    padding: 12px;
-    max-height: calc(100vh - 20px);
+    margin: 8px;
+    min-width: 300px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    border-radius: 12px;
+    animation: popup-fade-in 0.2s ease-out;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Внутрішній контент попапу */
+.popup-body>div {
+    padding: 16px;
+    max-height: calc(100vh - 40px);
     overflow-y: auto;
     color: var(--bs-body-color);
     background-color: var(--bs-body-bg);
-    -webkit-box-shadow: 2px 2px 12px 0px rgba(0, 0, 0, 0.75);
-    -moz-box-shadow: 2px 2px 12px 0px rgba(0, 0, 0, 0.75);
-    box-shadow: 2px 2px 12px 0px rgba(0, 0, 0, 0.75);
 }
 
 .popup-body sl-tooltip::part(body) {
@@ -885,4 +891,89 @@ sl-tooltip {
 
 .network-list-container>* {
     height: 42px;
+}
+
+/* Стилі для секцій позивних */
+.popup-body .callsigns-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 4px;
+    margin-bottom: 16px;
+}
+
+.popup-body .callsigns-section:last-child {
+    margin-bottom: 0;
+}
+
+.popup-body .callsigns-section-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--bs-body-color);
+    padding: 8px 0 4px 0;
+    border-bottom: 1px solid var(--bs-border-color);
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+/* Стилі для порожньої секції */
+.popup-body .callsigns-section-empty {
+    text-align: center;
+    padding: 20px;
+    color: var(--bs-secondary-color);
+    font-style: italic;
+}
+
+/* Покращення відображення окремих позивних */
+.popup-body .callsigns-group>div {
+    padding: 6px 8px;
+    border-radius: 4px;
+    background-color: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+    transition: background-color 0.2s ease;
+}
+
+.popup-body .callsigns-group>div:hover {
+    background-color: var(--bs-tertiary-bg);
+}
+
+/* Стилі для кнопки закриття */
+.popup-body .btn-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 10;
+    background: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--bs-body-color);
+    opacity: 0.8;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.popup-body .btn-close::before,
+.popup-body .btn-close::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 2px;
+    background-color: currentColor;
+    transform: rotate(45deg);
+}
+
+.popup-body .btn-close::after {
+    transform: rotate(-45deg);
+}
+
+.popup-body .btn-close:hover {
+    opacity: 1;
+    background: var(--bs-tertiary-bg);
+    transform: scale(1.1);
 }

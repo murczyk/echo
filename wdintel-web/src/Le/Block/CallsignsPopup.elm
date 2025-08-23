@@ -121,7 +121,25 @@ view viewParams pageSpecific =
 
                 popupBody =
                     div [ class "d-flex flex-column", style "gap" "20px" ]
-                        [ viewCallsignsGroup callsignsWithUnits, viewCallsignsGroup callsignsWithoutUnits ]
+                        [ if not (List.isEmpty callsignsWithUnits) then
+                            div [ class "callsigns-section" ]
+                                [ div [ class "callsigns-section-header" ] [ text "Еталонні позивні" ]
+                                , viewCallsignsGroup callsignsWithUnits
+                                ]
+                          else
+                            text ""
+                        , if not (List.isEmpty callsignsWithoutUnits) then
+                            div [ class "callsigns-section" ]
+                                [ div [ class "callsigns-section-header" ] [ text "Позивні без підрозділів" ]
+                                , viewCallsignsGroup callsignsWithoutUnits
+                                ]
+                          else
+                            text ""
+                        , if List.isEmpty callsignsWithUnits && List.isEmpty callsignsWithoutUnits then
+                            div [ class "callsigns-section-empty" ] [ text "Немає позивних для відображення" ]
+                          else
+                            text ""
+                        ]
             in
             Le.Block.Popup.new
                 { body = body
