@@ -1,10 +1,11 @@
-module Le.Block.Callsign exposing (view, viewDefault, viewWithNetworkInfo)
+module Le.Block.Callsign exposing (view, viewDefault, viewWithNetworkInfo, viewWithHintResult)
 
 import Bindings as B
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Extra as HtmlX
 import Le.Block.Tooltip as Tooltip
+import Le.Callsign.HintStrategy as HintStrategy
 
 
 viewCallsign : { a | position : String, unit1 : String, unit2 : String } -> String
@@ -33,6 +34,36 @@ viewDefault callsign isBlock =
 view : String -> ( List B.CallsignInfo, List B.CallsignInfo ) -> Html msg
 view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
     viewWithNetworkInfo callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) True
+
+
+{-| Нова функція для роботи з HintResult
+-}
+viewWithHintResult : String -> HintStrategy.HintResult -> Html msg
+viewWithHintResult callsign hintResult =
+    if List.length hintResult.prioritizedCallsigns == 0 then
+        viewDefault callsign False
+    else
+        let
+            prioritizedBlock =
+                hintResult.prioritizedCallsigns
+                    |> List.map viewCallsign
+                    |> String.join " "
+
+            tooltip =
+                div [ id "tooltip-content" ]
+                    [ div []
+                        [ div [ class "text-xs text-muted mb-1" ]
+                            [ text hintResult.tooltipText ]
+                        , span []
+                            [ text prioritizedBlock
+                            ]
+                        ]
+                    ]
+        in
+        Tooltip.new (String.toUpper callsign) 
+            |> Tooltip.withIconName hintResult.iconClass 
+            |> Tooltip.withTextNoWrap 
+            |> Tooltip.view tooltip
 
 
 viewWithNetworkInfo : String -> ( List B.CallsignInfo, List B.CallsignInfo ) -> Bool -> Html msg
