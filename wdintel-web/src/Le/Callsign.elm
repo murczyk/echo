@@ -1,4 +1,4 @@
-module Le.Callsign exposing (extractCallsignsInfo, filterNetworksByFreq, getAllUnitsIdsForNetworks, getNetworkUnits2, getUnitsInfoByIds, prioritizeCallsigns, prioritizeCallsignsForNetwork)
+module Le.Callsign exposing (extractCallsignsInfo, filterNetworksByFreq, getAllUnitsIdsForNetworks, getNetworkUnits2, getUnitsInfoByIds, prioritizeCallsigns, prioritizeCallsignsForNetwork, prioritizeCallsignsWithoutNetwork)
 
 import Bindings as B
 import Dict
@@ -117,6 +117,31 @@ prioritizeCallsignsForNetwork masterUnits network gdocCallsigns callsign =
                         masterUnits |> Dict.values
                 in
                 prioritizeCallsignsConnectedToNetworkUnitsRegiment masterUnitsList networkUnits callsignInfos
+
+        _ ->
+            []
+
+
+{-| Показує підказки для позивного навіть коли повідомлення не прив'язане до мережі
+    Використовує всі доступні юніти в системі для фільтрації підказок
+-}
+prioritizeCallsignsWithoutNetwork : Dict.Dict Int B.Unit -> Dict.Dict String (List B.CallsignInfo) -> String -> List B.CallsignInfo
+prioritizeCallsignsWithoutNetwork masterUnits callsignsInfo callsign =
+    case Dict.get (String.toLower callsign) callsignsInfo of
+        Just callsignInfo ->
+            if List.length callsignInfo == 0 then
+                []
+
+            else
+                let
+                    masterUnitsList =
+                        masterUnits |> Dict.values
+                    
+                    -- Використовуємо всі юніти як "мережеві" для фільтрації
+                    -- Це означає що підказки будуть показані якщо їх юніт співпадає з будь-яким юнітом в системі
+                    allUnitsAsNetworkUnits = masterUnitsList
+                in
+                prioritizeCallsignsConnectedToNetworkUnitsRegiment masterUnitsList allUnitsAsNetworkUnits callsignInfo
 
         _ ->
             []
