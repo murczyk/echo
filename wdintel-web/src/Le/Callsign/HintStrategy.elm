@@ -1,8 +1,9 @@
-module Le.Callsign.HintStrategy exposing (HintStrategy, HintResult, determineHintStrategy)
+module Le.Callsign.HintStrategy exposing (HintStrategy, HintResult, determineHintStrategy, getCallsignsForStrategy, getIconClass, getTooltipText)
 
 import Bindings as B
 import Dict exposing (Dict)
 import List.Extra as ListX
+import Le.Block.Unit as Unit
 
 
 {-| Фільтрує мережі за частотою
@@ -60,6 +61,102 @@ type alias HintResult =
     , iconClass : String
     , tooltipText : String
     }
+
+
+{-| Отримує підказки позивного для конкретної стратегії
+-}
+getCallsignsForStrategy : 
+    HintStrategy 
+    -> Dict String (List B.CallsignInfo) 
+    -> String 
+    -> List B.CallsignInfo
+getCallsignsForStrategy strategy callsignsInfo callsign =
+    case Dict.get (String.toLower callsign) callsignsInfo of
+        Just callsignInfo ->
+            if List.length callsignInfo == 0 then
+                []
+            else
+                case strategy of
+                    NetworkBased { units } ->
+                        let
+                            masterUnitsList = callsignsInfo |> Dict.values |> List.concat
+                        in
+                        filterCallsignsByNetworkUnits masterUnitsList units callsignInfo
+                    
+                    SystemWide { units } ->
+                        let
+                            masterUnitsList = callsignsInfo |> Dict.values |> List.concat
+                        in
+                        filterCallsignsByNetworkUnits masterUnitsList units callsignInfo
+                    
+                    NoHints ->
+                        []
+        
+        _ ->
+            []
+
+
+{-| Фільтрує позивні по зв'язку з мережевими юнітами
+-}
+filterCallsignsByNetworkUnits : List B.CallsignInfo -> List B.Unit -> List B.CallsignInfo -> List B.CallsignInfo
+filterCallsignsByNetworkUnits callsigns networkUnits callsignsInfo =
+    let
+        callsignsUnits =
+            findCallsignUnit callsigns networkUnits
+
+        unitsWithSameRegiment =
+            callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.isSameOrChildUnit callsignUnit))
+
+        isPrioritized : List B.Unit -> B.CallsignInfo -> Bool
+        isPrioritized u callsign =
+            List.any (\unit -> unit.id == Maybe.withDefault -1 callsign.unitId) u
+    in
+    callsignsInfo |> List.filter (isPrioritized unitsWithSameRegiment)
+
+
+{-| Знаходить юніти для позивних
+-}
+findCallsignUnit : List B.CallsignInfo -> List B.Unit -> List B.Unit
+findCallsignUnit callsigns units =
+    let
+        unitIds =
+            callsigns |> List.filterMap .unitId
+    in
+    units
+        |> List.filter
+            (\unit ->
+                List.member unit.id unitIds
+            )
+
+
+{-| Отримує клас іконки для стратегії
+-}
+getIconClass : HintStrategy -> String
+getIconClass strategy =
+    case strategy of
+        NetworkBased _ ->
+            "bi-info-circle-fill"
+        
+        SystemWide _ ->
+            "bi-info-circle-fill text-warning"
+        
+        NoHints ->
+            "bi-info-circle"
+
+
+{-| Отримує текст tooltip для стратегії
+-}
+getTooltipText : HintStrategy -> String
+getTooltipText strategy =
+    case strategy of
+        NetworkBased _ ->
+            "📍 Підказки по мережі"
+        
+        SystemWide _ ->
+            "🌐 Підказки по всій системі"
+        
+        NoHints ->
+            "Немає підказок"
 
 
 {-| Визначає стратегію підказок на основі повідомлення та контексту
