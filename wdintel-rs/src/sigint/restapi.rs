@@ -261,6 +261,12 @@ pub async fn receive_groups(
     config: &crate::config::Config,
     rq: &reqwest::Client,
 ) -> Result<Vec<Group>, AppError> {
+    if config.signal_api_phone.is_empty() {
+        debug!(
+            "signal_api_phone is empty, returning empty groups list. config: {config:?}"
+        );
+        return Ok(vec![]);
+    }
     let url = format!(
         "{}/v1/groups/{}",
         crate::config::SIGNAL_CLIENT_ADDR,
