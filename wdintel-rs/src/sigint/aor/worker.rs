@@ -62,10 +62,10 @@ async fn check_networks(dbx: &DatabaseConnection) -> anyhow::Result<()> {
         .c(h!())?;
     for n in networks {
         let cnt = counts.get(&n.id).cloned().unwrap_or(0);
-        if cnt != 1 {
+        if cnt == 0 {
             error!(
-                "[AORCheck] network id={} name={} has {} AORs assigned (expected exactly 1)",
-                n.id, n.name, cnt
+                "[AORCheck] network id={} name={} has zero AORs assigned (expected at least 1)",
+                n.id, n.name
             );
         }
     }
