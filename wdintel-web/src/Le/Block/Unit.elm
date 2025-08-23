@@ -67,33 +67,36 @@ isChildOf parentUnit childUnit =
     isChildUnitByLevels parentLevels childLevels
 
 
-{-| Рекурсивно перевіряє чи є childLevels дитячими для parentLevels
-    Дитячі рівні мають співпадати з батьківськими заповненими рівнями
+{-| Перевіряє чи є childLevels дитячими для parentLevels
+    Простий алгоритм: дитина має починатися так само як батько + мати додаткову інформацію
 -}
 isChildUnitByLevels : List String -> List String -> Bool
 isChildUnitByLevels parentLevels childLevels =
-    case ( parentLevels, childLevels ) of
-        ( [], [] ) ->
-            False
-
-        ( p :: ps, c :: cs ) ->
-            if String.isEmpty p then
-                -- Батьківський рівень порожній, дитячий може бути будь-яким
-                isChildUnitByLevels ps cs
-            else if p == c then
-                -- Співпадають, перевіряємо наступний рівень
-                isChildUnitByLevels ps cs
-            else
-                -- Не співпадають
-                False
-
-        ( [], _ ) ->
-            -- Батьківські рівні закінчилися, дитячі можуть мати додаткові
-            True
-
-        ( _, [] ) ->
-            -- Дитячі рівні закінчилися, але батьківські ще є
-            False
+    let
+        -- Збираємо пари (індекс, значення) для заповнених рівнів
+        getFilledLevels levels = 
+            levels 
+                |> List.indexedMap (\i level -> (i, level))
+                |> List.filter (\(_, level) -> not (String.isEmpty level))
+        
+        parentFilled = getFilledLevels parentLevels
+        childFilled = getFilledLevels childLevels
+        
+        -- Батько не може бути порожнім
+        parentNotEmpty = not (List.isEmpty parentFilled)
+        
+        -- Дитина має мати більше заповнених рівнів
+        childMoreSpecific = List.length childFilled > List.length parentFilled
+        
+        -- Всі заповнені рівні батька мають точно співпадати з початком дитини
+        parentMatchesChildPrefix = 
+            let
+                parentLength = List.length parentFilled
+                childPrefix = List.take parentLength childFilled
+            in
+            parentFilled == childPrefix
+    in
+    parentNotEmpty && childMoreSpecific && parentMatchesChildPrefix
 
 
 {-| Застаріла функція - замінена на isSameOrChildUnit
