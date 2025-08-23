@@ -23,6 +23,8 @@ pub struct Model {
     pub datasource_id: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub message_uid: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

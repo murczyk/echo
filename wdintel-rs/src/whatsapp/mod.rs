@@ -1,4 +1,5 @@
 use crate::entities::*;
+use crate::messenger::id;
 use crate::types::*;
 use chrono::prelude::*;
 use sea_orm::*;
@@ -88,7 +89,7 @@ async fn receive_once(
             .context(h!())?;
         let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
         if config.read_from_legacy_data_sources.unwrap_or(true) {
-            let signal_message = signal_message::ActiveModel {
+            let message = signal_message::ActiveModel {
                 id: NotSet,
                 body: Set(Some(body.clone())),
                 created_at: NotSet,
@@ -100,10 +101,16 @@ async fn receive_once(
                 datasource_id: Set(Some(datasource.id)),
                 deleted: NotSet,
                 external_id: NotSet,
+                message_uid: NotSet,
             }
-            .insert(&txn)
+            .insert(dbx)
             .await
             .context(h!())?;
+
+            let signal_message =
+                id::update_message_with_uid(dbx, &config, message)
+                    .await
+                    .context(h!())?;
 
             if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
                 // attachments if any

@@ -1,4 +1,5 @@
 use super::*;
+use crate::messenger::id;
 use log::*;
 
 pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
@@ -379,12 +380,16 @@ pub async fn process_incoming_message_restapi(
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
             external_id: NotSet,
-        };
-        let db_message_id: i64 = SignalMessage::insert(message)
-            .exec(dbx)
+            message_uid: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .context(h!())?;
+        let db_message_id = message.id;
+
+        id::update_message_with_uid(dbx, &config, message)
             .await
-            .context(h!())?
-            .last_insert_id;
+            .context(h!())?;
 
         if let Some(ref attachments) = data_message.attachments {
             for attachment in attachments.iter() {
