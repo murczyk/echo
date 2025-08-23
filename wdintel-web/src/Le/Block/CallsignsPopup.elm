@@ -130,7 +130,7 @@ view viewParams pageSpecific =
                             text ""
                         , if not (List.isEmpty callsignsWithoutUnits) then
                             div [ class "callsigns-section" ]
-                                [ div [ class "callsigns-section-header" ] [ text "Позивні без підрозділів" ]
+                                [ div [ class "callsigns-section-header" ] [ text "Не прив'язані позивні" ]
                                 , viewCallsignsGroup callsignsWithoutUnits
                                 ]
                           else
