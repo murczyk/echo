@@ -1,4 +1,4 @@
-module Le.Block.Callsign exposing (view, viewDefault)
+module Le.Block.Callsign exposing (view, viewDefault, viewWithNetworkInfo)
 
 import Bindings as B
 import Html exposing (..)
@@ -32,6 +32,11 @@ viewDefault callsign isBlock =
 
 view : String -> ( List B.CallsignInfo, List B.CallsignInfo ) -> Html msg
 view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
+    viewWithNetworkInfo callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) True
+
+
+viewWithNetworkInfo : String -> ( List B.CallsignInfo, List B.CallsignInfo ) -> Bool -> Html msg
+viewWithNetworkInfo callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) hasNetwork =
     if (List.length prioritizedCallsigns == 0) && (List.length nonPrioritizedCallsigns == 0) then
         viewDefault callsign False
 
@@ -49,7 +54,9 @@ view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
                 div [ id "tooltip-content" ]
                     [ HtmlX.viewIf (not noPrioritizedCallsigns) <|
                         div []
-                            [ span []
+                            [ div [ class "text-xs text-muted mb-1" ]
+                                [ text (if hasNetwork then "📍 Підказки по мережі" else "🌐 Підказки по всій системі") ]
+                            , span []
                                 [ text prioritizedBlock
                                 ]
                             ]
@@ -70,10 +77,10 @@ view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
                     ]
 
             infoCircleClass =
-                if noPrioritizedCallsigns then
-                    "bi-info-circle"
+                if hasNetwork then
+                    "bi-info-circle-fill"
 
                 else
-                    "bi-info-circle-fill"
+                    "bi-info-circle"
         in
         Tooltip.new (String.toUpper callsign) |> Tooltip.withIconName infoCircleClass |> Tooltip.withTextNoWrap |> Tooltip.view tooltip
