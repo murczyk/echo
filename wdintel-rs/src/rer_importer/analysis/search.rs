@@ -35,8 +35,7 @@ lazy_static! {
     static ref RE_NEG_FREQ: Regex =
         Regex::new(r"(?:^|\s)(-([0-9]{3}(\.|,)[0-9]{2,4}))\b").unwrap();
     static ref RE_MSG_UID: Regex =
-        Regex::new(r"\b[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}\b")
-            .unwrap();
+        Regex::new(r"\b[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}\b").unwrap();
 }
 
 pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {

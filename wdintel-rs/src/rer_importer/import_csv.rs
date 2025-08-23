@@ -383,7 +383,7 @@ pub async fn rer_delta_csv_import_go(
 
         let db_message_id = message.id;
 
-        id::update_message_with_uid(dbx, &config, message)
+        id::update_message_with_uid(dbx, config, message)
             .await
             .context(h!())?;
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(

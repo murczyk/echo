@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn test_gen_id() {
         let id = 891461;
-        let date = NaiveDate::from_ymd_opt(2026, 07, 29).unwrap();
+        let date = NaiveDate::from_ymd_opt(2026, 7, 29).unwrap();
         let time = NaiveTime::from_hms_nano_opt(23, 56, 47, 469647552).unwrap();
         let datetime = NaiveDateTime::new(date, time);
 
@@ -371,7 +371,6 @@ mod tests {
     #[test]
     fn test_gen_id2() {
         let id = 1745892;
-        let datasource_id = 12;
         let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
         let time = NaiveTime::from_hms_nano_opt(22, 18, 55, 782204129).unwrap();
         let datetime = NaiveDateTime::new(date, time);
@@ -385,8 +384,7 @@ mod tests {
     #[test]
     fn test_gen_id3() {
         let id = 2499063;
-        let datasource_id = 12;
-        let date = NaiveDate::from_ymd_opt(2026, 07, 22).unwrap();
+        let date = NaiveDate::from_ymd_opt(2026, 7, 22).unwrap();
         let time = NaiveTime::from_hms_nano_opt(14, 26, 43, 718991805).unwrap();
         let datetime = NaiveDateTime::new(date, time);
 

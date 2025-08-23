@@ -108,7 +108,7 @@ async fn receive_once(
             .context(h!())?;
 
             let signal_message =
-                id::update_message_with_uid(dbx, &config, message)
+                id::update_message_with_uid(dbx, config, message)
                     .await
                     .context(h!())?;
 

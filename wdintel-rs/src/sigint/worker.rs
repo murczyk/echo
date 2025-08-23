@@ -387,7 +387,7 @@ pub async fn process_incoming_message_restapi(
         .context(h!())?;
         let db_message_id = message.id;
 
-        id::update_message_with_uid(dbx, &config, message)
+        id::update_message_with_uid(dbx, config, message)
             .await
             .context(h!())?;
 

@@ -109,6 +109,11 @@ pub struct Config {
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
     pub read_from_legacy_data_sources: Option<bool>,
+    /// A unique identifier for the server.
+    ///
+    /// This is an arbitrary integer value in the range **1-16**.
+    /// It must be unique across all running servers to avoid conflicts.
+    /// Please double-check in Bitwarden that your value does not conflict with values in other live servers.
     pub server_id: Option<u32>,
 }
 
