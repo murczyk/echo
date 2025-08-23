@@ -2,6 +2,7 @@ module Tests exposing (..)
 
 import Coordinates as C
 import Expect
+import Le.Block.UnitTests
 import Le.Console
 import Le.Delta as D
 import Le.Time
@@ -10,11 +11,16 @@ import Pages.Importer
 import Parser as P exposing ((|.), (|=), Parser)
 import Test exposing (..)
 import Time
+import UnitHierarchyTests
 
 
 suite : Test
 suite =
-    describe "Coordinates" (testsCoordinates ++ testProgressRegex ++ testParseDateStr)
+    describe "All Tests"
+        [ describe "Coordinates" (testsCoordinates ++ testProgressRegex ++ testParseDateStr)
+        , Le.Block.UnitTests.suite
+        , UnitHierarchyTests.suite
+        ]
 
 
 testsCoordinates : List Test

@@ -33,20 +33,20 @@ findCallsignUnit callsigns units =
             )
 
 
-prioritizeCallsignsConnectedToNetworkUnitsRegiment : List B.Unit -> List B.Unit -> List B.CallsignInfo -> ( List B.CallsignInfo, List B.CallsignInfo )
+prioritizeCallsignsConnectedToNetworkUnitsRegiment : List B.Unit -> List B.Unit -> List B.CallsignInfo -> List B.CallsignInfo
 prioritizeCallsignsConnectedToNetworkUnitsRegiment units networkUnits callsigns =
     let
         callsignsUnits =
             findCallsignUnit callsigns units
 
         unitsWithSameRegiment =
-            callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.sameRegiment callsignUnit))
+            callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.isSameOrChildUnit callsignUnit))
 
         isPrioritized : List B.Unit -> B.CallsignInfo -> Bool
         isPrioritized u callsign =
             List.any (\unit -> unit.id == Maybe.withDefault -1 callsign.unitId) u
     in
-    callsigns |> List.partition (isPrioritized unitsWithSameRegiment)
+    callsigns |> List.filter (isPrioritized unitsWithSameRegiment)
 
 
 filterNetworksByFreq : Dict.Dict Int B.Network -> Maybe String -> List B.Network
@@ -83,12 +83,12 @@ getNetworkUnits2 network masterUnits =
         |> List.filterMap (\id_ -> Dict.get id_ masterUnits)
 
 
-prioritizeCallsigns : Dict.Dict Int B.Unit -> List B.Unit -> Dict.Dict String (List B.CallsignInfo) -> String -> ( List B.CallsignInfo, List B.CallsignInfo )
+prioritizeCallsigns : Dict.Dict Int B.Unit -> List B.Unit -> Dict.Dict String (List B.CallsignInfo) -> String -> List B.CallsignInfo
 prioritizeCallsigns masterUnits networkUnits callsignsInfo callsign =
     case Dict.get (String.toLower callsign) callsignsInfo of
         Just callsignInfo ->
             if List.length callsignInfo == 0 then
-                ( [], [] )
+                []
 
             else
                 let
@@ -98,15 +98,15 @@ prioritizeCallsigns masterUnits networkUnits callsignsInfo callsign =
                 prioritizeCallsignsConnectedToNetworkUnitsRegiment masterUnitsList networkUnits callsignInfo
 
         _ ->
-            ( [], [] )
+            []
 
 
-prioritizeCallsignsForNetwork : Dict.Dict Int B.Unit -> B.Network -> Dict.Dict String (Maybe (List B.CallsignInfo)) -> String -> ( List B.CallsignInfo, List B.CallsignInfo )
+prioritizeCallsignsForNetwork : Dict.Dict Int B.Unit -> B.Network -> Dict.Dict String (Maybe (List B.CallsignInfo)) -> String -> List B.CallsignInfo
 prioritizeCallsignsForNetwork masterUnits network gdocCallsigns callsign =
     case Dict.get (String.toLower callsign) gdocCallsigns of
         Just (Just callsignInfos) ->
             if List.length callsignInfos == 0 then
-                ( [], [] )
+                []
 
             else
                 let
@@ -119,4 +119,4 @@ prioritizeCallsignsForNetwork masterUnits network gdocCallsigns callsign =
                 prioritizeCallsignsConnectedToNetworkUnitsRegiment masterUnitsList networkUnits callsignInfos
 
         _ ->
-            ( [], [] )
+            []

@@ -728,15 +728,15 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                 prioritizeCallsignsPartial c =
                     Le.Callsign.prioritizeCallsigns vps.masterUnits networkUnits vps.callsignsInfo c
 
-                ( prio, nonPrio ) =
+                prio =
                     prioritizeCallsignsPartial callsign
 
                 conditionMet =
-                    List.length prio > 0 || List.length nonPrio > 0
+                    List.length prio > 0
 
                 result =
                     if conditionMet then
-                        Le.Block.Callsign.view callsign ( prio, nonPrio )
+                        Le.Block.Callsign.view callsign ( prio, [] )
 
                     else
                         Le.Block.Callsign.viewDefault callsign False

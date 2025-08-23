@@ -89,7 +89,7 @@ view (Settings settings) =
                     []
                  )
                     ++ (if settings.isOpen then
-                            [ style "position" "relative", style "z-index" "30" ]
+                            [ style "position" "relative", style "z-index" "600" ]
 
                         else
                             []
@@ -103,7 +103,7 @@ view (Settings settings) =
 
           else
             text ""
-        , div [ style "position" "relative", style "z-index" "30" ]
+        , div [ style "position" "relative", style "z-index" "600" ]
             [ node
                 "sl-popup"
                 ([ attribute "strategy" "fixed"

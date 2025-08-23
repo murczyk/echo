@@ -15,7 +15,7 @@ findConnectedNetworks selectedUnit networks masterUnits =
         sameRegimentUnits =
             case mSelUnit of
                 Just unit ->
-                    List.filter (\( id_, unit_ ) -> Unit.sameRegiment unit unit_) (Dict.toList masterUnits)
+                    List.filter (\( id_, unit_ ) -> Unit.isSameOrChildUnit unit unit_) (Dict.toList masterUnits)
 
                 Nothing ->
                     []
