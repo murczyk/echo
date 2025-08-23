@@ -16,7 +16,7 @@ pub use std::sync::Arc;
 pub use std::sync::RwLock;
 pub use uuid::Uuid;
 
-/// Shorthand trait for anyhow's `Context` allowing `.c(h!())` usage
+/// Shorthand trait for anyhow-like `Context` allowing `.c(h!())` usage
 pub trait ShortContext<T> {
     fn c<C>(self, context: C) -> anyhow::Result<T>
     where
@@ -46,6 +46,44 @@ impl<T> ShortContext<T> for Option<T> {
 }
 
 // No separate impl for anyhow::Result<T> to avoid overlap with the generic impl
+
+/// Error-only variant to add context to errors directly
+pub trait ShortContextErr {
+    fn c<C>(self, context: C) -> AppError
+    where
+        C: std::fmt::Display + Send + Sync + 'static;
+}
+
+impl ShortContextErr for anyhow::Error {
+    fn c<C>(self, context: C) -> AppError
+    where
+        C: std::fmt::Display + Send + Sync + 'static,
+    {
+        AppError::AnyhowError {
+            source: self.context(context),
+        }
+    }
+}
+
+impl ShortContextErr for AppError {
+    fn c<C>(self, context: C) -> AppError
+    where
+        C: std::fmt::Display + Send + Sync + 'static,
+    {
+        match self {
+            AppError::NotFound
+            | AppError::Unauthenticated
+            | AppError::Forbidden(_)
+            | AppError::Form(_) => self,
+            AppError::AnyhowError { source } => AppError::AnyhowError {
+                source: source.context(context),
+            },
+            other => AppError::AnyhowError {
+                source: anyhow!(other).context(context),
+            },
+        }
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum Mode {
