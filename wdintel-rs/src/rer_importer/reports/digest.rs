@@ -99,6 +99,7 @@ pub async fn report_docx_kind_digest(
     info!("report_docx_kind_digest data collected");
 
     let config = DocxConfig {
+        columns_count: 2,
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
         split_multiline_cells: false,
@@ -247,7 +248,7 @@ pub async fn report_docx_kind_digest(
         .page_orient(PageOrientationType::Portrait)
         .default_size(20)
         .page_size(11906, 16838)
-        .page_margin(PageMargin::new().left(1500).right(450).top(1200))
+        .page_margin(PageMargin::new().left(600).right(300).top(1200))
         .add_paragraph(form_paragraph)
         .add_paragraph(mk_paragraph("", util::ParagraphStyle::Default, &config))
         .add_paragraph(title_paragraph)

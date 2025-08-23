@@ -108,6 +108,7 @@ pub async fn report_docx_kind_revo(
         );
 
     let config = DocxConfig {
+        columns_count: 6,
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
         split_multiline_cells: true,
