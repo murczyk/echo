@@ -301,30 +301,25 @@ pub async fn create_login(
     let config = argon2::Config::original();
     let hash = argon2::hash_encoded(req.password.as_bytes(), salt, &config)?;
 
-    let login_obj = login::ActiveModel {
-        delta_login_id: NotSet,
-        login: Set(req.login.trim().to_string()),
-        password: Set(Some(hash.to_string())),
-        roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
-        created_at: NotSet,
-        sigint_zone_id: Set(req.sigint_zone_id),
-        organism_id: Set(req.organism_id),
-        deleted: Set(false),
-        last_active_at: Set(Some(Utc::now().naive_utc())),
-        deactivation_reason: NotSet,
-        deleted_permanently: NotSet,
-    }
-    .insert(&env.dbx)
+    let res = resurrect_or_insert_login(
+        &env.dbx,
+        login::ActiveModel {
+            // Make sure delta link is cleared for regular accounts
+            delta_login_id: Set(None),
+            login: Set(req.login.trim().to_string()),
+            password: Set(Some(hash.to_string())),
+            roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
+            created_at: NotSet,
+            sigint_zone_id: Set(req.sigint_zone_id),
+            organism_id: Set(req.organism_id),
+            deleted: Set(false),
+            last_active_at: Set(Some(Utc::now().naive_utc())),
+            deactivation_reason: NotSet,
+            deleted_permanently: NotSet,
+        },
+    )
     .await
     .context(h!())?;
-
-    let res = login::Entity::find()
-        .filter(login::Column::Login.eq(login_obj.login))
-        .filter(login::Column::DeletedPermanently.eq(false))
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .context(h!())?;
 
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::Id.eq(res.organism_id))
@@ -1063,20 +1058,23 @@ async fn register_delta_user(
     .await
     .context(h!())?;
 
-    let login_obj = login::ActiveModel {
-        login: Set(login),
-        password: Set(None),
-        roles: Set(serde_json::to_value(roles).context(h!())?),
-        created_at: NotSet,
-        sigint_zone_id: Set(sigint_zone),
-        organism_id: Set(organism_id),
-        deleted: Set(false),
-        delta_login_id: Set(Some(delta_login.id)),
-        last_active_at: Set(Some(Utc::now().naive_utc())),
-        deactivation_reason: NotSet,
-        deleted_permanently: NotSet,
-    }
-    .insert(dbx)
+    // Create or resurrect the login row and attach the new delta login
+    let login_obj = resurrect_or_insert_login(
+        dbx,
+        login::ActiveModel {
+            login: Set(login),
+            password: Set(None),
+            roles: Set(serde_json::to_value(roles).context(h!())?),
+            created_at: NotSet,
+            sigint_zone_id: Set(sigint_zone),
+            organism_id: Set(organism_id),
+            deleted: Set(false),
+            delta_login_id: Set(Some(delta_login.id)),
+            last_active_at: Set(Some(Utc::now().naive_utc())),
+            deactivation_reason: NotSet,
+            deleted_permanently: NotSet,
+        },
+    )
     .await
     .context(h!())?;
 
@@ -1099,17 +1097,8 @@ async fn register_delta_user(
         Some(organism) => (Some(organism.name.clone()), Some(organism.enabled)),
     };
 
-    let delta_login = match login_obj.delta_login_id {
-        None => None,
-        Some(id) => delta_login::Entity::find()
-            .filter(delta_login::Column::Id.eq(id))
-            .one(dbx)
-            .await
-            .context(h!())?
-            .map(|x| x.login),
-    };
     let result = Login {
-        delta_login,
+        delta_login: Some(delta_login.login.clone()),
         organism_name,
         organism_enabled,
         login: res.login,
@@ -1132,6 +1121,47 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
     };
     Ok(result)
+}
+
+// Helper: insert a new login, or resurrect a permanently-deleted one by updating
+// its fields with the provided values. Always clears deletion flags and updates
+// last_active_at on resurrection.
+async fn resurrect_or_insert_login(
+    dbx: &DatabaseConnection,
+    desired: login::ActiveModel,
+) -> Result<login::Model, AppError> {
+    let key = match desired.login.clone() {
+        Set(k) => k,
+        _ => {
+            // Produce anyhow error with context to preserve stack trace
+            return Err(anyhow!(
+                "login must be Set(...) for resurrect_or_insert_login"
+            )
+            .c(h!()));
+        }
+    };
+
+    if let Some(existing) = login::Entity::find_by_id(key)
+        .one(dbx)
+        .await
+        .context(h!())?
+    {
+        if existing.deleted_permanently {
+            let mut model = existing.into_active_model();
+            model.password = desired.password;
+            model.roles = desired.roles;
+            model.sigint_zone_id = desired.sigint_zone_id;
+            model.organism_id = desired.organism_id;
+            model.deleted = Set(false);
+            model.delta_login_id = desired.delta_login_id;
+            model.last_active_at = Set(Some(Utc::now().naive_utc()));
+            model.deactivation_reason = Set(None);
+            model.deleted_permanently = Set(false);
+            return Ok(model.update(dbx).await.context(h!())?);
+        }
+    }
+
+    Ok(desired.insert(dbx).await.context(h!())?)
 }
 
 pub async fn inactive_users_worker(dbx: &DatabaseConnection) {
