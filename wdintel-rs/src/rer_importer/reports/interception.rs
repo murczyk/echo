@@ -160,7 +160,20 @@ async fn get_inbox_messages_report(
 
     // println!("SQL: {}", &q.build(DbBackend::Postgres).to_string());
 
-    Ok(q.into_model::<InboxMessage>().all(&env.dbx).await?)
+    let messages = q
+        .into_model::<InboxMessage>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    let mut result = HashMap::new();
+    messages
+        .into_iter()
+        .map(|m| ((m.date.clone(), m.time.clone(), m.body.clone()), m))
+        .for_each(|(id, m)| {
+            result.insert(id, m);
+        });
+    let messages = result.into_values().collect::<Vec<_>>();
+    Ok(messages)
 }
 
 fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
