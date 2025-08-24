@@ -165,15 +165,17 @@ async fn get_inbox_messages_report(
         .all(&env.dbx)
         .await
         .context(h!())?;
-    let mut result = HashMap::new();
-    messages
-        .into_iter()
-        .map(|m| ((m.date.clone(), m.time.clone(), m.body.clone()), m))
-        .for_each(|(id, m)| {
-            result.insert(id, m);
-        });
-    let messages = result.into_values().collect::<Vec<_>>();
-    Ok(messages)
+    let mut keys = HashSet::new();
+    let mut result = vec![];
+    for m in messages {
+        let key = (m.date.clone(), m.time.clone(), m.body.clone());
+        if keys.contains(&key) {
+            continue;
+        }
+        keys.insert(key);
+        result.push(m);
+    }
+    Ok(result)
 }
 
 fn process_callsigns(callsigns: Vec<String>) -> (String, String) {

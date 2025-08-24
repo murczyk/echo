@@ -311,7 +311,6 @@ fn extract_kazhanchik_callsigns(
     let mut res: Vec<CNCallsign> = vec![];
 
     for line in lines.iter() {
-        
         if let Some(line_match) = LINE_REGEX.find(line) {
             // Extract the matched part of the line
             let matched_text = line_match.as_str();
@@ -1723,16 +1722,15 @@ mod tests {
 
 Мітки перехоплення: БПЛА - фіксація БПЛА СОУ"#;
         let res = extract_kazhanchik_callsigns(body).unwrap();
-        let expected: Vec<String> =
-            vec![
-                "РУДА".to_string(), 
-                "СИЛЬНЫЙ".to_string(), 
-                "РЕДУТ".to_string(),
-                "ВЕТЕР".to_string(),
-                "714 -Й".to_string(),
-                "ВЕТЕР -4".to_string(),
-                "712-Й".to_string(),
-                ];
+        let expected: Vec<String> = vec![
+            "РУДА".to_string(),
+            "СИЛЬНЫЙ".to_string(),
+            "РЕДУТ".to_string(),
+            "ВЕТЕР".to_string(),
+            "714 -Й".to_string(),
+            "ВЕТЕР -4".to_string(),
+            "712-Й".to_string(),
+        ];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected)
     }
