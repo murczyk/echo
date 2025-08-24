@@ -287,7 +287,7 @@ fn extract_kazhanchik_callsigns(
     // CALLSING must have capital letters and possibly numbers as a suffix
     // also allowed digital callsing in format 1-Й, 34-Й (i.e. numbers dash Й)
     // for digitall calllins only there is a extract_digital_callsigns function
-    const CALLSIGN_REGEX_STR: &str = r"(\d+\s*(-|—)\s*)?(?P<callsign>(([A-ZА-Я]+((-| )?[0-9]{1,3})?)|([0-9]{1,3}-?Й)))(\s?\([^\s]+\))?";
+    const CALLSIGN_REGEX_STR: &str = r"(\d+\s*(-|—)\s*)??(?P<callsign>(([A-ZА-Я]+(\s*(-|—)?\s*[0-9]{1,3})?)|([0-9]{1,3}\s*(-|—)?\s*Й)))(\s?\([^\s]+\))?";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -295,15 +295,23 @@ fn extract_kazhanchik_callsigns(
 
         // Regex for validating an entire line of callsigns separated by commas
         static ref LINE_REGEX: Regex = Regex::new(&format!(
-            r"^({})(,\s*{})*\s*$",
+            r"^({})(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*\s*$",
             CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign1>"),
-            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign2>")
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign2>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign3>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign4>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign5>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign6>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign7>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign8>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign9>"),
+            CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign10>"),
         )).unwrap();
     }
-
     let mut res: Vec<CNCallsign> = vec![];
 
     for line in lines.iter() {
+        
         if let Some(line_match) = LINE_REGEX.find(line) {
             // Extract the matched part of the line
             let matched_text = line_match.as_str();
@@ -1699,6 +1707,37 @@ mod tests {
     }
 
     #[test]
+    fn extract_callsigns_kazhanchik_with_7_callsigns() {
+        let body = r#"30.07.2025, 10:39:23
+
+УКХ р/м очс МВД (МЕЛІТОПОЛЬ) ймовірно ретранслятор ДМР
+РУДА
+СИЛЬНЫЙ, РЕДУТ, ВЕТЕР, 714 -Й, ВЕТЕР -4, 712-Й
+
+— Внимание, я Руда, объявлена атака БПЛА по всей Запорожской области.
+— Ветер -4, Ветру.
+-- Внимание всем постам, я Сильный, объявлена опасность БПЛА по всей Запорожской области.
+-- 714-й принял.
+-- 712-й принял.
+-- Внимание всем постам, я Редут, объявлена опасность БПЛА по всей Запорожской области.
+
+Мітки перехоплення: БПЛА - фіксація БПЛА СОУ"#;
+        let res = extract_kazhanchik_callsigns(body).unwrap();
+        let expected: Vec<String> =
+            vec![
+                "РУДА".to_string(), 
+                "СИЛЬНЫЙ".to_string(), 
+                "РЕДУТ".to_string(),
+                "ВЕТЕР".to_string(),
+                "714 -Й".to_string(),
+                "ВЕТЕР -4".to_string(),
+                "712-Й".to_string(),
+                ];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected)
+    }
+
+    #[test]
     fn extract_callsigns_buran_03() {
         let body = r#"Час: 21:23
 Дата: 27.02.2024
@@ -2258,6 +2297,33 @@ mod tests {
             "Бульдог".to_string(),
             "Псих".to_string(),
             "1234".to_string(),
+        ];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_sender_receiver_pair_with_5_callsigns() {
+        let body = r#"УКХ р/м зі складу 222 мсп (МВО)
+ ОРЛЯНСЬКЕ
+ 01.01.2025 3:3:03
+ Відправник: Бульдог
+ Отримувач(і): Псих,
+  1234,
+  Картон,
+  Коробка
+ Перехоплення:
+ 1. Бульдог Люстра.
+ 2. Псих, сейчас наша коробочка работает по соседней посадке, ей бы правее, ещё метра на 700, там напротив работал миномёт на  Скорого.
+ 3. Не в нашу сторону, а вообще в сторону Сокола, туда работал миномёт.
+ 4. Люстра Люстра азимут можешь сказать?   "#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> = vec![
+            "Бульдог".to_string(),
+            "Псих".to_string(),
+            "1234".to_string(),
+            "Картон".to_string(),
+            "Коробка".to_string(),
         ];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
