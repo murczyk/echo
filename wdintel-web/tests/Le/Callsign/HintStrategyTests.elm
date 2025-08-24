@@ -268,5 +268,65 @@ suite =
                             List.length parentHints.prioritizedCallsigns |> Expect.equal 2
                         ]
                         ()
+                , test "Коли немає мережі, SystemWide показує тільки існуючі позивні, а не всі можливі" <|
+                \_ ->
+                    let
+                        message =
+                            createMessage Nothing Nothing
+
+                        networks =
+                            Dict.empty
+
+                        -- В системі є тільки 2 юніти
+                        unit1 =
+                            createUnit 1 "1-ша армія" "" "" "" "" "Unit 1"
+
+                        unit2 =
+                            createUnit 2 "2-га армія" "" "" "" "" "Unit 2"
+
+                        masterUnits =
+                            Dict.fromList 
+                                [ ( 1, unit1 )
+                                , ( 2, unit2 )
+                                ]
+
+                        -- В базі позивних є тільки 2 позивні
+                        callsignsInfo =
+                            Dict.fromList
+                                [ ( "apple", [ createCallsignInfo 1 "APPLE" "Позиція 1" "1-ша армія" "" (Just 1) ] )
+                                , ( "banana", [ createCallsignInfo 2 "BANANA" "Позиція 2" "2-га армія" "" (Just 2) ] )
+                                ]
+
+                        context =
+                            createContext networks masterUnits callsignsInfo
+
+                        -- Перевіряємо позивний "apple"
+                        appleHints =
+                            HintStrategy.getCallsignHints message context "apple"
+
+                        -- Перевіряємо позивний "banana"
+                        bananaHints =
+                            HintStrategy.getCallsignHints message context "banana"
+
+                        -- Перевіряємо неіснуючий позивний
+                        unknownHints =
+                            HintStrategy.getCallsignHints message context "unknown"
+                    in
+                    Expect.all
+                        [ \_ ->
+                            -- SystemWide стратегія для існуючого позивного
+                            appleHints.strategy |> Expect.equal (HintStrategy.SystemWide { units = [ unit1, unit2 ] })
+                        , \_ ->
+                            -- Позивний "apple" має показувати тільки 1 підказку (свою)
+                            List.length appleHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- Позивний "banana" має показувати тільки 1 підказку (свою)
+                            List.length bananaHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- Неіснуючий позивний не має показувати підказки
+                            List.length unknownHints.prioritizedCallsigns |> Expect.equal 0
+                        ]
+                        ()
             ]
+       
         ]

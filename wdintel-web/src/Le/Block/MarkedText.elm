@@ -6,8 +6,8 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Le.Block.Callsign
-import Le.Callsign.HintStrategy as HintStrategy
 import Le.Block.Tooltip as Tooltip
+import Le.Callsign.HintStrategy as HintStrategy
 import Route
 import Route.Path
 
@@ -35,12 +35,15 @@ view prioritizedCallsignsDict signals networks mFreq (Model config) =
 createHintResultFromTuple : ( List B.CallsignInfo, List B.CallsignInfo ) -> HintStrategy.HintResult
 createHintResultFromTuple ( prioritized, nonPrioritized ) =
     let
-        hasNetwork = List.length prioritized > 0
-        strategy = 
+        hasNetwork =
+            List.length prioritized > 0
+
+        strategy =
             if hasNetwork then
                 HintStrategy.NetworkBased { networks = [], units = [] }
+
             else
-                HintStrategy.SystemWide { units = [] }
+                HintStrategy.SystemWide
     in
     { strategy = strategy
     , prioritizedCallsigns = prioritized
@@ -70,7 +73,7 @@ viewWithHintResults hintResultsDict signals networks mFreq (Model config) =
                         a3 =
                             case mFreq of
                                 Just freq ->
-                                    case networks |> List.filter (\x -> List.map .freq x.freqs |> List.member freq ) |> List.head |> Maybe.andThen .unitIds |> Maybe.andThen List.head of
+                                    case networks |> List.filter (\x -> List.map .freq x.freqs |> List.member freq) |> List.head |> Maybe.andThen .unitIds |> Maybe.andThen List.head of
                                         Just unitId ->
                                             Dict.insert "unitId" (String.fromInt unitId) a2
 

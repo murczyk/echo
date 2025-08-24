@@ -50,8 +50,6 @@ type HintStrategy
         , units : List B.Unit
         }
     | SystemWide
-        { units : List B.Unit
-        }
     | NoHints
 
 
@@ -88,12 +86,9 @@ getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
                         in
                         filterCallsignsByNetworkUnits allCallsigns masterUnits units
 
-                    SystemWide { units } ->
-                        let
-                            allCallsigns =
-                                callsignsInfo |> Dict.values |> List.concat
-                        in
-                        filterCallsignsByNetworkUnits allCallsigns masterUnits units
+                    SystemWide ->
+                        -- Для SystemWide просто повертаємо позивні для конкретного запиту
+                        callsignInfo
 
                     NoHints ->
                         []
@@ -143,7 +138,7 @@ getIconClass strategy =
         NetworkBased _ ->
             "bi-info-circle-fill"
 
-        SystemWide _ ->
+        SystemWide  ->
             "bi-info-circle"
 
         NoHints ->
@@ -158,7 +153,7 @@ getTooltipText strategy =
         NetworkBased _ ->
             "📍 Позивні підрозділів мережі"
 
-        SystemWide _ ->
+        SystemWide  ->
             "🌐 Позивні з каталогу"
 
         NoHints ->
@@ -228,5 +223,3 @@ determineHintStrategy message context =
 
     else
         SystemWide
-            { units = Dict.values context.masterUnits
-            }
