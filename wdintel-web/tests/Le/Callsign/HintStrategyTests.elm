@@ -210,9 +210,62 @@ suite =
                             HintStrategy.getCallsignHints message context "test"
                     in
                     Expect.all
-                        [ \_ -> result.strategy |> Expect.equal (HintStrategy.NetworkBased { networks = [ network ], units = [] })
+                        [ \_ ->
+                            result.strategy
+                                |> Expect.equal
+                                    (HintStrategy.NetworkBased
+                                        { networks = [ network ], units = [ createUnit 1 "1-ша армія" "" "" "" "" "Test" ] }
+                                    )
                         , \_ -> result.iconClass |> Expect.equal "bi-info-circle-fill"
                         , \_ -> result.tooltipText |> Expect.equal "📍 Підказки по мережі"
+                        ]
+                        ()
+            , test "Коли є мережа з батьківським юнітом, система показує підказки для дитячих юнітів" <|
+                \_ ->
+                    let
+                        message =
+                            createMessage (Just "123.45") Nothing
+
+                        network =
+                            createNetwork 1 [ "123.45" ] [ 1 ]
+
+                        networks =
+                            Dict.fromList [ ( 1, network ) ]
+
+                        -- Батьківський юніт: 2 мсб 122 мсп 68 мсд 6 А
+                        parentUnit =
+                            createUnit 1 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб 122 мсп 68 мсд 6 А"
+
+                        -- Дитячий юніт: мінбат 2 мсб 122 мсп 68 мсд 6 А
+                        childUnit =
+                            createUnit 2 "6А" "68 мсд" "122 мсп" "2 мсб" "мінбат" "мінбат 2 мсб 122 мсп 68 мсд 6 А"
+
+                        masterUnits =
+                            Dict.fromList 
+                                [ ( 1, parentUnit )
+                                , ( 2, childUnit )
+                                ]
+
+                        -- Позивні для обох юнітів
+                        callsignsInfo =
+                            Dict.fromList
+                                [ ( "parent", [ createCallsignInfo 1 "PARENT" "Батьківський" "2 мсб" "" (Just 1) ] )
+                                , ( "child", [ createCallsignInfo 2 "CHILD" "Дитячий" "мінбат" "" (Just 2) ] )
+                                ]
+
+                        context =
+                            createContext networks masterUnits callsignsInfo
+
+                        -- Перевіряємо що дитячий юніт знаходиться в підказках
+                        parentHints =
+                            HintStrategy.getCallsignHints message context "parent"
+
+                    in
+                    Expect.all
+                        [ 
+                         \_ ->
+                            -- Підказки мають містити обидва юніти (батьківський та дитячий)
+                            List.length parentHints.prioritizedCallsigns |> Expect.equal 2
                         ]
                         ()
             ]

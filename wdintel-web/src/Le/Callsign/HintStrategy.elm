@@ -1,9 +1,9 @@
-module Le.Callsign.HintStrategy exposing (HintStrategy(..), HintResult, determineHintStrategy, getCallsignsForStrategy, getIconClass, getTooltipText, getCallsignHints)
+module Le.Callsign.HintStrategy exposing (HintResult, HintStrategy(..), determineHintStrategy, getCallsignHints, getCallsignsForStrategy, getIconClass, getTooltipText)
 
 import Bindings as B
 import Dict exposing (Dict)
-import List.Extra as ListX
 import Le.Block.Unit as Unit
+import List.Extra as ListX
 
 
 {-| Фільтрує мережі за частотою
@@ -14,13 +14,15 @@ filterNetworksByFreq networks mFreq =
         |> Dict.values
         |> List.filterMap
             (\network ->
-                case mFreq of 
+                case mFreq of
                     Just freq ->
-                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of 
+                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of
                             Just a ->
-                                Just network 
+                                Just network
+
                             Nothing ->
                                 Nothing
+
                     Nothing ->
                         Nothing
             )
@@ -43,11 +45,11 @@ getUnitsInfoByIds unitIds masterUnits =
 {-| Стратегія для показу підказок позивних
 -}
 type HintStrategy
-    = NetworkBased 
+    = NetworkBased
         { networks : List B.Network
         , units : List B.Unit
         }
-    | SystemWide 
+    | SystemWide
         { units : List B.Unit
         }
     | NoHints
@@ -65,44 +67,48 @@ type alias HintResult =
 
 {-| Отримує підказки позивного для конкретної стратегії
 -}
-getCallsignsForStrategy : 
-    HintStrategy 
-    -> Dict String (List B.CallsignInfo) 
-    -> String 
+getCallsignsForStrategy :
+    HintStrategy
+    -> Dict Int B.Unit
+    -> Dict String (List B.CallsignInfo)
+    -> String
     -> List B.CallsignInfo
-getCallsignsForStrategy strategy callsignsInfo callsign =
+getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
     case Dict.get (String.toLower callsign) callsignsInfo of
         Just callsignInfo ->
             if List.length callsignInfo == 0 then
                 []
+
             else
                 case strategy of
                     NetworkBased { units } ->
                         let
-                            masterUnitsList = callsignsInfo |> Dict.values |> List.concat
+                            allCallsigns =
+                                callsignsInfo |> Dict.values |> List.concat
                         in
-                        filterCallsignsByNetworkUnits masterUnitsList units callsignInfo
-                    
+                        filterCallsignsByNetworkUnits allCallsigns masterUnits units
+
                     SystemWide { units } ->
                         let
-                            masterUnitsList = callsignsInfo |> Dict.values |> List.concat
+                            allCallsigns =
+                                callsignsInfo |> Dict.values |> List.concat
                         in
-                        filterCallsignsByNetworkUnits masterUnitsList units callsignInfo
-                    
+                        filterCallsignsByNetworkUnits allCallsigns masterUnits units
+
                     NoHints ->
                         []
-        
+
         _ ->
             []
 
 
 {-| Фільтрує позивні по зв'язку з мережевими юнітами
 -}
-filterCallsignsByNetworkUnits : List B.CallsignInfo -> List B.Unit -> List B.CallsignInfo -> List B.CallsignInfo
-filterCallsignsByNetworkUnits callsigns networkUnits callsignsInfo =
+filterCallsignsByNetworkUnits : List B.CallsignInfo -> Dict Int B.Unit -> List B.Unit -> List B.CallsignInfo
+filterCallsignsByNetworkUnits callsigns masterUnits networkUnits  =
     let
         callsignsUnits =
-            findCallsignUnit callsigns networkUnits
+            findCallsignUnit callsigns (Dict.values masterUnits)
 
         unitsWithSameRegiment =
             callsignsUnits |> List.filter (\callsignUnit -> networkUnits |> List.any (Unit.isSameOrChildUnit callsignUnit))
@@ -111,7 +117,7 @@ filterCallsignsByNetworkUnits callsigns networkUnits callsignsInfo =
         isPrioritized u callsign =
             List.any (\unit -> unit.id == Maybe.withDefault -1 callsign.unitId) u
     in
-    callsignsInfo |> List.filter (isPrioritized unitsWithSameRegiment)
+    callsigns |> List.filter (isPrioritized unitsWithSameRegiment)
 
 
 {-| Знаходить юніти для позивних
@@ -136,12 +142,12 @@ getIconClass strategy =
     case strategy of
         NetworkBased _ ->
             "bi-info-circle-fill"
-        
+
         SystemWide _ ->
-            "bi-info-circle-fill text-warning"
-        
-        NoHints ->
             "bi-info-circle"
+
+        NoHints ->
+            ""
 
 
 {-| Отримує текст tooltip для стратегії
@@ -150,27 +156,30 @@ getTooltipText : HintStrategy -> String
 getTooltipText strategy =
     case strategy of
         NetworkBased _ ->
-            "📍 Підказки по мережі"
-        
+            "📍 Позивні підрозділів мережі"
+
         SystemWide _ ->
-            "🌐 Підказки по всій системі"
-        
+            "🌐 Позивні з каталогу"
+
         NoHints ->
             "Немає підказок"
 
 
 {-| Головна функція для отримання підказок позивного
-    Об'єднує визначення стратегії та її застосування
+Об'єднує визначення стратегії та її застосування
 -}
-getCallsignHints : 
+getCallsignHints :
     { message | freq : Maybe String, networkIds : Maybe (List Int) }
     -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit, callsignsInfo : Dict String (List B.CallsignInfo) }
-    -> String 
+    -> String
     -> HintResult
 getCallsignHints message context callsign =
     let
-        strategy = determineHintStrategy message context
-        prioritizedCallsigns = getCallsignsForStrategy strategy context.callsignsInfo callsign
+        strategy =
+            determineHintStrategy message context
+
+        prioritizedCallsigns =
+            getCallsignsForStrategy strategy context.masterUnits context.callsignsInfo callsign
     in
     { strategy = strategy
     , prioritizedCallsigns = prioritizedCallsigns
@@ -181,39 +190,43 @@ getCallsignHints message context callsign =
 
 {-| Визначає стратегію підказок на основі повідомлення та контексту
 -}
-determineHintStrategy : 
+determineHintStrategy :
     { message | freq : Maybe String, networkIds : Maybe (List Int) }
     -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit }
     -> HintStrategy
 determineHintStrategy message context =
     let
         -- Спочатку перевіряємо чи є мережа за частотою
-        networksByFreq = filterNetworksByFreq context.networks message.freq
-        
+        networksByFreq =
+            filterNetworksByFreq context.networks message.freq
+
         -- Якщо є мережа за частотою - використовуємо її
-        hasNetworksByFreq = not (List.isEmpty networksByFreq)
+        hasNetworksByFreq =
+            not (List.isEmpty networksByFreq)
     in
     if hasNetworksByFreq then
         let
-            networkUnits = getUnitsInfoByIds (getAllUnitsIdsForNetworks networksByFreq) context.masterUnits
+            networkUnits =
+                getUnitsInfoByIds (getAllUnitsIdsForNetworks networksByFreq) context.masterUnits
         in
-        NetworkBased 
+        NetworkBased
             { networks = networksByFreq
             , units = networkUnits
             }
-    
-    -- Якщо немає мережі за частотою, але є networkIds - використовуємо їх
+        -- Якщо немає мережі за частотою, але є networkIds - використовуємо їх
+
     else if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
         let
-            networkUnits = getUnitsInfoByIds (Maybe.withDefault [] message.networkIds) context.masterUnits
+            networkUnits =
+                getUnitsInfoByIds (Maybe.withDefault [] message.networkIds) context.masterUnits
         in
-        NetworkBased 
+        NetworkBased
             { networks = []
             , units = networkUnits
             }
-    
-    -- Інакше показуємо підказки по всій системі
+        -- Інакше показуємо підказки по всій системі
+
     else
-        SystemWide 
+        SystemWide
             { units = Dict.values context.masterUnits
             }

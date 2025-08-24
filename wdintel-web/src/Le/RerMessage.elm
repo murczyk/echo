@@ -16,6 +16,7 @@ import Le.Block.Callsign
 import Le.Block.MarkedText
 import Le.Block.Unit
 import Le.Callsign
+import Le.Callsign.HintStrategy
 import Le.Components exposing (fieldError, isInvalidCls)
 import Le.ErrorHandling
 import Le.Time
@@ -716,27 +717,12 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
 
         callsignBlock ( j, callsign ) =
             let
-                networksWithMessageFreq =
-                    Le.Callsign.filterNetworksByFreq vps.networks message.freq
-
-                networksUnitIds =
-                    Le.Callsign.getAllUnitsIdsForNetworks networksWithMessageFreq
-
-                networkUnits =
-                    Le.Callsign.getUnitsInfoByIds networksUnitIds vps.masterUnits
-
-                prioritizeCallsignsPartial c =
-                    Le.Callsign.prioritizeCallsigns vps.masterUnits networkUnits vps.callsignsInfo c
-
-                prio =
-                    prioritizeCallsignsPartial callsign
-
-                conditionMet =
-                    List.length prio > 0
+                hintResult =
+                    Le.Callsign.HintStrategy.getCallsignHints message vps callsign
 
                 result =
-                    if conditionMet then
-                        Le.Block.Callsign.view callsign ( prio, [] )
+                    if List.length hintResult.prioritizedCallsigns > 0 then
+                        Le.Block.Callsign.viewWithHintResult callsign hintResult
 
                     else
                         Le.Block.Callsign.viewDefault callsign False

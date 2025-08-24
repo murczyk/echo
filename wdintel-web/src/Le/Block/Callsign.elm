@@ -1,4 +1,4 @@
-module Le.Block.Callsign exposing (view, viewDefault, viewWithNetworkInfo, viewWithHintResult)
+module Le.Block.Callsign exposing (view, viewDefault, viewWithHintResult, viewWithNetworkInfo)
 
 import Bindings as B
 import Html exposing (..)
@@ -42,6 +42,7 @@ viewWithHintResult : String -> HintStrategy.HintResult -> Html msg
 viewWithHintResult callsign hintResult =
     if List.length hintResult.prioritizedCallsigns == 0 then
         viewDefault callsign False
+
     else
         let
             prioritizedBlock =
@@ -52,7 +53,7 @@ viewWithHintResult callsign hintResult =
             tooltip =
                 div [ id "tooltip-content" ]
                     [ div []
-                        [ div [ class "text-xs text-muted mb-1" ]
+                        [ div [ class "text-xs mb-1" ]
                             [ text hintResult.tooltipText ]
                         , span []
                             [ text prioritizedBlock
@@ -60,9 +61,9 @@ viewWithHintResult callsign hintResult =
                         ]
                     ]
         in
-        Tooltip.new (String.toUpper callsign) 
-            |> Tooltip.withIconName hintResult.iconClass 
-            |> Tooltip.withTextNoWrap 
+        Tooltip.new (String.toUpper callsign)
+            |> Tooltip.withIconName hintResult.iconClass
+            |> Tooltip.withTextNoWrap
             |> Tooltip.view tooltip
 
 
@@ -85,8 +86,15 @@ viewWithNetworkInfo callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) h
                 div [ id "tooltip-content" ]
                     [ HtmlX.viewIf (not noPrioritizedCallsigns) <|
                         div []
-                            [ div [ class "text-xs text-muted mb-1" ]
-                                [ text (if hasNetwork then "📍 Підказки по мережі" else "🌐 Підказки по всій системі") ]
+                            [ div [ class "text-xs mb-1" ]
+                                [ text
+                                    (if hasNetwork then
+                                        "📍 Підказки по мережі"
+
+                                     else
+                                        "🌐 Підказки по всій системі"
+                                    )
+                                ]
                             , span []
                                 [ text prioritizedBlock
                                 ]

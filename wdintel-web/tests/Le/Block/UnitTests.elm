@@ -30,8 +30,11 @@ suite =
                 [ test "Підрозділи з однаковим ID завжди пов'язані, навіть якщо назви різні" <|
                     \_ ->
                         let
-                            unit1 = createUnit 1 "1-ша армія" "2-га дивізія" "3-й полк" "" "" "Unit 1"
-                            unit2 = createUnit 1 "інша армія" "інша дивізія" "інший полк" "" "" "Unit 2"
+                            unit1 =
+                                createUnit 1 "1-ша армія" "2-га дивізія" "3-й полк" "" "" "Unit 1"
+
+                            unit2 =
+                                createUnit 1 "інша армія" "інша дивізія" "інший полк" "" "" "Unit 2"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal True
@@ -40,24 +43,33 @@ suite =
                 [ test "Дивізія входить до складу армії" <|
                     \_ ->
                         let
-                            parentUnit = createUnit 3 "1-ша армія" "" "" "" "" "1-ша армія"
-                            childUnit = createUnit 4 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
+                            parentUnit =
+                                createUnit 3 "1-ша армія" "" "" "" "" "1-ша армія"
+
+                            childUnit =
+                                createUnit 4 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
                         in
                         Unit.isSameOrChildUnit parentUnit childUnit
                             |> Expect.equal True
                 , test "Полк входить до складу армії (через дивізію)" <|
                     \_ ->
                         let
-                            grandparentUnit = createUnit 5 "1-ша армія" "" "" "" "" "1-ша армія"
-                            grandchildUnit = createUnit 6 "1-ша армія" "2-га дивізія" "3-й полк" "" "" "3-й полк 2-ї дивізії 1-ї армії"
+                            grandparentUnit =
+                                createUnit 5 "1-ша армія" "" "" "" "" "1-ша армія"
+
+                            grandchildUnit =
+                                createUnit 6 "1-ша армія" "2-га дивізія" "3-й полк" "" "" "3-й полк 2-ї дивізії 1-ї армії"
                         in
                         Unit.isSameOrChildUnit grandparentUnit grandchildUnit
                             |> Expect.equal True
                 , test "Рота входить до складу полку" <|
                     \_ ->
                         let
-                            regimentUnit = createUnit 7 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
-                            companyUnit = createUnit 8 "" "69 мсд" "82 мсп" "" "6 рота" "6 рота 82 мсп 69 мсд"
+                            regimentUnit =
+                                createUnit 7 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
+
+                            companyUnit =
+                                createUnit 8 "" "69 мсд" "82 мсп" "" "6 рота" "6 рота 82 мсп 69 мсд"
                         in
                         Unit.isSameOrChildUnit regimentUnit companyUnit
                             |> Expect.equal True
@@ -66,24 +78,33 @@ suite =
                 [ test "Різні дивізії однієї армії НЕ пов'язані між собою" <|
                     \_ ->
                         let
-                            unit1 = createUnit 9 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
-                            unit2 = createUnit 10 "1-ша армія" "3-тя дивізія" "" "" "" "3-тя дивізія 1-ї армії"
+                            unit1 =
+                                createUnit 9 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
+
+                            unit2 =
+                                createUnit 10 "1-ша армія" "3-тя дивізія" "" "" "" "3-тя дивізія 1-ї армії"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal False
                 , test "Різні полки однієї дивізії НЕ пов'язані між собою" <|
                     \_ ->
                         let
-                            unit1 = createUnit 11 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
-                            unit2 = createUnit 12 "" "69 мсд" "121 мсп" "" "" "121 мсп 69 мсд"
+                            unit1 =
+                                createUnit 11 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
+
+                            unit2 =
+                                createUnit 12 "" "69 мсд" "121 мсп" "" "" "121 мсп 69 мсд"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal False
                 , test "Різні армії НЕ пов'язані між собою" <|
                     \_ ->
                         let
-                            unit1 = createUnit 13 "1-ша армія" "" "" "" "" "1-ша армія"
-                            unit2 = createUnit 14 "2-га армія" "" "" "" "" "2-га армія"
+                            unit1 =
+                                createUnit 13 "1-ша армія" "" "" "" "" "1-ша армія"
+
+                            unit2 =
+                                createUnit 14 "2-га армія" "" "" "" "" "2-га армія"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal False
@@ -93,17 +114,34 @@ suite =
                     \_ ->
                         let
                             -- Мережа: "82 мсп 69 мсд 6 А"
-                            networkUnit = createUnit 15 "" "69 мсд" "82 мсп" "" "6 А" "82 мсп 69 мсд 6 А"
+                            networkUnit =
+                                createUnit 15 "" "69 мсд" "82 мсп" "" "6 А" "82 мсп 69 мсд 6 А"
+
                             -- Підказка: "5 мсб 121 мсп 68 мсд 6а"
-                            callsignUnit = createUnit 16 "" "68 мсд" "121 мсп" "5 мсб" "6а" "5 мсб 121 мсп 68 мсд 6а"
+                            callsignUnit =
+                                createUnit 16 "" "68 мсд" "121 мсп" "5 мсб" "6а" "5 мсб 121 мсп 68 мсд 6а"
                         in
                         Unit.isSameOrChildUnit networkUnit callsignUnit
                             |> Expect.equal False
+                , test "мінбат 2 мсб 122 мсп 68 мсд 6 А повинен показуватися в підказках для 2 мсб 122 мсп 68 мсд 6 А" <|
+                    \_ ->
+                        let
+                            networkUnit =
+                                createUnit 15 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб 122 мсп 68 мсд 6 А"
+
+                            childUnit =
+                                createUnit 16 "6А" "68 мсд" "122 мсп" "2 мсб" "мінбат" "мінбат 2 мсб 122 мсп 68 мсд 6 А"
+                        in
+                        Unit.isSameOrChildUnit networkUnit childUnit
+                            |> Expect.equal True
                 , test "Різні полки навіть в одній дивізії НЕ повинні показувати підказки" <|
                     \_ ->
                         let
-                            unit1 = createUnit 17 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
-                            unit2 = createUnit 18 "" "69 мсд" "121 мсп" "" "" "121 мсп 69 мсд"
+                            unit1 =
+                                createUnit 17 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
+
+                            unit2 =
+                                createUnit 18 "" "69 мсд" "121 мсп" "" "" "121 мсп 69 мсд"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal False
@@ -111,8 +149,11 @@ suite =
                     \_ ->
                         let
                             -- Порожня армія у батька, заповнена у дитини
-                            parentUnit = createUnit 19 "" "2-га дивізія" "" "" "" "2-га дивізія"
-                            childUnit = createUnit 20 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
+                            parentUnit =
+                                createUnit 19 "" "2-га дивізія" "" "" "" "2-га дивізія"
+
+                            childUnit =
+                                createUnit 20 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
                         in
                         Unit.isSameOrChildUnit parentUnit childUnit
                             |> Expect.equal False
@@ -121,15 +162,19 @@ suite =
                 [ test "Повністю порожні підрозділи НЕ пов'язані між собою" <|
                     \_ ->
                         let
-                            unit1 = createUnit 21 "" "" "" "" "" "Empty Unit 1"
-                            unit2 = createUnit 22 "" "" "" "" "" "Empty Unit 2"
+                            unit1 =
+                                createUnit 21 "" "" "" "" "" "Empty Unit 1"
+
+                            unit2 =
+                                createUnit 22 "" "" "" "" "" "Empty Unit 2"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal False
                 , test "Підрозділ завжди пов'язаний з самим собою" <|
                     \_ ->
                         let
-                            unit = createUnit 23 "1-ша армія" "2-га дивізія" "3-й полк" "" "" "Test unit"
+                            unit =
+                                createUnit 23 "1-ша армія" "2-га дивізія" "3-й полк" "" "" "Test unit"
                         in
                         Unit.isSameOrChildUnit unit unit
                             |> Expect.equal True
@@ -138,8 +183,11 @@ suite =
                 [ test "Зв'язок батько-дитина працює в обох напрямках" <|
                     \_ ->
                         let
-                            parentUnit = createUnit 24 "1-ша армія" "" "" "" "" "1-ша армія"
-                            childUnit = createUnit 25 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
+                            parentUnit =
+                                createUnit 24 "1-ша армія" "" "" "" "" "1-ша армія"
+
+                            childUnit =
+                                createUnit 25 "1-ша армія" "2-га дивізія" "" "" "" "2-га дивізія 1-ї армії"
                         in
                         Expect.all
                             [ \_ -> Unit.isSameOrChildUnit parentUnit childUnit |> Expect.equal True
@@ -149,8 +197,11 @@ suite =
                 , test "Відсутність зв'язку також симетрична" <|
                     \_ ->
                         let
-                            unit1 = createUnit 26 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
-                            unit2 = createUnit 27 "" "68 мсд" "121 мсп" "" "" "121 мсп 68 мсд"
+                            unit1 =
+                                createUnit 26 "" "69 мсд" "82 мсп" "" "" "82 мсп 69 мсд"
+
+                            unit2 =
+                                createUnit 27 "" "68 мсд" "121 мсп" "" "" "121 мсп 68 мсд"
                         in
                         Expect.all
                             [ \_ -> Unit.isSameOrChildUnit unit1 unit2 |> Expect.equal False
