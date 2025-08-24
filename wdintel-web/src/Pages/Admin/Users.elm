@@ -878,10 +878,20 @@ viewDeletedStatus timeZone login =
                             ]
 
     else
-        div [ class "flex flex-col items-center" ]
-            [ i [ class "bi bi-check-circle-fill text-green-500 text-xl" ] []
-            , span [ class "text-green-500 text-xs" ] [ text "Активний" ]
-            ]
+        -- Перевіряємо, чи не деактивовано організм
+        case login.organismEnabled of
+            Just False ->
+                div [ class "flex flex-col items-center" ]
+                    [ i [ class "bi bi-building-x text-red-500 text-xl" ] []
+                    , span [ class "text-red-500 text-xs" ] [ text "Організм" ]
+                    , span [ class "text-gray-500 text-xs" ] [ text "деактивовано" ]
+                    ]
+
+            _ ->
+                div [ class "flex flex-col items-center" ]
+                    [ i [ class "bi bi-check-circle-fill text-green-500 text-xl" ] []
+                    , span [ class "text-green-500 text-xs" ] [ text "Активний" ]
+                    ]
 
 
 subscriptions : Model -> Sub Msg
