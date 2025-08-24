@@ -1,4 +1,4 @@
-module Le.Callsign.HintStrategy exposing (HintStrategy, HintResult, determineHintStrategy, getCallsignsForStrategy, getIconClass, getTooltipText, getCallsignHints)
+module Le.Callsign.HintStrategy exposing (HintStrategy(..), HintResult, determineHintStrategy, getCallsignsForStrategy, getIconClass, getTooltipText, getCallsignHints)
 
 import Bindings as B
 import Dict exposing (Dict)
