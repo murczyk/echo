@@ -63,7 +63,7 @@ async fn get_inbox_map(
     .await
     .context(h!())?;
     info!("points found: {}", points.len());
-    let units = crate::sigint::network::collect_network_units(
+    let units = crate::sigint::network::bl::collect_network_units(
         &inbox_items,
         &env.dbx,
         req.map_filter,

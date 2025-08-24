@@ -12,12 +12,7 @@ import Le.Utils exposing (networkKindVHFMapping)
 renderNetworkNameWithoutType network masterUnits =
     let
         hasNoUnits =
-            case network.unitIds of
-                Nothing ->
-                    True
-
-                Just ids ->
-                    List.isEmpty ids
+            List.isEmpty network.unitIds
     in
     div []
         [ div []
@@ -27,7 +22,7 @@ renderNetworkNameWithoutType network masterUnits =
              , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
-                        (Maybe.withDefault [] network.unitIds)
+                        network.unitIds
                     )
              ]
                 ++ (if hasNoUnits then
@@ -51,7 +46,7 @@ renderNetwork network masterUnits =
             , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
-                        (Maybe.withDefault [] network.unitIds)
+                        network.unitIds
                     )
             , text <|
                 if network.location /= "" then
@@ -122,24 +117,33 @@ networkStringToLabel networkString =
             a
 
 
+
 -- Frequency format validation
 -- Перевіряє формат ЦЦЦ.ЦЦЦЦ (3 цифри до крапки, рівно 4 цифри після крапки)
 -- Приклади: 130.1000 ✅, 130.100 ❌, 13.1000 ❌, 1300.1000 ❌
+
+
 validateFrequencyFormat : String -> Bool
 validateFrequencyFormat freq =
     let
-        trimmed = String.trim freq
+        trimmed =
+            String.trim freq
     in
     if String.isEmpty trimmed then
-        True  -- Empty is handled by required validation
+        True
+        -- Empty is handled by required validation
+
     else
         case String.split "." trimmed of
             [ wholePart, decimalPart ] ->
                 -- Перевіряємо що до крапки рівно 3 цифри
-                String.length wholePart == 3 
+                String.length wholePart
+                    == 3
                     && String.all Char.isDigit wholePart
                     -- Перевіряємо що після крапки рівно 4 цифри
-                    && String.length decimalPart == 4
+                    && String.length decimalPart
+                    == 4
                     && String.all Char.isDigit decimalPart
-            
-            _ -> False
+
+            _ ->
+                False

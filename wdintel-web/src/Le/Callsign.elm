@@ -55,13 +55,15 @@ filterNetworksByFreq networks mFreq =
         |> Dict.values
         |> List.filterMap
             (\network ->
-                case mFreq of 
+                case mFreq of
                     Just freq ->
-                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of 
+                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of
                             Just a ->
-                                Just network 
+                                Just network
+
                             Nothing ->
                                 Nothing
+
                     Nothing ->
                         Nothing
             )
@@ -69,7 +71,7 @@ filterNetworksByFreq networks mFreq =
 
 getAllUnitsIdsForNetworks : List B.Network -> List Int
 getAllUnitsIdsForNetworks networks =
-    List.concatMap (\network -> Maybe.withDefault [] network.unitIds) networks
+    List.concatMap .unitIds networks
 
 
 getUnitsInfoByIds : List Int -> Dict.Dict Int B.Unit -> List B.Unit
@@ -79,7 +81,7 @@ getUnitsInfoByIds unitIds masterUnits =
 
 getNetworkUnits2 : B.Network -> Dict.Dict Int B.Unit -> List B.Unit
 getNetworkUnits2 network masterUnits =
-    Maybe.withDefault [] network.unitIds
+    network.unitIds
         |> List.filterMap (\id_ -> Dict.get id_ masterUnits)
 
 

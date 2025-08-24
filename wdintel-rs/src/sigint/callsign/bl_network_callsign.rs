@@ -1,7 +1,7 @@
 use crate::entities::*;
 use crate::sigint::callsign::types::*;
 use crate::sigint::etalonka::query::*;
-use crate::sigint::network::{find_network, get_network_units};
+use crate::sigint::network::bl::{find_network, get_networks_units};
 use crate::types::*;
 use chrono::*;
 use sea_orm::QuerySelect;
@@ -15,14 +15,16 @@ pub async fn bl_create_network_callsign(
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network = find_network(txn, req.network_id).await.context(h!())?;
-    let network_units =
-        get_network_units(txn, req.network_id).await.context(h!())?;
+    let network_units_map = get_networks_units(txn, &[req.network_id])
+        .await
+        .context(h!())?;
+    let network_units = network_units_map.get(&req.network_id);
 
     // If network has units then create sigint_callsign for the first unit and add link to this callsign as a network callsign
     // othervise, create a network callsing just in place
-    let network_callsign_id = if let Some(network_units) = &network_units {
-        let unit_id = network_units[0];
-
+    let network_callsign_id = if let Some(&unit_id) =
+        network_units.and_then(|units| units.first())
+    {
         let known_callsing_req = CreateCallsignReq {
             callsign: req.callsign.clone(),
             position: req.position.clone().unwrap_or_default(),

@@ -150,7 +150,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                         if model.showNetworksWithoutUnit then
                             -- Show ONLY networks without units when checkbox is checked
                             Dict.values networks
-                                |> List.filter (\n -> Maybe.withDefault [] n.unitIds == [])
+                                |> List.filter (\n -> n.unitIds == [])
                                 |> filterOutAlreadyConnected
 
                         else
@@ -158,7 +158,7 @@ viewSelectingNetwork freq selectedNetworkId model shared =
                             case model.networkDialogUnitSelect.selected of
                                 Just unitId ->
                                     Dict.values networks
-                                        |> List.filter (\n -> List.member unitId (Maybe.withDefault [] n.unitIds))
+                                        |> List.filter (\n -> List.member unitId n.unitIds)
                                         |> filterOutAlreadyConnected
 
                                 Nothing ->

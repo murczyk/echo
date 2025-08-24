@@ -1392,7 +1392,7 @@ findSuggestedToMergeNetworks networks_ =
     let
         shouldBeMerged : B.Network -> B.Network -> Bool
         shouldBeMerged network1 network2 =
-            network1.purpose == network2.purpose && List.sort (Maybe.withDefault [] network1.unitIds) == List.sort (Maybe.withDefault [] network2.unitIds)
+            network1.purpose == network2.purpose && List.sort network1.unitIds == List.sort network2.unitIds
 
         findPairs : List ( B.Network, B.Network ) -> List B.Network -> List ( B.Network, B.Network )
         findPairs acc remaining =
