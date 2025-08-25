@@ -12,6 +12,8 @@ use sea_orm::*;
 use sea_query::JoinType;
 use std::collections::HashMap;
 
+
+/// Create a network callsign, optionally linking to a known callsign if unit_id is provided and unit_developing is false
 pub async fn bl_create_network_callsign(
     req: &CreateNetworkCallsignReq,
     user_id: &str,
@@ -19,12 +21,9 @@ pub async fn bl_create_network_callsign(
 ) -> Result<i64, AppError> {
     let network = find_network(txn, req.network_id).await.context(h!())?;
 
-    // If network has units then create sigint_callsign for the first unit and add link to this callsign as a network callsign
-    // othervise, create a network callsing just in place
-
-    if req.unit_developing {
         // If unit_developing is true, we should not link to any known callsign
-        return bl_just_network_callsign(&network, req, user_id, txn).await;
+    if req.unit_developing {
+        return bl_create_network_callsign_not_linked(&network, req, user_id, txn).await;
     }
 
     let network_callsign_id = if let Some(unit_id) = req.unit_id {
@@ -55,7 +54,7 @@ pub async fn bl_create_network_callsign(
         .next()
         .context(h!())?
     } else {
-        bl_just_network_callsign(&network, req, user_id, txn)
+        bl_create_network_callsign_not_linked(&network, req, user_id, txn)
             .await
             .context(h!())?
     };
@@ -64,7 +63,7 @@ pub async fn bl_create_network_callsign(
 }
 
 /// Create a network callsign without linking to any known callsign in sigint_callsign catalog table
-async fn bl_just_network_callsign(
+async fn bl_create_network_callsign_not_linked(
     network: &sigint_network::Model,
     req: &CreateNetworkCallsignReq,
     user_id: &str,
