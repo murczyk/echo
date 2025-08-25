@@ -4069,17 +4069,14 @@ contentBlock user shared network model =
                                             [ { icon = "bi-pencil"
                                               , label = "Редагувати"
                                               , onClick = EditCallsignClicked callsign.id
-                                              , color = "text-blue-600"
                                               }
                                             , { icon = "bi-arrow-right"
                                               , label = "Перейти на сторінку"
                                               , onClick = NavigateToCallsignPage callsign.id
-                                              , color = "text-green-600"
                                               }
                                             , { icon = "bi-trash"
                                               , label = "Видалити"
                                               , onClick = DeleteCallsignFromNetwork callsign.id
-                                              , color = "text-red-600"
                                               }
                                             ]
                                         )

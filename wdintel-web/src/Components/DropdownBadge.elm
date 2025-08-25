@@ -18,7 +18,6 @@ type alias DropdownAction msg =
     { icon : String
     , label : String
     , onClick : msg
-    , color : String
     }
 
 
@@ -80,7 +79,7 @@ viewDropdown actions onClose =
 viewAction : DropdownAction msg -> Html msg
 viewAction action =
     button
-        [ class ("w-full px-3 py-2 text-left hover:bg-[var(--color-bg-muted)] text-sm flex items-center gap-2 " ++ action.color)
+        [ class "w-full px-3 py-2 text-left hover:bg-[var(--color-bg-muted)] text-sm flex items-center gap-2 text-[var(--color-text)]"
         , onClick action.onClick
         ]
         [ i [ class ("bi " ++ action.icon) ] []
