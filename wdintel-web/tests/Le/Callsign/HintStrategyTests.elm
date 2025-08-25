@@ -132,7 +132,7 @@ suite =
                     in
                     HintStrategy.getCallsignHints message context "test"
                         |> .strategy
-                        |> Expect.equal (HintStrategy.SystemWide { units = [] })
+                        |> Expect.equal HintStrategy.SystemWide
             ]
         , describe "Сценарій: Користувач читає повідомлення без частоти але з вказаними мережами"
             [ test "Коли оператор бачить повідомлення без частоти, але з вказаними мережами [1,2], система показує підказки по цих мережах" <|
@@ -164,7 +164,7 @@ suite =
                     in
                     HintStrategy.getCallsignHints message context "test"
                         |> .strategy
-                        |> Expect.equal (HintStrategy.SystemWide { units = [] })
+                        |> Expect.equal HintStrategy.SystemWide
             ]
         , describe "Сценарій: Користувач читає повідомлення без додаткової інформації"
             [ test "Коли оператор бачить повідомлення без частоти і без вказаних мереж, система показує підказки по всій системі" <|
@@ -181,10 +181,10 @@ suite =
                     in
                     HintStrategy.getCallsignHints message context "test"
                         |> .strategy
-                        |> Expect.equal (HintStrategy.SystemWide { units = [] })
+                        |> Expect.equal HintStrategy.SystemWide
             ]
         , describe "Сценарій: Користувач отримує контекстну допомогу для позивного"
-            [ test "Коли оператор наводить мишку на позивний 'TEST' в повідомленні з мережею, система показує підказки з правильною іконкою та текстом" <|
+            [ test "Коли оператор наводить мишку на позивний 'TEST' в повідомленні з мережею, система показує підказки з правильною іконкою" <|
                 \_ ->
                     let
                         message =
@@ -217,7 +217,6 @@ suite =
                                         { networks = [ network ], units = [ createUnit 1 "1-ша армія" "" "" "" "" "Test" ] }
                                     )
                         , \_ -> result.iconClass |> Expect.equal "bi-info-circle-fill"
-                        , \_ -> result.tooltipText |> Expect.equal "📍 Підказки по мережі"
                         ]
                         ()
             , test "Коли є мережа з батьківським юнітом, система показує підказки для дитячих юнітів" <|
@@ -241,7 +240,7 @@ suite =
                             createUnit 2 "6А" "68 мсд" "122 мсп" "2 мсб" "мінбат" "мінбат 2 мсб 122 мсп 68 мсд 6 А"
 
                         masterUnits =
-                            Dict.fromList 
+                            Dict.fromList
                                 [ ( 1, parentUnit )
                                 , ( 2, childUnit )
                                 ]
@@ -259,16 +258,14 @@ suite =
                         -- Перевіряємо що дитячий юніт знаходиться в підказках
                         parentHints =
                             HintStrategy.getCallsignHints message context "parent"
-
                     in
                     Expect.all
-                        [ 
-                         \_ ->
+                        [ \_ ->
                             -- Підказки мають містити обидва юніти (батьківський та дитячий)
                             List.length parentHints.prioritizedCallsigns |> Expect.equal 2
                         ]
                         ()
-                , test "Коли немає мережі, SystemWide показує тільки існуючі позивні, а не всі можливі" <|
+            , test "Коли немає мережі, SystemWide показує тільки існуючі позивні, а не всі можливі" <|
                 \_ ->
                     let
                         message =
@@ -285,7 +282,7 @@ suite =
                             createUnit 2 "2-га армія" "" "" "" "" "Unit 2"
 
                         masterUnits =
-                            Dict.fromList 
+                            Dict.fromList
                                 [ ( 1, unit1 )
                                 , ( 2, unit2 )
                                 ]
@@ -315,7 +312,7 @@ suite =
                     Expect.all
                         [ \_ ->
                             -- SystemWide стратегія для існуючого позивного
-                            appleHints.strategy |> Expect.equal (HintStrategy.SystemWide { units = [ unit1, unit2 ] })
+                            appleHints.strategy |> Expect.equal HintStrategy.SystemWide
                         , \_ ->
                             -- Позивний "apple" має показувати тільки 1 підказку (свою)
                             List.length appleHints.prioritizedCallsigns |> Expect.equal 1
@@ -328,5 +325,4 @@ suite =
                         ]
                         ()
             ]
-       
         ]
