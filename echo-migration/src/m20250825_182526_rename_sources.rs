@@ -93,8 +93,8 @@ impl MigrationTrait for Migration {
             WHERE nc.source_id = s_old.id
                 AND s_new.name = 'ВЗАЄМОДІЯ';                    
             
-            DELETE FROM source WHERE name = 'ПРОЛОМ'
-            DELETE FROM source WHERE name = 'ДОКУМЕНТ'"#,
+            DELETE FROM source WHERE name = 'ПРОЛОМ';
+            DELETE FROM source WHERE name = 'ДОКУМЕНТ';"#,
         )
         .await?;
 
