@@ -25,6 +25,18 @@ pub struct MessageMeta {
 /// X is either a lowercase latin number or a digit.
 /// first 10 symbols is encoded timestamp, please refer to encode_datetime_to_base36.
 /// remaining 2 symbols are encoded message_id and server_id.
+///
+/// Example (covered completely in test test_generate_message_id):
+/// 1. current time is Mon, 25 Aug 2025 16:35:32 UTC, timestamp 1756139732000.
+///    custom epoch is midnight 1 Jan 2022 UTC, timestamp 1640995200000.
+///    so time since custom epoch is 115144532000.
+///    encoding timestamp using encode_num_to_base36, result is 001gwa2xi8 (check test test_encode_num).
+/// 2. server id is 7, message id from db is 3456789.
+///    let's calculate hashes of those values (binary value is {message_id % 64}{server id % 16}).
+///    result is 343 (check test test_combine_into_base36_len2).
+///    encoding 343 to base36 len 2, result is 9j (check test test_encode_num_2).
+/// 3. so segments for id are 001g, wa2x, i8 and 9j.
+///    reorder them in order {2}-{1}-{4}{3}, and the result is wa2x-001g-9ji8
 pub fn generate_message_id(
     message: MessageMeta,
     config: &Config,
@@ -34,12 +46,8 @@ pub fn generate_message_id(
     let (id_mid, id_tail) = id_head.split_at(4);
     let (id_head, id_tail) = id_tail.split_at(4);
 
-    let server_id = match &config.server_id {
-        Some(id) => *id,
-        None => {
-            error!("server id is missing!");
-            1
-        }
+    let Some(server_id) = config.server_id else {
+        anyhow::bail!("server id is missing")
     };
 
     // id_tail_decimal is decimal number, first 5 bytes are message_id mod 32, other 5 bytes are server_id mod 32.
@@ -94,7 +102,8 @@ pub async fn oneoff_assign_message_ids(
             NaiveTime::MIN,
         )
     } else {
-        Utc::now().naive_utc() - Duration::days(20)
+        Utc::now().naive_utc()
+            - Duration::days(crate::config::GENERATE_MESSAGE_UID_TILL_MAX_DAYS)
     };
     info!("oneoff_assign_message_ids dry_run={dry_run}");
     if dry_run {
@@ -243,11 +252,11 @@ fn encode_datetime_to_base36(dt: NaiveDateTime) -> anyhow::Result<String> {
     encode_num_to_base36(seconds, 10)
 }
 
-pub fn combine_into_base36_len2(a: u64, b: u32) -> u32 {
-    let x = a % 64;
-    let y = b % 16;
-    let combined_x = (x << 4) as u32;
-    combined_x | y
+pub fn combine_into_base36_len2(message_id: u64, server_id: u32) -> u32 {
+    let message_id_hash = message_id % 64;
+    let server_id_hash = server_id % 16;
+    let message_id_hash_offset = (message_id_hash << 4) as u32;
+    message_id_hash_offset | server_id_hash
 }
 
 fn encode_num_to_base36(num: i64, len: usize) -> anyhow::Result<String> {
@@ -355,8 +364,9 @@ mod tests {
             .unwrap();
         encode_datetime_to_base36(dt).unwrap();
     }
+
     #[test]
-    fn test_gen_id() {
+    fn test_gen_id1() {
         let id = 891461;
         let date = NaiveDate::from_ymd_opt(2026, 7, 29).unwrap();
         let time = NaiveTime::from_hms_nano_opt(23, 56, 47, 469647552).unwrap();
@@ -392,5 +402,40 @@ mod tests {
         let id =
             generate_message_id(MessageMeta { id, datetime }, &config).unwrap();
         assert_eq!(id, "1488-001u-olzq");
+    }
+
+    #[test]
+    fn test_encode_num() {
+        let id = encode_num_to_base36(115144532000, 10).unwrap();
+        assert_eq!(id, "001gwa2xi8");
+    }
+
+    #[test]
+    fn test_encode_num_2() {
+        let id = encode_num_to_base36(343, 2).unwrap();
+        assert_eq!(id, "9j");
+    }
+
+    #[test]
+    fn test_combine_into_base36_len2() {
+        let message_id = 3456789;
+        let server_id = 7;
+        let combined_hashes = combine_into_base36_len2(message_id, server_id);
+        assert_eq!(combined_hashes, 343);
+    }
+
+    #[test]
+    fn test_generate_message_id() {
+        //25 Aug 2025 16:35:32
+        let id = 3456789;
+        let date = NaiveDate::from_ymd_opt(2025, 8, 25).unwrap();
+        let time = NaiveTime::from_hms_opt(16, 35, 32).unwrap();
+        let datetime = NaiveDateTime::new(date, time);
+
+        let mut config = crate::config::read_config(Mode::Test).unwrap();
+        config.server_id = Some(7);
+        let id =
+            generate_message_id(MessageMeta { id, datetime }, &config).unwrap();
+        assert_eq!(id, "wa2x-001g-9ji8");
     }
 }
