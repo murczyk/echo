@@ -1,4 +1,4 @@
-module Le.Block.MarkedText exposing (Model, new, view)
+module Le.Block.MarkedText exposing (Model, new, view, viewWithHintResults)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -7,6 +7,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Le.Block.Callsign
 import Le.Block.Tooltip as Tooltip
+import Le.Callsign.HintStrategy as HintStrategy
 import Route
 import Route.Path
 
@@ -26,6 +27,34 @@ new contentNodes =
 
 view : Dict String ( List B.CallsignInfo, List B.CallsignInfo ) -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Model msg -> List (Html msg)
 view prioritizedCallsignsDict signals networks mFreq (Model config) =
+    viewWithHintResults (Dict.map (\_ -> createHintResultFromTuple) prioritizedCallsignsDict) signals networks mFreq (Model config)
+
+
+{-| Конвертує tuple (prioritized, nonPrioritized) в HintResult
+-}
+createHintResultFromTuple : ( List B.CallsignInfo, List B.CallsignInfo ) -> HintStrategy.HintResult
+createHintResultFromTuple ( prioritized, nonPrioritized ) =
+    let
+        hasNetwork =
+            List.length prioritized > 0
+
+        strategy =
+            if hasNetwork then
+                HintStrategy.NetworkBased { networks = [], units = [] }
+
+            else
+                HintStrategy.SystemWide
+    in
+    { strategy = strategy
+    , prioritizedCallsigns = prioritized
+    , iconClass = HintStrategy.getIconClass strategy
+    }
+
+
+{-| Нова функція для роботи з HintResult
+-}
+viewWithHintResults : Dict String HintStrategy.HintResult -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Model msg -> List (Html msg)
+viewWithHintResults hintResultsDict signals networks mFreq (Model config) =
     let
         renderContentNode cn =
             case cn of
@@ -43,7 +72,7 @@ view prioritizedCallsignsDict signals networks mFreq (Model config) =
                         a3 =
                             case mFreq of
                                 Just freq ->
-                                    case networks |> List.filter (\x -> List.map .freq x.freqs |> List.member freq ) |> List.head |> Maybe.andThen .unitIds |> Maybe.andThen List.head of
+                                    case networks |> List.filter (\x -> List.map .freq x.freqs |> List.member freq) |> List.head |> Maybe.andThen .unitIds |> Maybe.andThen List.head of
                                         Just unitId ->
                                             Dict.insert "unitId" (String.fromInt unitId) a2
 
@@ -54,9 +83,9 @@ view prioritizedCallsignsDict signals networks mFreq (Model config) =
                                     a2
                     in
                     a [ class "content-token--ADP hover:cursor-pointer", Route.href { path = Route.Path.RerCallsigns, query = a3, hash = Nothing }, target "_blank" ]
-                        [ case Dict.get (String.toLower obj.text) prioritizedCallsignsDict of
-                            Just callsigns ->
-                                Le.Block.Callsign.view obj.text callsigns
+                        [ case Dict.get (String.toLower obj.text) hintResultsDict of
+                            Just hintResult ->
+                                Le.Block.Callsign.viewWithHintResult obj.text hintResult
 
                             Nothing ->
                                 text obj.text

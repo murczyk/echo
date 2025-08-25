@@ -3,6 +3,7 @@ module Tests exposing (..)
 import Coordinates as C
 import Expect
 import Le.Block.UnitTests
+import Le.Callsign.HintStrategyTests
 import Le.Console
 import Le.Delta as D
 import Le.Time
@@ -19,6 +20,7 @@ suite =
     describe "All Tests"
         [ describe "Coordinates" (testsCoordinates ++ testProgressRegex ++ testParseDateStr)
         , Le.Block.UnitTests.suite
+        , Le.Callsign.HintStrategyTests.suite
         , UnitHierarchyTests.suite
         ]
 

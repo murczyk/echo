@@ -1,10 +1,11 @@
-module Le.Block.Callsign exposing (view, viewDefault)
+module Le.Block.Callsign exposing (view, viewDefault, viewWithHintResult, viewWithNetworkInfo)
 
 import Bindings as B
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Extra as HtmlX
 import Le.Block.Tooltip as Tooltip
+import Le.Callsign.HintStrategy as HintStrategy
 
 
 viewCallsign : { a | position : String, unit1 : String, unit2 : String } -> String
@@ -32,6 +33,49 @@ viewDefault callsign isBlock =
 
 view : String -> ( List B.CallsignInfo, List B.CallsignInfo ) -> Html msg
 view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
+    viewWithNetworkInfo callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) True
+
+
+{-| Нова функція для роботи з HintResult
+-}
+viewWithHintResult : String -> HintStrategy.HintResult -> Html msg
+viewWithHintResult callsign hintResult =
+    if List.length hintResult.prioritizedCallsigns == 0 then
+        viewDefault callsign False
+
+    else
+        let
+            tooltip =
+                div [ id "tooltip-content" ]
+                    [ div []
+                        [ div [ class "text-sm mb-1" ]
+                            [ 
+                                (case hintResult.strategy of
+                                    HintStrategy.NetworkBased _ ->
+                                        text "Позивні підрозділів мережі:"
+                                    HintStrategy.SystemWide ->
+                                        text "Позивні з каталогу:"
+                                    HintStrategy.NoHints ->
+                                        text "Немає підказок"
+                                )
+                            ]
+                        , div []
+                            (hintResult.prioritizedCallsigns
+                                |> List.map (\callsignInfo -> 
+                                    div [ class "text-sm py-1" ] [ text (viewCallsign callsignInfo) ]
+                                )
+                            )
+                        ]
+                    ]
+        in
+        Tooltip.new (String.toUpper callsign)
+            |> Tooltip.withIconName hintResult.iconClass
+            |> Tooltip.withTextNoWrap
+            |> Tooltip.view tooltip
+
+
+viewWithNetworkInfo : String -> ( List B.CallsignInfo, List B.CallsignInfo ) -> Bool -> Html msg
+viewWithNetworkInfo callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) hasNetwork =
     if (List.length prioritizedCallsigns == 0) && (List.length nonPrioritizedCallsigns == 0) then
         viewDefault callsign False
 
@@ -49,7 +93,16 @@ view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
                 div [ id "tooltip-content" ]
                     [ HtmlX.viewIf (not noPrioritizedCallsigns) <|
                         div []
-                            [ span []
+                            [ div [ class "text-xs mb-1" ]
+                                [ text
+                                    (if hasNetwork then
+                                        "📍 Підказки по мережі"
+
+                                     else
+                                        "🌐 Підказки по всій системі"
+                                    )
+                                ]
+                            , span []
                                 [ text prioritizedBlock
                                 ]
                             ]
@@ -70,10 +123,10 @@ view callsign ( prioritizedCallsigns, nonPrioritizedCallsigns ) =
                     ]
 
             infoCircleClass =
-                if noPrioritizedCallsigns then
-                    "bi-info-circle"
+                if hasNetwork then
+                    "bi-info-circle-fill"
 
                 else
-                    "bi-info-circle-fill"
+                    "bi-info-circle"
         in
         Tooltip.new (String.toUpper callsign) |> Tooltip.withIconName infoCircleClass |> Tooltip.withTextNoWrap |> Tooltip.view tooltip
