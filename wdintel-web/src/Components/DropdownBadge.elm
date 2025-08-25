@@ -1,7 +1,9 @@
 module Components.DropdownBadge exposing 
     ( Config
     , DropdownAction(..)
+    , DropdownDirection(..)
     , config
+    , withAutoDirection
     , view
     )
 
@@ -27,6 +29,10 @@ type DropdownAction msg
         }
 
 
+type DropdownDirection
+    = Up
+    | Down
+
 type alias Config msg =
     { text : String
     , isOpen : Bool
@@ -34,6 +40,7 @@ type alias Config msg =
     , onClose : msg
     , actions : List (DropdownAction msg)
     , badgeClass : String
+    , forceDirection : Maybe DropdownDirection
     }
 
 
@@ -48,7 +55,12 @@ config text_ isOpen onToggle onClose actions =
     , onClose = onClose
     , actions = actions
     , badgeClass = "px-2 py-1 bg-[var(--color-primary-light)] hover:bg-[var(--color-primary-light-hover)] hover:shadow-md text-[var(--color-primary-dark)] rounded cursor-pointer transition-all duration-200 flex items-center gap-1"
+    , forceDirection = Nothing
     }
+
+withAutoDirection : DropdownDirection -> Config msg -> Config msg
+withAutoDirection direction cfg =
+    { cfg | forceDirection = Just direction }
 
 
 -- VIEW
@@ -68,16 +80,28 @@ view cfg =
             , span [ class "opacity-70" ] [ text "⋮" ]
             ]
         , if cfg.isOpen then
-            viewDropdown cfg.actions cfg.onClose
+            viewDropdown cfg.actions cfg.onClose cfg.forceDirection
           else
             text ""
         ]
 
 
-viewDropdown : List (DropdownAction msg) -> msg -> Html msg
-viewDropdown actions onClose =
+viewDropdown : List (DropdownAction msg) -> msg -> Maybe DropdownDirection -> Html msg
+viewDropdown actions onClose direction =
+    let
+        (positionClass, marginClass) =
+            case direction of
+                Just Up ->
+                    ( "bottom-full left-0 mb-1", "mb-1" )
+                
+                Just Down ->
+                    ( "top-full left-0 mt-1", "mt-1" )
+                
+                Nothing ->
+                    ( "top-full left-0 mt-1", "mt-1" )
+    in
     div
-        [ class "absolute top-full left-0 mt-1 bg-[var(--color-card)] border border-[var(--color-border-muted)] rounded shadow-lg z-50 min-w-[160px]"
+        [ class ("absolute " ++ positionClass ++ " bg-[var(--color-card)] border border-[var(--color-border-muted)] rounded shadow-lg z-50 min-w-[160px]")
         ]
         (List.map viewAction actions)
 

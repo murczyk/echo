@@ -289,6 +289,8 @@ type alias Model =
 
     -- Developing callsigns dropdown
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
+    -- Unknown callsigns dropdown
+    , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
     }
 
 
@@ -444,8 +446,10 @@ init route shared () =
       , editCallsignErrors = Dict.empty
       , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
 
-      -- Developing callsigns dropdown initialization
-      , developingCallsignDropdown = Nothing
+              -- Developing callsigns dropdown initialization
+        , developingCallsignDropdown = Nothing
+        -- Unknown callsigns dropdown initialization
+        , unknownCallsignDropdown = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -577,6 +581,9 @@ type Msg
     | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
     | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
     | NavigateToCallsignPage Int -- Перейти на сторінку позивного
+    -- Unknown callsigns dropdown
+    | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
+    | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
     | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
     | SaveEditCallsignClicked -- Збереження змін редагування
     | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
@@ -2176,6 +2183,19 @@ update shared msg model =
 
         NavigateToCallsignPage callsignId ->
             ( { model | developingCallsignDropdown = Nothing }, E.none )
+
+        ToggleUnknownCallsignDropdown callsign ->
+            let
+                newDropdown =
+                    if model.unknownCallsignDropdown == Just callsign then
+                        Nothing
+                    else
+                        Just callsign
+            in
+            ( { model | unknownCallsignDropdown = newDropdown }, E.none )
+
+        CloseUnknownCallsignDropdown ->
+            ( { model | unknownCallsignDropdown = Nothing }, E.none )
 
 
 
@@ -4027,7 +4047,7 @@ contentBlock user shared network model =
                     paginatedCallsigns =
                         Pager.getPageData model.networkCallsignsPager sortedCallsigns
                 in
-                div [ class "flex flex-col flex-1 mb-4" ]
+                div [ class "flex flex-col flex-1 mb-2" ]
                     [ div [ class "overflow-y-auto flex-1" ]
                         [ Table.view (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState paginatedCallsigns
                         ]
@@ -4154,16 +4174,32 @@ contentBlock user shared network model =
                               Pager.view model.callsignsPager
                                 |> Html.map CallsignsPagerMsg
                             ,
-                              div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                              div [ class "mt-4 p-3 bg-[var(--color-bg-muted)] rounded" ]
                                 [ span [ class "font-medium" ] [ text "Присутні в перехопленнях: " ]
                                 , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
                                     (List.map
                                         (\c ->
-                                            button
-                                                [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
-                                                , onClick (OpenAddFromUnknownSidebar c)
-                                                ]
-                                                [ text <| String.toUpper c ]
+                                            let
+                                                config =
+                                                    DropdownBadge.config
+                                                        (String.toUpper c)
+                                                        (model.unknownCallsignDropdown == Just c)
+                                                        (ToggleUnknownCallsignDropdown c)
+                                                        CloseUnknownCallsignDropdown
+                                                        [ DropdownBadge.InternalAction
+                                                            { icon = "bi-plus"
+                                                            , label = "Додати"
+                                                            , action = OpenAddFromUnknownSidebar c
+                                                            }
+                                                        , DropdownBadge.ExternalLink
+                                                            { icon = "bi-arrow-right"
+                                                            , label = "Проаналізувати"
+                                                            , url = createAnalysisUrl shared model c
+                                                            }
+                                                        ]
+                                            in
+                                            DropdownBadge.view
+                                                (DropdownBadge.withAutoDirection DropdownBadge.Up config)
                                         )
                                         callsignsUnknown
                                     )
