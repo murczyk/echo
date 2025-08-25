@@ -2144,7 +2144,7 @@ update shared msg model =
                                     { id = callsign.id
                                     , networkId =
                                         network.id
-                                    , callsign = callsign.callsign
+                                    , callsign = String.toUpper  callsign.callsign
                                     , position = callsign.position
                                     , comment = callsign.comment
                                     , sourceId = Maybe.withDefault 1 callsign.sourceId
