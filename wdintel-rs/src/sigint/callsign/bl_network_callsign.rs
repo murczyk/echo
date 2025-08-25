@@ -4,7 +4,7 @@ use crate::sigint::callsign::{
     bl_callsign_create, bl_callsign_update, find_callsign,
 };
 use crate::sigint::etalonka::query::*;
-use crate::sigint::network::bl::{find_network, get_networks_units};
+use crate::sigint::network::bl::find_network;
 use crate::types::*;
 use chrono::*;
 use sea_orm::QuerySelect;
@@ -18,16 +18,16 @@ pub async fn bl_create_network_callsign(
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network = find_network(txn, req.network_id).await.context(h!())?;
-    let network_units_map = get_networks_units(txn, &[req.network_id])
-        .await
-        .context(h!())?;
-    let network_units = network_units_map.get(&req.network_id);
 
     // If network has units then create sigint_callsign for the first unit and add link to this callsign as a network callsign
     // othervise, create a network callsing just in place
-    let network_callsign_id = if let Some(&unit_id) =
-        network_units.and_then(|units| units.first())
-    {
+
+    if req.unit_developing {
+        // If unit_developing is true, we should not link to any known callsign
+        return bl_just_network_callsign(&network, req, user_id, txn).await;
+    }
+
+    let network_callsign_id = if let Some(unit_id) = req.unit_id {
         let known_callsing_req = CreateCallsignReq {
             callsign: req.callsign.clone(),
             position: req.position.clone().unwrap_or_default(),
@@ -55,36 +55,48 @@ pub async fn bl_create_network_callsign(
         .next()
         .context(h!())?
     } else {
-        let network_callsign = sigint_network_callsign::ActiveModel {
-            id: NotSet,
-            sigint_network_id: Set(req.network_id),
-            deleted: NotSet,
-            created_at: NotSet,
-            sigint_callsign: Set(req.callsign.clone().trim().to_lowercase()),
-            sigint_callsign_id: NotSet,
-            position: Set(req.position.clone()),
-            comment: Set(req.comment.clone()),
-            source_id: Set(req.source_id),
-            radio_freq: Set(req.radio_freq.clone()),
-            developing: Set(req.developing),
-
-            sigint_origin_id: NotSet,
-            mothership_id: NotSet,
-        }
-        .insert(txn)
-        .await
-        .context(h!())?;
-
-        // Update the network's updated_at timestamp
-        let mut network_record = network.into_active_model();
-        network_record.updated_at = Set(Utc::now().naive_utc());
-        network_record.updated_by = Set(Some(user_id.to_string()));
-        network_record.update(txn).await.context(h!())?;
-
-        network_callsign.id
+        bl_just_network_callsign(&network, req, user_id, txn)
+            .await
+            .context(h!())?
     };
 
     Ok(network_callsign_id)
+}
+
+/// Create a network callsign without linking to any known callsign in sigint_callsign catalog table
+async fn bl_just_network_callsign(
+    network: &sigint_network::Model,
+    req: &CreateNetworkCallsignReq,
+    user_id: &str,
+    txn: &DatabaseTransaction,
+) -> Result<i64, AppError> {
+    let network_callsign = sigint_network_callsign::ActiveModel {
+        id: NotSet,
+        sigint_network_id: Set(req.network_id),
+        deleted: NotSet,
+        created_at: NotSet,
+        sigint_callsign: Set(req.callsign.clone().trim().to_lowercase()),
+        sigint_callsign_id: NotSet,
+        position: Set(req.position.clone()),
+        comment: Set(req.comment.clone()),
+        source_id: Set(req.source_id),
+        radio_freq: Set(req.radio_freq.clone()),
+        unit_developing: Set(req.unit_developing),            developing: Set(req.developing),
+
+        sigint_origin_id: NotSet,
+        mothership_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    // Update the network's updated_at timestamp
+    let mut network_record = network.clone().into_active_model();
+    network_record.updated_at = Set(Utc::now().naive_utc());
+    network_record.updated_by = Set(Some(user_id.to_string()));
+    network_record.update(txn).await.context(h!())?;
+
+    Ok(network_callsign.id)
 }
 
 pub async fn bl_add_as_known_network_callsigns(
@@ -480,6 +492,7 @@ pub fn render_network_callsign(
             .or_else(|| known_callsign.as_ref().map(|kc| kc.comment.clone())),
         unit_id: unit.as_ref().map(|u| u.id),
         unit_name: unit.as_ref().map(|u| u.name.clone()),
+        unit_developing: network_callsign.unit_developing,
         source_id: network_callsign.source_id.or_else(|| {
             known_callsign
                 .as_ref()
