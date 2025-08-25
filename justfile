@@ -470,7 +470,7 @@ _echo-generic-deploy-front:
 
 _echo-generic-build-rs:
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh {{ builder }} '(cd workspace/echo/wdintel-rs && touch build.rs && $HOME/.cargo/bin/cargo deb)'
+    ssh {{ builder }} '(cd workspace/echo && touch wdintel-rs/build.rs && $HOME/.cargo/bin/cargo deb -p wdintel-rs)'
 
     # TODO: determine version from Cargo.toml
     rsync --progress {{ builder }}:workspace/echo/target/debian/wdintel-rs_0.1.0-1_amd64.deb /tmp
