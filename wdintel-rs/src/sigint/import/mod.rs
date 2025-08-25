@@ -1485,6 +1485,7 @@ where
             developing: Set(rec.developing),
             sigint_origin_id: Set(Some(origin_id)),
             mothership_id: Set(rec.mothership_id),
+            unit_developing: Set(rec.unit_developing),
         };
 
         let new_rec = if new_record {

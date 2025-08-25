@@ -67,6 +67,7 @@ pub async fn bl_create_network_callsign(
             source_id: Set(req.source_id),
             radio_freq: Set(req.radio_freq.clone()),
             developing: Set(req.developing),
+
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
         }
@@ -117,6 +118,7 @@ pub async fn bl_add_as_known_network_callsigns(
             developing: NotSet,
             sigint_origin_id: NotSet,
             mothership_id: NotSet,
+            unit_developing: NotSet,
         }
         .insert(txn)
         .await
