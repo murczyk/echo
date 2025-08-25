@@ -209,8 +209,8 @@ pub struct UpdFreqNetwork {
 pub struct ListNetworksReq {
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
-    /// filter_further_investigation - to filter networks that does not have any unit assigned to them yet
-    pub filter_further_investigation: Option<bool>,
+    /// show_only_further_inverstigation - to filter networks that does not have any unit assigned to them yet
+    pub show_only_further_inverstigation: Option<bool>,
     pub show_inactive: Option<bool>,
     pub show_only_deleted: Option<bool>,
     /// Optional filter by Areas of Responsibility (AOR) IDs

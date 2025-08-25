@@ -318,12 +318,17 @@ pub async fn generate_networks_docx_report(
             .await
             .context(h!())?;
 
-            let network_descriptions =
-                crate::sigint::network::get_network_descriptions(
-                    &env.dbx, network.id,
+            let network_descriptions_map =
+                crate::sigint::network::bl::get_networks_descriptions(
+                    &env.dbx,
+                    &[network.id],
                 )
                 .await
                 .context(h!())?;
+            let network_descriptions = network_descriptions_map
+                .get(&network.id)
+                .cloned()
+                .unwrap_or_default();
 
             // doc = add_field(doc, "0. Id: ", &network.id.to_string());
             doc = add_field(

@@ -298,6 +298,12 @@ pub async fn load_messages_networks(
     messages: &Vec<InboxMessageDesc>,
     dbx: &DatabaseConnection,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    #[derive(Debug, FromQueryResult)]
+    pub struct NetworkFreqResult {
+        pub network_id: i64,
+        pub freq: String,
+    }
+
     // Step 1: Collect group_ids and freqs from messages
     let mut group_master_keys = HashSet::new();
     let mut freqs = HashSet::new();
@@ -333,27 +339,29 @@ pub async fn load_messages_networks(
     }
 
     // Step 3: Load network_freq + networks, collect network_ids
-    let freq_networks = sigint_network_freq::Entity::find()
-        .find_also_related(sigint_network::Entity)
+    let networks_freqs = sigint_network_freq::Entity::find()
+        .inner_join(sigint_network::Entity)
+        .select_only()
+        .column(sigint_network_freq::Column::NetworkId)
+        .column(sigint_network_freq::Column::Freq)
         .filter(sigint_network_freq::Column::Freq.is_in(freqs.clone()))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::ActiveTo.is_null())
+        .into_model::<NetworkFreqResult>()
         .all(dbx)
         .await
         .context(h!())?;
 
     let mut network_ids = HashSet::new();
-    let mut freq_networks_map: HashMap<String, Vec<i64>> = HashMap::new();
-    for (nf, maybe_net) in freq_networks {
-        if let Some(net) = maybe_net {
-            network_ids.insert(net.id);
-            freq_networks_map
-                .entry(nf.freq.clone())
-                .or_default()
-                .push(net.id);
-        }
+    let mut freq_networks_map: HashMap<String, HashSet<i64>> = HashMap::new();
+    for nf in networks_freqs {
+        network_ids.insert(nf.network_id);
+        freq_networks_map
+            .entry(nf.freq)
+            .or_default()
+            .insert(nf.network_id);
     }
 
     // Step 5: Load AORs for networks
@@ -393,7 +401,7 @@ fn match_network_ids_for_messages(
     messages: &Vec<InboxMessageDesc>,
     group_bounds_map: &HashMap<String, Vec<(f64, f64)>>,
     network_bounds_map: &HashMap<i64, Vec<(f64, f64)>>,
-    freq_networks_map: &HashMap<String, Vec<i64>>,
+    freq_networks_map: &HashMap<String, HashSet<i64>>,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let mut result = HashMap::new();
 
@@ -417,7 +425,10 @@ fn match_network_ids_for_messages(
             if let Some(net_bounds) = network_bounds_map.get(network_id) {
                 for (gl, gr) in group_bounds {
                     for (nl, nr) in net_bounds {
-                        if (gl >= nl && gl <= nr) || (gr >= nl && gr <= nr) {
+                        if (gl >= nl && gl <= nr)
+                            || (gr >= nl && gr <= nr)
+                            || (gl <= nl && gr >= nr)
+                        {
                             matched.insert(*network_id);
                             break;
                         }

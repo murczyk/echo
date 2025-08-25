@@ -12,8 +12,6 @@ import Components.Pager as Pager
 import Components.SegmentedControl as SegmentedControl
 import Components.Sidebar as Sidebar
 import Components.Table as Table
-
-import Shared.Model exposing (isDarkMode)
 import Components.Table.Column as TableColumn
 import Components.Table.Config as TableConfig
 import Components.Table.Sorter as TableSorter
@@ -44,6 +42,7 @@ import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Model exposing (isDarkMode)
 import Time
 import Time.Extra
 import Url.Builder
@@ -1382,8 +1381,9 @@ update shared msg model =
                 updatedModel =
                     if isChecked then
                         { model | reportIncludePelengsMap = False }
+
                     else
-                        { model 
+                        { model
                             | reportIncludePelengsMap = True
                             , reportIncludeSigintSigns = True
                             , reportIncludeConfirmation = True
@@ -1402,8 +1402,10 @@ update shared msg model =
                 updatedModel =
                     if isChecked && model.reportNetworksOnly then
                         { model | reportNetworksOnly = False }
+
                     else if not isChecked && not model.reportNetworksOnly then
                         { model | reportNetworksOnly = True }
+
                     else
                         model
             in
@@ -2033,11 +2035,12 @@ update shared msg model =
                 ]
             )
 
-                  -- Callsign adding functionality
+        -- Callsign adding functionality
         AddCallsignToNetwork knownCallsignId ->
             -- Перевіряємо, чи не додається вже цей позивний
             if Set.member knownCallsignId model.callsignAddingInProgress then
                 ( model, E.none )
+
             else
                 case model.network of
                     Success network ->
@@ -2050,6 +2053,7 @@ update shared msg model =
                         ( { model | callsignAddingInProgress = Set.insert knownCallsignId model.callsignAddingInProgress }
                         , E.addMultipleCallsignsToNetwork CallsignAddedToNetwork payload
                         )
+
                     _ ->
                         ( model, E.none )
 
@@ -2097,14 +2101,12 @@ update shared msg model =
             in
             ( updatedModel, reloadEffect )
 
-
-
         DeleteCallsignFromNetwork callsignId ->
             ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
 
         EditCallsignClicked callsignId ->
-            case (model.networkCallsigns, model.network) of
-                (Success networkCallsigns, Success network) ->
+            case ( model.networkCallsigns, model.network ) of
+                ( Success networkCallsigns, Success network ) ->
                     case ListX.find (\c -> c.id == callsignId) networkCallsigns of
                         Just callsign ->
                             let
@@ -2647,26 +2649,31 @@ callsignsTableConfig shared model user =
                         { attributes = []
                         , children =
                             [ let
-                                isAdding = Set.member row.id model.callsignAddingInProgress
+                                isAdding =
+                                    Set.member row.id model.callsignAddingInProgress
                               in
                               button
                                 [ class <|
                                     if isAdding then
                                         "icon-btn icon-btn-primary opacity-50 cursor-not-allowed"
+
                                     else
                                         "icon-btn icon-btn-primary"
                                 , title <|
                                     if isAdding then
                                         "Додається до мережі..."
+
                                     else
                                         "Додати до мережі"
                                 , if isAdding then
                                     attribute "disabled" "true"
+
                                   else
                                     onClick (AddCallsignToNetwork row.id)
                                 ]
                                 [ if isAdding then
                                     Le.Block.Spinner.loadingSpinner2Sm
+
                                   else
                                     i [ class "bi bi-plus" ] []
                                 ]
@@ -2815,25 +2822,24 @@ networkCallsignsTableConfig shared model user =
         { toId = String.fromInt << .id
         , toMsg = SetNetworkCallsignsTableState
         , columns =
-            [
-                Table.veryCustomColumn
+            [ Table.veryCustomColumn
                 { name = ""
                 , viewData =
                     \row ->
                         { attributes = []
                         , children =
-                                                            [ button
-                                    [ class "icon-btn icon-btn-danger"
-                                    , title "Відв'язати від мережі"
-                                    , onClick (DeleteCallsignFromNetwork row.id)
-                                    ]
-                                    [ i [ class "bi bi-dash" ] [] ]
+                            [ button
+                                [ class "icon-btn icon-btn-danger"
+                                , title "Відв'язати від мережі"
+                                , onClick (DeleteCallsignFromNetwork row.id)
+                                ]
+                                [ i [ class "bi bi-dash" ] [] ]
                             ]
                         }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "4%"
-            ,Table.veryCustomColumn
+            , Table.veryCustomColumn
                 { name = "Позивний"
                 , viewData = \row -> { attributes = [], children = [ text (String.toUpper row.callsign) ] }
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
@@ -2915,7 +2921,6 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
-
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -4167,24 +4172,23 @@ view user shared model =
                                 [ h2 [] [ text "Звіт \"еталонка\"" ]
                                 , p [] [ text "Еталонка для мережі" ]
                                 , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
-                                    ([ Checkbox.new { isChecked = model.reportNetworksOnly, onToggle = ReportNetworksOnlyCheckedByUser }
+                                    [ Checkbox.new { isChecked = model.reportNetworksOnly, onToggle = ReportNetworksOnlyCheckedByUser }
                                         |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]
                                         |> Checkbox.view
-                                     , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
+                                    , Checkbox.new { isChecked = model.reportActiveFreqsOnly, onToggle = ReportActiveFreqsOnlyCheckedByUser }
                                         |> Checkbox.withContent [ span [] [ text "Лише активні частоти" ] ]
                                         |> Checkbox.view
-                                     , Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
+                                    , Checkbox.new { isChecked = model.reportIncludePelengsMap, onToggle = ReportIncludePelengsMapCheckedByUser }
                                         |> Checkbox.withContent [ span [] [ text "Включити карту пеленгів" ] ]
                                         |> Checkbox.withDisabled model.reportNetworksOnly
                                         |> Checkbox.view
-                                     , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
+                                    , Checkbox.new { isChecked = model.reportIncludeSigintSigns, onToggle = ReportIncludeSigintSignsCheckedByUser }
                                         |> Checkbox.withContent [ span [] [ text "Додати сигнали" ] ]
                                         |> Checkbox.view
-                                     , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
+                                    , Checkbox.new { isChecked = model.reportIncludeConfirmation, onToggle = ReportIncludeConfirmationCheckedByUser }
                                         |> Checkbox.withContent [ span [] [ text "Додати підтвердження" ] ]
                                         |> Checkbox.view
-                                     ]
-                                    )
+                                    ]
                                 , div [ class "text-xs text-gray-600 dark:text-gray-400 mt-2" ]
                                     [ text "Якщо вибрано \"Згідно форми\", то карта пеленгів недоступна." ]
                                 ]

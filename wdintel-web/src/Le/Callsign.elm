@@ -55,13 +55,15 @@ filterNetworksByFreq networks mFreq =
         |> Dict.values
         |> List.filterMap
             (\network ->
-                case mFreq of 
+                case mFreq of
                     Just freq ->
-                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of 
+                        case ListX.find (\nFreq -> nFreq.freq == freq) network.freqs of
                             Just a ->
-                                Just network 
+                                Just network
+
                             Nothing ->
                                 Nothing
+
                     Nothing ->
                         Nothing
             )
@@ -123,7 +125,7 @@ prioritizeCallsignsForNetwork masterUnits network gdocCallsigns callsign =
 
 
 {-| Показує підказки для позивного навіть коли повідомлення не прив'язане до мережі
-    Використовує всі доступні юніти в системі для фільтрації підказок
+Використовує всі доступні юніти в системі для фільтрації підказок
 -}
 prioritizeCallsignsWithoutNetwork : Dict.Dict Int B.Unit -> Dict.Dict String (List B.CallsignInfo) -> String -> List B.CallsignInfo
 prioritizeCallsignsWithoutNetwork masterUnits callsignsInfo callsign =
@@ -136,10 +138,11 @@ prioritizeCallsignsWithoutNetwork masterUnits callsignsInfo callsign =
                 let
                     masterUnitsList =
                         masterUnits |> Dict.values
-                    
+
                     -- Використовуємо всі юніти як "мережеві" для фільтрації
                     -- Це означає що підказки будуть показані якщо їх юніт співпадає з будь-яким юнітом в системі
-                    allUnitsAsNetworkUnits = masterUnitsList
+                    allUnitsAsNetworkUnits =
+                        masterUnitsList
                 in
                 prioritizeCallsignsConnectedToNetworkUnitsRegiment masterUnitsList allUnitsAsNetworkUnits callsignInfo
 
