@@ -11,7 +11,7 @@ pub struct Callsign {
     pub comment: String,
     pub unit_id: i64,
     pub active: bool,
-    pub source_id: i32,
+    pub source_id: Option<i32>,
     pub created_at: i64,
     pub developing: bool,
     /// Set when source_id points to "radio" (id=2)
@@ -62,7 +62,7 @@ pub struct CreateCallsignReq {
     pub position: String,
     pub comment: String,
     pub unit_id: i64,
-    pub source_id: i32,
+    pub source_id: Option<i32>,
     pub developing: bool,
     pub radio_freq: Option<String>,
 }
@@ -163,7 +163,7 @@ pub struct CreateNetworkCallsignReq {
     pub callsign: String,
     pub position: Option<String>,
     pub comment: Option<String>,
-    pub source_id: i64,
+    pub source_id: Option<i64>,
     pub radio_freq: Option<String>,
     pub developing: bool,
 }
@@ -177,7 +177,7 @@ pub struct UpdateNetworkCallsignReq {
     pub callsign: String,
     pub position: Option<String>,
     pub comment: Option<String>,
-    pub source_id: i64,
+    pub source_id: Option<i64>,
     pub radio_freq: Option<String>,
     pub developing: bool,
 }

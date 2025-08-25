@@ -1612,13 +1612,12 @@ where
         .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let Some(source_id) =
-            source_ids_map.get(&(rec.source_id as i64)).cloned()
-        else {
-            import_warnings
-                .push(format!("source with id {} not found", rec.unit_id));
-            continue;
-        };
+        // Convert source_id to Option<i32> first
+        let source_id = rec.source_id.and_then(|src_id| {
+            source_ids_map
+                .get(&(src_id as i64))
+                .map(|&mapped_id| mapped_id as i32)
+        });
         let Some(unit_id) = sigint_unit_ids_map.get(&rec.unit_id).cloned()
         else {
             import_warnings
@@ -1641,7 +1640,7 @@ where
             unit_id: Set(unit_id),
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),
-            source_id: Set(source_id as i32),
+            source_id: Set(source_id),
             developing: Set(rec.developing),
             radio_freq: Set(rec.radio_freq),
             sigint_origin_id: Set(Some(origin_id)),

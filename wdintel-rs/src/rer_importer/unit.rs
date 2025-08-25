@@ -206,7 +206,7 @@ pub async fn import_unit(
                         .clone()
                         .unwrap_or_default()),
                     unit_id: Set(unit_id),
-                    source_id: Set(1), // TODO: hardcoded
+                    source_id: Set(Some(1)), // TODO: hardcoded
                     ..Default::default()
                 })
                 .exec(&dbx)

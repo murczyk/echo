@@ -33,7 +33,7 @@ pub async fn bl_create_network_callsign(
             position: req.position.clone().unwrap_or_default(),
             comment: req.comment.clone().unwrap_or_default(),
             unit_id,
-            source_id: req.source_id as i32,
+            source_id: req.source_id.map(|v| v as i32),
             radio_freq: req.radio_freq.clone(),
             developing: req.developing,
         };
@@ -64,7 +64,7 @@ pub async fn bl_create_network_callsign(
             sigint_callsign_id: NotSet,
             position: Set(req.position.clone()),
             comment: Set(req.comment.clone()),
-            source_id: Set(Some(req.source_id)),
+            source_id: Set(req.source_id),
             radio_freq: Set(req.radio_freq.clone()),
             developing: Set(req.developing),
             sigint_origin_id: NotSet,
@@ -161,7 +161,7 @@ pub async fn bl_update_network_callsign(
             comment: req.comment.clone().unwrap_or_default(),
             unit_id: known_callsign.unit_id,
             active: known_callsign.deleted,
-            source_id: req.source_id as i32,
+            source_id: req.source_id.map(|v| v as i32),
             created_at: known_callsign.created_at.and_utc().timestamp_millis(),
             developing: req.developing,
             radio_freq: req.radio_freq.clone(),
@@ -188,7 +188,7 @@ pub async fn bl_update_network_callsign(
             Set(req.callsign.clone().trim().to_lowercase());
         network_callsign_record.position = Set(req.position.clone());
         network_callsign_record.comment = Set(req.comment.clone());
-        network_callsign_record.source_id = Set(Some(req.source_id));
+        network_callsign_record.source_id = Set(req.source_id);
         network_callsign_record.radio_freq = Set(req.radio_freq.clone());
         network_callsign_record.developing = Set(req.developing);
 
@@ -478,9 +478,11 @@ pub fn render_network_callsign(
             .or_else(|| known_callsign.as_ref().map(|kc| kc.comment.clone())),
         unit_id: unit.as_ref().map(|u| u.id),
         unit_name: unit.as_ref().map(|u| u.name.clone()),
-        source_id: network_callsign
-            .source_id
-            .or_else(|| known_callsign.as_ref().map(|kc| kc.source_id as i64)),
+        source_id: network_callsign.source_id.or_else(|| {
+            known_callsign
+                .as_ref()
+                .and_then(|kc| kc.source_id.map(|v| v as i64))
+        }),
         // source_name: None,
         radio_freq: network_callsign.radio_freq.or_else(|| {
             known_callsign.as_ref().map(|kc| kc.radio_freq.clone())
