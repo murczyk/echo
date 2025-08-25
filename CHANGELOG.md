@@ -7,7 +7,7 @@
 
 ## NEXT
 
-- [#1281](https://github.com/echoua/echo/issues/1281) ✅👷 Звіт ДАЙДЖЕСТ (необхідно додати `server_id = 5` в config.toml)
+- [#1281](https://github.com/echoua/echo/issues/1281) ✅👷 Звіт ДАЙДЖЕСТ + унікальний ID перрехоплення (необхідно додати `server_id = 5` в config.toml)
 - [#1323](https://github.com/echoua/echo/issues/1323) Переіменовано джерела позивних
 - [#1308](https://github.com/echoua/echo/issues/1308) Аналіз та оперативний, показувати мережі в дорозвідці. Мережі: Покращення швидкодії
 - [#1328](https://github.com/echoua/echo/issues/1328) Позивні мережі: приналежність встановлюється, змінено принцип визначення
