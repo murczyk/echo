@@ -8,7 +8,6 @@ use actix_identity::Identity;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
-use itertools::Either;
 use sea_orm::prelude::Json;
 use sea_orm::*;
 use std::cmp::Ordering;
@@ -47,7 +46,8 @@ pub struct NetworkRow {
 pub struct InterNote {
     pub time: Option<NaiveDateTime>,
     pub comment: String,
-    pub interception_or_id: Either<String, String>,
+    pub interception: Option<String>,
+    pub interception_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult)]
@@ -195,35 +195,53 @@ pub async fn report_docx_kind_digest(
                         ),
                     },
                 };
-                let inter_cell = match note.interception_or_id {
-                    Either::Left(interception) => {
-                        let lines = interception
+                let m_inter_lines = match note.interception {
+                    None => None,
+                    Some(interception) => Some(
+                        interception
                             .split('\n')
                             .collect::<Vec<&str>>()
                             .into_iter()
                             .map(|s| s.to_string())
-                            .collect();
-                        mk_multiline_text_cell(
-                            lines,
-                            util::ParagraphStyle::Italic,
-                            &config,
-                        )
-                        .vertical_align(VAlignType::Top)
+                            .collect_vec(),
+                    ),
+                };
+                let m_id_paragraph = match note.interception_id {
+                    None => None,
+                    Some(text) => Some(
+                        Paragraph::new().add_run(
+                            mk_text(
+                                &format!("EXO ID {text}"),
+                                &util::ParagraphStyle::Italic,
+                            )
+                            .color("808080")
+                            .size(16),
+                        ),
+                    ),
+                };
+
+                let inter_cell = match (m_inter_lines, m_id_paragraph) {
+                    (None, None) => {
+                        continue;
                     }
-                    Either::Right(interception_id) => {
-                        let host = env.config.public_host.clone();
-                        let link = format!("{host}/rer-analysis?interception_id={interception_id}");
-                        mk_text_cell(
-                            &format!("Перехоплення #{interception_id}"),
-                            util::ParagraphStyle::Default,
-                            &config,
-                        )
-                        .add_paragraph(mk_paragraph(
-                            &link,
-                            util::ParagraphStyle::Default,
-                            &config,
-                        ))
+                    (Some(lines), None) => mk_multiline_text_cell(
+                        lines,
+                        util::ParagraphStyle::Italic,
+                        &config,
+                    )
+                    .vertical_align(VAlignType::Top),
+                    (Some(lines), Some(inter_id)) => {
+                        let mut cell = mk_cell(&config, inter_id);
+                        for l in lines {
+                            cell = cell.add_paragraph(mk_paragraph(
+                                &l,
+                                util::ParagraphStyle::Italic,
+                                &config,
+                            ));
+                        }
+                        cell
                     }
+                    (None, Some(inter_id)) => mk_cell(&config, inter_id),
                 };
                 let comment_cell = mk_text_cell(
                     &note_txt,
@@ -467,7 +485,6 @@ async fn collect_report(
             for (message_id, comment) in comments {
                 let message = messages.get(&message_id).context(h!())?.clone();
                 // todo if message is missing, from a secret chat or other edge case - don't put it here, put Right(message_id) instead
-                let interception_or_id = Either::Left(message.text);
                 let time = message
                     .timestamp
                     .and_then(chrono::DateTime::from_timestamp_millis)
@@ -477,7 +494,8 @@ async fn collect_report(
                 notes.push(InterNote {
                     time,
                     comment,
-                    interception_or_id,
+                    interception: Some(message.text),
+                    interception_id: message.message_uid,
                 });
             }
             notes.sort_by(|x, y| match (x.time, y.time) {
