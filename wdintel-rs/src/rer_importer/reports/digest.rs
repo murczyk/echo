@@ -195,31 +195,24 @@ pub async fn report_docx_kind_digest(
                         ),
                     },
                 };
-                let m_inter_lines = match note.interception {
-                    None => None,
-                    Some(interception) => Some(
-                        interception
-                            .split('\n')
-                            .collect::<Vec<&str>>()
-                            .into_iter()
-                            .map(|s| s.to_string())
-                            .collect_vec(),
-                    ),
-                };
-                let m_id_paragraph = match note.interception_id {
-                    None => None,
-                    Some(text) => Some(
-                        Paragraph::new().add_run(
-                            mk_text(
-                                &format!("EXO ID {text}"),
-                                &util::ParagraphStyle::Italic,
-                            )
-                            .color("808080")
-                            .size(16),
-                        ),
-                    ),
-                };
-
+                let m_inter_lines = note.interception.map(|interception| {
+                    interception
+                        .split('\n')
+                        .collect::<Vec<&str>>()
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect_vec()
+                });
+                let m_id_paragraph = note.interception_id.map(|text| {
+                    Paragraph::new().add_run(
+                        mk_text(
+                            &format!("EXO ID {text}"),
+                            &util::ParagraphStyle::Italic,
+                        )
+                        .color("808080")
+                        .size(16),
+                    )
+                });
                 let inter_cell = match (m_inter_lines, m_id_paragraph) {
                     (None, None) => {
                         continue;
