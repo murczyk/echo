@@ -3661,6 +3661,7 @@ type alias CreateNetworkCallsignReq =
     , comment : Maybe String
     , sourceId : Int
     , radioFreq : Maybe String
+    , developing : Bool
     }
 
 
@@ -3673,6 +3674,7 @@ createNetworkCallsignReqEncoder struct =
         , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
         , ( "source_id", Json.Encode.int struct.sourceId )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
+        , ( "developing", Json.Encode.bool struct.developing )
         ]
 
 
@@ -3715,6 +3717,7 @@ type alias NetworkCallsign =
     , radioFreq : Maybe String
     , createdAt : Int
     , active : Bool
+    , developing : Bool
     , messageCount : Int
     , lastDatetime : Maybe Int
     , freqs : Maybe (List String)
@@ -3736,6 +3739,7 @@ networkCallsignEncoder struct =
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "active", Json.Encode.bool struct.active )
+        , ( "developing", Json.Encode.bool struct.developing )
         , ( "message_count", Json.Encode.int struct.messageCount )
         , ( "last_datetime", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.lastDatetime )
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
@@ -3750,6 +3754,7 @@ type alias UpdateNetworkCallsignReq =
     , comment : Maybe String
     , sourceId : Int
     , radioFreq : Maybe String
+    , developing : Bool
     }
 
 
@@ -3763,6 +3768,7 @@ updateNetworkCallsignReqEncoder struct =
         , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
         , ( "source_id", Json.Encode.int struct.sourceId )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
+        , ( "developing", Json.Encode.bool struct.developing )
         ]
 
 
@@ -7781,6 +7787,7 @@ createNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
 
 
 callsignUnitStatsRspDecoder : Json.Decode.Decoder CallsignUnitStatsRsp
@@ -7811,6 +7818,7 @@ networkCallsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_datetime" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
@@ -7826,6 +7834,7 @@ updateNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
 
 
 etalonkaJimForksReqDecoder : Json.Decode.Decoder EtalonkaJimForksReq

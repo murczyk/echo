@@ -1706,6 +1706,7 @@ update shared msg model =
                             , comment = Nothing
                             , sourceId = 1 -- Default source ID
                             , radioFreq = Nothing
+                            , developing = False
                             }
                     in
                     ( { model
@@ -2119,6 +2120,7 @@ update shared msg model =
                                     , comment = callsign.comment
                                     , sourceId = Maybe.withDefault 1 callsign.sourceId
                                     , radioFreq = callsign.radioFreq -- Тепер це окреме поле
+                                    , developing = callsign.developing
                                     }
                             in
                             ( { model
@@ -2278,6 +2280,7 @@ update shared msg model =
                             , comment = Nothing
                             , sourceId = 1 -- Default source ID
                             , radioFreq = Nothing
+                            , developing = False
                             }
                     in
                     ( { model
@@ -2921,6 +2924,9 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
+
+
+
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -3997,7 +4003,7 @@ contentBlock user shared network model =
             NeedsReload _ ->
                 Le.Block.Spinner.loadingSpinnerSm
         , div [ class "mb-[8px] flex justify-between items-center" ]
-            [ h4 [ class "" ] [ text "Всі позивні" ]
+            [ h4 [ class "" ] [ text "Співпадіння з каталогом" ]
             ]
         , case model.callsigns of
             Success callsigns ->
@@ -4059,9 +4065,9 @@ contentBlock user shared network model =
                             , -- Пейджер для таблиці
                               Pager.view model.callsignsPager
                                 |> Html.map CallsignsPagerMsg
-                            , -- Список "Приналежність встановлюється:" (без пагінації)
+                            ,
                               div [ class "mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
-                                [ span [ class "font-medium" ] [ text "Приналежність встановлюється: " ]
+                                [ span [ class "font-medium" ] [ text "Присутні в перехопленнях: " ]
                                 , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
                                     (List.map
                                         (\c ->
@@ -4790,6 +4796,26 @@ callsignCreateSidebarContent shared model user =
                         ]
                         []
                     ]
+                , div []
+                    [ 
+                     div [ class "flex items-center" ]
+                        [ Checkbox.new 
+                            { isChecked = Maybe.map .developing model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle = \_ -> 
+                                UpdateCallsignCreateField
+                                    (\maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | developing = not s.developing }
+                                            
+                                            Nothing ->
+                                                Nothing
+                                    )
+                            }
+                            |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
+                            |> Checkbox.view
+                        ]
+                    ]
                 , if (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
@@ -4974,6 +5000,26 @@ editCallsignSidebarContent shared model user =
                                    )
                         ]
                         []
+                    ]
+                , div []
+                    [ 
+                     div [ class "flex items-center" ]
+                        [ Checkbox.new 
+                            { isChecked = Maybe.map .developing model.editCallsignState |> Maybe.withDefault False
+                            , onToggle = \_ -> 
+                                UpdateEditCallsignField
+                                    (\maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | developing = not s.developing }
+                                            
+                                            Nothing ->
+                                                Nothing
+                                    )
+                            }
+                            |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
+                            |> Checkbox.view
+                        ]
                     ]
                 , if (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2 then
                     div []
