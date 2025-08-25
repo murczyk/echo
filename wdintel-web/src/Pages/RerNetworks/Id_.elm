@@ -7,6 +7,7 @@ import Bytes exposing (Bytes)
 import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
+import Components.DropdownBadge as DropdownBadge
 import Components.ModalDialog as ModalDialog
 import Components.Pager as Pager
 import Components.SegmentedControl as SegmentedControl
@@ -285,6 +286,9 @@ type alias Model =
     , editCallsignSaving : Bool -- Стан збереження редагування
     , editCallsignErrors : Dict String String -- Помилки валідації редагування
     , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
+    
+    -- Developing callsigns dropdown
+    , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
     }
 
 
@@ -439,6 +443,9 @@ init route shared () =
       , editCallsignSaving = False
       , editCallsignErrors = Dict.empty
       , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+      
+      -- Developing callsigns dropdown initialization
+      , developingCallsignDropdown = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -565,6 +572,11 @@ type Msg
     | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
     | CloseEditCallsignSidebar -- Закриття сайдбару редагування
+    
+    -- Developing callsigns dropdown
+    | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
+    | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
+    | NavigateToCallsignPage Int -- Перейти на сторінку позивного
     | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
     | SaveEditCallsignClicked -- Збереження змін редагування
     | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
@@ -2113,7 +2125,7 @@ update shared msg model =
             ( updatedModel, reloadEffect )
 
         DeleteCallsignFromNetwork callsignId ->
-            ( { model | deleteCallsignConfirmation = Just callsignId }, E.none )
+            ( { model | deleteCallsignConfirmation = Just callsignId, developingCallsignDropdown = Nothing }, E.none )
 
         EditCallsignClicked callsignId ->
             case ( model.networkCallsigns, model.network ) of
@@ -2138,6 +2150,7 @@ update shared msg model =
                                 , editCallsignState = Just editState
                                 , editCallsignErrors = Dict.empty
                                 , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+                                , developingCallsignDropdown = Nothing -- Закриваємо dropdown
                               }
                             , E.none
                             )
@@ -2147,6 +2160,23 @@ update shared msg model =
 
                 _ ->
                     ( model, E.none )
+
+        ToggleDevelopingCallsignDropdown callsignId ->
+            let
+                newDropdown =
+                    if model.developingCallsignDropdown == Just callsignId then
+                        Nothing
+                    else
+                        Just callsignId
+            in
+            ( { model | developingCallsignDropdown = newDropdown }, E.none )
+
+        CloseDevelopingCallsignDropdown ->
+            ( { model | developingCallsignDropdown = Nothing }, E.none )
+
+        NavigateToCallsignPage callsignId ->
+            -- Тут можна додати логіку переходу на сторінку позивного
+            ( { model | developingCallsignDropdown = Nothing }, E.none )
 
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
@@ -4021,21 +4051,38 @@ contentBlock user shared network model =
                     -- Використовуємо helper функцію для фільтрації позивних що розвиваються
                     developingCallsigns = getDevelopingCallsigns networkCallsigns
                 in
-                div [ class "p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                div [ class "p-3 bg-[var(--color-bg-muted)] rounded" ]
                     [ span [ class "font-medium" ] [ text "В дорозвідці: " ]
                     , if List.isEmpty developingCallsigns then
-                        div [ class "text-gray-500 text-sm mt-2" ] 
+                        div [ class "text-[var(--color-text-muted)] text-sm mt-2" ] 
                             [ text "Немає позивних в дорозвідці" ]
                       else
                         div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
                             (List.map
                                 (\callsign ->
-                                    button [ 
-                                        class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
-                                        , onClick (EditCallsignClicked callsign.id)
-                                        , title "Клікніть для редагування"
-                                    ]
-                                        [ text <| String.toUpper callsign.callsign ]
+                                    DropdownBadge.view
+                                        (DropdownBadge.config
+                                            (String.toUpper callsign.callsign)
+                                            (model.developingCallsignDropdown == Just callsign.id)
+                                            (ToggleDevelopingCallsignDropdown callsign.id)
+                                            CloseDevelopingCallsignDropdown
+                                            [ { icon = "bi-pencil"
+                                              , label = "Редагувати"
+                                              , onClick = EditCallsignClicked callsign.id
+                                              , color = "text-blue-600"
+                                              }
+                                            , { icon = "bi-arrow-right"
+                                              , label = "Перейти на сторінку"
+                                              , onClick = NavigateToCallsignPage callsign.id
+                                              , color = "text-green-600"
+                                              }
+                                            , { icon = "bi-trash"
+                                              , label = "Видалити"
+                                              , onClick = DeleteCallsignFromNetwork callsign.id
+                                              , color = "text-red-600"
+                                              }
+                                            ]
+                                        )
                                 )
                                 developingCallsigns
                             )
