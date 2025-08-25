@@ -133,7 +133,7 @@ boldMasterUnit masterUnits network =
             , text <|
                 String.join ", "
                     (List.map (unitName masterUnits)
-                        network.unitIds
+                        (Maybe.withDefault [] network.unitIds)
                     )
             , text <|
                 if network.location /= "" then

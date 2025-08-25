@@ -621,7 +621,7 @@ update shared msg model =
                     { postsSelect | selected = res.postIds }
 
                 unitsSelect2 =
-                    { unitsSelect | selected = res.unitIds }
+                    { unitsSelect | selected = Maybe.withDefault [] res.unitIds }
 
                 -- set AOR selection items if list is loaded
                 editAorSelect2 =
@@ -3189,15 +3189,20 @@ missingFieldsBlock user network shared model =
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Підрозділи:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ network.unitIds
-                    |> List.map
-                        (\unitId ->
-                            Dict.get unitId (RD.withDefault Dict.empty shared.masterUnits)
-                                |> Maybe.map .name
-                                |> Maybe.withDefault (String.fromInt unitId)
-                        )
-                    |> String.join ", "
-                    |> text
+                [ case network.unitIds of
+                    Just unitIds ->
+                        List.map
+                            (\unitId ->
+                                Dict.get unitId (RD.withDefault Dict.empty shared.masterUnits)
+                                    |> Maybe.map .name
+                                    |> Maybe.withDefault (String.fromInt unitId)
+                            )
+                            unitIds
+                            |> String.join ", "
+                            |> text
+
+                    Nothing ->
+                        text ""
                 ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]

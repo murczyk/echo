@@ -25,4 +25,4 @@ findConnectedNetworks selectedUnit networks masterUnits =
     in
     Dict.toList networks
         |> List.map Tuple.second
-        |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) network.unitIds)
+        |> List.filter (\network -> List.any (\unitId -> List.member unitId sameRegimentUnitIds) (Maybe.withDefault [] network.unitIds))

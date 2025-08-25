@@ -28,7 +28,7 @@ pub struct NetworkDetails {
 pub struct Network {
     pub id: i64,
     pub freqs: Vec<NetworkFreq>,
-    pub unit_ids: Vec<i64>,
+    pub unit_ids: Option<Vec<i64>>,
     pub aor_ids: Vec<i64>,
     pub name: String,
     pub location: String,

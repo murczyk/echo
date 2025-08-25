@@ -53,7 +53,7 @@ where
         networks_res.push(Network {
             id: network.id,
             freqs: freqs_map.get(&network.id).cloned().unwrap_or_default(),
-            unit_ids: units_map.get(&network.id).cloned().unwrap_or_default(),
+            unit_ids: units_map.get(&network.id).cloned(),
             post_ids: posts_map.get(&network.id).cloned().unwrap_or_default(),
             descriptions: descs_map
                 .get(&network.id)

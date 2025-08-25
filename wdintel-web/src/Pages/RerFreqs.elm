@@ -2024,11 +2024,16 @@ viewFreqBlock mUser shared model freq =
 
                                         _ ->
                                             text "Завантаження..."
-                                    , if List.isEmpty network.unitIds then
-                                        span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+                                    , case network.unitIds of
+                                        Nothing ->
+                                            span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
 
-                                      else
-                                        text ""
+                                        Just ids ->
+                                            if List.isEmpty ids then
+                                                span [ class "badge badge-no-unit" ] [ text "в дорозвідці" ]
+
+                                            else
+                                                text ""
                                     ]
 
                             _ ->

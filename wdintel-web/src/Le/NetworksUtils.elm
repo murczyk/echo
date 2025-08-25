@@ -12,7 +12,12 @@ import Le.Utils exposing (networkKindVHFMapping)
 renderNetworkNameWithoutType network masterUnits =
     let
         hasNoUnits =
-            List.isEmpty network.unitIds
+            case network.unitIds of
+                Nothing ->
+                    True
+
+                Just ids ->
+                    List.isEmpty ids
     in
     div []
         [ div []
@@ -22,7 +27,7 @@ renderNetworkNameWithoutType network masterUnits =
              , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
-                        network.unitIds
+                        (Maybe.withDefault [] network.unitIds)
                     )
              ]
                 ++ (if hasNoUnits then
@@ -46,7 +51,7 @@ renderNetwork network masterUnits =
             , text <|
                 String.join ", "
                     (List.map (Unit.unitName masterUnits)
-                        network.unitIds
+                        (Maybe.withDefault [] network.unitIds)
                     )
             , text <|
                 if network.location /= "" then
