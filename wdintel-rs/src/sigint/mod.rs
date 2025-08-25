@@ -1,5 +1,6 @@
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
+use crate::messenger::id;
 use crate::types::*;
 use crate::utils::pop_vector;
 use crate::utils::string::*;
@@ -392,12 +393,16 @@ async fn xlsx_import_process_one(
         datasource_id: Set(Some(datasource_id)),
         deleted: NotSet,
         external_id: NotSet,
-    };
+        message_uid: NotSet,
+    }
+    .insert(dbx)
+    .await
+    .context(h!())?;
+    let db_message_id = message.id;
 
-    let db_message_id: i64 = SignalMessage::insert(message)
-        .exec(dbx)
-        .await?
-        .last_insert_id;
+    id::update_message_with_uid(dbx, config, message)
+        .await
+        .context(h!())?;
     crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
         settlements.clone(),
         dbx,

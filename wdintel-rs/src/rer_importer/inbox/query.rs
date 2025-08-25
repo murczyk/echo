@@ -348,6 +348,7 @@ where
         .select_only()
         .column_as(signal_message::Column::Id, "id")
         .column_as(signal_message::Column::Body, "body")
+        .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::Timestamp, "timestamp")
         .column_as(signal_message::Column::GroupMasterKey, "group_master_key")
         .column_as(signal_message::Column::Sender, "sender")

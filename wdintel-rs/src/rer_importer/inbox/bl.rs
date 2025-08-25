@@ -27,6 +27,7 @@ use sqlx::Row;
 #[derive(Debug, FromQueryResult)]
 pub struct InboxMessageDesc {
     pub id: i64,
+    pub message_uid: Option<String>,
     pub body: Option<String>,
     pub timestamp: Option<NaiveDateTime>,
     pub group_master_key: Option<String>,
@@ -206,6 +207,7 @@ pub async fn aggregate_to_inbox_messages(
         res.push((
             message.id,
             InboxMessage {
+                message_uid: message.message_uid,
                 text: body.clone(),
                 images,
                 image_recognized: vec![],

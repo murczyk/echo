@@ -1,5 +1,6 @@
 use crate::config::{Config, IMPORT_DIRECTION_FINDING_UUID};
 use crate::delta::finish_bgtask;
+use crate::messenger::id;
 use crate::rer_importer::bgtask_log;
 use crate::utils::*;
 use crate::{entities::*, error::*, types::*};
@@ -120,11 +121,17 @@ pub async fn oneoff_rer_csv_import_1(
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
             external_id: NotSet,
-        };
-        let db_message_id: i64 = signal_message::Entity::insert(message)
-            .exec(&dbx)
-            .await?
-            .last_insert_id;
+            message_uid: NotSet,
+        }
+        .insert(&dbx)
+        .await
+        .context(h!())?;
+        let db_message_id = message.id;
+
+        id::update_message_with_uid(&dbx, &config, message)
+            .await
+            .context(h!())?;
+
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             &dbx,
@@ -368,11 +375,17 @@ pub async fn rer_delta_csv_import_go(
             datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
             external_id: NotSet,
-        };
-        let db_message_id: i64 = signal_message::Entity::insert(message)
-            .exec(dbx)
-            .await?
-            .last_insert_id;
+            message_uid: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .context(h!())?;
+
+        let db_message_id = message.id;
+
+        id::update_message_with_uid(dbx, config, message)
+            .await
+            .context(h!())?;
         crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
             settlements.clone(),
             dbx,

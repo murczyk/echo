@@ -23,6 +23,7 @@ pub struct SearchParts {
     pub not_ilike: Vec<String>,
     pub freq: Vec<String>,
     pub not_freq: Vec<String>,
+    pub message_uids: Vec<String>,
 }
 
 lazy_static! {
@@ -33,12 +34,23 @@ lazy_static! {
         Regex::new(r"\b([0-9]{3}(\.|,)[0-9]{2,4})\b").unwrap();
     static ref RE_NEG_FREQ: Regex =
         Regex::new(r"(?:^|\s)(-([0-9]{3}(\.|,)[0-9]{2,4}))\b").unwrap();
+    static ref RE_MSG_UID: Regex =
+        Regex::new(r"\b[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}\b").unwrap();
 }
 
 pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
+    let mut inp = inp.to_string();
+    //extract message UIDs
+    let message_uids = RE_MSG_UID
+        .find_iter(&inp)
+        .map(|m| m.as_str().to_string())
+        .collect_vec();
+    if !message_uids.is_empty() {
+        inp = RE_MSG_UID.replace_all(&inp, "").to_string()
+    }
     // Extract negative quoted parts for not_ilike
     let not_ilike: Vec<String> = RE_NEG_QUOTES
-        .captures_iter(inp)
+        .captures_iter(&inp)
         .map(|cap| {
             let value = cap[1].to_string();
             if !value.starts_with('%') && !value.ends_with('%') {
@@ -54,7 +66,7 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
         .collect();
 
     // Remove negative quoted parts before processing regular quotes
-    let without_neg = RE_NEG_QUOTES.replace_all(inp, "");
+    let without_neg = RE_NEG_QUOTES.replace_all(&inp, "");
 
     // Extract quoted parts for ilike.
     let ilike: Vec<String> = RE_QUOTES
@@ -124,6 +136,7 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
         not_ilike,
         freq,
         not_freq,
+        message_uids,
     })
 }
 
@@ -157,6 +170,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec![],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -174,6 +188,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec![],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -219,6 +234,7 @@ mod tests {
             not_ilike: vec!["%bar%".to_string()],
             freq: vec![],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -237,6 +253,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec!["440.3567".to_string()],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -254,6 +271,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec!["440.3567".to_string(), "165.2500".to_string()],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -271,6 +289,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec!["440.3567".to_string(), "165.2500".to_string()],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -288,6 +307,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec!["165.2500".to_string()],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -304,6 +324,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec!["165.2500".to_string(), "437.1000".to_string()],
             not_freq: vec![],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -320,6 +341,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec![],
             not_freq: vec!["433.0350".to_string(), "158.9000".to_string()],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -337,6 +359,7 @@ mod tests {
             not_ilike: vec![],
             freq: vec!["437.1000".to_string()],
             not_freq: vec!["165.2500".to_string()],
+            message_uids: vec![],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);
@@ -354,6 +377,42 @@ mod tests {
             not_ilike: vec!["%поле%".to_string()],
             freq: vec!["437.1000".to_string()],
             not_freq: vec!["165.2500".to_string(), "445.2300".to_string()],
+            message_uids: vec![],
+        };
+        let result = parse_search_parts(input).unwrap();
+        assert_eq!(result.ts_query, expected.ts_query);
+        assert_eq!(result.ilike, expected.ilike);
+        assert_eq!(result.not_ilike, expected.not_ilike);
+        assert_eq!(result.freq, expected.freq);
+    }
+
+    #[test]
+    fn test_freq_handling_09() {
+        let input = r#"foo bar "440.3" bus -"поле" -165.25 -445.2300 1208-6734-2879 437.10"#;
+        let expected = SearchParts {
+            ts_query: "foo bar bus".to_string(),
+            ilike: vec!["%440.3%".to_string()],
+            not_ilike: vec!["%поле%".to_string()],
+            freq: vec!["437.1000".to_string()],
+            not_freq: vec!["165.2500".to_string(), "445.2300".to_string()],
+            message_uids: vec!["1208-6734-2879".to_string()],
+        };
+        let result = parse_search_parts(input).unwrap();
+        assert_eq!(result.ts_query, expected.ts_query);
+        assert_eq!(result.ilike, expected.ilike);
+        assert_eq!(result.not_ilike, expected.not_ilike);
+        assert_eq!(result.freq, expected.freq);
+    }
+    #[test]
+    fn test_freq_handling_10() {
+        let input = r#"foo "440.3" 165.25 437.10 hgsd-987n-8m3z"#;
+        let expected = SearchParts {
+            ts_query: "foo".to_string(),
+            ilike: vec!["%440.3%".to_string()],
+            not_ilike: vec![],
+            freq: vec!["165.2500".to_string(), "437.1000".to_string()],
+            not_freq: vec![],
+            message_uids: vec!["hgsd-987n-8m3z".to_string()],
         };
         let result = parse_search_parts(input).unwrap();
         assert_eq!(result.ts_query, expected.ts_query);

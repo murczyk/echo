@@ -199,6 +199,7 @@ pub async fn get_inbox_messages_report(
                 m.id,
                 coords_tuple,
                 InboxMessage {
+                    message_uid: None,
                     location,
                     coords,
                     text: m.body.clone(),

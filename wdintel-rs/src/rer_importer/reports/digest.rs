@@ -1,7 +1,6 @@
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
-// Add this import if h!() uses anyhow::Context
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
@@ -29,7 +28,6 @@ pub struct SigintBodyNoHeader {
 }
 
 pub struct Report {
-    pub datetime: DateTime<Utc>,
     pub aor_data: Vec<AorRow>,
     skip_aor_cell: bool,
 }
@@ -47,8 +45,7 @@ pub struct NetworkRow {
 }
 
 pub struct InterNote {
-    pub order: u32,
-    pub time: Option<NaiveTime>,
+    pub time: Option<NaiveDateTime>,
     pub comment: String,
     pub interception_or_id: Either<String, String>,
 }
@@ -73,6 +70,17 @@ pub async fn report_docx_kind_digest(
     outpath: &Path,
 ) -> Result<(), AppError> {
     info!("report_docx_kind_digest started");
+    let report_since = DateTime::from_timestamp_millis(
+        req.req.since_date_inclusive_ms.context(h!())?,
+    )
+    .context(h!())?;
+    let report_till = match &req.req.till_date_inclusive_ms {
+        None => Utc::now(),
+        Some(epoch_millis) => {
+            DateTime::from_timestamp_millis(*epoch_millis).context(h!())?
+        }
+    };
+    let show_date = check_should_show_date(report_since, report_till);
     let login = user.id()?;
     let logins = crate::users::get_organism_logins(&env.dbx, user)
         .await
@@ -91,6 +99,7 @@ pub async fn report_docx_kind_digest(
     info!("report_docx_kind_digest data collected");
 
     let config = DocxConfig {
+        columns_count: 2,
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
         split_multiline_cells: false,
@@ -106,7 +115,7 @@ pub async fn report_docx_kind_digest(
         .align(AlignmentType::Center);
 
     let timestamp_txt =
-        format!("(станом на {})", convert_utc_to_kyiv_time(report.datetime));
+        format!("(станом на {})", convert_utc_to_kyiv_time(report_till));
 
     let timestamp_paragraph = Paragraph::new()
         .add_run(Run::new().add_text(&timestamp_txt))
@@ -173,9 +182,18 @@ pub async fn report_docx_kind_digest(
             for note in network_row.notes {
                 let note_txt = match note.time {
                     None => note.comment,
-                    Some(time) => {
-                        format!("{} {}", time.format("%H:%M"), note.comment)
-                    }
+                    Some(dt) => match show_date {
+                        false => format!(
+                            "{} {}",
+                            dt.time().format("%H:%M"),
+                            note.comment
+                        ),
+                        true => format!(
+                            "{} {}",
+                            dt.format("%d.%m %H:%M"),
+                            note.comment
+                        ),
+                    },
                 };
                 let inter_cell = match note.interception_or_id {
                     Either::Left(interception) => {
@@ -230,7 +248,7 @@ pub async fn report_docx_kind_digest(
         .page_orient(PageOrientationType::Portrait)
         .default_size(20)
         .page_size(11906, 16838)
-        .page_margin(PageMargin::new().left(1500).right(450).top(1200))
+        .page_margin(PageMargin::new().left(600).right(300).top(1200))
         .add_paragraph(form_paragraph)
         .add_paragraph(mk_paragraph("", util::ParagraphStyle::Default, &config))
         .add_paragraph(title_paragraph)
@@ -245,6 +263,15 @@ pub async fn report_docx_kind_digest(
     Ok(())
 }
 
+fn check_should_show_date(since: DateTime<Utc>, till: DateTime<Utc>) -> bool {
+    let tz = crate::config::get_tz();
+    let since_local =
+        since.with_timezone(&tz).naive_local() + chrono::Duration::seconds(1);
+    let till_local =
+        till.with_timezone(&tz).naive_local() - chrono::Duration::seconds(1);
+    since_local.date() != till_local.date()
+}
+
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
     _logins: Vec<String>,
@@ -253,12 +280,6 @@ async fn collect_report(
     let (comments, messages) =
         load_messages_with_comments(messages, env).await?;
     debug!("loaded {} messages with comments {}", messages.len(), h!());
-    let report_ts = messages
-        .iter()
-        .flat_map(|(_, m)| m.timestamp)
-        .max()
-        .and_then(chrono::DateTime::from_timestamp_millis)
-        .unwrap_or(Utc::now());
 
     let freqs = messages
         .iter()
@@ -451,20 +472,18 @@ async fn collect_report(
                     .timestamp
                     .and_then(chrono::DateTime::from_timestamp_millis)
                     .map(|ts| {
-                        ts.with_timezone(&crate::config::get_tz())
-                            .naive_local()
-                            .time()
+                        ts.with_timezone(&crate::config::get_tz()).naive_local()
                     });
-                let order =
-                    time.map(|t| t.num_seconds_from_midnight()).unwrap_or(0);
                 notes.push(InterNote {
-                    order,
                     time,
                     comment,
                     interception_or_id,
                 });
             }
-            notes.sort_by_key(|n| n.order);
+            notes.sort_by(|x, y| match (x.time, y.time) {
+                (Some(t1), Some(t2)) => t1.cmp(&t2),
+                (t1, t2) => compare_options(&t1, &t2).reverse(),
+            });
             network_data.push(NetworkRow {
                 network_name,
                 network_location,
@@ -482,7 +501,6 @@ async fn collect_report(
         });
     }
     Ok(Report {
-        datetime: report_ts,
         aor_data,
         skip_aor_cell,
     })

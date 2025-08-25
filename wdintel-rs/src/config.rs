@@ -60,6 +60,7 @@ pub const SIGNAL_UNIT_NAME: &str = "echo-signal-bot";
 pub const WHATSAPP_UNIT_NAME: &str = "echo-whatsapp-bot";
 pub const CLIENT_DATA_DIR_NAME: &str = "client_data";
 pub const WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo/config.toml";
+pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -109,6 +110,12 @@ pub struct Config {
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
     pub read_from_legacy_data_sources: Option<bool>,
+    /// A unique identifier for the server.
+    ///
+    /// This is an arbitrary integer value in the range **1-16**.
+    /// It must be unique across all running servers to avoid conflicts.
+    /// Please double-check in Bitwarden that your value does not conflict with values in other live servers.
+    pub server_id: Option<u32>,
 }
 
 impl Config {

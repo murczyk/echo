@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxMessage {
+    pub message_uid: Option<String>,
     pub text: String,
     pub images: Vec<String>,
     pub image_recognized: Vec<String>,

@@ -1,6 +1,7 @@
 use docx_rs::*;
 
 pub struct DocxConfig {
+    pub columns_count: usize,
     pub width_unit: usize,
     pub highlight_color: String,
     pub split_multiline_cells: bool,
@@ -16,7 +17,7 @@ pub enum ParagraphStyle {
 
 pub fn mk_header_cell(text: &str, config: &DocxConfig) -> TableCell {
     TableCell::new()
-        .width(config.width_unit * 2, WidthType::Dxa)
+        .width(calculate_cell_width(config), WidthType::Dxa)
         .vertical_align(VAlignType::Center)
         // .vertical_merge(VMergeType::Restart)
         .add_paragraph(
@@ -35,7 +36,7 @@ pub fn mk_text_cell(
 
 pub fn mk_cell(config: &DocxConfig, paragraph: Paragraph) -> TableCell {
     TableCell::new()
-        .width(config.width_unit * 2, WidthType::Dxa)
+        .width(calculate_cell_width(config), WidthType::Dxa)
         .vertical_align(VAlignType::Center)
         .add_paragraph(paragraph)
 }
@@ -46,7 +47,7 @@ pub fn mk_multiline_text_cell(
     config: &DocxConfig,
 ) -> TableCell {
     let mut cell = TableCell::new()
-        .width(config.width_unit * 2, WidthType::Dxa)
+        .width(calculate_cell_width(config), WidthType::Dxa)
         .vertical_align(VAlignType::Center);
     let mut remaining_count: i32 = lines.len() as i32;
     for text in lines {
@@ -76,7 +77,7 @@ pub fn mk_bullet_list_cell(
     config: &DocxConfig,
 ) -> TableCell {
     let mut cell = TableCell::new()
-        .width(config.width_unit * 2, WidthType::Dxa)
+        .width(calculate_cell_width(config), WidthType::Dxa)
         .vertical_align(VAlignType::Center);
     for text in lines {
         cell = cell.add_paragraph(mk_paragraph(
@@ -122,9 +123,14 @@ pub fn mk_merged_text_cell(
         text = text.color(&config.highlight_color);
     }
     TableCell::new()
-        .width(config.width_unit * 2, WidthType::Dxa)
+        .width(calculate_cell_width(config), WidthType::Dxa)
         .vertical_align(VAlignType::Center)
         .vertical_merge(VMergeType::Restart)
         .add_paragraph(text.align(AlignmentType::Center))
-        .grid_span(6)
+        .grid_span(config.columns_count)
+}
+
+fn calculate_cell_width(config: &DocxConfig) -> usize {
+    (12.0 / (config.columns_count as f64) * (config.width_unit as f64)).ceil()
+        as usize
 }

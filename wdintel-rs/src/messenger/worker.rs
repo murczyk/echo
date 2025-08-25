@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
 use crate::messenger::bl::list_accounts;
+use crate::messenger::id;
 use crate::messenger::types::EchoAccountF1;
 use crate::types::*;
 use crate::{h, new_redis};
@@ -395,10 +396,16 @@ async fn receive_once(
         datasource_id: Set(Some(datasource.id)),
         deleted: NotSet,
         external_id: NotSet,
+        message_uid: NotSet,
     }
     .insert(txn)
     .await
     .context(h!())?;
+
+    let signal_message =
+        id::update_message_with_uid(txn, config, signal_message)
+            .await
+            .context(h!())?;
 
     for a in &m.attachments {
         let _signal_attachment = signal_attachment::ActiveModel {
