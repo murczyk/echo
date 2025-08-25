@@ -147,6 +147,7 @@ pub async fn bl_add_as_known_network_callsigns(
     Ok(res)
 }
 
+
 pub async fn bl_update_network_callsign(
     req: &UpdateNetworkCallsignReq,
     user_id: &str,
