@@ -48,7 +48,6 @@ createHintResultFromTuple ( prioritized, nonPrioritized ) =
     { strategy = strategy
     , prioritizedCallsigns = prioritized
     , iconClass = HintStrategy.getIconClass strategy
-    , tooltipText = HintStrategy.getTooltipText strategy
     }
 
 

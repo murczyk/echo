@@ -45,19 +45,26 @@ viewWithHintResult callsign hintResult =
 
     else
         let
-            prioritizedBlock =
-                hintResult.prioritizedCallsigns
-                    |> List.map viewCallsign
-                    |> String.join " "
-
             tooltip =
                 div [ id "tooltip-content" ]
                     [ div []
-                        [ div [ class "text-xs mb-1" ]
-                            [ text hintResult.tooltipText ]
-                        , span []
-                            [ text prioritizedBlock
+                        [ div [ class "text-sm mb-1" ]
+                            [ 
+                                (case hintResult.strategy of
+                                    HintStrategy.NetworkBased _ ->
+                                        text "Позивні підрозділів мережі:"
+                                    HintStrategy.SystemWide ->
+                                        text "Позивні з каталогу:"
+                                    HintStrategy.NoHints ->
+                                        text "Немає підказок"
+                                )
                             ]
+                        , div []
+                            (hintResult.prioritizedCallsigns
+                                |> List.map (\callsignInfo -> 
+                                    div [ class "text-sm py-1" ] [ text (viewCallsign callsignInfo) ]
+                                )
+                            )
                         ]
                     ]
         in
