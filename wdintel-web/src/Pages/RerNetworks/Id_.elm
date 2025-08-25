@@ -69,6 +69,16 @@ toLayout user model =
 
 
 
+-- Helper functions for filtering callsigns
+
+getRegularCallsigns : List B.NetworkCallsign -> List B.NetworkCallsign
+getRegularCallsigns callsigns =
+    List.filter (\callsign -> not callsign.developing) callsigns
+
+getDevelopingCallsigns : List B.NetworkCallsign -> List B.NetworkCallsign
+getDevelopingCallsigns callsigns =
+    List.filter (\callsign -> callsign.developing) callsigns
+
 -- Navigation helper function
 
 
@@ -248,8 +258,6 @@ type alias Model =
 
     -- Network callsigns (new table)
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
-    , regularNetworkCallsigns : List B.NetworkCallsign -- Звичайні позивні (developing = false)
-    , developingNetworkCallsigns : List B.NetworkCallsign -- Позивні що розвиваються (developing = true)
     , networkCallsignsTableState : Table.State
     , networkCallsignsPager : Pager.Model
     , callsignsPager : Pager.Model
@@ -404,8 +412,6 @@ init route shared () =
 
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
-      , regularNetworkCallsigns = []
-      , developingNetworkCallsigns = []
       , networkCallsignsTableState = Table.initialSort "Позивний"
       , networkCallsignsPager = Pager.initWithPageSize 5
       , callsignsPager = Pager.initWithPageSize 5
@@ -1436,16 +1442,9 @@ update shared msg model =
             )
 
         NetworkCallsignsReturnedByApi (Ok res) ->
-            let
-                -- Розділяємо позивні на два списки
-                ( regularCallsigns, developingCallsigns ) =
-                    List.partition (\callsign -> not callsign.developing) res.networkCallsigns
-            in
             ( { model
                 | networkCallsigns = Success res.networkCallsigns
-                , regularNetworkCallsigns = regularCallsigns
-                , developingNetworkCallsigns = developingCallsigns
-                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length regularCallsigns) (Pager.initWithPageSize 5)
+                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length (getRegularCallsigns res.networkCallsigns)) (Pager.initWithPageSize 5)
               }
             , E.none
             )
@@ -3985,11 +3984,14 @@ contentBlock user shared network model =
                 text ""
             ]
         , case model.networkCallsigns of
-            Success _ ->
+            Success networkCallsigns ->
                 let
-                    -- Використовуємо розділений список звичайних позивних
+                    -- Використовуємо helper функцію для фільтрації звичайних позивних
+                    regularCallsigns = getRegularCallsigns networkCallsigns
+                    
+                    -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
                     sortedCallsigns =
-                        Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState model.regularNetworkCallsigns
+                        Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState regularCallsigns
 
                     paginatedCallsigns =
                         Pager.getPageData model.networkCallsignsPager sortedCallsigns
@@ -4013,21 +4015,29 @@ contentBlock user shared network model =
 
             NeedsReload _ ->
                 Le.Block.Spinner.loadingSpinnerSm
-        , div [ class "p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
-            [ span [ class "font-medium" ] [ text "В дорозвідці: " ]
-            , if List.isEmpty model.developingNetworkCallsigns then
-                div [ class "text-gray-500 text-sm mt-2" ] 
-                    [ text "Немає позивних в дорозвідці" ]
-              else
-                div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
-                    (List.map
-                        (\callsign ->
-                            div [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors" ]
-                                [ text <| String.toUpper callsign.callsign ]
-                        )
-                        model.developingNetworkCallsigns
-                    )
-            ]
+        , case model.networkCallsigns of
+            Success networkCallsigns ->
+                let
+                    -- Використовуємо helper функцію для фільтрації позивних що розвиваються
+                    developingCallsigns = getDevelopingCallsigns networkCallsigns
+                in
+                div [ class "p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+                    [ span [ class "font-medium" ] [ text "В дорозвідці: " ]
+                    , if List.isEmpty developingCallsigns then
+                        div [ class "text-gray-500 text-sm mt-2" ] 
+                            [ text "Немає позивних в дорозвідці" ]
+                      else
+                        div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
+                            (List.map
+                                (\callsign ->
+                                    div [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors" ]
+                                        [ text <| String.toUpper callsign.callsign ]
+                                )
+                                developingCallsigns
+                            )
+                    ]
+            _ ->
+                text ""
         , div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Співпадіння з каталогом" ]
             ]
