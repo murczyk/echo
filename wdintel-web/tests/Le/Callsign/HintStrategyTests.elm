@@ -219,7 +219,7 @@ suite =
                         , \_ -> result.iconClass |> Expect.equal "bi-info-circle-fill"
                         ]
                         ()
-            , test "Коли є мережа з батьківським юнітом, система показує підказки для дитячих юнітів" <|
+            , test "✅ ВИПРАВЛЕНО: Коли є мережа з батьківським юнітом, кожен позивний показує тільки свої підказки" <|
                 \_ ->
                     let
                         message =
@@ -255,14 +255,33 @@ suite =
                         context =
                             createContext networks masterUnits callsignsInfo
 
-                        -- Перевіряємо що дитячий юніт знаходиться в підказках
+                        -- Перевіряємо підказки для батьківського позивного
                         parentHints =
                             HintStrategy.getCallsignHints message context "parent"
+
+                        -- Перевіряємо підказки для дитячого позивного
+                        childHints =
+                            HintStrategy.getCallsignHints message context "child"
                     in
                     Expect.all
                         [ \_ ->
-                            -- Підказки мають містити обидва юніти (батьківський та дитячий)
-                            List.length parentHints.prioritizedCallsigns |> Expect.equal 2
+                            -- Позивний "parent" має показувати тільки 1 підказку (свою)
+                            List.length parentHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- Позивний "child" має показувати тільки 1 підказку (свою)
+                            List.length childHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- Підказка для PARENT має містити правильну інформацію
+                            parentHints.prioritizedCallsigns
+                                |> List.head
+                                |> Maybe.map .callsign
+                                |> Expect.equal (Just "PARENT")
+                        , \_ ->
+                            -- Підказка для CHILD має містити правильну інформацію
+                            childHints.prioritizedCallsigns
+                                |> List.head
+                                |> Maybe.map .callsign
+                                |> Expect.equal (Just "CHILD")
                         ]
                         ()
             , test "Коли немає мережі, SystemWide показує тільки існуючі позивні, а не всі можливі" <|
@@ -322,6 +341,85 @@ suite =
                         , \_ ->
                             -- Неіснуючий позивний не має показувати підказки
                             List.length unknownHints.prioritizedCallsigns |> Expect.equal 0
+                        ]
+                        ()
+            , test "ПРОБЛЕМА: NetworkBased показує підказки всіх позивних мережі замість тільки конкретного" <|
+                \_ ->
+                    let
+                        message =
+                            createMessage (Just "123.45") Nothing
+
+                        -- Мережа містить 2 юніти
+                        network =
+                            createNetwork 1 [ "123.45" ] [ 1, 2 ]
+
+                        networks =
+                            Dict.fromList [ ( 1, network ) ]
+
+                        -- 2 юніти в мережі
+                        unit1 =
+                            createUnit 1 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб"
+
+                        unit2 =
+                            createUnit 2 "6А" "68 мсд" "122 мсп" "3 мсб" "" "3 мсб"
+
+                        masterUnits =
+                            Dict.fromList
+                                [ ( 1, unit1 )
+                                , ( 2, unit2 )
+                                ]
+
+                        -- 3 різні позивні в мережі
+                        callsignsInfo =
+                            Dict.fromList
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир" "2 мсб" "122 мсп" (Just 1) ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Заступник" "3 мсб" "122 мсп" (Just 2) ] )
+                                , ( "бета", [ createCallsignInfo 3 "БЕТА" "Начальник штабу" "2 мсб" "122 мсп" (Just 1) ] )
+                                ]
+
+                        context =
+                            createContext networks masterUnits callsignsInfo
+
+                        -- Запитуємо підказки для конкретного позивного "ЗЕВС"
+                        zeusHints =
+                            HintStrategy.getCallsignHints message context "зевс"
+
+                        -- Запитуємо підказки для конкретного позивного "АЛЬФА"
+                        alfaHints =
+                            HintStrategy.getCallsignHints message context "альфа"
+                    in
+                    Expect.all
+                        [ \_ ->
+                            -- Стратегія має бути NetworkBased
+                            zeusHints.strategy
+                                |> (\strategy ->
+                                        case strategy of
+                                            HintStrategy.NetworkBased _ ->
+                                                Expect.pass
+
+                                            _ ->
+                                                Expect.fail "Очікували NetworkBased стратегію"
+                                   )
+                        , \_ ->
+                            -- 🐛 ПРОБЛЕМА: зараз повертається 3 підказки (ЗЕВС, АЛЬФА, БЕТА)
+                            -- 🎯 ОЧІКУЄМО: тільки 1 підказку для ЗЕВС
+                            List.length zeusHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- 🐛 ПРОБЛЕМА: зараз повертається 3 підказки (ЗЕВС, АЛЬФА, БЕТА)
+                            -- 🎯 ОЧІКУЄМО: тільки 1 підказку для АЛЬФА
+                            List.length alfaHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- Підказка для ЗЕВС має містити тільки інформацію про ЗЕВС
+                            zeusHints.prioritizedCallsigns
+                                |> List.head
+                                |> Maybe.map .callsign
+                                |> Expect.equal (Just "ЗЕВС")
+                        , \_ ->
+                            -- Підказка для АЛЬФА має містити тільки інформацію про АЛЬФА
+                            alfaHints.prioritizedCallsigns
+                                |> List.head
+                                |> Maybe.map .callsign
+                                |> Expect.equal (Just "АЛЬФА")
                         ]
                         ()
             ]

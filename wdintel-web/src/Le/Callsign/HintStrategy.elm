@@ -79,11 +79,7 @@ getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
             else
                 case strategy of
                     NetworkBased { units } ->
-                        let
-                            allCallsigns =
-                                callsignsInfo |> Dict.values |> List.concat
-                        in
-                        filterCallsignsByNetworkUnits allCallsigns masterUnits units
+                        filterCallsignsByNetworkUnits callsignInfo masterUnits units
 
                     SystemWide ->
                         -- Для SystemWide просто повертаємо позивні для конкретного запиту
