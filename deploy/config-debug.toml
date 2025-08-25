@@ -28,6 +28,7 @@ fill_comp_freq_worker = false
 import_callsign_gdoc_worker = false
 #settlements_sources="kurska_oblast_rf, luhanska_oblast"
 settlements_sources=""
+server_id = 37
 
 [secret_config]
 token_endpoint = ""
