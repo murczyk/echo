@@ -1482,6 +1482,7 @@ where
             comment: Set(rec.comment),
             source_id: Set(rec.source_id),
             radio_freq: Set(rec.radio_freq),
+            developing: Set(rec.developing),
             sigint_origin_id: Set(Some(origin_id)),
             mothership_id: Set(rec.mothership_id),
         };
