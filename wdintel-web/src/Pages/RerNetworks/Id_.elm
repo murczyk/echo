@@ -4030,7 +4030,11 @@ contentBlock user shared network model =
                         div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
                             (List.map
                                 (\callsign ->
-                                    div [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors" ]
+                                    button [ 
+                                        class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors"
+                                        , onClick (EditCallsignClicked callsign.id)
+                                        , title "Клікніть для редагування"
+                                    ]
                                         [ text <| String.toUpper callsign.callsign ]
                                 )
                                 developingCallsigns
