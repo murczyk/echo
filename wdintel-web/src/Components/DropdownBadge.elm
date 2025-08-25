@@ -1,12 +1,12 @@
 module Components.DropdownBadge exposing 
     ( Config
-    , DropdownAction
+    , DropdownAction(..)
     , config
     , view
     )
 
-import Html exposing (Html, button, div, i, span, text)
-import Html.Attributes exposing (class, title)
+import Html exposing (Html, a, button, div, i, span, text)
+import Html.Attributes exposing (class, href, target, title)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Json.Decode as Decode
 
@@ -14,11 +14,17 @@ import Json.Decode as Decode
 -- TYPES
 
 
-type alias DropdownAction msg =
-    { icon : String
-    , label : String
-    , onClick : msg
-    }
+type DropdownAction msg
+    = ExternalLink
+        { icon : String
+        , label : String
+        , url : String
+        }
+    | InternalAction
+        { icon : String
+        , label : String
+        , action : msg
+        }
 
 
 type alias Config msg =
@@ -77,11 +83,23 @@ viewDropdown actions onClose =
 
 
 viewAction : DropdownAction msg -> Html msg
-viewAction action =
-    button
-        [ class "w-full px-3 py-2 text-left hover:bg-[var(--color-bg-muted)] text-sm flex items-center gap-2 text-[var(--color-text)]"
-        , onClick action.onClick
-        ]
-        [ i [ class ("bi " ++ action.icon) ] []
-        , text action.label
-        ]
+viewAction dropdownAction =
+    case dropdownAction of
+        ExternalLink { icon, label, url } ->
+            a
+                [ class "w-full px-3 py-2 text-left hover:bg-[var(--color-bg-muted)] text-sm flex items-center gap-2 text-[var(--color-text)] no-underline"
+                , href url
+                , target "_blank"
+                ]
+                [ i [ class ("bi " ++ icon) ] []
+                , text label
+                ]
+
+        InternalAction { icon, label, action } ->
+            button
+                [ class "w-full px-3 py-2 text-left hover:bg-[var(--color-bg-muted)] text-sm flex items-center gap-2 text-[var(--color-text)]"
+                , onClick action
+                ]
+                [ i [ class ("bi " ++ icon) ] []
+                , text label
+                ]

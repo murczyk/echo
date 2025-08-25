@@ -7,7 +7,7 @@ import Bytes exposing (Bytes)
 import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
-import Components.DropdownBadge as DropdownBadge
+import Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
 import Components.ModalDialog as ModalDialog
 import Components.Pager as Pager
 import Components.SegmentedControl as SegmentedControl
@@ -286,7 +286,7 @@ type alias Model =
     , editCallsignSaving : Bool -- Стан збереження редагування
     , editCallsignErrors : Dict String String -- Помилки валідації редагування
     , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
-    
+
     -- Developing callsigns dropdown
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
     }
@@ -443,7 +443,7 @@ init route shared () =
       , editCallsignSaving = False
       , editCallsignErrors = Dict.empty
       , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
-      
+
       -- Developing callsigns dropdown initialization
       , developingCallsignDropdown = Nothing
       }
@@ -572,7 +572,7 @@ type Msg
     | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
     | CloseEditCallsignSidebar -- Закриття сайдбару редагування
-    
+
     -- Developing callsigns dropdown
     | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
     | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
@@ -2175,8 +2175,9 @@ update shared msg model =
             ( { model | developingCallsignDropdown = Nothing }, E.none )
 
         NavigateToCallsignPage callsignId ->
-            -- Тут можна додати логіку переходу на сторінку позивного
             ( { model | developingCallsignDropdown = Nothing }, E.none )
+
+
 
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
@@ -4018,7 +4019,7 @@ contentBlock user shared network model =
                 let
                     -- Використовуємо helper функцію для фільтрації звичайних позивних
                     regularCallsigns = getRegularCallsigns networkCallsigns
-                    
+
                     -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
                     sortedCallsigns =
                         Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState regularCallsigns
@@ -4054,7 +4055,7 @@ contentBlock user shared network model =
                 div [ class "p-3 bg-[var(--color-bg-muted)] rounded" ]
                     [ span [ class "font-medium" ] [ text "В дорозвідці: " ]
                     , if List.isEmpty developingCallsigns then
-                        div [ class "text-[var(--color-text-muted)] text-sm mt-2" ] 
+                        div [ class "text-[var(--color-text-muted)] text-sm mt-2" ]
                             [ text "Немає позивних в дорозвідці" ]
                       else
                         div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
@@ -4066,18 +4067,21 @@ contentBlock user shared network model =
                                             (model.developingCallsignDropdown == Just callsign.id)
                                             (ToggleDevelopingCallsignDropdown callsign.id)
                                             CloseDevelopingCallsignDropdown
-                                            [ { icon = "bi-pencil"
-                                              , label = "Редагувати"
-                                              , onClick = EditCallsignClicked callsign.id
-                                              }
-                                            , { icon = "bi-arrow-right"
-                                              , label = "Перейти на сторінку"
-                                              , onClick = NavigateToCallsignPage callsign.id
-                                              }
-                                            , { icon = "bi-trash"
-                                              , label = "Видалити"
-                                              , onClick = DeleteCallsignFromNetwork callsign.id
-                                              }
+                                            [ DropdownBadge.InternalAction
+                                                { icon = "bi-pencil"
+                                                , label = "Редагувати"
+                                                , action = EditCallsignClicked callsign.id
+                                                }
+                                            , DropdownBadge.ExternalLink
+                                                { icon = "bi-arrow-right"
+                                                , label = "Проаналізувати"
+                                                , url = createAnalysisUrl shared model callsign.callsign
+                                                }
+                                            , DropdownBadge.InternalAction
+                                                { icon = "bi-trash"
+                                                , label = "Видалити"
+                                                , action = DeleteCallsignFromNetwork callsign.id
+                                                }
                                             ]
                                         )
                                 )
@@ -4881,17 +4885,17 @@ callsignCreateSidebarContent shared model user =
                         []
                     ]
                 , div []
-                    [ 
+                    [
                      div [ class "flex items-center" ]
-                        [ Checkbox.new 
+                        [ Checkbox.new
                             { isChecked = Maybe.map .developing model.callsignCreateState |> Maybe.withDefault False
-                            , onToggle = \_ -> 
+                            , onToggle = \_ ->
                                 UpdateCallsignCreateField
                                     (\maybeState ->
                                         case maybeState of
                                             Just s ->
                                                 Just { s | developing = not s.developing }
-                                            
+
                                             Nothing ->
                                                 Nothing
                                     )
@@ -5086,17 +5090,17 @@ editCallsignSidebarContent shared model user =
                         []
                     ]
                 , div []
-                    [ 
+                    [
                      div [ class "flex items-center" ]
-                        [ Checkbox.new 
+                        [ Checkbox.new
                             { isChecked = Maybe.map .developing model.editCallsignState |> Maybe.withDefault False
-                            , onToggle = \_ -> 
+                            , onToggle = \_ ->
                                 UpdateEditCallsignField
                                     (\maybeState ->
                                         case maybeState of
                                             Just s ->
                                                 Just { s | developing = not s.developing }
-                                            
+
                                             Nothing ->
                                                 Nothing
                                     )
