@@ -248,6 +248,8 @@ type alias Model =
 
     -- Network callsigns (new table)
     , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
+    , regularNetworkCallsigns : List B.NetworkCallsign -- Звичайні позивні (developing = false)
+    , developingNetworkCallsigns : List B.NetworkCallsign -- Позивні що розвиваються (developing = true)
     , networkCallsignsTableState : Table.State
     , networkCallsignsPager : Pager.Model
     , callsignsPager : Pager.Model
@@ -402,6 +404,8 @@ init route shared () =
 
       -- Network callsigns (new table)
       , networkCallsigns = NotAsked
+      , regularNetworkCallsigns = []
+      , developingNetworkCallsigns = []
       , networkCallsignsTableState = Table.initialSort "Позивний"
       , networkCallsignsPager = Pager.initWithPageSize 5
       , callsignsPager = Pager.initWithPageSize 5
@@ -1432,9 +1436,16 @@ update shared msg model =
             )
 
         NetworkCallsignsReturnedByApi (Ok res) ->
+            let
+                -- Розділяємо позивні на два списки
+                ( regularCallsigns, developingCallsigns ) =
+                    List.partition (\callsign -> not callsign.developing) res.networkCallsigns
+            in
             ( { model
                 | networkCallsigns = Success res.networkCallsigns
-                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length res.networkCallsigns) (Pager.initWithPageSize 5)
+                , regularNetworkCallsigns = regularCallsigns
+                , developingNetworkCallsigns = developingCallsigns
+                , networkCallsignsPager = Pager.updateForNewTotalItems (List.length regularCallsigns) (Pager.initWithPageSize 5)
               }
             , E.none
             )
@@ -3974,11 +3985,11 @@ contentBlock user shared network model =
                 text ""
             ]
         , case model.networkCallsigns of
-            Success networkCallsigns ->
+            Success _ ->
                 let
-                    -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
+                    -- Використовуємо розділений список звичайних позивних
                     sortedCallsigns =
-                        Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState networkCallsigns
+                        Table.getSortedData (networkCallsignsTableConfig shared model user) model.networkCallsignsTableState model.regularNetworkCallsigns
 
                     paginatedCallsigns =
                         Pager.getPageData model.networkCallsignsPager sortedCallsigns
@@ -4002,6 +4013,21 @@ contentBlock user shared network model =
 
             NeedsReload _ ->
                 Le.Block.Spinner.loadingSpinnerSm
+        , div [ class "p-3 bg-gray-50 dark:bg-gray-800 rounded" ]
+            [ span [ class "font-medium" ] [ text "В дорозвідці: " ]
+            , if List.isEmpty model.developingNetworkCallsigns then
+                div [ class "text-gray-500 text-sm mt-2" ] 
+                    [ text "Немає позивних в дорозвідці" ]
+              else
+                div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
+                    (List.map
+                        (\callsign ->
+                            div [ class "px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded cursor-pointer transition-colors" ]
+                                [ text <| String.toUpper callsign.callsign ]
+                        )
+                        model.developingNetworkCallsigns
+                    )
+            ]
         , div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Співпадіння з каталогом" ]
             ]
