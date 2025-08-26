@@ -383,7 +383,6 @@ async fn xlsx_import_process_one(
         .filter(
             datasource_group::Column::GroupMasterKey.eq(group_id.clone()),
         )
-        .order_by_desc(datasource_group::Column::LastSyncAt)
         .order_by_desc(datasource_group::Column::CreatedAt)
         .one(dbx)
         .await

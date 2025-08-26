@@ -208,9 +208,8 @@ pub async fn sync_groups(
                 // ensure datasource_group mapping
                 let _ = datasource_group::ActiveModel {
                     id: NotSet,
-                    group_master_key: Set(signal_group.master_key.clone()),
+                    group_master_key: Set(Some(signal_group.master_key.clone())),
                     datasource_id: Set(datasource.id),
-                    last_sync_at: NotSet,
                     created_at: NotSet,
                 }
                 .insert(dbx)

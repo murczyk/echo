@@ -167,16 +167,15 @@ async fn sync_groups(
         if let Some(datasource_id) = datasource_id {
             let datasource_group = datasource_groups
                 .iter()
-                .filter(|d| d.group_master_key.eq(&g.id))
+                .filter(|d| d.group_master_key.as_deref() == Some(g.id.as_str()))
                 .find(|d| d.datasource_id.eq(&datasource_id))
                 .cloned();
             match datasource_group {
                 None => {
                     datasource_group::ActiveModel {
                         id: NotSet,
-                        group_master_key: Set(g.id),
+                        group_master_key: Set(Some(g.id)),
                         datasource_id: Set(datasource_id),
-                        last_sync_at: NotSet,
                         created_at: NotSet,
                     }
                     .insert(txn)
@@ -184,9 +183,7 @@ async fn sync_groups(
                     .context(h!())?;
                 }
                 Some(rec) => {
-                    let mut rec = rec.into_active_model();
-                    rec.last_sync_at = Set(Utc::now().naive_utc());
-                    rec.update(txn).await.context(h!())?;
+                    let _rec = rec; // no last_sync_at field; nothing to update
                 }
             }
         }
