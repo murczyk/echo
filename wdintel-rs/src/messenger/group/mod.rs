@@ -28,6 +28,7 @@ pub async fn fix_group_areas_of_responsibility(
     db: &DatabaseConnection,
 ) -> Result<(), AppError> {
     let groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .join(
             JoinType::LeftJoin,
             signal_group::Relation::SignalGroupAor.def(),

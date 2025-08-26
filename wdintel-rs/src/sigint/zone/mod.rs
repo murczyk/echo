@@ -153,6 +153,7 @@ pub async fn zones_datasources_group_add(
 
     // Fetch the group name and notes
     let group_name = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .select_only()
         .column(signal_group::Column::Name)

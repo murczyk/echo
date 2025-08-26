@@ -30,6 +30,7 @@ pub async fn oneoff_print_organism_groups(
     info!("Available groups: {}", available_keys.len());
     for available_key in available_keys {
         let group = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
             .filter(signal_group::Column::MasterKey.eq(available_key.clone()))
             .one(&db)
             .await

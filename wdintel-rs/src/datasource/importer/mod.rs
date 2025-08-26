@@ -113,6 +113,7 @@ async fn collect_datasource_data(
         .context(h!())?;
 
     let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .join(
             sea_orm::JoinType::InnerJoin,
             signal_group::Relation::DatasourceGroup.def(),
@@ -123,6 +124,7 @@ async fn collect_datasource_data(
         .context(h!())?;
 
     let whatsapp_groups = whatsapp_group::Entity::find()
+        .filter(whatsapp_group::Column::Deleted.eq(false))
         .all(&db)
         .await
         .context(h!())?;

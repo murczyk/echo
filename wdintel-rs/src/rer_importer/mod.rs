@@ -348,6 +348,7 @@ pub async fn signal_group_info(
         .await
         .context(h!())?;
     let m_signal_group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&req.master_key))
         .one(&env.dbx)
         .await
@@ -475,6 +476,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                         sii.lat IS NOT NULL
                         AND sii.lng IS NOT NULL
                         AND sg.name = $1
+                        AND sg.deleted = false
                         AND sii.freq <> TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999')
                 ) AS updated
                 WHERE
@@ -678,6 +680,7 @@ pub async fn collect_groups(
     is_admin: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
     let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(keys.clone()))
         .all(txn)
         .await
@@ -770,6 +773,7 @@ where
         .column(signal_message::Column::GroupMasterKey)
         .column_as(Expr::cust("count(*)"), "count")
         .group_by(Expr::cust("group_master_key"))
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(keys))
         .filter(signal_message::Column::Timestamp.gte(cutoff))
         .into_tuple::<(String, i64)>()

@@ -15,6 +15,7 @@ use log::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
+use sea_orm::sea_query::Expr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
@@ -185,6 +186,7 @@ async fn sync_groups(
 
     let mut groups_raw = vec![];
     signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(
             signal_group::Column::MasterKey.is_in(group_master_keys.clone()),
         )
@@ -203,6 +205,7 @@ async fn sync_groups(
             })
         });
     whatsapp_group::Entity::find()
+        .filter(whatsapp_group::Column::Deleted.eq(false))
         .filter(whatsapp_group::Column::Jid.is_in(group_master_keys))
         .all(txn)
         .await
@@ -255,6 +258,7 @@ async fn sync_groups(
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
                     is_secret: NotSet,
+                    deleted: NotSet,
                 };
                 crate::messenger::group::add_group(model, txn)
                     .await
@@ -265,6 +269,7 @@ async fn sync_groups(
                         created_at: NotSet,
                         jid: Set(group_id.clone()),
                         owner_jid: NotSet,
+                        deleted: NotSet,
                     }
                     .insert(txn)
                     .await
@@ -297,7 +302,8 @@ async fn sync_groups(
         ids_to_delete.push(g.id.clone());
     }
     if !ids_to_delete.is_empty() {
-        signal_group::Entity::delete_many()
+        signal_group::Entity::update_many()
+            .col_expr(signal_group::Column::Deleted, Expr::value(true))
             .filter(
                 signal_group::Column::MasterKey.is_in(ids_to_delete.clone()),
             )
@@ -306,7 +312,8 @@ async fn sync_groups(
             .context(h!())?;
     }
     if !ids_to_delete.is_empty() {
-        whatsapp_group::Entity::delete_many()
+        whatsapp_group::Entity::update_many()
+            .col_expr(whatsapp_group::Column::Deleted, Expr::value(true))
             .filter(whatsapp_group::Column::Jid.is_in(ids_to_delete.clone()))
             .exec(txn)
             .await

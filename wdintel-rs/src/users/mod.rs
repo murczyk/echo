@@ -801,6 +801,7 @@ where
         organism_groups_obj =
             crate::sigint::zone::filter_out_ineligible_secret_chats(
                 signal_group::Entity::find()
+                    .filter(signal_group::Column::Deleted.eq(false))
                     .filter(
                         signal_group::Column::MasterKey
                             .is_in(organism_groups.available_keys),

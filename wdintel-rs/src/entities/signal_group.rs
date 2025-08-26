@@ -16,6 +16,7 @@ pub struct Model {
     pub created_at: DateTime,
     pub ignore_operativny: bool,
     pub is_secret: bool,
+    pub deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

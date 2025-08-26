@@ -189,6 +189,7 @@ pub async fn upsert_whatsapp_groups(
     for new_group in groups {
         let source_group_id = new_group.jid.clone();
         let existing_group = whatsapp_group::Entity::find()
+            .filter(whatsapp_group::Column::Deleted.eq(false))
             .filter(whatsapp_group::Column::Jid.eq(source_group_id.clone()))
             .one(db)
             .await

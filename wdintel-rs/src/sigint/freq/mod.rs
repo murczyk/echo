@@ -272,6 +272,7 @@ pub async fn list_groups_by_freqs_per_day(
         .group_by(Expr::cust(
             "freq, day, signal_group.name",
         ))
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(
             signal_message::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(

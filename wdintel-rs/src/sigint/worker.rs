@@ -254,6 +254,7 @@ pub async fn do_sync_state(
                     is_secret: Set(false),
                     created_at: NotSet,
                     ignore_operativny: Default::default(),
+                    deleted: NotSet,
                 };
                 let inserted = crate::messenger::group::add_group(group, dbx)
                     .await

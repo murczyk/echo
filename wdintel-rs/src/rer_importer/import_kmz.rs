@@ -143,6 +143,7 @@ pub async fn rer_delta_kmz_import_go(
 
     let group_name = config.signal_import_group_name.clone();
     let group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::Name.eq(group_name))
         .order_by_desc(signal_group::Column::CreatedAt)
         .one(dbx)

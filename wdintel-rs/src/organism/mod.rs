@@ -31,6 +31,7 @@ pub async fn add_group_to_organism(
         .context(h!())?;
 
     let group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&req.group_name))
         .one(&env.dbx)
         .await
@@ -181,6 +182,7 @@ pub async fn group_list(
 
     Ok(Json(
         signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
             .all(&env.dbx)
             .await?
             .into_iter()
@@ -226,6 +228,7 @@ pub async fn organism_available_groups(
         .context(h!())?;
 
     let groups_list = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(groups.available_keys))
         .all(&env.dbx)
         .await
