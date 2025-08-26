@@ -1,7 +1,9 @@
 use anyhow::Context;
 // use aws_sdk_s3::error::SdkError;
 use log::error;
+use log::warn;
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -173,6 +175,17 @@ impl actix_web::error::ResponseError for AppError {
     fn error_response(
         &self,
     ) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
+        // Special-case: during graceful shutdown the Tokio runtime may reject
+        // new I/O, surfacing as an IO error like
+        // "A Tokio 1.x context was found, but it is being shutdown.".
+        // Return 503 to clients and avoid noisy stack traces.
+        if self.is_runtime_shutting_down() {
+            warn!("Service unavailable during shutdown: {self:?}");
+            return actix_web::HttpResponseBuilder::new(
+                actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+            )
+            .body("Service unavailable: server is shutting down");
+        }
         match self {
             AppError::NotFound => actix_web::HttpResponseBuilder::new(
                 actix_web::http::StatusCode::NOT_FOUND,
@@ -249,6 +262,49 @@ impl actix_web::error::ResponseError for AppError {
 impl From<&str> for AppError {
     fn from(v: &str) -> Self {
         AppError::BL { msg: v.to_string() }
+    }
+}
+
+impl AppError {
+    /// Detects the common shutdown error propagated from SQLx/SeaORM/Tokio
+    /// when the Actix/Tokio runtime is terminating.
+    fn is_runtime_shutting_down(&self) -> bool {
+        // Helper: check error and its source chain for the shutdown marker.
+        fn chain_has_shutdown(err: &dyn StdError) -> bool {
+            let mut cur: Option<&(dyn StdError)> = Some(err);
+            while let Some(e) = cur {
+                let msg = e.to_string();
+                if msg.contains("Tokio 1.x context")
+                    && msg.contains("being shutdown")
+                {
+                    return true;
+                }
+                cur = e.source();
+            }
+            false
+        }
+
+        match self {
+            AppError::AnyhowError { source } => {
+                // anyhow::Error implements StdError, traverse its chain
+                if let Some(inner) = source.source() {
+                    if chain_has_shutdown(inner) {
+                        return true;
+                    }
+                }
+                // Fallback to message check
+                source.to_string().contains("being shutdown")
+            }
+            AppError::SeaormError { source } => {
+                chain_has_shutdown(source)
+                    || source.to_string().contains("being shutdown")
+            }
+            AppError::SqlxError { source } => {
+                chain_has_shutdown(source)
+                    || source.to_string().contains("being shutdown")
+            }
+            _ => false,
+        }
     }
 }
 

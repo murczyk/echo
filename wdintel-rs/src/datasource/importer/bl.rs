@@ -107,13 +107,30 @@ pub async fn upsert_signal_groups(
             None => {
                 info!("inserting group {}", new_group.master_key);
                 let mut rec = new_group.into_active_model();
-                rec.datasource_id = Set(Some(target_datasource_id));
                 rec.created_at = NotSet;
-                if let Err(e) = crate::messenger::group::add_group(rec, db)
+                match crate::messenger::group::add_group(rec, db)
                     .await
                     .context(h!())
                 {
-                    error!("failed to insert new group: {e:?}")
+                    Ok(inserted) => {
+                        // ensure mapping in datasource_group
+                        let _ = datasource_group::ActiveModel {
+                            id: NotSet,
+                            group_master_key: Set(inserted.master_key.clone()),
+                            datasource_id: Set(target_datasource_id),
+                            last_sync_at: NotSet,
+                            created_at: NotSet,
+                        }
+                        .insert(db)
+                        .await
+                        .map_err(|e| {
+                            error!("failed to create datasource_group mapping: {e:?}");
+                            e
+                        });
+                    }
+                    Err(e) => {
+                        error!("failed to insert new group: {e:?}")
+                    }
                 }
             }
             Some(existing_group) => {
@@ -123,9 +140,40 @@ pub async fn upsert_signal_groups(
                 }
                 rec.ignore_operativny = Set(new_group.ignore_operativny);
                 rec.is_secret = Set(new_group.is_secret);
-                rec.datasource_id = Set(Some(target_datasource_id));
                 if let Err(e) = rec.update(db).await.context(h!()) {
                     error!("failed to update group {source_master_key} : {e:?}")
+                }
+                // ensure mapping exists after update
+                let mapping_exists = datasource_group::Entity::find()
+                    .filter(
+                        datasource_group::Column::GroupMasterKey
+                            .eq(source_master_key.clone()),
+                    )
+                    .filter(
+                        datasource_group::Column::DatasourceId
+                            .eq(target_datasource_id),
+                    )
+                    .count(db)
+                    .await
+                    .context(h!())
+                    .unwrap_or(0)
+                    > 0;
+                if !mapping_exists {
+                    let _ = datasource_group::ActiveModel {
+                        id: NotSet,
+                        group_master_key: Set(source_master_key.clone()),
+                        datasource_id: Set(target_datasource_id),
+                        last_sync_at: NotSet,
+                        created_at: NotSet,
+                    }
+                    .insert(db)
+                    .await
+                    .map_err(|e| {
+                        error!(
+                            "failed to create datasource_group mapping: {e:?}"
+                        );
+                        e
+                    });
                 }
             }
         }

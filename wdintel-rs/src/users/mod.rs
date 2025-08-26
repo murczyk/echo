@@ -817,7 +817,11 @@ where
                     )
                     .join(
                         JoinType::InnerJoin,
-                        signal_group::Relation::Datasource.def(),
+                        signal_group::Relation::DatasourceGroup.def(),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        datasource_group::Relation::Datasource.def(),
                     )
                     .join(
                         JoinType::InnerJoin,

@@ -63,7 +63,13 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     }
     .join("version.txt");
     info!("version file: {}", version_file.display());
-    let version = tokio::fs::read_to_string(version_file).await.unwrap();
+    let version = match tokio::fs::read_to_string(version_file).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("failed to read version file: {e:?}");
+            "unknown".to_string()
+        }
+    };
 
     let env = Env {
         mode,

@@ -100,13 +100,21 @@ pub async fn oneoff_rer_csv_import_1(
     };
     let source_uuid = signal_profile.uuid;
 
+    // choose datasource for this group based on datasource_group mapping
+    let datasource_id = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.eq(group_id.clone()))
+        .order_by_desc(datasource_group::Column::CreatedAt)
+        .one(&dbx)
+        .await
+        .map(|m| m.map(|dg| dg.datasource_id))
+        .unwrap_or(None)
+        .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
+
     for body in bodies {
         // Normalize body
         let body = body.replace("\r\n", "\n");
         bgtask_log(bgid, &format!("> body: {body}"), &dbx).await?;
 
-        // hardcode
-        let datasource_id = 1;
         let timestamp = Utc::now().naive_utc();
 
         let message = signal_message::ActiveModel {
@@ -315,8 +323,6 @@ pub async fn rer_delta_csv_import_go(
     bgtask_log(bgtask_id, &format!("> parsed {} records", recs.len()), dbx)
         .await?;
 
-    // hardcode
-    let datasource_id = 1;
     let group_name = config.signal_import_group_name.clone();
     let group = signal_group::Entity::find()
         .filter(signal_group::Column::Name.eq(group_name))
@@ -331,6 +337,15 @@ pub async fn rer_delta_csv_import_go(
         });
     };
     let group_id = group.master_key;
+    // choose datasource for this group based on datasource_group mapping
+    let datasource_id = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.eq(group_id.clone()))
+        .order_by_desc(datasource_group::Column::CreatedAt)
+        .one(dbx)
+        .await
+        .map(|m| m.map(|dg| dg.datasource_id))
+        .unwrap_or(None)
+        .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
 
     let sender_name = config.signal_import_fiven_name.clone();
     let signal_profile = signal_profile::Entity::find()
@@ -629,14 +644,24 @@ pub async fn ensure_import_group_exists(
             let group = signal_group::ActiveModel {
                 master_key: Set(Uuid::new_v4().to_string()),
                 name: Set(Some(group_name)),
-                datasource_id: Set(Some(datasource_id)),
                 ..Default::default()
             };
 
-            crate::messenger::group::add_group(group, dbx)
+            let inserted = crate::messenger::group::add_group(group, dbx)
                 .await
-                .context(h!())?
-                .master_key
+                .context(h!())?;
+            // ensure datasource_group mapping
+            let _ = datasource_group::ActiveModel {
+                id: NotSet,
+                group_master_key: Set(inserted.master_key.clone()),
+                datasource_id: Set(datasource_id),
+                last_sync_at: NotSet,
+                created_at: NotSet,
+            }
+            .insert(dbx)
+            .await
+            .c(h!())?;
+            inserted.master_key
         }
     };
 
@@ -696,14 +721,23 @@ pub async fn ensure_import_group_exists(
             let group = signal_group::ActiveModel {
                 master_key: Set(IMPORT_DIRECTION_FINDING_UUID.to_string()),
                 name: Set(Some("Імпорт Пеленгів".to_string())),
-                datasource_id: Set(Some(datasource_id)),
                 ignore_operativny: Set(true),
                 ..Default::default()
             };
-            crate::messenger::group::add_group(group, dbx)
+            let inserted = crate::messenger::group::add_group(group, dbx)
                 .await
-                .context(h!())?
-                .master_key
+                .context(h!())?;
+            let _ = datasource_group::ActiveModel {
+                id: NotSet,
+                group_master_key: Set(inserted.master_key.clone()),
+                datasource_id: Set(datasource_id),
+                last_sync_at: NotSet,
+                created_at: NotSet,
+            }
+            .insert(dbx)
+            .await
+            .ok();
+            inserted.master_key
         }
     };
 
