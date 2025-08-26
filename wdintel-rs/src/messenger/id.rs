@@ -144,7 +144,9 @@ pub async fn oneoff_assign_message_ids(
                 }
                 Some(muid) => {
                     if muid != mid {
-                        debug!("issue occurred on generating ID; expected ID to be {mid}, but present in db: {muid}")
+                        if dry_run {
+                            debug!("issue occurred on generating ID; expected ID to be {mid}, but present in db: {muid}")
+                        }
                     }
                 }
             }
