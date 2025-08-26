@@ -156,9 +156,7 @@ pub async fn rer_delta_kmz_import_go(
     let group_id = group.master_key;
     // choose datasource for this group based on datasource_group mapping
     let datasource_id = datasource_group::Entity::find()
-        .filter(
-            datasource_group::Column::GroupMasterKey.eq(group_id.clone()),
-        )
+        .filter(datasource_group::Column::GroupMasterKey.eq(group_id.clone()))
         .order_by_desc(datasource_group::Column::CreatedAt)
         .one(dbx)
         .await

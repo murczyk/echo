@@ -173,7 +173,7 @@ async fn sync_groups(
         let datasource_id = datasource_ids.into_iter().next().context(h!())?;
         let datasource_group = datasource_groups
             .iter()
-                .filter(|d| d.group_master_key == g.id)
+            .filter(|d| d.group_master_key == g.id)
             .find(|d| d.datasource_id.eq(&datasource_id))
             .cloned();
         match datasource_group {
