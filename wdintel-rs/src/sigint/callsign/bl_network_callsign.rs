@@ -12,7 +12,6 @@ use sea_orm::*;
 use sea_query::JoinType;
 use std::collections::HashMap;
 
-
 /// Create a network callsign, optionally linking to a known callsign if unit_id is provided and unit_developing is false
 pub async fn bl_create_network_callsign(
     req: &CreateNetworkCallsignReq,
@@ -24,7 +23,7 @@ pub async fn bl_create_network_callsign(
         return create_network_callsign_not_linked(req, user_id, txn).await;
     }
 
-     // Otherwise, if unit_id provided - create linked callsign, and add it as a known network callsign
+    // Otherwise, if unit_id provided - create linked callsign, and add it as a known network callsign
     let network_callsign_id = if let Some(unit_id) = req.unit_id {
         let known_callsing_req = CreateCallsignReq {
             callsign: req.callsign.clone(),
@@ -82,7 +81,7 @@ async fn create_network_callsign_not_linked(
         source_id: Set(req.source_id),
         radio_freq: Set(req.radio_freq.clone()),
         unit_id: Set(req.unit_id),
-        unit_developing: Set(req.unit_developing),            
+        unit_developing: Set(req.unit_developing),
         developing: Set(req.developing),
         sigint_origin_id: NotSet,
         mothership_id: NotSet,
@@ -150,7 +149,6 @@ pub async fn bl_add_as_known_network_callsigns(
     Ok(res)
 }
 
-
 pub async fn bl_update_network_callsign(
     req: &UpdateNetworkCallsignReq,
     user_id: &str,
@@ -171,9 +169,8 @@ pub async fn bl_update_network_callsign(
         network_callsign.sigint_callsign_id
     {
         // Network callsign is linked to known callsign, update the known callsign instead
-        let known_callsign = find_callsign(txn, sigint_callsign_id)
-            .await
-            .context(h!())?;
+        let known_callsign =
+            find_callsign(txn, sigint_callsign_id).await.context(h!())?;
 
         let known_callsing_req = Callsign {
             id: known_callsign.id,
@@ -209,14 +206,13 @@ pub async fn bl_update_network_callsign(
     Ok(network_callsign_id)
 }
 
-
 async fn update_network_callsign_not_linked(
     req: &UpdateNetworkCallsignReq,
     user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network = find_network(txn, req.network_id).await.context(h!())?;
-    
+
     let network_callsign = sigint_network_callsign::Entity::find_by_id(req.id)
         .one(txn)
         .await
@@ -232,7 +228,7 @@ async fn update_network_callsign_not_linked(
     network_callsign_record.source_id = Set(req.source_id);
     network_callsign_record.radio_freq = Set(req.radio_freq.clone());
     network_callsign_record.unit_id = Set(req.unit_id);
-    network_callsign_record.unit_developing = Set(req.unit_developing);            
+    network_callsign_record.unit_developing = Set(req.unit_developing);
     network_callsign_record.developing = Set(req.developing);
 
     let network_callsign =
