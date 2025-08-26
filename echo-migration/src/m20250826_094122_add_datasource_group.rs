@@ -15,6 +15,9 @@ impl MigrationTrait for Migration {
                 last_sync_at timestamp without time zone default (now() at time zone 'utc') not null,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );
+            insert into datasource_group (group_master_key, datasource_id)
+            select g.master_key, g.datasource_id
+            from signal_group g where g.datasource_id is not null;
             "
         ).await?;
         Ok(())
