@@ -27,6 +27,7 @@ pub struct Model {
     pub radio_freq: Option<String>,
     pub developing: bool,
     pub unit_developing: bool,
+    pub unit_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -56,6 +57,14 @@ pub enum Relation {
     )]
     SigintOrigin,
     #[sea_orm(
+        belongs_to = "super::sigint_unit::Entity",
+        from = "Column::UnitId",
+        to = "super::sigint_unit::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SigintUnit,
+    #[sea_orm(
         belongs_to = "super::source::Entity",
         from = "Column::SourceId",
         to = "super::source::Column::Id",
@@ -80,6 +89,12 @@ impl Related<super::sigint_network::Entity> for Entity {
 impl Related<super::sigint_origin::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintOrigin.def()
+    }
+}
+
+impl Related<super::sigint_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnit.def()
     }
 }
 
