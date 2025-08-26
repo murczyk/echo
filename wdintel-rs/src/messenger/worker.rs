@@ -15,7 +15,6 @@ use log::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
-use sea_orm::sea_query::Expr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
@@ -297,24 +296,22 @@ async fn sync_groups(
         }
     }
 
-    let mut ids_to_delete = vec![];
+    let mut datasource_groups_to_delete = vec![];
+
     for g in deleted_groups {
-        ids_to_delete.push(g.id.clone());
+        let datasource_ids = messenger_profiles
+            .iter()
+            .filter(|(_, source)| sources_eq(&g.message_source, source))
+            .map(|(id, _)| *id)
+            .collect_vec();
+        for id in datasource_ids {
+            datasource_groups_to_delete.push((g.id.clone(), id));
+        }
     }
-    if !ids_to_delete.is_empty() {
-        signal_group::Entity::update_many()
-            .col_expr(signal_group::Column::Deleted, Expr::value(true))
-            .filter(
-                signal_group::Column::MasterKey.is_in(ids_to_delete.clone()),
-            )
-            .exec(txn)
-            .await
-            .context(h!())?;
-    }
-    if !ids_to_delete.is_empty() {
-        whatsapp_group::Entity::update_many()
-            .col_expr(whatsapp_group::Column::Deleted, Expr::value(true))
-            .filter(whatsapp_group::Column::Jid.is_in(ids_to_delete.clone()))
+    for (master_key, datasource_id) in datasource_groups_to_delete.clone() {
+        datasource_group::Entity::delete_many()
+            .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+            .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
             .exec(txn)
             .await
             .context(h!())?;
@@ -322,19 +319,16 @@ async fn sync_groups(
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
 
     for g in unsorted_groups.clone() {
-        if ids_to_delete.contains(&g.id) {
-            continue;
-        }
         let datasource_ids = messenger_profiles
             .iter()
             .filter(|(_, source)| sources_eq(&g.message_source, source))
             .map(|(id, _)| *id)
             .collect_vec();
-        if datasource_ids.is_empty() {
+        let should_skip = datasource_ids.iter().any(|id| {
+            datasource_groups_to_delete.contains(&(g.id.clone(), *id))
+        });
+        if should_skip {
             continue;
-        }
-        if datasource_ids.len() > 2 {
-            warn!("unexpected datasource to messenger lock: message source for group {} is mapped to datasources {datasource_ids:?}", g.id);
         }
         let datasource_id = datasource_ids.into_iter().next().context(h!())?;
         let datasource_group = datasource_groups
