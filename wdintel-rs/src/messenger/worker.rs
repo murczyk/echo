@@ -191,17 +191,27 @@ async fn sync_groups(
                 datasource_id: datasource.id,
             })
         });
+    let mut groups_by_dsid = HashMap::new();
     for g in groups_raw {
-        let key = (g.id.clone(), g.datasource_id);
-        match existing_groups.get(&key) {
-            None => {
-                existing_groups.insert(key, g);
-            }
-            Some(g2) => {
-                if g.created_at > g2.created_at {
-                    existing_groups.insert(key, g.clone());
-                } else {
-                    existing_groups.insert(key, g2.clone());
+        let datasource_id = g.datasource_id;
+        let mut groups =
+            groups_by_dsid.remove(&datasource_id).unwrap_or(vec![]);
+        groups.push(g);
+        groups_by_dsid.insert(datasource_id, groups);
+    }
+    for (datasource_id, groups_raw) in groups_by_dsid {
+        for g in groups_raw {
+            let key = (g.id.clone(), datasource_id);
+            match existing_groups.get(&key) {
+                None => {
+                    existing_groups.insert(key, g);
+                }
+                Some(g2) => {
+                    if g.created_at > g2.created_at {
+                        existing_groups.insert(key, g.clone());
+                    } else {
+                        existing_groups.insert(key, g2.clone());
+                    }
                 }
             }
         }
