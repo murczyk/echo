@@ -10,8 +10,9 @@ impl MigrationTrait for Migration {
         db.execute_unprepared("
             create table datasource_group (
                 id bigserial primary key,
-                group_master_key text references signal_group(master_key),
+                group_master_key text references signal_group(master_key) not null,
                 datasource_id int8 REFERENCES datasource (id) not null,
+                last_sync_at timestamp without time zone default (now() at time zone 'utc') not null,
                 created_at timestamp without time zone default (now() at time zone 'utc') not null
             );
             "
