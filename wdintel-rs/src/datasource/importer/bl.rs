@@ -116,8 +116,9 @@ pub async fn upsert_signal_groups(
                         // ensure mapping in datasource_group
                         let _ = datasource_group::ActiveModel {
                             id: NotSet,
-                            group_master_key: Set(Some(inserted.master_key.clone())),
+                            group_master_key: Set(inserted.master_key.clone()),
                             datasource_id: Set(target_datasource_id),
+                            last_sync_at: NotSet,
                             created_at: NotSet,
                         }
                         .insert(db)
@@ -146,7 +147,7 @@ pub async fn upsert_signal_groups(
                 let mapping_exists = datasource_group::Entity::find()
                     .filter(
                         datasource_group::Column::GroupMasterKey
-                            .eq(Some(source_master_key.clone())),
+                            .eq(source_master_key.clone()),
                     )
                     .filter(
                         datasource_group::Column::DatasourceId
@@ -160,8 +161,9 @@ pub async fn upsert_signal_groups(
                 if !mapping_exists {
                     let _ = datasource_group::ActiveModel {
                         id: NotSet,
-                        group_master_key: Set(Some(source_master_key.clone())),
+                        group_master_key: Set(source_master_key.clone()),
                         datasource_id: Set(target_datasource_id),
+                        last_sync_at: NotSet,
                         created_at: NotSet,
                     }
                     .insert(db)
