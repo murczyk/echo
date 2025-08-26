@@ -591,7 +591,12 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 27,
-                        callsign.position.as_deref().unwrap_or_default(),
+                        format!(
+                            "{} {}",
+                            callsign.position.clone().unwrap_or_default(),
+                            callsign.unit_name.clone().unwrap_or_default(),
+                        )
+                        .as_str(),
                         None,
                         false,
                     ),
@@ -674,7 +679,12 @@ fn build_network_callsigns_table(
                     ),
                     create_table_data_cell(
                         width_unit * 10,
-                        callsign.position.as_deref().unwrap_or_default(),
+                        format!(
+                            "{} {}",
+                            callsign.position.clone().unwrap_or_default(),
+                            callsign.unit_name.clone().unwrap_or_default(),
+                        )
+                        .as_str(),
                         None,
                         false,
                     ),
@@ -1154,7 +1164,7 @@ where
 
 fn paragraph_with_linebreaks(text: &str, color: Option<&str>) -> Paragraph {
     let mut paragraph = Paragraph::new();
-    let lines: Vec<&str> = text.split('\n').collect();
+    let lines: Vec<&str> = text.trim().split('\n').collect();
 
     for (i, line) in lines.iter().enumerate() {
         let mut run = Run::new().add_text(line.to_string());
