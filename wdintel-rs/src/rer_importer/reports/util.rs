@@ -102,7 +102,7 @@ pub fn mk_paragraph(
     paragraph
 }
 
-fn mk_text(text: &str, style: &ParagraphStyle) -> Run {
+pub(crate) fn mk_text(text: &str, style: &ParagraphStyle) -> Run {
     let text = Run::new().add_text(text);
     match style {
         ParagraphStyle::Default => text,
