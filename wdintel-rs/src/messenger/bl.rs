@@ -6,7 +6,7 @@ use crate::entities::*;
 use crate::error::ContextAndError;
 use crate::messenger::group::collect_group_stats;
 use crate::messenger::types::{EchoAccountF1, GroupUpdateReq};
-use crate::sigint::aor::render_aor;
+use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
 use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::{
@@ -103,6 +103,7 @@ pub async fn deactivate_account(
 }
 
 pub async fn link_account(
+    datasource_id: Option<i64>,
     phone_number: &str,
     display_name: &str,
     system_service_name: &str,
@@ -179,26 +180,37 @@ pub async fn link_account(
     .await
     .cae(h!())?;
 
-    let id = datasource::ActiveModel {
-        echo_client_lock_id: Set(Some(lock.id as i64)),
-        id: NotSet,
-        status: NotSet,
-        created_at: NotSet,
-        display_name: Set(display_name.to_string()),
-        signal_phone: NotSet,
-        signal_docker_port: NotSet,
-        api_endpoint: NotSet,
-        enabled: NotSet,
-        group_master_key: NotSet,
-        sender_uuid: NotSet,
-        description: Set(description),
-        kind: Set(src_display_name),
-        default_aor_id: Set(Some(aor_id)),
-    }
-    .insert(txn)
-    .await
-    .context(h!())?
-    .id;
+    let id = if let Some(id) = datasource_id {
+        let datasource = datasource::Entity::find_by_id(id)
+            .one(txn)
+            .await
+            .context(h!())?
+            .context(h!())?;
+        let mut datasource = datasource.into_active_model();
+        datasource.echo_client_lock_id = Set(Some(lock.id as i64));
+        datasource.update(txn).await.context(h!())?.id
+    } else {
+        datasource::ActiveModel {
+            echo_client_lock_id: Set(Some(lock.id as i64)),
+            id: NotSet,
+            status: NotSet,
+            created_at: NotSet,
+            display_name: Set(display_name.to_string()),
+            signal_phone: NotSet,
+            signal_docker_port: NotSet,
+            api_endpoint: NotSet,
+            enabled: NotSet,
+            group_master_key: NotSet,
+            sender_uuid: NotSet,
+            description: Set(description),
+            kind: Set(src_display_name),
+            default_aor_id: Set(Some(aor_id)),
+        }
+        .insert(txn)
+        .await
+        .context(h!())?
+        .id
+    };
 
     match src {
         MessageSource::Signal => os_specific::start_new_signal_client(
@@ -229,12 +241,18 @@ pub async fn get_qr_code(
     account_id: i64,
     txn: &DatabaseTransaction,
 ) -> Result<String, AppError> {
-    let account = list_accounts(Some(account_id), txn)
+    let m_account = list_accounts(Some(account_id), txn)
         .await
         .context(h!())?
         .into_iter()
-        .find(|a| a.id.eq(&account_id))
-        .context(h!())?;
+        .find(|a| a.id.eq(&account_id));
+
+    let account = match m_account {
+        Some(account) => account,
+        None => link_existing_datasource(account_id, txn)
+            .await
+            .context(h!())?,
+    };
 
     let messenger = parse_message_source(&account).context(h!())?;
     let system_service_name = account.system_service_name.context(h!())?;
@@ -243,6 +261,36 @@ pub async fn get_qr_code(
         .context(h!())?;
 
     Ok(code)
+}
+
+async fn link_existing_datasource(
+    datasource_id: i64,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<EchoAccountF1> {
+    let datasource = datasource::Entity::find_by_id(datasource_id)
+        .one(txn)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let phone_number = datasource.signal_phone.context(h!())?;
+    let process_name =
+        transliterate_and_slugify(&datasource.display_name).to_lowercase();
+    let aor_id = match datasource.default_aor_id {
+        Some(id) => id,
+        None => load_default_aor(txn).await.context(h!())?.id,
+    };
+    link_account(
+        Some(datasource_id),
+        &phone_number,
+        &datasource.display_name,
+        &process_name,
+        &datasource.kind,
+        datasource.description,
+        aor_id,
+        txn,
+    )
+    .await
+    .context(h!())
 }
 
 pub async fn list_accounts<'a, 'async_trait, C>(
@@ -512,4 +560,99 @@ pub async fn bl_group_update(
         stats,
         aors,
     })
+}
+
+// Transliterates a Cyrillic character to its Latin equivalent.
+fn cyrillic_to_latin(c: char) -> Option<&'static str> {
+    match c {
+        'А' => Some("A"),
+        'Б' => Some("B"),
+        'В' => Some("V"),
+        'Г' => Some("G"),
+        'Д' => Some("D"),
+        'Е' => Some("E"),
+        'Ё' => Some("Yo"),
+        'Ж' => Some("Zh"),
+        'З' => Some("Z"),
+        'И' => Some("I"),
+        'Й' => Some("Y"),
+        'К' => Some("K"),
+        'Л' => Some("L"),
+        'М' => Some("M"),
+        'Н' => Some("N"),
+        'О' => Some("O"),
+        'П' => Some("P"),
+        'Р' => Some("R"),
+        'С' => Some("S"),
+        'Т' => Some("T"),
+        'У' => Some("U"),
+        'Ф' => Some("F"),
+        'Х' => Some("Kh"),
+        'Ц' => Some("Ts"),
+        'Ч' => Some("Ch"),
+        'Ш' => Some("Sh"),
+        'Щ' => Some("Shch"),
+        'Ъ' => Some(""),
+        'Ы' => Some("Y"),
+        'Ь' => Some(""),
+        'Э' => Some("E"),
+        'Ю' => Some("Yu"),
+        'Я' => Some("Ya"),
+        'а' => Some("a"),
+        'б' => Some("b"),
+        'в' => Some("v"),
+        'г' => Some("g"),
+        'д' => Some("d"),
+        'е' => Some("e"),
+        'ё' => Some("yo"),
+        'ж' => Some("zh"),
+        'з' => Some("z"),
+        'и' => Some("i"),
+        'й' => Some("y"),
+        'к' => Some("k"),
+        'л' => Some("l"),
+        'м' => Some("m"),
+        'н' => Some("n"),
+        'о' => Some("o"),
+        'п' => Some("p"),
+        'р' => Some("r"),
+        'с' => Some("s"),
+        'т' => Some("t"),
+        'у' => Some("u"),
+        'ф' => Some("f"),
+        'х' => Some("kh"),
+        'ц' => Some("ts"),
+        'ч' => Some("ch"),
+        'ш' => Some("sh"),
+        'щ' => Some("shch"),
+        'ъ' => Some(""),
+        'ы' => Some("y"),
+        'ь' => Some(""),
+        'э' => Some("e"),
+        'ю' => Some("yu"),
+        'я' => Some("ya"),
+        _ => None,
+    }
+}
+
+// Transliterates a given string, handling Cyrillic characters and non-alphabetic symbols.
+pub fn transliterate_and_slugify(input: &str) -> String {
+    let mut result = String::new();
+    let mut last_char_was_space = false;
+
+    for c in input.chars() {
+        if let Some(latin_char) = cyrillic_to_latin(c) {
+            result.push_str(latin_char);
+            last_char_was_space = false;
+        } else if c.is_ascii_alphabetic() {
+            result.push(c);
+            last_char_was_space = false;
+        } else if !last_char_was_space {
+            result.push(' ');
+            last_char_was_space = true;
+        }
+    }
+
+    // Clean up spaces and replace with dashes
+    result.trim().replace(' ', "-")
 }

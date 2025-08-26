@@ -152,6 +152,7 @@ pub async fn link(
     valid_phone_number(&req.phone)?;
 
     let account = bl::link_account(
+        None,
         req.phone.as_str(),
         req.display_name.as_str(),
         req.system_service_name.as_str(),
