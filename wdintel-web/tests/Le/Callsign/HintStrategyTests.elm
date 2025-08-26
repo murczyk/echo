@@ -96,23 +96,30 @@ suite =
                             createMessage (Just "123.45") Nothing
 
                         network =
-                            createNetwork 1 [ "123.45" ] [ 1, 2 ]
+                            createNetwork 1 [ "123.45" ] [ 1 ]
 
                         networks =
                             Dict.fromList [ ( 1, network ) ]
 
+                        unit1 =
+                            createUnit 1 "1-ша армія" "" "" "" "" "Test"
+
                         masterUnits =
-                            Dict.fromList [ ( 1, createUnit 1 "1-ша армія" "" "" "" "" "Test" ) ]
+                            Dict.fromList [ ( 1, unit1 ) ]
+
+                        -- Додаємо позивний який реально пов'язаний з мережевим юнітом
+                        callsignsInfo =
+                            Dict.fromList [ ( "test", [ createCallsignInfo 1 "TEST" "Командир" unit1.name "" (Just unit1.id) ] ) ]
 
                         context =
-                            createContext networks masterUnits Dict.empty
+                            createContext networks masterUnits callsignsInfo
                     in
                     HintStrategy.getCallsignHints message context "test"
                         |> .strategy
                         |> Expect.equal
                             (HintStrategy.NetworkBased
                                 { networks = [ network ]
-                                , units = [ createUnit 1 "1-ша армія" "" "" "" "" "Test" ]
+                                , units = [ unit1 ]
                                 }
                             )
             , test "Коли оператор бачить повідомлення на частоті 123.45, але в системі немає мережі з цією частотою, система показує підказки з каталогу позивних" <|
@@ -420,6 +427,77 @@ suite =
                                 |> List.head
                                 |> Maybe.map .callsign
                                 |> Expect.equal (Just "АЛЬФА")
+                        ]
+                        ()
+            ]
+        , describe "🐛 КРИТИЧНА ПРОБЛЕМА: Неправильна фільтрація підказок"
+            [ test "Різні батальйони НЕ повинні показувати підказки один для одного" <|
+                \_ ->
+                    let
+                        -- Мережа з 1 мсб
+                        network1 =
+                            createNetwork 1 [ "123.45" ] [ 1 ]
+
+                        networks =
+                            Dict.fromList [ ( 1, network1 ) ]
+
+                        -- Юніти: 1 мсб та 2 мсб (РІЗНІ батальйони!)
+                        unit1msb =
+                            createUnit 1 "6А" "68 мсд" "122 мсп" "1 мсб" "" "1 мсб 122 мсп 68 мсд 6А"
+
+                        unit2msb =
+                            createUnit 2 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб 122 мсп 68 мсд 6А"
+
+                        masterUnits =
+                            Dict.fromList [ ( 1, unit1msb ), ( 2, unit2msb ) ]
+
+                        -- Позивні для РІЗНИХ батальйонів
+                        callsignsInfo =
+                            Dict.fromList
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) ] )
+                                ]
+
+                        message =
+                            { freq = Just "123.45", networkIds = Nothing }
+
+                        context =
+                            { networks = networks, masterUnits = masterUnits, callsignsInfo = callsignsInfo }
+
+                        -- Тестуємо підказки для ЗЕВС (1 мсб)
+                        zeusHints =
+                            HintStrategy.getCallsignHints message context "зевс"
+
+                        -- Тестуємо підказки для АЛЬФА (2 мсб)
+                        alfaHints =
+                            HintStrategy.getCallsignHints message context "альфа"
+                    in
+                    Expect.all
+                        [ \_ ->
+                            -- ЗЕВС (1 мсб) має NetworkBased стратегію (є в мережі)
+                            case zeusHints.strategy of
+                                HintStrategy.NetworkBased _ ->
+                                    Expect.pass
+
+                                _ ->
+                                    Expect.fail "ЗЕВС має бути NetworkBased (є в мережі)"
+                        , \_ ->
+                            -- ЗЕВС повинен мати 1 підказку (тільки свою)
+                            List.length zeusHints.prioritizedCallsigns |> Expect.equal 1
+                        , \_ ->
+                            -- АЛЬФА (2 мсб) має SystemWide стратегію (НЕ в мережі)
+                            case alfaHints.strategy of
+                                HintStrategy.SystemWide ->
+                                    Expect.pass
+
+                                HintStrategy.NetworkBased data ->
+                                    Expect.fail <| "🐛 АЛЬФА отримала NetworkBased замість SystemWide! Networks: " ++ String.fromInt (List.length data.networks) ++ ", Units: " ++ String.fromInt (List.length data.units)
+
+                                _ ->
+                                    Expect.fail "АЛЬФА має бути SystemWide (НЕ в мережі з 1 мсб)"
+                        , \_ ->
+                            -- АЛЬФА повинен мати 1 підказку (тільки свою)
+                            List.length alfaHints.prioritizedCallsigns |> Expect.equal 1
                         ]
                         ()
             ]
