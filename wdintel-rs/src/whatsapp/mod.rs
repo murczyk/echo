@@ -165,12 +165,14 @@ pub async fn sync_groups(
     datasource: &datasource::Model,
 ) -> Result<(), AppError> {
     let whatsapp_groups = whatsapp_group::Entity::find()
+        .filter(whatsapp_group::Column::Deleted.eq(false))
         .all(dbx)
         .await
         .context(h!())?;
 
     for wg in whatsapp_groups {
         let signal_group = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
             .filter(signal_group::Column::MasterKey.eq(wg.jid.clone()))
             .one(dbx)
             .await
@@ -200,6 +202,7 @@ pub async fn sync_groups(
                     created_at: NotSet,
                     is_secret: Set(false),
                     ignore_operativny: Default::default(),
+                    deleted: NotSet,
                 };
                 let signal_group =
                     crate::messenger::group::add_group(group, dbx)

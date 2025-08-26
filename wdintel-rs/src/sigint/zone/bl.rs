@@ -41,6 +41,7 @@ pub async fn bl_szd_group_update(
     // Fetch updated is_secret and other group attributes
 
     let is_secret = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .select_only()
         .column(signal_group::Column::IsSecret)
@@ -95,6 +96,7 @@ pub async fn bl_zones_datasources_group_update_or_add(
     txn: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     let m_group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(szd.group_master_key))
         .one(txn)
         .await

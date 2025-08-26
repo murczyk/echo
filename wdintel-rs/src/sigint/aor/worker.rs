@@ -32,7 +32,11 @@ async fn check_signal_groups(dbx: &DatabaseConnection) -> anyhow::Result<()> {
     }
 
     // Iterate all groups and validate exactly 1 AoR per group
-    let groups = signal_group::Entity::find().all(dbx).await.c(h!())?;
+    let groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
     for g in groups {
         let cnt = counts.get(&g.master_key).cloned().unwrap_or(0);
         if cnt == 0 {

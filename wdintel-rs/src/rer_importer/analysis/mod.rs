@@ -2163,6 +2163,7 @@ async fn collect_group_names(
     let mut result = vec![];
     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
     let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .select_only()
         .columns([
             signal_group::Column::MasterKey,
@@ -2212,6 +2213,7 @@ async fn collect_group_names(
         }
     }
     let whatsapp_groups = whatsapp_group::Entity::find()
+        .filter(whatsapp_group::Column::Deleted.eq(false))
         .select_only()
         .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
         .filter(whatsapp_group::Column::Jid.is_in(group_keys.clone()))

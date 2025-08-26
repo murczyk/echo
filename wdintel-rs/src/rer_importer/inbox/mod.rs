@@ -204,6 +204,7 @@ async fn inbox_group_stats(
         .await
         .context(h!())?;
     let signal_groups = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.is_in(sigint_groups))
         .select_only()
         .column(signal_group::Column::MasterKey)

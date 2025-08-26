@@ -376,6 +376,7 @@ pub async fn network_group_activity_bl(
         .group_by(Expr::cust(
             "network_id, day, signal_group.name",
         ))
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(
             signal_message::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(

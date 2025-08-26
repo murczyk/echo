@@ -131,6 +131,7 @@ mod m20250823_182737_fix_network_freqs_format;
 mod m20250825_182526_rename_sources;
 mod m20250825_192410_make_callsign_sources_optional;
 mod m20250826_094122_add_datasource_group;
+mod m20250826_190501_add_deleted_to_groups;
 
 pub struct Migrator;
 
@@ -269,6 +270,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250825_182526_rename_sources::Migration),
             Box::new(m20250825_192410_make_callsign_sources_optional::Migration),
             Box::new(m20250826_094122_add_datasource_group::Migration),
+            Box::new(m20250826_190501_add_deleted_to_groups::Migration),
         ]
     }
 }

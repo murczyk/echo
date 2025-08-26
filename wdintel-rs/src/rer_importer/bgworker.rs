@@ -239,6 +239,7 @@ where
                 .into(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::Name.eq(group_name))
         .one(txn)
         .await
