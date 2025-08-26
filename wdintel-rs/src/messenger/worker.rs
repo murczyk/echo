@@ -158,48 +158,10 @@ async fn sync_groups(
         .all(txn)
         .await
         .context(h!())?;
-    for g in unsorted_groups.clone() {
-        let datasource_ids = messenger_profiles
-            .iter()
-            .filter(|(_, source)| sources_eq(&g.message_source, source))
-            .map(|(id, _)| *id)
-            .collect_vec();
-        if datasource_ids.is_empty() {
-            continue;
-        }
-        if datasource_ids.len() > 2 {
-            warn!("unexpected datasource to messenger lock: message source for group {} is mapped to datasources {datasource_ids:?}", g.id);
-        }
-        let datasource_id = datasource_ids.into_iter().next().context(h!())?;
-        let datasource_group = datasource_groups
-            .iter()
-            .filter(|d| d.group_master_key == g.id)
-            .find(|d| d.datasource_id.eq(&datasource_id))
-            .cloned();
-        match datasource_group {
-            None => {
-                datasource_group::ActiveModel {
-                    id: NotSet,
-                    group_master_key: Set(g.id),
-                    datasource_id: Set(datasource_id),
-                    last_sync_at: NotSet,
-                    created_at: NotSet,
-                }
-                .insert(txn)
-                .await
-                .context(h!())?;
-            }
-            Some(rec) => {
-                let mut rec = rec.into_active_model();
-                rec.last_sync_at = Set(Utc::now().naive_utc());
-                rec.update(txn).await.context(h!())?;
-            }
-        }
-    }
 
     let mut groups = vec![];
     let mut deleted_groups = vec![];
-    for g in unsorted_groups {
+    for g in unsorted_groups.clone() {
         if g.deleted_by_messenger {
             deleted_groups.push(g);
         } else {
@@ -330,31 +292,69 @@ async fn sync_groups(
         }
     }
 
-    let mut signal_ids_to_delete = vec![];
-    let mut whatsapp_ids_to_delete = vec![];
+    let mut ids_to_delete = vec![];
     for g in deleted_groups {
-        if !g.id.is_empty() {
-            signal_ids_to_delete.push(g.id.clone());
-            if g.message_source == MessageSource::Whatsapp {
-                whatsapp_ids_to_delete.push(g.id);
-            }
-        }
+        ids_to_delete.push(g.id.clone());
     }
-    if !signal_ids_to_delete.is_empty() {
+    if !ids_to_delete.is_empty() {
         signal_group::Entity::delete_many()
-            .filter(signal_group::Column::MasterKey.is_in(signal_ids_to_delete))
+            .filter(
+                signal_group::Column::MasterKey.is_in(ids_to_delete.clone()),
+            )
             .exec(txn)
             .await
             .context(h!())?;
     }
-    if !whatsapp_ids_to_delete.is_empty() {
+    if !ids_to_delete.is_empty() {
         whatsapp_group::Entity::delete_many()
-            .filter(whatsapp_group::Column::Jid.is_in(whatsapp_ids_to_delete))
+            .filter(whatsapp_group::Column::Jid.is_in(ids_to_delete.clone()))
             .exec(txn)
             .await
             .context(h!())?;
     }
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
+
+    for g in unsorted_groups.clone() {
+        if ids_to_delete.contains(&g.id) {
+            continue;
+        }
+        let datasource_ids = messenger_profiles
+            .iter()
+            .filter(|(_, source)| sources_eq(&g.message_source, source))
+            .map(|(id, _)| *id)
+            .collect_vec();
+        if datasource_ids.is_empty() {
+            continue;
+        }
+        if datasource_ids.len() > 2 {
+            warn!("unexpected datasource to messenger lock: message source for group {} is mapped to datasources {datasource_ids:?}", g.id);
+        }
+        let datasource_id = datasource_ids.into_iter().next().context(h!())?;
+        let datasource_group = datasource_groups
+            .iter()
+            .filter(|d| d.group_master_key == g.id)
+            .find(|d| d.datasource_id.eq(&datasource_id))
+            .cloned();
+        match datasource_group {
+            None => {
+                datasource_group::ActiveModel {
+                    id: NotSet,
+                    group_master_key: Set(g.id),
+                    datasource_id: Set(datasource_id),
+                    last_sync_at: NotSet,
+                    created_at: NotSet,
+                }
+                .insert(txn)
+                .await
+                .context(h!())?;
+            }
+            Some(rec) => {
+                let mut rec = rec.into_active_model();
+                rec.last_sync_at = Set(Utc::now().naive_utc());
+                rec.update(txn).await.context(h!())?;
+            }
+        }
+    }
     Ok(())
 }
 
