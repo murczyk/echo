@@ -3601,7 +3601,7 @@ zoneCard2 isDark model user ( zoneId, zone ) =
         renderCustomTabs : Html Msg
         renderCustomTabs =
             div [ class "tabs-container" ]
-                [ div [ class "tabs-nav" ]
+                [ div [ class "tabs-nav tabs-nav-scrollable" ]
                     (List.map (renderCustomTab activeTab) tabDefinitions)
                 ]
 
