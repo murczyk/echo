@@ -2931,7 +2931,7 @@ removeGroupFromOrganismReqEncoder struct =
 type alias SignalGroupFull =
     { name : String
     , masterKey : String
-    , datasourceId : Int
+    , originDatasourceId : Int
     }
 
 
@@ -2940,7 +2940,7 @@ signalGroupFullEncoder struct =
     Json.Encode.object
         [ ( "name", Json.Encode.string struct.name )
         , ( "master_key", Json.Encode.string struct.masterKey )
-        , ( "datasource_id", Json.Encode.int struct.datasourceId )
+        , ( "origin_datasource_id", Json.Encode.int struct.originDatasourceId )
         ]
 
 
@@ -7299,7 +7299,7 @@ signalGroupFullDecoder =
     Json.Decode.succeed SignalGroupFull
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" Json.Decode.string))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin_datasource_id" Json.Decode.int))
 
 
 organismGroupDecoder : Json.Decode.Decoder OrganismGroup

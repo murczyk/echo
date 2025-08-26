@@ -56,6 +56,8 @@ pub enum Relation {
     EchoClientLock,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
+    #[sea_orm(has_many = "super::signal_group::Entity")]
+    SignalGroup,
     #[sea_orm(has_many = "super::signal_message::Entity")]
     SignalMessage,
 }
@@ -81,6 +83,12 @@ impl Related<super::echo_client_lock::Entity> for Entity {
 impl Related<super::sigint_zone_datasource::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintZoneDatasource.def()
+    }
+}
+
+impl Related<super::signal_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalGroup.def()
     }
 }
 

@@ -187,7 +187,7 @@ pub async fn group_list(
             .map(|g| SignalGroupFull {
                 master_key: g.master_key,
                 name: g.name.unwrap_or("".to_string()),
-                datasource_id: g.datasource_id.unwrap_or(0),
+                origin_datasource_id: g.datasource_id.unwrap_or(0),
             })
             .collect(),
     ))
@@ -236,7 +236,7 @@ pub async fn organism_available_groups(
             .map(|g| SignalGroupFull {
                 master_key: g.master_key,
                 name: g.name.unwrap_or("".to_string()),
-                datasource_id: g.datasource_id.unwrap_or(0),
+                origin_datasource_id: g.datasource_id.unwrap_or(0),
             })
             .collect(),
     ))

@@ -76,7 +76,7 @@ pub struct RemoveGroupFromOrganismReq {
 pub struct SignalGroupFull {
     pub name: String,
     pub master_key: String,
-    pub datasource_id: i64,
+    pub origin_datasource_id: i64,
 }
 
 #[derive(
