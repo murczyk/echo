@@ -18,7 +18,7 @@ use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
 use sea_orm::{
     ConnectionTrait, DatabaseTransaction, FromQueryResult, IntoActiveModel,
-    JoinType, NotSet, QuerySelect, Set,
+    JoinType, NotSet, QuerySelect, Set, TransactionTrait,
 };
 use std::net::TcpListener;
 
@@ -239,9 +239,9 @@ pub async fn link_account(
 
 pub async fn get_qr_code(
     account_id: i64,
-    txn: &DatabaseTransaction,
+    db: &DatabaseConnection,
 ) -> Result<String, AppError> {
-    let m_account = list_accounts(Some(account_id), txn)
+    let m_account = list_accounts(Some(account_id), db)
         .await
         .context(h!())?
         .into_iter()
@@ -250,16 +250,23 @@ pub async fn get_qr_code(
 
     let account = match m_account {
         Some(account) => account,
-        None => link_existing_datasource(account_id, txn)
-            .await
-            .context(h!())?,
+        None => {
+            let txn = db.begin().await.context(h!())?;
+            let result = link_existing_datasource(account_id, &txn)
+                .await
+                .context(h!())?;
+            result
+        }
     };
 
     let messenger = parse_message_source(&account).context(h!())?;
     let system_service_name = account.system_service_name.context(h!())?;
-    let code = echo_im::link_account(&system_service_name, messenger, txn)
+
+    let txn = db.begin().await.context(h!())?;
+    let code = echo_im::link_account(&system_service_name, messenger, &txn)
         .await
         .context(h!())?;
+    txn.commit().await.context(h!())?;
 
     Ok(code)
 }

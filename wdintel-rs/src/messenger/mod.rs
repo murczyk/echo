@@ -42,10 +42,8 @@ pub async fn get_qr(
     crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
         .await
         .cae(h!())?;
-    let txn = env.dbx.begin().await.context(h!())?;
     let qr_code_base64 =
-        bl::get_qr_code(req.account_id, &txn).await.cae(h!())?;
-    txn.commit().await.context(h!())?;
+        bl::get_qr_code(req.account_id, &env.dbx).await.cae(h!())?;
     Ok(Json(QrCodeRsp { qr_code_base64 }))
 }
 
