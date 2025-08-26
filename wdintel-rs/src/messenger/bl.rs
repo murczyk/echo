@@ -251,10 +251,12 @@ pub async fn get_qr_code(
     let account = match m_account {
         Some(account) => account,
         None => {
+            debug!("creating new account for datasource {account_id}");
             let txn = db.begin().await.context(h!())?;
             let result = link_existing_datasource(account_id, &txn)
                 .await
                 .context(h!())?;
+            txn.commit().await.context(h!())?;
             result
         }
     };
@@ -282,7 +284,7 @@ async fn link_existing_datasource(
         .context(h!())?;
     let phone_number = datasource.signal_phone.context(h!())?;
     let process_name =
-        transliterate_and_slugify(&datasource.display_name).to_lowercase();
+        transliterate_and_slugify(&datasource.display_name.to_lowercase());
     let aor_id = match datasource.default_aor_id {
         Some(id) => id,
         None => load_default_aor(txn).await.context(h!())?.id,
@@ -573,49 +575,18 @@ pub async fn bl_group_update(
 // Transliterates a Cyrillic character to its Latin equivalent.
 fn cyrillic_to_latin(c: char) -> Option<&'static str> {
     match c {
-        'А' => Some("A"),
-        'Б' => Some("B"),
-        'В' => Some("V"),
-        'Г' => Some("G"),
-        'Д' => Some("D"),
-        'Е' => Some("E"),
-        'Ё' => Some("Yo"),
-        'Ж' => Some("Zh"),
-        'З' => Some("Z"),
-        'И' => Some("I"),
-        'Й' => Some("Y"),
-        'К' => Some("K"),
-        'Л' => Some("L"),
-        'М' => Some("M"),
-        'Н' => Some("N"),
-        'О' => Some("O"),
-        'П' => Some("P"),
-        'Р' => Some("R"),
-        'С' => Some("S"),
-        'Т' => Some("T"),
-        'У' => Some("U"),
-        'Ф' => Some("F"),
-        'Х' => Some("Kh"),
-        'Ц' => Some("Ts"),
-        'Ч' => Some("Ch"),
-        'Ш' => Some("Sh"),
-        'Щ' => Some("Shch"),
-        'Ъ' => Some(""),
-        'Ы' => Some("Y"),
-        'Ь' => Some(""),
-        'Э' => Some("E"),
-        'Ю' => Some("Yu"),
-        'Я' => Some("Ya"),
         'а' => Some("a"),
         'б' => Some("b"),
         'в' => Some("v"),
-        'г' => Some("g"),
+        'г' => Some("h"),
+        'ґ' => Some("g"),
         'д' => Some("d"),
         'е' => Some("e"),
-        'ё' => Some("yo"),
         'ж' => Some("zh"),
         'з' => Some("z"),
-        'и' => Some("i"),
+        'и' => Some("y"),
+        'і' => Some("i"),
+        'ї' => Some("yi"),
         'й' => Some("y"),
         'к' => Some("k"),
         'л' => Some("l"),
@@ -633,10 +604,8 @@ fn cyrillic_to_latin(c: char) -> Option<&'static str> {
         'ч' => Some("ch"),
         'ш' => Some("sh"),
         'щ' => Some("shch"),
-        'ъ' => Some(""),
-        'ы' => Some("y"),
         'ь' => Some(""),
-        'э' => Some("e"),
+        'є' => Some("ye"),
         'ю' => Some("yu"),
         'я' => Some("ya"),
         _ => None,
