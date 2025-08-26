@@ -96,19 +96,39 @@ sortCallsignsNew freq networksDict params =
 
 
 {-| Нова функція сортування для HintResult
+Спочатку NetworkBased (мережеві), потім SystemWide (каталог), потім по кількості підказок
 -}
 sortByPrioNew : ( HintStrategy.HintResult, String ) -> ( HintStrategy.HintResult, String ) -> Order
 sortByPrioNew callsignWithPrioA callsignWithPrioB =
     let
-        lengthA = callsignWithPrioA |> Tuple.first |> .prioritizedCallsigns |> List.length
-        lengthB = callsignWithPrioB |> Tuple.first |> .prioritizedCallsigns |> List.length
+        hintA = callsignWithPrioA |> Tuple.first
+        hintB = callsignWithPrioB |> Tuple.first
+        
+        -- Приоритет стратегії: NetworkBased > SystemWide > NoHints
+        strategyPriority strategy =
+            case strategy of
+                HintStrategy.NetworkBased _ -> 1
+                HintStrategy.SystemWide -> 2
+                HintStrategy.NoHints -> 3
+        
+        priorityA = strategyPriority hintA.strategy
+        priorityB = strategyPriority hintB.strategy
+        
+        lengthA = List.length hintA.prioritizedCallsigns
+        lengthB = List.length hintB.prioritizedCallsigns
     in
-    if lengthA > lengthB then
+    if priorityA < priorityB then
         LT
-    else if lengthA < lengthB then
+    else if priorityA > priorityB then
         GT
     else
-        EQ
+        -- Якщо стратегії однакові - сортуємо по кількості підказок
+        if lengthA > lengthB then
+            LT
+        else if lengthA < lengthB then
+            GT
+        else
+            EQ
 
 
 sortCallsigns2 : B.Network -> Params a -> List ( List B.CallsignInfo, String )
