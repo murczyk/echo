@@ -14,8 +14,9 @@ use std::sync::{Arc, RwLock};
 
 pub async fn upsert_datasource(
     db: &DatabaseConnection,
-    new_datasource: datasource::Model,
+    mut new_datasource: datasource::Model,
 ) -> anyhow::Result<(i64, i64)> {
+    new_datasource.echo_client_lock_id = None;
     let existing_data_source = datasource::Entity::find()
         .filter(datasource::Column::Kind.eq(new_datasource.kind.clone()))
         .filter(
