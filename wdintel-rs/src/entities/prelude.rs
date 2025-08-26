@@ -8,6 +8,7 @@ pub use super::callsign_lexeme::Entity as CallsignLexeme;
 pub use super::comp_freq::Entity as CompFreq;
 pub use super::comp_freq_callsign::Entity as CompFreqCallsign;
 pub use super::datasource::Entity as Datasource;
+pub use super::datasource_group::Entity as DatasourceGroup;
 pub use super::delta_kv::Entity as DeltaKv;
 pub use super::delta_login::Entity as DeltaLogin;
 pub use super::echo_account::Entity as EchoAccount;
