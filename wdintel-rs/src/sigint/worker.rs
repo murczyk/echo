@@ -223,7 +223,7 @@ pub async fn do_sync_state(
                 let exists = datasource_group::Entity::find()
                     .filter(
                         datasource_group::Column::GroupMasterKey
-                            .eq(existing.master_key.clone()),
+                            .eq(Some(existing.master_key.clone())),
                     )
                     .filter(
                         datasource_group::Column::DatasourceId
@@ -236,9 +236,8 @@ pub async fn do_sync_state(
                 if !exists {
                     let _ = datasource_group::ActiveModel {
                         id: NotSet,
-                        group_master_key: Set(existing.master_key.clone()),
+                        group_master_key: Set(Some(existing.master_key.clone())),
                         datasource_id: Set(datasource_id),
-                        last_sync_at: NotSet,
                         created_at: NotSet,
                     }
                     .insert(dbx)
@@ -260,9 +259,8 @@ pub async fn do_sync_state(
                     .context(h!())?;
                 let _ = datasource_group::ActiveModel {
                     id: NotSet,
-                    group_master_key: Set(inserted.master_key.clone()),
+                    group_master_key: Set(Some(inserted.master_key.clone())),
                     datasource_id: Set(datasource_id),
-                    last_sync_at: NotSet,
                     created_at: NotSet,
                 }
                 .insert(dbx)

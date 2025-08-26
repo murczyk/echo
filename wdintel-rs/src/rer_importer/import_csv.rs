@@ -657,9 +657,8 @@ pub async fn ensure_import_group_exists(
             // ensure datasource_group mapping
             let _ = datasource_group::ActiveModel {
                 id: NotSet,
-                group_master_key: Set(inserted.master_key.clone()),
+                group_master_key: Set(Some(inserted.master_key.clone())),
                 datasource_id: Set(datasource_id),
-                last_sync_at: NotSet,
                 created_at: NotSet,
             }
             .insert(dbx)
@@ -733,9 +732,8 @@ pub async fn ensure_import_group_exists(
                 .context(h!())?;
             let _ = datasource_group::ActiveModel {
                 id: NotSet,
-                group_master_key: Set(inserted.master_key.clone()),
+                group_master_key: Set(Some(inserted.master_key.clone())),
                 datasource_id: Set(datasource_id),
-                last_sync_at: NotSet,
                 created_at: NotSet,
             }
             .insert(dbx)
