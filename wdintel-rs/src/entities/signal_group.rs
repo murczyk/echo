@@ -20,14 +20,6 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::datasource::Entity",
-        from = "Column::DatasourceId",
-        to = "super::datasource::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    Datasource,
     #[sea_orm(has_many = "super::datasource_group::Entity")]
     DatasourceGroup,
     #[sea_orm(has_many = "super::group_admin_data::Entity")]
@@ -40,12 +32,6 @@ pub enum Relation {
     SigintZoneDatasource,
     #[sea_orm(has_many = "super::signal_group_aor::Entity")]
     SignalGroupAor,
-}
-
-impl Related<super::datasource::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Datasource.def()
-    }
 }
 
 impl Related<super::datasource_group::Entity> for Entity {

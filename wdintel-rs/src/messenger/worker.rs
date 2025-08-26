@@ -283,7 +283,7 @@ async fn sync_groups(
             None => {
                 let model = signal_group::ActiveModel {
                     name: Set(Some(g.name.clone())),
-                    datasource_id: Set(Some(datasource.id)),
+                    datasource_id: NotSet,
                     created_at: NotSet,
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
@@ -305,15 +305,11 @@ async fn sync_groups(
                 }
             }
             Some(group_model) => {
-                let datasource_id = group_model.datasource_id;
                 let name = Some(g.name.clone());
-                if group_model.name != name
-                    || group_model.datasource_id != datasource_id
-                {
+                if group_model.name != name {
                     if let Some(ref model) = group_model.model_a {
                         let mut model = model.clone().into_active_model();
                         model.name = Set(name);
-                        model.datasource_id = Set(Some(datasource_id));
                         model.update(txn).await.context(h!())?;
                     } else {
                         let mut model = group_model

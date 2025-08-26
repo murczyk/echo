@@ -113,7 +113,11 @@ async fn collect_datasource_data(
         .context(h!())?;
 
     let signal_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::DatasourceId.eq(params.datasource_id))
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_group::Relation::DatasourceGroup.def(),
+        )
+        .filter(datasource_group::Column::DatasourceId.eq(params.datasource_id))
         .all(&db)
         .await
         .context(h!())?;

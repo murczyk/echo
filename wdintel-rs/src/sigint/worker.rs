@@ -215,23 +215,59 @@ pub async fn do_sync_state(
                         group.name.clone()
                     );
                     let mut existing: signal_group::ActiveModel =
-                        existing.into();
+                        existing.clone().into();
                     existing.name = Set(Some(group.name.clone()));
                     existing.update(dbx).await.context(h!())?;
+                }
+                // ensure mapping exists for this datasource
+                let exists = datasource_group::Entity::find()
+                    .filter(
+                        datasource_group::Column::GroupMasterKey
+                            .eq(existing.master_key.clone()),
+                    )
+                    .filter(
+                        datasource_group::Column::DatasourceId
+                            .eq(datasource_id),
+                    )
+                    .count(dbx)
+                    .await
+                    .context(h!())?
+                    > 0;
+                if !exists {
+                    let _ = datasource_group::ActiveModel {
+                        id: NotSet,
+                        group_master_key: Set(existing.master_key.clone()),
+                        datasource_id: Set(datasource_id),
+                        last_sync_at: NotSet,
+                        created_at: NotSet,
+                    }
+                    .insert(dbx)
+                    .await
+                    .ok();
                 }
             }
             None => {
                 let group = signal_group::ActiveModel {
                     master_key: Set(group.master_key.clone()),
                     name: Set(Some(group.name.clone())),
-                    datasource_id: Set(Some(datasource_id)),
+                    datasource_id: NotSet,
                     is_secret: Set(false),
                     created_at: NotSet,
                     ignore_operativny: Default::default(),
                 };
-                crate::messenger::group::add_group(group, dbx)
+                let inserted = crate::messenger::group::add_group(group, dbx)
                     .await
                     .context(h!())?;
+                let _ = datasource_group::ActiveModel {
+                    id: NotSet,
+                    group_master_key: Set(inserted.master_key.clone()),
+                    datasource_id: Set(datasource_id),
+                    last_sync_at: NotSet,
+                    created_at: NotSet,
+                }
+                .insert(dbx)
+                .await
+                .ok();
             }
         }
     }

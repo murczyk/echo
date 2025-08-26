@@ -6,7 +6,8 @@ use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use actix_web::post;
 use actix_web::web::Json;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
+use std::collections::HashSet;
 
 /// Отримує список груп, які не прив'язані до жодного напрямку
 ///
@@ -36,22 +37,23 @@ pub async fn orphan_signal_groups(
         .into_iter()
         .collect::<HashSet<_>>();
 
-    let orphan_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::DatasourceId.is_not_null())
-        .order_by_desc(signal_group::Column::CreatedAt)
-        .all(&env.dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .filter(|g| match g.datasource_id {
-            None => true,
-            Some(id) => !assigned_keys.contains(&(g.master_key.clone(), id)),
-        })
-        .collect::<Vec<_>>();
+    // Find all datasource_group mappings and related signal_groups; filter out those already assigned
+    let orphan_pairs: Vec<(signal_group::Model, i64)> =
+        datasource_group::Entity::find()
+            .find_also_related(signal_group::Entity)
+            .all(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .filter_map(|(dg, m_group)| m_group.map(|g| (g, dg.datasource_id)))
+            .filter(|(g, dsid)| {
+                !assigned_keys.contains(&(g.master_key.clone(), *dsid))
+            })
+            .collect();
 
-    let keys: Vec<String> = orphan_groups
+    let keys: Vec<String> = orphan_pairs
         .iter()
-        .map(|g| g.master_key.clone())
+        .map(|(g, _)| g.master_key.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -64,9 +66,9 @@ pub async fn orphan_signal_groups(
     let group_admin_data = collect_group_admin_data(keys, &env.dbx)
         .await
         .context(h!())?;
-    let data: Vec<OrphanSignalGroupEntry> = orphan_groups
+    let data: Vec<OrphanSignalGroupEntry> = orphan_pairs
         .into_iter()
-        .filter_map(|g| {
+        .filter_map(|(g, dsid)| {
             let master_key = g.master_key.clone();
             let stats = stats.get(&master_key).cloned().unwrap_or_default();
             let group_admin_data = group_admin_data.get(&master_key).cloned();
@@ -75,7 +77,7 @@ pub async fn orphan_signal_groups(
                 name,
                 master_key: g.master_key,
                 ignore_operativny: g.ignore_operativny,
-                datasource_id: g.datasource_id,
+                datasource_id: Some(dsid),
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
                 group_admin_data,

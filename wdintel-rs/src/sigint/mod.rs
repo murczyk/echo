@@ -378,7 +378,18 @@ async fn xlsx_import_process_one(
     );
     let group_id = ps.signal_group_id.clone();
     let sender_uuid = ps.signal_sender_uuid.clone();
-    let datasource_id = crate::config::SIGNAL_DATASOURCE_ID;
+    // choose datasource for this group based on datasource_group mapping
+    let datasource_id = datasource_group::Entity::find()
+        .filter(
+            datasource_group::Column::GroupMasterKey.eq(group_id.clone()),
+        )
+        .order_by_desc(datasource_group::Column::LastSyncAt)
+        .order_by_desc(datasource_group::Column::CreatedAt)
+        .one(dbx)
+        .await
+        .map(|m| m.map(|dg| dg.datasource_id))
+        .unwrap_or(None)
+        .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
     // Normalize body
     let body = body.replace("\r\n", "\n");
     let message = signal_message::ActiveModel {

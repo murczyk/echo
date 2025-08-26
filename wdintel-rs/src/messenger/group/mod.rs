@@ -67,9 +67,20 @@ where
         return Ok(None);
     }
 
-    let Some(datasource_id) = group.datasource_id else {
-        info!("[group={master_key}] skipped assigning group's area of responsibility: no datasource specified for the group");
-        return Ok(None);
+    let datasource_id = match datasource_group::Entity::find()
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq(group.master_key.clone()),
+        )
+        .one(dbx)
+        .await
+        .context(h!())?
+    {
+        Some(dg) => dg.datasource_id,
+        None => {
+            info!("[group={master_key}] skipped assigning group's area of responsibility: no datasource mapping found for the group");
+            return Ok(None);
+        }
     };
     let aor = area_of_responsibility::Entity::find()
         .join(
