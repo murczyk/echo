@@ -24,25 +24,37 @@ pub async fn orphan_signal_groups(
         .context(h!())?;
 
     // Отримати всі master_key, які вже прив'язані
-    let assigned_keys: Vec<String> = sigint_zone_datasource::Entity::find()
+    let assigned_keys = sigint_zone_datasource::Entity::find()
         .select_only()
+        .filter(sigint_zone_datasource::Column::DatasourceId.is_not_null())
         .column(sigint_zone_datasource::Column::GroupMasterKey)
-        .into_tuple::<String>()
+        .column(sigint_zone_datasource::Column::DatasourceId)
+        .into_tuple::<(String, i64)>()
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
 
-    // Знайти всі signal_group, яких немає серед assigned_keys
-    // Сортувати за часом створення (найновіші першими)
     let orphan_groups = signal_group::Entity::find()
-        .filter(signal_group::Column::MasterKey.is_not_in(assigned_keys))
+        .filter(signal_group::Column::DatasourceId.is_not_null())
         .order_by_desc(signal_group::Column::CreatedAt)
         .all(&env.dbx)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .into_iter()
+        .filter(|g| match g.datasource_id {
+            None => true,
+            Some(id) => !assigned_keys.contains(&(g.master_key.clone(), id)),
+        })
+        .collect::<Vec<_>>();
 
-    let keys: Vec<String> =
-        orphan_groups.iter().map(|b| b.master_key.clone()).collect();
+    let keys: Vec<String> = orphan_groups
+        .iter()
+        .map(|g| g.master_key.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let stats = collect_group_stats(keys.clone(), &env.dbx)
         .await
         .context(h!())?;
@@ -55,10 +67,10 @@ pub async fn orphan_signal_groups(
     let data: Vec<OrphanSignalGroupEntry> = orphan_groups
         .into_iter()
         .filter_map(|g| {
-            let stats = stats.get(&g.master_key).cloned().unwrap_or_default();
-            let group_admin_data =
-                group_admin_data.get(g.master_key.as_str()).cloned();
-            let aors = group_aors.get(g.master_key.as_str()).cloned();
+            let master_key = g.master_key.clone();
+            let stats = stats.get(&master_key).cloned().unwrap_or_default();
+            let group_admin_data = group_admin_data.get(&master_key).cloned();
+            let aors = group_aors.get(&master_key).cloned();
             g.name.clone().map(|name| OrphanSignalGroupEntry {
                 name,
                 master_key: g.master_key,
