@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub group_master_key: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub group_master_key: String,
     pub datasource_id: i64,
+    pub last_sync_at: DateTime,
     pub created_at: DateTime,
 }
 
