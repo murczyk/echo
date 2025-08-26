@@ -255,7 +255,7 @@ type alias EditCallsignState =
     , inpUnitId : Int
     , inpUnitSelState : Select.State
     , inpUnitSelMenu : List (Select.MenuItem Int)
-    , inpSourceId : Int
+    , inpSourceId : Maybe Int
     , inpDeveloping : Bool
     , inpRadioFreq : String
     }
@@ -716,7 +716,7 @@ update req shared msg model =
                                                         , position = addState.inpPosition
                                                         , comment = addState.inpComment
                                                         , unitId = unitId
-                                                        , sourceId = sourceId
+                                                        , sourceId = Just sourceId
                                                         , developing = addState.inpDeveloping
                                                         , radioFreq = Just addState.inpRadioFreq
                                                         }
@@ -794,7 +794,7 @@ update req shared msg model =
                             let
                                 -- Validate that if РО (source ID 2) is selected, frequency must be provided
                                 isValid =
-                                    if editState.inpSourceId == 2 then
+                                    if editState.inpSourceId == Just 2 then
                                         not (String.isEmpty (String.trim editState.inpRadioFreq))
 
                                     else
@@ -1236,7 +1236,7 @@ update req shared msg model =
                             let
                                 -- Validate that if РО (source ID 2) is selected, frequency must be provided
                                 isValid =
-                                    if editState.inpSourceId == 2 then
+                                    if editState.inpSourceId == Just 2 then
                                         not (String.isEmpty (String.trim editState.inpRadioFreq))
 
                                     else
@@ -1661,16 +1661,21 @@ callsignsTableConfig shared model user =
                     \callsign ->
                         { attributes = [ class "text-sm" ]
                         , children =
-                            [ case ListX.find (\s -> s.id == callsign.sourceId) model.sources of
+                            [ case callsign.sourceId of
                                 Nothing ->
-                                    text "Loading..."
+                                    text "Не вказано"
 
-                                Just source ->
-                                    if source.id == 2 && not (String.isEmpty (callsign.radioFreq |> def "")) then
-                                        text (source.name ++ " (" ++ def "" callsign.radioFreq ++ ")")
+                                Just sourceId ->
+                                    case ListX.find (\s -> s.id == sourceId) model.sources of
+                                        Nothing ->
+                                            text "Loading..."
 
-                                    else
-                                        text source.name
+                                        Just source ->
+                                            if source.id == 2 && not (String.isEmpty (callsign.radioFreq |> def "")) then
+                                                text (source.name ++ " (" ++ def "" callsign.radioFreq ++ ")")
+
+                                            else
+                                                text source.name
                             ]
                         }
                 , sorter = Table.unsortable
@@ -1829,14 +1834,14 @@ editSidebarContent model shared user =
                                     (List.map
                                         (\source ->
                                             Tag.new
-                                                { isActive = editState.inpSourceId == source.id
-                                                , onToggle = EditCallsignMsg { editState | inpSourceId = source.id }
+                                                { isActive = editState.inpSourceId == Just source.id
+                                                , onToggle = EditCallsignMsg { editState | inpSourceId = Just source.id }
                                                 }
                                                 |> Tag.view source.name
                                         )
                                         model.sources
                                     )
-                                , if editState.inpSourceId == 2 then
+                                , if editState.inpSourceId == Just 2 then
                                     input
                                         [ class "form-input w-full mt-2"
                                         , type_ "text"

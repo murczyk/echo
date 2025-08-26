@@ -19,7 +19,7 @@ pub struct Model {
     pub unit_id: i64,
     pub deleted: bool,
     pub created_at: DateTime,
-    pub source_id: i32,
+    pub source_id: Option<i32>,
     pub developing: bool,
     #[sea_orm(column_type = "Text")]
     pub radio_freq: String,

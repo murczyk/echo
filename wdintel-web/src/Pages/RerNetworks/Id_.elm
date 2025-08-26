@@ -1733,7 +1733,7 @@ update shared msg model =
                             , callsign = ""
                             , position = Nothing
                             , comment = Nothing
-                            , sourceId = 1 -- Default source ID
+                            , sourceId = Nothing -- No default source ID
                             , radioFreq = Nothing
                             , developing = False
                             }
@@ -1836,12 +1836,12 @@ update shared msg model =
                     Select.update imsg model.callsignCreateSourceSelState
 
                 updatedSourceId =
-                    Le.Block.Select.singleUpd mAction (Maybe.map .sourceId model.callsignCreateState)
+                    Le.Block.Select.singleUpd mAction (Maybe.andThen .sourceId model.callsignCreateState)
             in
             ( { model
                 | callsignCreateSourceSelState = imodel2
                 , callsignCreateState =
-                    Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.callsignCreateState
+                    Maybe.map (\state -> { state | sourceId = updatedSourceId }) model.callsignCreateState
               }
             , E.sendCmd <| Cmd.map CallsignCreateSourceSelMsg icmd
             )
@@ -2147,7 +2147,7 @@ update shared msg model =
                                     , callsign = String.toUpper  callsign.callsign
                                     , position = callsign.position
                                     , comment = callsign.comment
-                                    , sourceId = Maybe.withDefault 1 callsign.sourceId
+                                    , sourceId = callsign.sourceId
                                     , radioFreq = callsign.radioFreq -- Тепер це окреме поле
                                     , developing = callsign.developing
                                     }
@@ -2320,12 +2320,12 @@ update shared msg model =
                     Select.update imsg model.editCallsignSourceSelState
 
                 updatedSourceId =
-                    Le.Block.Select.singleUpd mAction (Maybe.map .sourceId model.editCallsignState)
+                    Le.Block.Select.singleUpd mAction (Maybe.andThen .sourceId model.editCallsignState)
             in
             ( { model
                 | editCallsignSourceSelState = imodel2
                 , editCallsignState =
-                    Maybe.map (\state -> { state | sourceId = Maybe.withDefault 1 updatedSourceId }) model.editCallsignState
+                    Maybe.map (\state -> { state | sourceId = updatedSourceId }) model.editCallsignState
               }
             , E.sendCmd <| Cmd.map EditCallsignSourceSelMsg icmd
             )
@@ -2339,7 +2339,7 @@ update shared msg model =
                             , callsign = String.toUpper callsign
                             , position = Nothing
                             , comment = Nothing
-                            , sourceId = 1 -- Default source ID
+                            , sourceId = Nothing -- No default source ID
                             , radioFreq = Nothing
                             , developing = False
                             }
@@ -4835,14 +4835,14 @@ callsignCreateSidebarContent shared model user =
                         []
                     ]
                 , div []
-                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело *" ]
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
                     , let
                         sourceMenu =
                             model.callsignCreateSources
                                 |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
 
                         selectItem =
-                            Maybe.map .sourceId model.callsignCreateState
+                            Maybe.andThen .sourceId model.callsignCreateState
                                 |> Maybe.andThen
                                     (\sourceId ->
                                         ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
@@ -4855,11 +4855,11 @@ callsignCreateSidebarContent shared model user =
                                 selectItem
                                 model.callsignCreateSourceSelState
                                 sourceMenu
-                                "Виберіть джерело"
+                                "Виберіть джерело (необов'язково)"
                                 (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                                     |> (\opts ->
                                             { opts
-                                                | clearable = False
+                                                | clearable = True
                                             }
                                        )
                                 )
@@ -4940,7 +4940,7 @@ callsignCreateSidebarContent shared model user =
                             |> Checkbox.view
                         ]
                     ]
-                , if (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2 then
+                , if (Maybe.andThen .sourceId model.callsignCreateState) == Just 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
                         , input
@@ -4994,7 +4994,7 @@ callsignCreateSidebarContent shared model user =
                                         |> Maybe.withDefault True
 
                                 isRO =
-                                    (Maybe.map .sourceId model.callsignCreateState |> Maybe.withDefault 1) == 2
+                                    (Maybe.andThen .sourceId model.callsignCreateState) == Just 2
 
                                 roFreqEmpty =
                                     if isRO then
@@ -5040,14 +5040,14 @@ editCallsignSidebarContent shared model user =
                         []
                     ]
                 , div []
-                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело *" ]
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
                     , let
                         sourceMenu =
                             model.callsignCreateSources
                                 |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
 
                         selectItem =
-                            Maybe.map .sourceId model.editCallsignState
+                            Maybe.andThen .sourceId model.editCallsignState
                                 |> Maybe.andThen
                                     (\sourceId ->
                                         ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
@@ -5060,11 +5060,11 @@ editCallsignSidebarContent shared model user =
                                 selectItem
                                 model.editCallsignSourceSelState
                                 sourceMenu
-                                "Виберіть джерело"
+                                "Виберіть джерело (необов'язково)"
                                 (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
                                     |> (\opts ->
                                             { opts
-                                                | clearable = False
+                                                | clearable = True
                                             }
                                        )
                                 )
@@ -5145,7 +5145,7 @@ editCallsignSidebarContent shared model user =
                             |> Checkbox.view
                         ]
                     ]
-                , if (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2 then
+                , if (Maybe.andThen .sourceId model.editCallsignState) == Just 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
                         , input
@@ -5208,7 +5208,7 @@ editCallsignSidebarContent shared model user =
                                         |> Maybe.withDefault True
 
                                 isRO =
-                                    (Maybe.map .sourceId model.editCallsignState |> Maybe.withDefault 1) == 2
+                                    (Maybe.andThen .sourceId model.editCallsignState) == Just 2
 
                                 roFreqEmpty =
                                     if isRO then

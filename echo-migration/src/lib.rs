@@ -129,6 +129,7 @@ mod m20250822_190939_add_message_id;
 mod m20250823_115254_trim_callsigns;
 mod m20250823_182737_fix_network_freqs_format;
 mod m20250825_182526_rename_sources;
+mod m20250825_192410_make_callsign_sources_optional;
 
 pub struct Migrator;
 
@@ -265,6 +266,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250823_182737_fix_network_freqs_format::Migration),
             Box::new(m20250825_182526_rename_sources::Migration),
             Box::new(m20250822_190939_add_message_id::Migration),
+            Box::new(m20250825_192410_make_callsign_sources_optional::Migration),
         ]
     }
 }

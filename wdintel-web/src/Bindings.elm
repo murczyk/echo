@@ -875,7 +875,8 @@ radiosDownloadResultReqEncoder struct =
 
 
 type alias InboxMessage =
-    { text : String
+    { messageUid : Maybe String
+    , text : String
     , images : List String
     , imageRecognized : List String
     , date : Maybe String
@@ -908,7 +909,8 @@ type alias InboxMessage =
 inboxMessageEncoder : InboxMessage -> Json.Encode.Value
 inboxMessageEncoder struct =
     Json.Encode.object
-        [ ( "text", Json.Encode.string struct.text )
+        [ ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.messageUid )
+        , ( "text", Json.Encode.string struct.text )
         , ( "images", Json.Encode.list Json.Encode.string struct.images )
         , ( "image_recognized", Json.Encode.list Json.Encode.string struct.imageRecognized )
         , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.date )
@@ -3455,7 +3457,7 @@ type alias Callsign =
     , comment : String
     , unitId : Int
     , active : Bool
-    , sourceId : Int
+    , sourceId : Maybe Int
     , createdAt : Int
     , developing : Bool
     , radioFreq : Maybe String
@@ -3471,7 +3473,7 @@ callsignEncoder struct =
         , ( "comment", Json.Encode.string struct.comment )
         , ( "unit_id", Json.Encode.int struct.unitId )
         , ( "active", Json.Encode.bool struct.active )
-        , ( "source_id", Json.Encode.int struct.sourceId )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
         , ( "created_at", Json.Encode.int struct.createdAt )
         , ( "developing", Json.Encode.bool struct.developing )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
@@ -3635,7 +3637,7 @@ type alias CreateCallsignReq =
     , position : String
     , comment : String
     , unitId : Int
-    , sourceId : Int
+    , sourceId : Maybe Int
     , developing : Bool
     , radioFreq : Maybe String
     }
@@ -3648,7 +3650,7 @@ createCallsignReqEncoder struct =
         , ( "position", Json.Encode.string struct.position )
         , ( "comment", Json.Encode.string struct.comment )
         , ( "unit_id", Json.Encode.int struct.unitId )
-        , ( "source_id", Json.Encode.int struct.sourceId )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
         , ( "developing", Json.Encode.bool struct.developing )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         ]
@@ -3659,7 +3661,7 @@ type alias CreateNetworkCallsignReq =
     , callsign : String
     , position : Maybe String
     , comment : Maybe String
-    , sourceId : Int
+    , sourceId : Maybe Int
     , radioFreq : Maybe String
     , developing : Bool
     }
@@ -3672,7 +3674,7 @@ createNetworkCallsignReqEncoder struct =
         , ( "callsign", Json.Encode.string struct.callsign )
         , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.position )
         , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
-        , ( "source_id", Json.Encode.int struct.sourceId )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         , ( "developing", Json.Encode.bool struct.developing )
         ]
@@ -3752,7 +3754,7 @@ type alias UpdateNetworkCallsignReq =
     , callsign : String
     , position : Maybe String
     , comment : Maybe String
-    , sourceId : Int
+    , sourceId : Maybe Int
     , radioFreq : Maybe String
     , developing : Bool
     }
@@ -3766,7 +3768,7 @@ updateNetworkCallsignReqEncoder struct =
         , ( "callsign", Json.Encode.string struct.callsign )
         , ( "position", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.position )
         , ( "comment", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.comment )
-        , ( "source_id", Json.Encode.int struct.sourceId )
+        , ( "source_id", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sourceId )
         , ( "radio_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.radioFreq )
         , ( "developing", Json.Encode.bool struct.developing )
         ]
@@ -6159,6 +6161,7 @@ radiosDownloadResultReqDecoder =
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "images" (Json.Decode.list Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "image_recognized" (Json.Decode.list Json.Decode.string)))
@@ -7599,7 +7602,7 @@ callsignDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" Json.Decode.bool))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
@@ -7773,7 +7776,7 @@ createCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" Json.Decode.int))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
 
@@ -7785,7 +7788,7 @@ createNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
 
@@ -7832,7 +7835,7 @@ updateNetworkCallsignReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" Json.Decode.string))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_id" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "radio_freq" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "developing" Json.Decode.bool))
 
