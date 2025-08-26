@@ -215,7 +215,7 @@ pub async fn sync_groups(
                 }
                 .insert(dbx)
                 .await
-                .ok();
+                .c(h!())?;
                 println!(
                     "> whatsapp::sync_groups: created signal_group master_key={}, name={}",
                     signal_group.master_key, wg.name

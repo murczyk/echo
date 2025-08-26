@@ -234,7 +234,7 @@ pub async fn do_sync_state(
                     .context(h!())?
                     > 0;
                 if !exists {
-                    let _ = datasource_group::ActiveModel {
+                    datasource_group::ActiveModel {
                         id: NotSet,
                         group_master_key: Set(existing.master_key.clone()),
                         datasource_id: Set(datasource_id),
@@ -243,7 +243,7 @@ pub async fn do_sync_state(
                     }
                     .insert(dbx)
                     .await
-                    .ok();
+                    .c(h!())?;
                 }
             }
             None => {
@@ -267,7 +267,7 @@ pub async fn do_sync_state(
                 }
                 .insert(dbx)
                 .await
-                .ok();
+                .c(h!())?;
             }
         }
     }

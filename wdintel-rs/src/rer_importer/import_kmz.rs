@@ -63,7 +63,8 @@ pub async fn rer_delta_kmz_import(
         finished_with_error: Set(None),
     }
     .insert(&env.dbx)
-    .await?;
+    .await
+    .c(h!())?;
     let bgtask_id = bgtask.id;
 
     let dbx2 = env.dbx.clone();
@@ -161,7 +162,7 @@ pub async fn rer_delta_kmz_import_go(
         .one(dbx)
         .await
         .map(|m| m.map(|dg| dg.datasource_id))
-        .unwrap_or(None)
+        .c(h!())?
         .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
 
     let sender_name = config.signal_import_fiven_name.clone();
