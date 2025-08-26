@@ -1,4 +1,5 @@
 use crate::config::{read_config, Config};
+use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
 use crate::location::SettlementsData;
@@ -132,6 +133,70 @@ async fn sync_groups(
     }
     let unsorted_groups =
         echo_im::list_groups(client_name, txn).await.context(h!())?;
+    let datasource_groups = datasource_group::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let messenger_profiles = echo_client_lock::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            echo_client_lock::Relation::EchoClient.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            echo_client_lock::Relation::EchoAccount.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            echo_client_lock::Relation::Datasource.def(),
+        )
+        .filter(echo_client::Column::Name.eq(client_name))
+        .select_only()
+        .column(datasource::Column::Id)
+        .column(echo_account::Column::Source)
+        .into_tuple::<(i64, EchoMessageSource)>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    for g in unsorted_groups.clone() {
+        let datasource_ids = messenger_profiles
+            .iter()
+            .filter(|(_, source)| sources_eq(&g.message_source, source))
+            .map(|(id, _)| *id)
+            .collect_vec();
+        if datasource_ids.is_empty() {
+            continue;
+        }
+        if datasource_ids.len() > 2 {
+            warn!("unexpected datasource to messenger lock: message source for group {} is mapped to datasources {datasource_ids:?}", g.id);
+        }
+        let datasource_id = datasource_ids.into_iter().next().context(h!())?;
+        let datasource_group = datasource_groups
+            .iter()
+            .filter(|d| d.group_master_key.eq(&g.id))
+            .find(|d| d.datasource_id.eq(&datasource_id))
+            .cloned();
+        match datasource_group {
+            None => {
+                datasource_group::ActiveModel {
+                    id: NotSet,
+                    group_master_key: Set(g.id),
+                    datasource_id: Set(datasource_id),
+                    last_sync_at: NotSet,
+                    created_at: NotSet,
+                }
+                .insert(txn)
+                .await
+                .context(h!())?;
+            }
+            Some(rec) => {
+                let mut rec = rec.into_active_model();
+                rec.last_sync_at = Set(Utc::now().naive_utc());
+                rec.update(txn).await.context(h!())?;
+            }
+        }
+    }
+
     let mut groups = vec![];
     let mut deleted_groups = vec![];
     for g in unsorted_groups {
@@ -296,6 +361,15 @@ async fn sync_groups(
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
     Ok(())
 }
+
+fn sources_eq(s1: &MessageSource, s2: &EchoMessageSource) -> bool {
+    matches!(
+        (s1, s2),
+        (MessageSource::Signal, EchoMessageSource::Signal)
+            | (MessageSource::Whatsapp, EchoMessageSource::Whatsapp)
+    )
+}
+
 async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,

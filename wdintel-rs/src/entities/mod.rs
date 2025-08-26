@@ -10,6 +10,7 @@ pub mod callsign_lexeme;
 pub mod comp_freq;
 pub mod comp_freq_callsign;
 pub mod datasource;
+pub mod datasource_group;
 pub mod delta_kv;
 pub mod delta_login;
 pub mod echo_account;

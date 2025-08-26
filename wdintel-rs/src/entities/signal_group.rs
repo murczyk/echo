@@ -28,6 +28,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Datasource,
+    #[sea_orm(has_many = "super::datasource_group::Entity")]
+    DatasourceGroup,
     #[sea_orm(has_many = "super::group_admin_data::Entity")]
     GroupAdminData,
     #[sea_orm(has_many = "super::organism_group::Entity")]
@@ -43,6 +45,12 @@ pub enum Relation {
 impl Related<super::datasource::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Datasource.def()
+    }
+}
+
+impl Related<super::datasource_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DatasourceGroup.def()
     }
 }
 

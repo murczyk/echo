@@ -44,6 +44,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     AreaOfResponsibility,
+    #[sea_orm(has_many = "super::datasource_group::Entity")]
+    DatasourceGroup,
     #[sea_orm(
         belongs_to = "super::echo_client_lock::Entity",
         from = "Column::EchoClientLockId",
@@ -63,6 +65,12 @@ pub enum Relation {
 impl Related<super::area_of_responsibility::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AreaOfResponsibility.def()
+    }
+}
+
+impl Related<super::datasource_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DatasourceGroup.def()
     }
 }
 
