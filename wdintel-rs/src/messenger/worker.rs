@@ -159,35 +159,40 @@ async fn sync_groups(
         .await
         .context(h!())?;
     for g in unsorted_groups.clone() {
-        let datasource_id = messenger_profiles
+        let datasource_ids = messenger_profiles
             .iter()
             .filter(|(_, source)| sources_eq(&g.message_source, source))
             .map(|(id, _)| *id)
-            .next();
-        if let Some(datasource_id) = datasource_id {
-            let datasource_group = datasource_groups
-                .iter()
+            .collect_vec();
+        if datasource_ids.is_empty() {
+            continue;
+        }
+        if datasource_ids.len() > 2 {
+            warn!("unexpected datasource to messenger lock: message source for group {} is mapped to datasources {datasource_ids:?}", g.id);
+        }
+        let datasource_id = datasource_ids.into_iter().next().context(h!())?;
+        let datasource_group = datasource_groups
+            .iter()
                 .filter(|d| d.group_master_key == g.id)
-                .find(|d| d.datasource_id.eq(&datasource_id))
-                .cloned();
-            match datasource_group {
-                None => {
-                    datasource_group::ActiveModel {
-                        id: NotSet,
-                        group_master_key: Set(g.id),
-                        datasource_id: Set(datasource_id),
-                        last_sync_at: NotSet,
-                        created_at: NotSet,
-                    }
-                    .insert(txn)
-                    .await
-                    .context(h!())?;
+            .find(|d| d.datasource_id.eq(&datasource_id))
+            .cloned();
+        match datasource_group {
+            None => {
+                datasource_group::ActiveModel {
+                    id: NotSet,
+                    group_master_key: Set(g.id),
+                    datasource_id: Set(datasource_id),
+                    last_sync_at: NotSet,
+                    created_at: NotSet,
                 }
-                Some(rec) => {
-                    let mut rec = rec.into_active_model();
-                    rec.last_sync_at = Set(Utc::now().naive_utc());
-                    rec.update(txn).await.context(h!())?;
-                }
+                .insert(txn)
+                .await
+                .context(h!())?;
+            }
+            Some(rec) => {
+                let mut rec = rec.into_active_model();
+                rec.last_sync_at = Set(Utc::now().naive_utc());
+                rec.update(txn).await.context(h!())?;
             }
         }
     }
