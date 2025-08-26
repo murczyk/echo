@@ -12,6 +12,66 @@
     gap: 2rem !important;
 }
 
+/* Scrollable Tabs Navigation */
+.tabs-nav-scrollable {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: #d1d5db transparent !important;
+    -webkit-overflow-scrolling: touch !important;
+    scroll-behavior: smooth !important;
+    white-space: nowrap !important;
+    flex-wrap: nowrap !important;
+}
+
+/* Custom scrollbar for webkit browsers */
+.tabs-nav-scrollable::-webkit-scrollbar {
+    height: 6px !important;
+}
+
+.tabs-nav-scrollable::-webkit-scrollbar-track {
+    background: transparent !important;
+}
+
+.tabs-nav-scrollable::-webkit-scrollbar-thumb {
+    background-color: #d1d5db !important;
+    border-radius: 3px !important;
+}
+
+.tabs-nav-scrollable::-webkit-scrollbar-thumb:hover {
+    background-color: #9ca3af !important;
+}
+
+/* Dark theme scrollbar adjustments */
+[data-theme="dark"] .tabs-nav-scrollable {
+    scrollbar-color: #4b5563 transparent !important;
+}
+
+[data-theme="dark"] .tabs-nav-scrollable::-webkit-scrollbar-thumb {
+    background-color: #4b5563 !important;
+}
+
+[data-theme="dark"] .tabs-nav-scrollable::-webkit-scrollbar-thumb:hover {
+    background-color: #6b7280 !important;
+}
+
+/* Dark theme tab colors */
+[data-theme="dark"] .tab-button.active {
+    color: #60a5fa !important;
+}
+
+[data-theme="dark"] .tab-button:not(.active) {
+    color: #9ca3af !important;
+}
+
+[data-theme="dark"] .tab-button:not(.active):hover {
+    color: #d1d5db !important;
+}
+
+[data-theme="dark"] .tab-indicator {
+    background-color: #60a5fa !important;
+}
+
 /* Tab Button */
 .tab-button {
     position: relative !important;
@@ -24,6 +84,8 @@
     background: transparent !important;
     box-shadow: none !important;
     cursor: pointer !important;
+    flex-shrink: 0 !important;
+    min-width: fit-content !important;
 }
 
 /* Tab Button Focus State */
