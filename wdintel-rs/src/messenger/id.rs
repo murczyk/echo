@@ -143,10 +143,8 @@ pub async fn oneoff_assign_message_ids(
                     ids_to_insert.insert(id, mid);
                 }
                 Some(muid) => {
-                    if muid != mid {
-                        if dry_run {
-                            debug!("issue occurred on generating ID; expected ID to be {mid}, but present in db: {muid}")
-                        }
+                    if muid != mid && dry_run {
+                        debug!("issue occurred on generating ID; expected ID to be {mid}, but present in db: {muid}")
                     }
                 }
             }
