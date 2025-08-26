@@ -208,6 +208,20 @@ suite =
                             , \_ -> Unit.isSameOrChildUnit unit2 unit1 |> Expect.equal False
                             ]
                             ()
+                , test "🐛 КРИТИЧНО: Різні батальйони НЕ повинні вважатися пов'язаними" <|
+                    \_ ->
+                        let
+                            battalion1 =
+                                createUnit 28 "6А" "68 мсд" "122 мсп" "1 мсб" "" "1 мсб 122 мсп 68 мсд 6А"
+
+                            battalion2 =
+                                createUnit 29 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб 122 мсп 68 мсд 6А"
+                        in
+                        Expect.all
+                            [ \_ -> Unit.isSameOrChildUnit battalion1 battalion2 |> Expect.equal False
+                            , \_ -> Unit.isSameOrChildUnit battalion2 battalion1 |> Expect.equal False
+                            ]
+                            ()
                 ]
             ]
         ]
