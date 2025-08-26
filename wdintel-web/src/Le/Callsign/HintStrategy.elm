@@ -1,4 +1,4 @@
-module Le.Callsign.HintStrategy exposing (HintResult, HintStrategy(..), determineHintStrategy, determineHintStrategyForCallsign, getCallsignHints, getCallsignsForStrategy, getIconClass, isCallsignRelatedToNetworks)
+module Le.Callsign.HintStrategy exposing (HintContext(..), HintResult, HintStrategy(..), determineHintStrategy, determineHintStrategyForCallsign, getCallsignHints, getCallsignsForStrategy, getIconClass, isCallsignRelatedToNetworks)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -40,6 +40,13 @@ getAllUnitsIdsForNetworks networks =
 getUnitsInfoByIds : List Int -> Dict Int B.Unit -> List B.Unit
 getUnitsInfoByIds unitIds masterUnits =
     List.filterMap (\id_ -> Dict.get id_ masterUnits) unitIds
+
+
+{-| Контекст використання підказок
+-}
+type HintContext
+    = MessageContext   -- Для повідомлень: мережа → тільки мережеві підказки
+    | FrequencyContext -- Для частот: мережа → мережеві + каталогові підказки
 
 
 {-| Стратегія для показу підказок позивних
@@ -175,15 +182,16 @@ getIconClass strategy =
         NoHints ->
             ""
 
-{-| Головна функція для отримання підказок позивного
+{-| Головна функція для отримання підказок позивного з урахуванням контексту
 Об'єднує визначення стратегії та її застосування
 -}
 getCallsignHints :
-    { message | freq : Maybe String, networkIds : Maybe (List Int) }
+    HintContext
+    -> { message | freq : Maybe String, networkIds : Maybe (List Int) }
     -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit, callsignsInfo : Dict String (List B.CallsignInfo) }
     -> String
     -> HintResult
-getCallsignHints message context callsign =
+getCallsignHints hintContext message context callsign =
     let
         -- Отримуємо інформацію про цей конкретний позивний
         callsignInfo =
@@ -193,9 +201,9 @@ getCallsignHints message context callsign =
         networksByFreq =
             filterNetworksByFreq context.networks message.freq
 
-        -- Персонально визначаємо стратегію для цього позивного
+        -- Персонально визначаємо стратегію для цього позивного з урахуванням контексту
         strategy =
-            determineHintStrategyForCallsign message context callsignInfo networksByFreq
+            determineHintStrategyForCallsign hintContext message context callsignInfo networksByFreq
 
         prioritizedCallsigns =
             getCallsignsForStrategy strategy context.masterUnits context.callsignsInfo callsign
@@ -206,15 +214,16 @@ getCallsignHints message context callsign =
     }
 
 
-{-| Персонально визначає стратегію підказок для конкретного позивного
+{-| Персонально визначає стратегію підказок для конкретного позивного з урахуванням контексту
 -}
 determineHintStrategyForCallsign :
-    { message | freq : Maybe String, networkIds : Maybe (List Int) }
+    HintContext
+    -> { message | freq : Maybe String, networkIds : Maybe (List Int) }
     -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit }
     -> Maybe (List B.CallsignInfo)
     -> List B.Network
     -> HintStrategy
-determineHintStrategyForCallsign message context callsignInfo networksByFreq =
+determineHintStrategyForCallsign hintContext message context callsignInfo networksByFreq =
     let
         -- Якщо є мережа за частотою - перевіряємо чи цей позивний пов'язаний з нею
         hasNetworksByFreq =
@@ -237,8 +246,15 @@ determineHintStrategyForCallsign message context callsignInfo networksByFreq =
                 }
 
         else
-            -- Позивний не пов'язаний з мережею - показуємо SystemWide
-            SystemWide
+            -- 🎯 КЛЮЧОВА РІЗНИЦЯ: залежить від контексту
+            case hintContext of
+                MessageContext ->
+                    -- Для повідомлень: якщо позивний НЕ в мережі → NoHints
+                    NoHints
+
+                FrequencyContext ->
+                    -- Для частот: якщо позивний НЕ в мережі → SystemWide (каталог)
+                    SystemWide
         -- Якщо немає мережі за частотою, але є networkIds - використовуємо їх
 
     else if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then

@@ -114,7 +114,7 @@ suite =
                         context =
                             createContext networks masterUnits callsignsInfo
                     in
-                    HintStrategy.getCallsignHints message context "test"
+                    HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "test"
                         |> .strategy
                         |> Expect.equal
                             (HintStrategy.NetworkBased
@@ -137,7 +137,7 @@ suite =
                         context =
                             createContext networks Dict.empty Dict.empty
                     in
-                    HintStrategy.getCallsignHints message context "test"
+                    HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "test"
                         |> .strategy
                         |> Expect.equal HintStrategy.SystemWide
             ]
@@ -154,7 +154,7 @@ suite =
                         context =
                             createContext networks Dict.empty Dict.empty
                     in
-                    HintStrategy.getCallsignHints message context "test"
+                    HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "test"
                         |> .strategy
                         |> Expect.equal (HintStrategy.NetworkBased { networks = [], units = [] })
             , test "Коли оператор бачить повідомлення без частоти і без вказаних мереж, система показує підказки по всій системі" <|
@@ -169,7 +169,7 @@ suite =
                         context =
                             createContext networks Dict.empty Dict.empty
                     in
-                    HintStrategy.getCallsignHints message context "test"
+                    HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "test"
                         |> .strategy
                         |> Expect.equal HintStrategy.SystemWide
             ]
@@ -186,7 +186,7 @@ suite =
                         context =
                             createContext networks Dict.empty Dict.empty
                     in
-                    HintStrategy.getCallsignHints message context "test"
+                    HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "test"
                         |> .strategy
                         |> Expect.equal HintStrategy.SystemWide
             ]
@@ -214,7 +214,7 @@ suite =
                             createContext networks masterUnits callsignsInfo
 
                         result =
-                            HintStrategy.getCallsignHints message context "test"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "test"
                     in
                     Expect.all
                         [ \_ ->
@@ -264,11 +264,11 @@ suite =
 
                         -- Перевіряємо підказки для батьківського позивного
                         parentHints =
-                            HintStrategy.getCallsignHints message context "parent"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "parent"
 
                         -- Перевіряємо підказки для дитячого позивного
                         childHints =
-                            HintStrategy.getCallsignHints message context "child"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "child"
                     in
                     Expect.all
                         [ \_ ->
@@ -325,15 +325,15 @@ suite =
 
                         -- Перевіряємо позивний "apple"
                         appleHints =
-                            HintStrategy.getCallsignHints message context "apple"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "apple"
 
                         -- Перевіряємо позивний "banana"
                         bananaHints =
-                            HintStrategy.getCallsignHints message context "banana"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "banana"
 
                         -- Перевіряємо неіснуючий позивний
                         unknownHints =
-                            HintStrategy.getCallsignHints message context "unknown"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "unknown"
                     in
                     Expect.all
                         [ \_ ->
@@ -389,11 +389,11 @@ suite =
 
                         -- Запитуємо підказки для конкретного позивного "ЗЕВС"
                         zeusHints =
-                            HintStrategy.getCallsignHints message context "зевс"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "зевс"
 
                         -- Запитуємо підказки для конкретного позивного "АЛЬФА"
                         alfaHints =
-                            HintStrategy.getCallsignHints message context "альфа"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "альфа"
                     in
                     Expect.all
                         [ \_ ->
@@ -466,11 +466,11 @@ suite =
 
                         -- Тестуємо підказки для ЗЕВС (1 мсб)
                         zeusHints =
-                            HintStrategy.getCallsignHints message context "зевс"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "зевс"
 
                         -- Тестуємо підказки для АЛЬФА (2 мсб)
                         alfaHints =
-                            HintStrategy.getCallsignHints message context "альфа"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "альфа"
                     in
                     Expect.all
                         [ \_ ->
@@ -498,6 +498,125 @@ suite =
                         , \_ ->
                             -- АЛЬФА повинен мати 1 підказку (тільки свою)
                             List.length alfaHints.prioritizedCallsigns |> Expect.equal 1
+                        ]
+                        ()
+            ]
+        , describe "🧪 TDD: Різні контексти використання (MessageContext vs FrequencyContext)"
+            [ test "MessageContext: Повідомлення з мережею НЕ показує каталог для непов'язаних позивних" <|
+                \_ ->
+                    let
+                        -- Повідомлення з мережею (як в RerMessage.elm)
+                        message =
+                            { freq = Just "123.45", networkIds = Just [ 1 ] } -- ← Повідомлення ПРИВ'ЯЗАНЕ до мережі
+
+                        network =
+                            createNetwork 1 [ "123.45" ] [ 1 ] -- Мережа з 1 мсб
+
+                        networks =
+                            Dict.fromList [ ( 1, network ) ]
+
+                        unit1msb =
+                            createUnit 1 "6А" "68 мсд" "122 мсп" "1 мсб" "" "1 мсб 122 мсп 68 мсд 6А"
+
+                        unit2msb =
+                            createUnit 2 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб 122 мсп 68 мсд 6А"
+
+                        masterUnits =
+                            Dict.fromList [ ( 1, unit1msb ), ( 2, unit2msb ) ]
+
+                        callsignsInfo =
+                            Dict.fromList
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) ] )
+                                ]
+
+                        context =
+                            { networks = networks, masterUnits = masterUnits, callsignsInfo = callsignsInfo }
+
+                        -- В MessageContext: позивні НЕ з мережі повідомлення мають NoHints
+                        zeusHints =
+                            HintStrategy.getCallsignHints HintStrategy.MessageContext message context "зевс" -- В мережі
+
+                        alfaHints =
+                            HintStrategy.getCallsignHints HintStrategy.MessageContext message context "альфа" -- НЕ в мережі
+                    in
+                    Expect.all
+                        [ \_ ->
+                            -- ЗЕВС (в мережі повідомлення) → NetworkBased
+                            case zeusHints.strategy of
+                                HintStrategy.NetworkBased _ ->
+                                    Expect.pass
+
+                                _ ->
+                                    Expect.fail "ЗЕВС має бути NetworkBased"
+                        , \_ ->
+                            -- 🔥 TDD FAIL: АЛЬФА (НЕ в мережі повідомлення) → має бути NoHints, а не SystemWide
+                            case alfaHints.strategy of
+                                HintStrategy.NoHints ->
+                                    Expect.pass
+
+                                HintStrategy.SystemWide ->
+                                    Expect.fail "🔥 TDD FAIL: У MessageContext АЛЬФА не повинна показувати каталог (SystemWide), має бути NoHints"
+
+                                _ ->
+                                    Expect.fail "АЛЬФА має бути NoHints в MessageContext"
+                        ]
+                        ()
+            , test "FrequencyContext: Частота з мережею показує каталог для непов'язаних позивних" <|
+                \_ ->
+                    let
+                        -- Частота з мережею (як в RerFreqs.elm)
+                        message =
+                            { freq = Just "123.45", networkIds = Nothing } -- ← Частота БЕЗ прив'язки до мережі
+
+                        network =
+                            createNetwork 1 [ "123.45" ] [ 1 ] -- Мережа існує для частоти
+
+                        networks =
+                            Dict.fromList [ ( 1, network ) ]
+
+                        unit1msb =
+                            createUnit 1 "6А" "68 мсд" "122 мсп" "1 мсб" "" "1 мсб 122 мсп 68 мсд 6А"
+
+                        unit2msb =
+                            createUnit 2 "6А" "68 мсд" "122 мсп" "2 мсб" "" "2 мсб 122 мсп 68 мсд 6А"
+
+                        masterUnits =
+                            Dict.fromList [ ( 1, unit1msb ), ( 2, unit2msb ) ]
+
+                        callsignsInfo =
+                            Dict.fromList
+                                [ ( "зевс", [ createCallsignInfo 1 "ЗЕВС" "Командир 1 мсб" unit1msb.name "" (Just unit1msb.id) ] )
+                                , ( "альфа", [ createCallsignInfo 2 "АЛЬФА" "Командир 2 мсб" unit2msb.name "" (Just unit2msb.id) ] )
+                                ]
+
+                        context =
+                            { networks = networks, masterUnits = masterUnits, callsignsInfo = callsignsInfo }
+
+                        -- В FrequencyContext: позивні НЕ з мережі частоти мають SystemWide
+                        zeusHints =
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "зевс" -- В мережі частоти
+
+                        alfaHints =
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "альфа" -- НЕ в мережі частоти
+                    in
+                    Expect.all
+                        [ \_ ->
+                            -- ЗЕВС (в мережі частоти) → NetworkBased
+                            case zeusHints.strategy of
+                                HintStrategy.NetworkBased _ ->
+                                    Expect.pass
+
+                                _ ->
+                                    Expect.fail "ЗЕВС має бути NetworkBased"
+                        , \_ ->
+                            -- ✅ АЛЬФА (НЕ в мережі частоти) → має бути SystemWide (каталог)
+                            case alfaHints.strategy of
+                                HintStrategy.SystemWide ->
+                                    Expect.pass
+
+                                _ ->
+                                    Expect.fail "АЛЬФА має бути SystemWide в FrequencyContext"
                         ]
                         ()
             ]

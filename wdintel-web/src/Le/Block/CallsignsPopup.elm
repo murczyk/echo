@@ -50,7 +50,7 @@ getCallsignHintsNew freq networks params callsign =
         message = createMessageForFreq freq
         context = createHintContext networks params
     in
-    HintStrategy.getCallsignHints message context callsign
+    HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context callsign
 
 
 sortByPrio callsignWithPrioA callsignWithPrioB =
@@ -155,7 +155,7 @@ sortCallsigns2New network params =
         context = createHintContext Dict.empty params
     in
     params.callsigns
-        |> List.map (\callsign -> ( HintStrategy.getCallsignHints message context callsign, callsign ))
+        |> List.map (\callsign -> ( HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context callsign, callsign ))
         |> List.sortWith sortByPrioNew
 
 
