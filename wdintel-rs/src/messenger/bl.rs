@@ -245,6 +245,7 @@ pub async fn get_qr_code(
         .await
         .context(h!())?
         .into_iter()
+        .filter(|a| a.system_service_name.is_some())
         .find(|a| a.id.eq(&account_id));
 
     let account = match m_account {
