@@ -171,6 +171,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        datasource_group::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         signal_group::Entity::delete_many()
             .exec(&env.dbx)
             .await
