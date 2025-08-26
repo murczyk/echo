@@ -117,7 +117,7 @@ suite =
                             { networks = networks, masterUnits = masterUnits, callsignsInfo = callsignsInfo }
 
                         result =
-                            HintStrategy.getCallsignHints message context "зевс"
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "зевс"
                     in
                     Expect.all
                         [ \_ ->

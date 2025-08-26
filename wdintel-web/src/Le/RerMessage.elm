@@ -718,7 +718,7 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
         callsignBlock ( j, callsign ) =
             let
                 hintResult =
-                    Le.Callsign.HintStrategy.getCallsignHints message vps callsign
+                    Le.Callsign.HintStrategy.getCallsignHints Le.Callsign.HintStrategy.MessageContext message vps callsign
 
                 result =
                     if List.length hintResult.prioritizedCallsigns > 0 then
