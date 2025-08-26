@@ -471,7 +471,7 @@ where
                     sigint_inbox_item::Relation::SigintSearch.def(),
                 )
                 .filter(
-                    sea_query::Expr::col(sigint_search::Column::SearchTsv)
+                    sea_query::Expr::col((sigint_search::Entity, sigint_search::Column::SearchTsv))
                         .matches(Expr::cust_with_values(
                             "websearch_to_tsquery('russian', $1)",
                             vec![search_parts.ts_query.clone()],
