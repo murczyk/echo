@@ -11,6 +11,7 @@ import Le.Block.Callsign
 import Le.Block.Spinner
 import Le.Block.Unit
 import Le.Callsign
+import Le.Callsign.HintStrategy
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Utils exposing (..)
 import RerAnalysis.Model exposing (..)
@@ -221,27 +222,31 @@ sumTableBlock2 model shared route sumTable =
                             |> List.map
                                 (\callsign ->
                                     let
-                                        networksWithMessageFreq =
-                                            Le.Callsign.filterNetworksByFreq sharedNetworks (Just row.freq)
+                                        -- Створюємо message для частоти
+                                        message =
+                                            { freq = Just row.freq, networkIds = Nothing }
 
-                                        networksUnitIds =
-                                            Le.Callsign.getAllUnitsIdsForNetworks networksWithMessageFreq
+                                        -- Створюємо контекст для HintStrategy
+                                        context =
+                                            { networks = sharedNetworks
+                                            , masterUnits = masterUnitsDict
+                                            , callsignsInfo = model.callsignsInfoSumTable
+                                            }
 
-                                        networkUnits =
-                                            Le.Callsign.getUnitsInfoByIds networksUnitIds masterUnitsDict
-
-                                        prioritizeCallsignsPartial c =
-                                            Le.Callsign.prioritizeCallsigns masterUnitsDict networkUnits model.callsignsInfoSumTable c
-
-                                        prio =
-                                            prioritizeCallsignsPartial callsign
+                                        -- Використовуємо нову HintStrategy з FrequencyContext
+                                        hintResult =
+                                            Le.Callsign.HintStrategy.getCallsignHints 
+                                                Le.Callsign.HintStrategy.FrequencyContext 
+                                                message 
+                                                context 
+                                                callsign
 
                                         conditionMet =
-                                            List.length prio > 0
+                                            List.length hintResult.prioritizedCallsigns > 0
 
                                         result =
                                             if conditionMet then
-                                                Le.Block.Callsign.view callsign ( prio, [] )
+                                                Le.Block.Callsign.viewWithHintResult callsign hintResult
 
                                             else
                                                 Le.Block.Callsign.viewDefault callsign False
