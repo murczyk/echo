@@ -135,8 +135,12 @@ test-be:
     export RUSTC_WRAPPER=""
 
     echo "Running cargo clippy..."
-    # Lint all targets for this crate; fail on any warning
-    cargo clippy --all-targets --all-features -- -D warnings
+    # Lint all targets; fail on any warning. Use --release in CI to reuse artifacts.
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        cargo clippy --release --all-targets --all-features -- -D warnings
+    else
+        cargo clippy --all-targets --all-features -- -D warnings
+    fi
 
     # Check if we should use cached build
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
