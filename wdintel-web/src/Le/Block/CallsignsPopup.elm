@@ -7,6 +7,7 @@ import Html.Attributes exposing (..)
 import Le.Block.Callsign
 import Le.Block.Popup
 import Le.Callsign
+import Le.Callsign.HintStrategy as HintStrategy
 
 
 prioUnitsAccessor : ( List B.CallsignInfo, String ) -> List B.CallsignInfo
@@ -20,6 +21,36 @@ type alias Params a =
         , callsignsInfo : Dict String (List B.CallsignInfo)
         , callsigns : List String
     }
+
+
+{-| Допоміжна функція для конвертації параметрів у нову систему HintStrategy
+-}
+createHintContext : Dict Int B.Network -> Params a -> { networks : Dict Int B.Network, masterUnits : Dict Int B.Unit, callsignsInfo : Dict String (List B.CallsignInfo) }
+createHintContext networks params =
+    { networks = networks
+    , masterUnits = params.masterUnits
+    , callsignsInfo = params.callsignsInfo
+    }
+
+
+{-| Створює тестове повідомлення для частоти (для використання з HintStrategy)
+-}
+createMessageForFreq : String -> { freq : Maybe String, networkIds : Maybe (List Int) }
+createMessageForFreq freq =
+    { freq = Just freq
+    , networkIds = Nothing
+    }
+
+
+{-| Отримує підказки для позивного через нову систему HintStrategy
+-}
+getCallsignHintsNew : String -> Dict Int B.Network -> Params a -> String -> HintStrategy.HintResult
+getCallsignHintsNew freq networks params callsign =
+    let
+        message = createMessageForFreq freq
+        context = createHintContext networks params
+    in
+    HintStrategy.getCallsignHints message context callsign
 
 
 sortByPrio callsignWithPrioA callsignWithPrioB =
@@ -55,6 +86,31 @@ sortCallsigns freq networksDict params =
         |> List.sortWith sortByPrio
 
 
+{-| Нова функція сортування через HintStrategy (поки що не використовується)
+-}
+sortCallsignsNew : String -> Dict Int B.Network -> Params a -> List ( HintStrategy.HintResult, String )
+sortCallsignsNew freq networksDict params =
+    params.callsigns
+        |> List.map (\callsign -> ( getCallsignHintsNew freq networksDict params callsign, callsign ))
+        |> List.sortWith sortByPrioNew
+
+
+{-| Нова функція сортування для HintResult
+-}
+sortByPrioNew : ( HintStrategy.HintResult, String ) -> ( HintStrategy.HintResult, String ) -> Order
+sortByPrioNew callsignWithPrioA callsignWithPrioB =
+    let
+        lengthA = callsignWithPrioA |> Tuple.first |> .prioritizedCallsigns |> List.length
+        lengthB = callsignWithPrioB |> Tuple.first |> .prioritizedCallsigns |> List.length
+    in
+    if lengthA > lengthB then
+        LT
+    else if lengthA < lengthB then
+        GT
+    else
+        EQ
+
+
 sortCallsigns2 : B.Network -> Params a -> List ( List B.CallsignInfo, String )
 sortCallsigns2 network params =
     let
@@ -67,6 +123,20 @@ sortCallsigns2 network params =
     params.callsigns
         |> List.map (\callsign -> ( prioritizeCallsignsPartial callsign, callsign ))
         |> List.sortWith sortByPrio
+
+
+{-| Нова функція сортування для мережі через HintStrategy (поки що не використовується)
+-}
+sortCallsigns2New : B.Network -> Params a -> List ( HintStrategy.HintResult, String )
+sortCallsigns2New network params =
+    let
+        -- Створюємо повідомлення з networkIds
+        message = { freq = Nothing, networkIds = Just [ network.id ] }
+        context = createHintContext Dict.empty params
+    in
+    params.callsigns
+        |> List.map (\callsign -> ( HintStrategy.getCallsignHints message context callsign, callsign ))
+        |> List.sortWith sortByPrioNew
 
 
 type PopupCallerOrigin
@@ -90,16 +160,18 @@ view viewParams pageSpecific =
         sortedCallsigns =
             case pageSpecific of
                 FreqsPage freq networksDict ->
-                    sortCallsigns freq networksDict viewParams
+                    -- ✅ ВИПРАВЛЕННЯ: Використовуємо нову систему HintStrategy
+                    sortCallsignsNew freq networksDict viewParams
 
                 NetworksPage network ->
-                    sortCallsigns2 network viewParams
+                    -- ✅ ВИПРАВЛЕННЯ: Використовуємо нову систему HintStrategy
+                    sortCallsigns2New network viewParams
 
         ( callsignsWithUnits, callsignsWithoutUnits ) =
             let
-                hasUnits : ( List B.CallsignInfo, String ) -> Bool
+                hasUnits : ( HintStrategy.HintResult, String ) -> Bool
                 hasUnits callsignWithPrio =
-                    (prioUnitsAccessor callsignWithPrio |> List.length) > 0
+                    (callsignWithPrio |> Tuple.first |> .prioritizedCallsigns |> List.length) > 0
             in
             sortedCallsigns
                 |> List.partition hasUnits
@@ -162,7 +234,13 @@ viewCallsignsRow callsignsList =
     div [ class "flex flex-col gap-[4px]" ]
         (callsignsList
             |> List.take 3
-            |> List.map (\callsignWithPrio -> Le.Block.Callsign.view (callsignWithPrio |> Tuple.second) ( callsignWithPrio |> Tuple.first, [] ))
+            |> List.map (\callsignWithPrio -> 
+                let
+                    callsign = callsignWithPrio |> Tuple.second
+                    hintResult = callsignWithPrio |> Tuple.first
+                in
+                Le.Block.Callsign.viewWithHintResult callsign hintResult
+            )
         )
 
 
@@ -170,5 +248,11 @@ viewCallsignsGroup callsignsList =
     div [ class "callsigns-group" ]
         (callsignsList
             |> List.map
-                (\callsignWithPrio -> div [] [ Le.Block.Callsign.view (callsignWithPrio |> Tuple.second) ( callsignWithPrio |> Tuple.first, [] ) ])
+                (\callsignWithPrio -> 
+                    let
+                        callsign = callsignWithPrio |> Tuple.second
+                        hintResult = callsignWithPrio |> Tuple.first
+                    in
+                    div [] [ Le.Block.Callsign.viewWithHintResult callsign hintResult ]
+                )
         )

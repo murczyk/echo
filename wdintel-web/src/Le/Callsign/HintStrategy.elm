@@ -1,4 +1,4 @@
-module Le.Callsign.HintStrategy exposing (HintResult, HintStrategy(..), determineHintStrategy, getCallsignHints, getCallsignsForStrategy, getIconClass)
+module Le.Callsign.HintStrategy exposing (HintResult, HintStrategy(..), determineHintStrategy, determineHintStrategyForCallsign, getCallsignHints, getCallsignsForStrategy, getIconClass, isCallsignRelatedToNetworks)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -125,6 +125,42 @@ findCallsignUnit callsigns units =
             )
 
 
+{-| Перевіряє чи є позивний пов'язаний з мережевими юнітами
+-}
+isCallsignRelatedToNetworks : Maybe (List B.CallsignInfo) -> List B.Network -> Dict Int B.Unit -> Bool
+isCallsignRelatedToNetworks maybeCallsignInfo networks masterUnits =
+    case maybeCallsignInfo of
+        Nothing ->
+            False
+
+        Just callsignInfoList ->
+            if List.isEmpty callsignInfoList then
+                False
+
+            else
+                let
+                    -- Отримуємо всі юніти з мереж
+                    networkUnitIds =
+                        getAllUnitsIdsForNetworks networks
+
+                    networkUnits =
+                        getUnitsInfoByIds networkUnitIds masterUnits
+
+                    -- Знаходимо юніти для цього позивного
+                    callsignUnits =
+                        findCallsignUnit callsignInfoList (Dict.values masterUnits)
+
+                    -- Перевіряємо чи є хоча б один юніт позивного пов'язаний з мережевими юнітами
+                    isRelated =
+                        callsignUnits 
+                            |> List.any (\callsignUnit -> 
+                                networkUnits 
+                                    |> List.any (Unit.isSameOrChildUnit callsignUnit)
+                            )
+                in
+                isRelated
+
+
 {-| Отримує клас іконки для стратегії
 -}
 getIconClass : HintStrategy -> String
@@ -149,8 +185,17 @@ getCallsignHints :
     -> HintResult
 getCallsignHints message context callsign =
     let
+        -- Отримуємо інформацію про цей конкретний позивний
+        callsignInfo =
+            Dict.get (String.toLower callsign) context.callsignsInfo
+
+        -- Знаходимо мережі за частотою
+        networksByFreq =
+            filterNetworksByFreq context.networks message.freq
+
+        -- Персонально визначаємо стратегію для цього позивного
         strategy =
-            determineHintStrategy message context
+            determineHintStrategyForCallsign message context callsignInfo networksByFreq
 
         prioritizedCallsigns =
             getCallsignsForStrategy strategy context.masterUnits context.callsignsInfo callsign
@@ -161,7 +206,58 @@ getCallsignHints message context callsign =
     }
 
 
-{-| Визначає стратегію підказок на основі повідомлення та контексту
+{-| Персонально визначає стратегію підказок для конкретного позивного
+-}
+determineHintStrategyForCallsign :
+    { message | freq : Maybe String, networkIds : Maybe (List Int) }
+    -> { context | networks : Dict Int B.Network, masterUnits : Dict Int B.Unit }
+    -> Maybe (List B.CallsignInfo)
+    -> List B.Network
+    -> HintStrategy
+determineHintStrategyForCallsign message context callsignInfo networksByFreq =
+    let
+        -- Якщо є мережа за частотою - перевіряємо чи цей позивний пов'язаний з нею
+        hasNetworksByFreq =
+            not (List.isEmpty networksByFreq)
+    in
+    if hasNetworksByFreq then
+        let
+            -- Персонально перевіряємо чи цей позивний пов'язаний з мережевими юнітами
+            isRelated =
+                isCallsignRelatedToNetworks callsignInfo networksByFreq context.masterUnits
+        in
+        if isRelated then
+            let
+                networkUnits =
+                    getUnitsInfoByIds (getAllUnitsIdsForNetworks networksByFreq) context.masterUnits
+            in
+            NetworkBased
+                { networks = networksByFreq
+                , units = networkUnits
+                }
+
+        else
+            -- Позивний не пов'язаний з мережею - показуємо SystemWide
+            SystemWide
+        -- Якщо немає мережі за частотою, але є networkIds - використовуємо їх
+
+    else if Maybe.withDefault False (Maybe.map (not << List.isEmpty) message.networkIds) then
+        let
+            networkUnits =
+                getUnitsInfoByIds (Maybe.withDefault [] message.networkIds) context.masterUnits
+        in
+        NetworkBased
+            { networks = []
+            , units = networkUnits
+            }
+        -- Інакше показуємо підказки по всій системі
+
+    else
+        SystemWide
+
+
+{-| Візначає стратегію підказок на основі повідомлення та контексту
+ЗАСТАРІЛА ФУНКЦІЯ - замінена на determineHintStrategyForCallsign
 -}
 determineHintStrategy :
     { message | freq : Maybe String, networkIds : Maybe (List Int) }
