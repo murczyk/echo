@@ -316,6 +316,9 @@ type alias Model =
             , items : List (Select.MenuItem String)
             , selected : Maybe String
             }
+        
+        -- Delete confirmation dialog state
+        , deleteDescriptionConfirmation : Maybe B.NetworkDescription
     }
 
 
@@ -497,6 +500,9 @@ init route shared () =
             , items = []
             , selected = Nothing
             }
+        
+        -- Delete confirmation dialog initialization
+        , deleteDescriptionConfirmation = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -660,6 +666,10 @@ type Msg
     -- Input field management for editing descriptions
     | EditDescriptionInputChanged String
     | EditDescriptionFreqSelMsg (Select.Msg String)
+    
+    -- Delete confirmation dialog management
+    | DeleteDescriptionConfirmed B.NetworkDescription
+    | DeleteDescriptionCanceled
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1228,7 +1238,7 @@ update shared msg model =
             ( { model | signals = Success res.signals }, E.none )
 
         DescriptionDeleteClickedByUser description ->
-            ( model, E.networkDeleteDescription DescriptionDeleted { descriptionId = description.id, networkId = description.networkId } )
+            ( { model | deleteDescriptionConfirmation = Just description }, E.none )
 
         DescriptionEditClickedByUser description ->
             ( { model | editDescriptionSidebar = Just ( description.id, description ) }, E.none )
@@ -2650,6 +2660,15 @@ update shared msg model =
                     EditDescriptionFreqSelMsg
                     icmd
             )
+            
+        -- Delete confirmation dialog management
+        DeleteDescriptionConfirmed description ->
+            ( { model | deleteDescriptionConfirmation = Nothing }
+            , E.networkDeleteDescription DescriptionDeleted { descriptionId = description.id, networkId = description.networkId }
+            )
+            
+        DeleteDescriptionCanceled ->
+            ( { model | deleteDescriptionConfirmation = Nothing }, E.none )
 
 
 
@@ -4222,7 +4241,7 @@ contentBlock user shared network model =
                             |> Button.withStyleSecondary
                             |> Button.view
                         ]
-                    , div [ class "max-h-[200px] overflow-y-auto" ]
+                    , div [ class "max-h-[350px] overflow-y-auto" ]
                         (List.map
                             (\description ->
                                 div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
@@ -4293,7 +4312,7 @@ contentBlock user shared network model =
                             |> Button.withStyleSecondary
                             |> Button.view
                         ]
-                    , div [ class "max-h-[200px] overflow-y-auto" ]
+                    , div [ class "max-h-[350px] overflow-y-auto" ]
                         (List.map
                             (\description ->
                                 div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
@@ -4809,6 +4828,23 @@ view user shared model =
                         ]
                   in
                   ModalDialog.modalDialog (model.deleteCallsignConfirmation /= Nothing) DeleteCallsignCanceled [] deleteCallsignDialogContent
+                , let
+                    deleteDescriptionDialogContent =
+                        [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                            [ div [ class "pb-6" ]
+                                [ h2 [] [ text "Видалити обґрунтування" ]
+                                , p [] [ text "Ви впевнені, що хочете видалити це обґрунтування?" ]
+                                ]
+                            , div [ class "flex justify-between" ]
+                                [ Button.new { label = "Скасувати", onClick = DeleteDescriptionCanceled } |> Button.withStyleSecondary |> Button.view
+                                , Button.new { label = "Видалити", onClick = DeleteDescriptionConfirmed (Maybe.withDefault (B.NetworkDescription 0 0 Nothing B.Confirmation "" "" 0) model.deleteDescriptionConfirmation) }
+                                    |> Button.withStyleDanger
+                                    |> Button.view
+                                ]
+                            ]
+                        ]
+                  in
+                  ModalDialog.modalDialog (model.deleteDescriptionConfirmation /= Nothing) DeleteDescriptionCanceled [] deleteDescriptionDialogContent
                 ]
             ]
         ]
