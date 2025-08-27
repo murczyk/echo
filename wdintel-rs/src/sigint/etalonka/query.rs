@@ -1,7 +1,7 @@
 use crate::entities::*;
 use crate::error::AppError;
-use crate::sigint::signal::types::Signal;
 use crate::sigint::network::types::ListNetworksSortBy;
+use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
 use actix_web::web::Json;
@@ -1195,7 +1195,6 @@ async fn get_map_image(
 
 pub async fn load_networks(
     db: &DatabaseConnection,
-    groups: Vec<String>,
     req: &Json<EtalonkaJimForksReq>,
 ) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
     let mut networks = sigint_network::Entity::find()
@@ -1266,7 +1265,7 @@ pub async fn load_networks(
                     sigint_network_aor::Column::AorId.is_in(aor_ids.clone()),
                 );
         }
-    }    
+    }
 
     if let Some(filter_freq) = &req.req.filter_freq {
         let subquery = sigint_network_freq::Entity::find()

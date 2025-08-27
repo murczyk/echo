@@ -52,9 +52,7 @@ pub async fn report_networks(
     .await?;
 
     let networks_data: HashMap<String, Vec<NetworkEtalonkaResult>> =
-        load_networks(&env.dbx, groups.clone(), &req)
-            .await
-            .context(h!())?;
+        load_networks(&env.dbx, &req).await.context(h!())?;
 
     let filename =
         format!("report_{}.docx", Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"));
