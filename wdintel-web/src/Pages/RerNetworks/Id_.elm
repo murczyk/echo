@@ -1750,7 +1750,14 @@ update shared msg model =
                             , sourceId = Nothing -- No default source ID
                             , radioFreq = Nothing
                             , developing = False
-                            , unitId = Nothing
+                            , unitId = 
+                                -- Автоматично встановлюємо перший підрозділ мережі
+                                case model.editUnitsSelect.selected of
+                                    firstUnitId :: _ ->
+                                        Just firstUnitId
+                                    
+                                    [] ->
+                                        Nothing
                             , unitDeveloping = False
                             }
                     in
@@ -1870,11 +1877,12 @@ update shared msg model =
                 updatedUnitId =
                     Le.Block.Select.singleUpd mAction (Maybe.andThen .unitId model.callsignCreateState)
                 
-                -- Закриваємо селект коли щось вибрано
+                -- Закриваємо селект тільки коли користувач дійсно вибрав підрозділ
                 shouldCloseSelector =
                     case mAction of
-                        Just _ -> True
-                        Nothing -> False
+                        Just (Select.Select _) -> True
+                        Just Select.Clear -> True
+                        _ -> False
             in
             ( { model
                 | callsignCreateUnitSelState = imodel2
@@ -1895,7 +1903,18 @@ update shared msg model =
             ( { model 
                 | callsignCreateUnitSelectorVisible = False
                 , callsignCreateState = 
-                    Maybe.map (\state -> { state | unitId = Nothing }) model.callsignCreateState
+                    Maybe.map (\state -> 
+                        { state | 
+                            unitId = 
+                                -- Повертаємо до першого підрозділу мережі
+                                case model.editUnitsSelect.selected of
+                                    firstUnitId :: _ ->
+                                        Just firstUnitId
+                                    
+                                    [] ->
+                                        Nothing
+                        }
+                    ) model.callsignCreateState
               }
             , E.none
             )
@@ -2394,11 +2413,12 @@ update shared msg model =
                 updatedUnitId =
                     Le.Block.Select.singleUpd mAction (Maybe.andThen .unitId model.editCallsignState)
                 
-                -- Закриваємо селект коли щось вибрано
+                -- Закриваємо селект тільки коли користувач дійсно вибрав підрозділ
                 shouldCloseSelector =
                     case mAction of
-                        Just _ -> True
-                        Nothing -> False
+                        Just (Select.Select _) -> True
+                        Just Select.Clear -> True
+                        _ -> False
             in
             ( { model
                 | editCallsignUnitSelState = imodel2
@@ -2419,7 +2439,18 @@ update shared msg model =
             ( { model 
                 | editCallsignUnitSelectorVisible = False
                 , editCallsignState = 
-                    Maybe.map (\state -> { state | unitId = Nothing }) model.editCallsignState
+                    Maybe.map (\state -> 
+                        { state | 
+                            unitId = 
+                                -- Повертаємо до першого підрозділу мережі
+                                case model.editUnitsSelect.selected of
+                                    firstUnitId :: _ ->
+                                        Just firstUnitId
+                                    
+                                    [] ->
+                                        Nothing
+                        }
+                    ) model.editCallsignState
               }
             , E.none
             )
@@ -2436,7 +2467,14 @@ update shared msg model =
                             , sourceId = Nothing -- No default source ID
                             , radioFreq = Nothing
                             , developing = False
-                            , unitId = Nothing
+                            , unitId = 
+                                -- Автоматично встановлюємо перший підрозділ мережі
+                                case model.editUnitsSelect.selected of
+                                    firstUnitId :: _ ->
+                                        Just firstUnitId
+                                    
+                                    [] ->
+                                        Nothing
                             , unitDeveloping = False
                             }
                     in
@@ -4988,7 +5026,20 @@ callsignCreateSidebarContent shared model user =
                                             "Завантаження..."
                                 
                                 Nothing ->
-                                    "Підрозділ мережі"
+                                    -- Показуємо назву першого підрозділу мережі
+                                    case model.editUnitsSelect.selected of
+                                        firstUnitId :: _ ->
+                                            case shared.masterUnits of
+                                                Success units ->
+                                                    Dict.get firstUnitId units
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault "Підрозділ мережі"
+                                                
+                                                _ ->
+                                                    "Підрозділ мережі"
+                                        
+                                        [] ->
+                                            "Підрозділ мережі"
                               ) ]
                         , button 
                             [ type_ "button"
@@ -5290,7 +5341,20 @@ editCallsignSidebarContent shared model user =
                                             "Завантаження..."
                                 
                                 Nothing ->
-                                    "Підрозділ мережі"
+                                    -- Показуємо назву першого підрозділу мережі
+                                    case model.editUnitsSelect.selected of
+                                        firstUnitId :: _ ->
+                                            case shared.masterUnits of
+                                                Success units ->
+                                                    Dict.get firstUnitId units
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault "Підрозділ мережі"
+                                                
+                                                _ ->
+                                                    "Підрозділ мережі"
+                                        
+                                        [] ->
+                                            "Підрозділ мережі"
                               ) ]
                         , button 
                             [ type_ "button"
