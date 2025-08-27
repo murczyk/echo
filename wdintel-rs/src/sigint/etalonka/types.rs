@@ -1,3 +1,4 @@
+use crate::sigint::network::types::{ListNetworksReq, ListNetworksSortBy};
 use crate::sigint::signal::types::Signal;
 use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -9,11 +10,7 @@ use std::cmp::Ordering;
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct EtalonkaJimForksReq {
-    pub since_date_inclusive_ms: Option<i64>,
-    pub till_date_noninclusive_ms: Option<i64>,
-    pub filter_freq: Option<String>,
-    pub filter_unit: Option<String>,
-    pub sort_by: Option<Vec<EtalonkaJimForksSortBy>>,
+    pub req: ListNetworksReq,
     pub settings: EtalonkaSettings,
 }
 
@@ -27,14 +24,6 @@ pub struct EtalonkaSettings {
     pub include_pelengs_map: bool,
     pub include_sigint_signs: bool,
     pub include_confirmation: bool,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub enum EtalonkaJimForksSortBy {
-    NetworkNameAsc,
-    NetworkNameDesc,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -224,6 +213,6 @@ impl PartialOrd for KnownCallsignShortRes {
 )]
 pub struct EtalonkaNetworkBatchReq {
     pub network_ids: Vec<i64>,
-    pub sort_by: Option<Vec<EtalonkaJimForksSortBy>>,
+    pub sort_by: Option<Vec<ListNetworksSortBy>>,
     pub settings: EtalonkaSettings,
 }

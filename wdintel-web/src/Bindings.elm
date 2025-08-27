@@ -3785,11 +3785,7 @@ updateNetworkCallsignReqEncoder struct =
 
 
 type alias EtalonkaJimForksReq =
-    { sinceDateInclusiveMs : Maybe Int
-    , tillDateNoninclusiveMs : Maybe Int
-    , filterFreq : Maybe String
-    , filterUnit : Maybe String
-    , sortBy : Maybe (List EtalonkaJimForksSortBy)
+    { req : ListNetworksReq
     , settings : EtalonkaSettings
     }
 
@@ -3797,28 +3793,9 @@ type alias EtalonkaJimForksReq =
 etalonkaJimForksReqEncoder : EtalonkaJimForksReq -> Json.Encode.Value
 etalonkaJimForksReqEncoder struct =
     Json.Encode.object
-        [ ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.sinceDateInclusiveMs )
-        , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.tillDateNoninclusiveMs )
-        , ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterFreq )
-        , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.filterUnit )
-        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list etalonkaJimForksSortByEncoder)) struct.sortBy )
+        [ ( "req", listNetworksReqEncoder struct.req )
         , ( "settings", etalonkaSettingsEncoder struct.settings )
         ]
-
-
-type EtalonkaJimForksSortBy
-    = NetworkNameAsc
-    | NetworkNameDesc
-
-
-etalonkaJimForksSortByEncoder : EtalonkaJimForksSortBy -> Json.Encode.Value
-etalonkaJimForksSortByEncoder enum =
-    case enum of
-        NetworkNameAsc ->
-            Json.Encode.string "NetworkNameAsc"
-
-        NetworkNameDesc ->
-            Json.Encode.string "NetworkNameDesc"
 
 
 type alias EtalonkaSettings =
@@ -3843,7 +3820,7 @@ etalonkaSettingsEncoder struct =
 
 type alias EtalonkaNetworkBatchReq =
     { networkIds : List Int
-    , sortBy : Maybe (List EtalonkaJimForksSortBy)
+    , sortBy : Maybe (List ListNetworksSortBy)
     , settings : EtalonkaSettings
     }
 
@@ -3852,7 +3829,7 @@ etalonkaNetworkBatchReqEncoder : EtalonkaNetworkBatchReq -> Json.Encode.Value
 etalonkaNetworkBatchReqEncoder struct =
     Json.Encode.object
         [ ( "network_ids", Json.Encode.list Json.Encode.int struct.networkIds )
-        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list etalonkaJimForksSortByEncoder)) struct.sortBy )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list listNetworksSortByEncoder)) struct.sortBy )
         , ( "settings", etalonkaSettingsEncoder struct.settings )
         ]
 
@@ -7858,38 +7835,8 @@ updateNetworkCallsignReqDecoder =
 etalonkaJimForksReqDecoder : Json.Decode.Decoder EtalonkaJimForksReq
 etalonkaJimForksReqDecoder =
     Json.Decode.succeed EtalonkaJimForksReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list etalonkaJimForksSortByDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" listNetworksReqDecoder))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
-
-
-etalonkaJimForksSortByDecoder : Json.Decode.Decoder EtalonkaJimForksSortBy
-etalonkaJimForksSortByDecoder =
-    Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "NetworkNameAsc" ->
-                            Json.Decode.succeed NetworkNameAsc
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "NetworkNameDesc" ->
-                            Json.Decode.succeed NetworkNameDesc
-
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        ]
 
 
 etalonkaSettingsDecoder : Json.Decode.Decoder EtalonkaSettings
@@ -7906,7 +7853,7 @@ etalonkaNetworkBatchReqDecoder : Json.Decode.Decoder EtalonkaNetworkBatchReq
 etalonkaNetworkBatchReqDecoder =
     Json.Decode.succeed EtalonkaNetworkBatchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list etalonkaJimForksSortByDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list listNetworksSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" etalonkaSettingsDecoder))
 
 
