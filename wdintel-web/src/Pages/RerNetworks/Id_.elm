@@ -197,6 +197,9 @@ type alias CallsignTableRow =
     }
 
 
+type ShowAllPopupFor
+    = ShowAllComment
+
 type FreqActivityFilter
     = AllFreqs
     | ActiveFreqs
@@ -293,8 +296,11 @@ type alias Model =
 
     -- Developing callsigns dropdown
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
-    -- Unknown callsigns dropdown
-    , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+            -- Unknown callsigns dropdown
+        , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+        
+        -- Row show all popup status for comments
+        , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
     }
 
 
@@ -458,6 +464,9 @@ init route shared () =
         , developingCallsignDropdown = Nothing
         -- Unknown callsigns dropdown initialization
         , unknownCallsignDropdown = Nothing
+        
+        -- Row show all popup status initialization
+        , rowShowAllPopupStatus = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -606,6 +615,7 @@ type Msg
     | DeleteCallsignConfirmed Int -- Підтвердження видалення позивного
     | DeleteCallsignCanceled -- Скасування видалення позивного
     | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
+    | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor )) -- Зміна статусу popup для показу повного коментаря
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -2496,6 +2506,11 @@ update shared msg model =
         NetworkCallsignsSearchChanged query ->
             ( { model | networkCallsignsSearchQuery = query }, E.none )
 
+        RowShowAllPopupChanged popupStatus ->
+            ( { model | rowShowAllPopupStatus = popupStatus }
+            , E.none
+            )
+
 
 
 -- SUBSCRIPTIONS
@@ -2933,7 +2948,56 @@ callsignsTableConfig shared model user =
                 |> Table.withColumnWidth "18%"
             , Table.veryCustomColumn
                 { name = "Коментар"
-                , viewData = \row -> { attributes = [], children = [ text row.comment ] }
+                , viewData = \row -> 
+                    { attributes = [ class "relative" ]
+                    , children = 
+                        [ div [ class "flex flex-col gap-2" ]
+                            [ div
+                                [ class "comment-preview"
+                                , style "max-height" "4.5rem" -- ~3 рядки
+                                , style "overflow" "hidden"
+                                , style "white-space" "pre-line"
+                                ]
+                                [ text row.comment ]
+                            , if String.length row.comment > 100 then
+                                let
+                                    isOpen =
+                                        case model.rowShowAllPopupStatus of
+                                            Just ( callsignId, ShowAllComment ) ->
+                                                callsignId == row.id
+
+                                            _ ->
+                                                False
+                                in
+                                Popup.new
+                                    { body =
+                                        span
+                                            [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                            ]
+                                            [ text "Показати повністю"
+                                            , i [ class "bi bi-chevron-down text-xs" ] []
+                                            ]
+                                    , popupBody =
+                                        div [ class "comment-popup-content p-4" ]
+                                            [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                    [ text "Повний коментар" ]
+                                                ]
+                                            , div [ class "whitespace-pre-line text-sm" ]
+                                                [ text row.comment ]
+                                            ]
+                                    , isOpen = isOpen
+                                    , onClose = RowShowAllPopupChanged Nothing
+                                    , onOpen = RowShowAllPopupChanged <| Just ( row.id, ShowAllComment )
+                                    , disabled = False
+                                    }
+                                    |> Popup.view
+
+                              else
+                                text ""
+                            ]
+                        ]
+                    }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "20%"
@@ -3075,7 +3139,7 @@ networkCallsignsTableConfig shared model user =
                         unitContent = 
                             if row.unitDeveloping then
                                 [ text unitText
-                                , span [ class "ml-2 text-xs text-orange-600 bg-orange-100 dark:bg-orange-900 dark:text-orange-300 px-2 py-1 rounded" ] 
+                                , span [ class "ml-2 badge badge-no-unit" ] 
                                     [ text "в дорозвідці" ]
                                 ]
                             else
@@ -3087,7 +3151,56 @@ networkCallsignsTableConfig shared model user =
                 |> Table.withColumnWidth "16%"
             , Table.veryCustomColumn
                 { name = "Коментар"
-                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.comment) ] }
+                , viewData = \row -> 
+                    { attributes = [ class "relative" ]
+                    , children = 
+                        [ div [ class "flex flex-col gap-2" ]
+                            [ div
+                                [ class "comment-preview"
+                                , style "max-height" "4.5rem" -- ~3 рядки
+                                , style "overflow" "hidden"
+                                , style "white-space" "pre-line"
+                                ]
+                                [ text (Maybe.withDefault "-" row.comment) ]
+                            , if String.length (Maybe.withDefault "" row.comment) > 100 then
+                                let
+                                    isOpen =
+                                        case model.rowShowAllPopupStatus of
+                                            Just ( callsignId, ShowAllComment ) ->
+                                                callsignId == row.id
+
+                                            _ ->
+                                                False
+                                in
+                                Popup.new
+                                    { body =
+                                        span
+                                            [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                            ]
+                                            [ text "Показати повний коментар"
+                                            , i [ class "bi bi-chevron-down text-xs" ] []
+                                            ]
+                                    , popupBody =
+                                        div [ class "comment-popup-content p-4" ]
+                                            [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                    [ text "Повний коментар" ]
+                                                ]
+                                            , div [ class "whitespace-pre-line text-sm" ]
+                                                [ text (Maybe.withDefault "-" row.comment) ]
+                                            ]
+                                    , isOpen = isOpen
+                                    , onClose = RowShowAllPopupChanged Nothing
+                                    , onOpen = RowShowAllPopupChanged <| Just ( row.id, ShowAllComment )
+                                    , disabled = False
+                                    }
+                                    |> Popup.view
+
+                              else
+                                text ""
+                            ]
+                        ]
+                    }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "15%"
