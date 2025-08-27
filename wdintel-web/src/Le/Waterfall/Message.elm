@@ -13,7 +13,7 @@ import Json.Encode as Encode
 import Le.Auth
 import Le.Block.MarkedText
 import Le.Block.Unit
-import Le.Callsign
+import Le.Callsign.HintStrategy
 import Le.Config
 import Le.ErrorHandling
 import Le.RerMessage
@@ -917,33 +917,42 @@ rightColumn ( messageId, message ) ps model =
                         ++ (case message.textMarked of
                                 Just textMarked ->
                                     let
-                                        networksWithMessageFreq =
-                                            Le.Callsign.filterNetworksByFreq ps.networks message.freq
+                                        -- Створюємо контекст для HintStrategy
+                                        context =
+                                            { networks = ps.networks
+                                            , masterUnits = ps.masterUnits
+                                            , callsignsInfo = ps.callsignsInfo
+                                            }
 
-                                        networksUnitIds =
-                                            Le.Callsign.getAllUnitsIdsForNetworks networksWithMessageFreq
+                                        -- Створюємо message для HintStrategy
+                                        messageForHints =
+                                            { freq = message.freq
+                                            , networkIds = 
+                                                if List.isEmpty ps.messageNetworkIds then
+                                                    Nothing  -- Немає мережі → MessageContext не показує каталог
+                                                else
+                                                    Just ps.messageNetworkIds  -- Є мережа → показуємо тільки мережеві підказки
+                                            }
 
-                                        networkUnits =
-                                            Le.Callsign.getUnitsInfoByIds networksUnitIds ps.masterUnits
-
-                                        --TODO: remove partial to parent module and leave eonly adding callsign
-                                        prioritizeCallsignsPartial callsign =
-                                            Le.Callsign.prioritizeCallsigns ps.masterUnits networkUnits ps.callsignsInfo callsign
-
-                                        prioritizedCallsignsDict =
+                                        hintResultsDict =
                                             message.callsigns
                                                 |> List.foldl
                                                     (\callsign dict ->
                                                         let
-                                                            prio =
-                                                                prioritizeCallsignsPartial callsign
+                                                            -- Використовуємо нову HintStrategy з MessageContext
+                                                            hintResult =
+                                                                Le.Callsign.HintStrategy.getCallsignHints 
+                                                                    Le.Callsign.HintStrategy.MessageContext 
+                                                                    messageForHints 
+                                                                    context 
+                                                                    callsign
                                                         in
-                                                        Dict.insert callsign ( prio, [] ) dict
+                                                        Dict.insert callsign hintResult dict
                                                     )
                                                     Dict.empty
                                     in
                                     Le.Block.MarkedText.new textMarked
-                                        |> Le.Block.MarkedText.view prioritizedCallsignsDict (Just ps.signals) (Dict.values ps.networks) message.freq
+                                        |> Le.Block.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq
 
                                 Nothing ->
                                     msgToHtml message.text

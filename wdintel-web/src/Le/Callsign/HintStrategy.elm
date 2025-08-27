@@ -45,7 +45,7 @@ getUnitsInfoByIds unitIds masterUnits =
 {-| Контекст використання підказок
 -}
 type HintContext
-    = MessageContext   -- Для повідомлень: мережа → тільки мережеві підказки
+    = MessageContext -- Для повідомлень: мережа → тільки мережеві підказки
     | FrequencyContext -- Для частот: мережа → мережеві + каталогові підказки
 
 
@@ -102,7 +102,7 @@ getCallsignsForStrategy strategy masterUnits callsignsInfo callsign =
 {-| Фільтрує позивні по зв'язку з мережевими юнітами
 -}
 filterCallsignsByNetworkUnits : List B.CallsignInfo -> Dict Int B.Unit -> List B.Unit -> List B.CallsignInfo
-filterCallsignsByNetworkUnits callsigns masterUnits networkUnits  =
+filterCallsignsByNetworkUnits callsigns masterUnits networkUnits =
     let
         callsignsUnits =
             findCallsignUnit callsigns (Dict.values masterUnits)
@@ -159,11 +159,12 @@ isCallsignRelatedToNetworks maybeCallsignInfo networks masterUnits =
 
                     -- Перевіряємо чи є хоча б один юніт позивного пов'язаний з мережевими юнітами
                     isRelated =
-                        callsignUnits 
-                            |> List.any (\callsignUnit -> 
-                                networkUnits 
-                                    |> List.any (Unit.isSameOrChildUnit callsignUnit)
-                            )
+                        callsignUnits
+                            |> List.any
+                                (\callsignUnit ->
+                                    networkUnits
+                                        |> List.any (Unit.isSameOrChildUnit callsignUnit)
+                                )
                 in
                 isRelated
 
@@ -176,11 +177,12 @@ getIconClass strategy =
         NetworkBased _ ->
             "bi-info-circle-fill"
 
-        SystemWide  ->
+        SystemWide ->
             "bi-info-circle"
 
         NoHints ->
             ""
+
 
 {-| Головна функція для отримання підказок позивного з урахуванням контексту
 Об'єднує визначення стратегії та її застосування
