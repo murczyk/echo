@@ -4244,59 +4244,68 @@ contentBlock user shared network model =
                           else
                             text ""
                         ]
-                    , div [ class "max-h-[350px] overflow-y-auto" ]
+                    , div [ class "max-h-[350px] overflow-y-auto", style "scrollbar-width" "thin", style "scrollbar-color" "#d1d5db #f3f4f6", style "scroll-padding" "8px", style "scroll-margin" "8px" ]
                         (List.map
                             (\description ->
-                                div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
-                                    [ div [ class "flex justify-between items-center " ]
-                                        [ div [ class "opacity-70 flex gap-[4px] items-center" ]
-                                            [ span [] [ text description.login ]
-                                            , span [] [ text "|" ]
-                                            , span [ class "text-[13px]" ] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
-                                            , span [ class "text-[13px]" ]
-                                                [ description.networkFrequencyId
-                                                    |> Maybe.andThen
-                                                        (\freqId ->
-                                                            ListX.find (\freq -> freq.id == freqId) network.freqs
-                                                        )
-                                                    |> Maybe.map .freq
-                                                    |> (\mFreq ->
-                                                            case mFreq of
-                                                                Just f ->
-                                                                    text ("| " ++ f)
-
-                                                                Nothing ->
-                                                                    text ""
-                                                       )
+                                div [ class "min-h-[60px] border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-3 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200" ]
+                                    [ div [ class "flex justify-between items-start mb-3" ]
+                                        [ div [ class "flex flex-col gap-1" ]
+                                            [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
+                                                                                            (List.concat
+                                                [ [ i [ class "bi bi-person-circle text-blue-500" ] []
+                                                , span [ class "font-medium" ] [ text description.login ]
+                                                , span [ class "text-gray-400" ] [ text "•" ]
+                                                , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
                                                 ]
+                                                , if description.networkFrequencyId /= Nothing then
+                                                    [ span [ class "text-gray-400" ] [ text "•" ]
+                                                    , span [ class "text-blue-600 dark:text-blue-400 font-medium" ] 
+                                                        [ text <| Maybe.withDefault "" 
+                                                            (description.networkFrequencyId
+                                                                |> Maybe.andThen
+                                                                    (\freqId ->
+                                                                        ListX.find (\freq -> freq.id == freqId) network.freqs
+                                                                    )
+                                                                |> Maybe.map .freq
+                                                            )
+                                                        ]
+                                                    ]
+                                                  else
+                                                    []
+                                                ]
+                                            )
                                             ]
-                                        , div [ class "flex gap-[8px]" ]
+                                        , div [ class "flex gap-2" ]
                                             (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
                                                 [ case Dict.get description.id model.descriptionsEditDict of
                                                     Just desc ->
-                                                        i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+                                                        button [ class "p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditSave desc, title "Зберегти зміни" ] 
+                                                            [ i [ class "bi bi-check2 text-lg" ] [] ]
 
                                                     Nothing ->
-                                                        i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
-                                                , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                                        button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ] 
+                                                            [ i [ class "bi bi-pencil text-lg" ] [] ]
+                                                , button [ class "p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ] 
+                                                    [ i [ class "bi bi-trash text-lg" ] [] ]
                                                 ]
                                               else
                                                 []
                                             )
                                         ]
-                                    , div []
+                                    , div [ class "mt-2" ]
                                         [ case Dict.get description.id model.descriptionsEditDict of
                                             Just desc ->
                                                 textarea
-                                                    [ class "textarea__field"
+                                                    [ class "w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                                                     , placeholder "Введіть обґрунтування прив'язки"
                                                     , value desc.description
                                                     , onInput <| DescriptionEditedByUser desc.id
+                                                    , style "min-height" "80px"
                                                     ]
                                                     []
 
                                             Nothing ->
-                                                div [ style "white-space" "pre-line" ] [ text description.description ]
+                                                div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
                                         ]
                                     ]
                             )
@@ -4322,43 +4331,50 @@ contentBlock user shared network model =
                           else
                             text ""
                         ]
-                    , div [ class "max-h-[350px] overflow-y-auto" ]
+                    , div [ class "max-h-[350px] overflow-y-auto", style "scrollbar-width" "thin", style "scrollbar-color" "#d1d5db #f3f4f6", style "scroll-padding" "8px", style "scroll-margin" "8px" ]
                         (List.map
                             (\description ->
-                                div [ class "min-h-[50px] border-b-1 border-border py-[4px]" ]
-                                    [ div [ class "flex justify-between items-center " ]
-                                        [ div [ class "opacity-70 flex gap-[4px] items-center" ]
-                                            [ span [] [ text description.login ]
-                                            , span [] [ text "|" ]
-                                            , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                div [ class "min-h-[60px] border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-3 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200" ]
+                                    [ div [ class "flex justify-between items-start mb-3" ]
+                                        [ div [ class "flex flex-col gap-1" ]
+                                            [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
+                                                [ i [ class "bi bi-person-circle text-blue-500" ] []
+                                                , span [ class "font-medium" ] [ text description.login ]
+                                                , span [ class "text-gray-400" ] [ text "•" ]
+                                                , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                                                ]
                                             ]
-                                        , div [ class "flex gap-[8px]" ]
+                                        , div [ class "flex gap-2" ]
                                             (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
                                                 [ case Dict.get description.id model.descriptionsEditDict of
                                                     Just desc ->
-                                                        i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+                                                        button [ class "p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditSave desc, title "Зберегти зміни" ] 
+                                                            [ i [ class "bi bi-check2 text-lg" ] [] ]
 
                                                     Nothing ->
-                                                        i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
-                                                , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                                        button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ] 
+                                                            [ i [ class "bi bi-pencil text-lg" ] [] ]
+                                                , button [ class "p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ] 
+                                                    [ i [ class "bi bi-trash text-lg" ] [] ]
                                                 ]
                                               else
                                                 []
                                             )
                                         ]
-                                    , div []
+                                    , div [ class "mt-2" ]
                                         [ case Dict.get description.id model.descriptionsEditDict of
                                             Just desc ->
                                                 textarea
-                                                    [ class "textarea__field"
+                                                    [ class "w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                                                     , placeholder "Введіть розвідувальні ознаки"
                                                     , value desc.description
                                                     , onInput <| DescriptionEditedByUser desc.id
+                                                    , style "min-height" "80px"
                                                     ]
                                                     []
 
                                             Nothing ->
-                                                div [ style "white-space" "pre-line" ] [ text description.description ]
+                                                div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
                                         ]
                                     ]
                             )
