@@ -274,6 +274,8 @@ type alias Model =
     , callsignCreateSaving : Bool
     , callsignCreateErrors : Dict String String
     , callsignCreateSourceSelState : Select.State
+    , callsignCreateUnitSelState : Select.State
+    , callsignCreateUnitSelectorVisible : Bool -- Чи показувати селект підрозділів
     , callsignCreateSources : List B.Source
 
     -- Callsign deletion confirmation dialog
@@ -286,6 +288,8 @@ type alias Model =
     , editCallsignSaving : Bool -- Стан збереження редагування
     , editCallsignErrors : Dict String String -- Помилки валідації редагування
     , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
+    , editCallsignUnitSelState : Select.State -- Стан селекта підрозділу для редагування
+    , editCallsignUnitSelectorVisible : Bool -- Чи показувати селект підрозділів
 
     -- Developing callsigns dropdown
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
@@ -432,7 +436,9 @@ init route shared () =
       , callsignCreateState = Nothing
       , callsignCreateSaving = False
       , callsignCreateErrors = Dict.empty
-      , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+          , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+          , callsignCreateUnitSelState = Select.initState (Select.selectIdentifier "callsign-create-unit-state")
+      , callsignCreateUnitSelectorVisible = False
       , callsignCreateSources = []
 
       -- Callsign deletion confirmation dialog initialization
@@ -445,6 +451,8 @@ init route shared () =
       , editCallsignSaving = False
       , editCallsignErrors = Dict.empty
       , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
+    , editCallsignUnitSelState = Select.initState (Select.selectIdentifier "callsign-edit-unit-state")
+    , editCallsignUnitSelectorVisible = False
 
               -- Developing callsigns dropdown initialization
         , developingCallsignDropdown = Nothing
@@ -567,6 +575,9 @@ type Msg
     | CreateCallsignClicked
     | CallsignCreated (Result ApiError B.NetworkCallsign)
     | CallsignCreateSourceSelMsg (Select.Msg Int)
+    | CallsignCreateUnitSelMsg (Select.Msg Int)
+    | ToggleCallsignCreateUnitSelector -- Показати/сховати селект підрозділів для створення
+    | ResetCallsignCreateUnit -- Повернути підрозділ мережі для створення
       -- Callsign adding functionality
     | AddCallsignToNetwork Int -- Додавання позивного до мережі
     | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign)) -- Результат додавання позивного
@@ -588,6 +599,9 @@ type Msg
     | SaveEditCallsignClicked -- Збереження змін редагування
     | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
     | EditCallsignSourceSelMsg (Select.Msg Int) -- Повідомлення від селекта джерела для редагування
+    | EditCallsignUnitSelMsg (Select.Msg Int) -- Повідомлення від селекта підрозділу для редагування
+    | ToggleEditCallsignUnitSelector -- Показати/сховати селект підрозділів для редагування
+    | ResetEditCallsignUnit -- Повернути підрозділ мережі для редагування
     | OpenAddFromUnknownSidebar String -- Відкриття сайдбару додавання зі списку "Приналежність встановлюється"
     | DeleteCallsignConfirmed Int -- Підтвердження видалення позивного
     | DeleteCallsignCanceled -- Скасування видалення позивного
@@ -1736,6 +1750,8 @@ update shared msg model =
                             , sourceId = Nothing -- No default source ID
                             , radioFreq = Nothing
                             , developing = False
+                            , unitId = Nothing
+                            , unitDeveloping = False
                             }
                     in
                     ( { model
@@ -1844,6 +1860,44 @@ update shared msg model =
                     Maybe.map (\state -> { state | sourceId = updatedSourceId }) model.callsignCreateState
               }
             , E.sendCmd <| Cmd.map CallsignCreateSourceSelMsg icmd
+            )
+
+        CallsignCreateUnitSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.callsignCreateUnitSelState
+
+                updatedUnitId =
+                    Le.Block.Select.singleUpd mAction (Maybe.andThen .unitId model.callsignCreateState)
+                
+                -- Закриваємо селект коли щось вибрано
+                shouldCloseSelector =
+                    case mAction of
+                        Just _ -> True
+                        Nothing -> False
+            in
+            ( { model
+                | callsignCreateUnitSelState = imodel2
+                , callsignCreateUnitSelectorVisible = 
+                    if shouldCloseSelector then False else model.callsignCreateUnitSelectorVisible
+                , callsignCreateState =
+                    Maybe.map (\state -> { state | unitId = updatedUnitId }) model.callsignCreateState
+              }
+            , E.sendCmd <| Cmd.map CallsignCreateUnitSelMsg icmd
+            )
+
+        ToggleCallsignCreateUnitSelector ->
+            ( { model | callsignCreateUnitSelectorVisible = not model.callsignCreateUnitSelectorVisible }
+            , E.none
+            )
+
+        ResetCallsignCreateUnit ->
+            ( { model 
+                | callsignCreateUnitSelectorVisible = False
+                , callsignCreateState = 
+                    Maybe.map (\state -> { state | unitId = Nothing }) model.callsignCreateState
+              }
+            , E.none
             )
 
         DeleteNetworkClickedByUser ->
@@ -2150,6 +2204,8 @@ update shared msg model =
                                     , sourceId = callsign.sourceId
                                     , radioFreq = callsign.radioFreq -- Тепер це окреме поле
                                     , developing = callsign.developing
+                                    , unitId = callsign.unitId
+                                    , unitDeveloping = callsign.unitDeveloping
                                     }
                             in
                             ( { model
@@ -2330,6 +2386,44 @@ update shared msg model =
             , E.sendCmd <| Cmd.map EditCallsignSourceSelMsg icmd
             )
 
+        EditCallsignUnitSelMsg imsg ->
+            let
+                ( mAction, imodel2, icmd ) =
+                    Select.update imsg model.editCallsignUnitSelState
+
+                updatedUnitId =
+                    Le.Block.Select.singleUpd mAction (Maybe.andThen .unitId model.editCallsignState)
+                
+                -- Закриваємо селект коли щось вибрано
+                shouldCloseSelector =
+                    case mAction of
+                        Just _ -> True
+                        Nothing -> False
+            in
+            ( { model
+                | editCallsignUnitSelState = imodel2
+                , editCallsignUnitSelectorVisible = 
+                    if shouldCloseSelector then False else model.editCallsignUnitSelectorVisible
+                , editCallsignState =
+                    Maybe.map (\state -> { state | unitId = updatedUnitId }) model.editCallsignState
+              }
+            , E.sendCmd <| Cmd.map EditCallsignUnitSelMsg icmd
+            )
+
+        ToggleEditCallsignUnitSelector ->
+            ( { model | editCallsignUnitSelectorVisible = not model.editCallsignUnitSelectorVisible }
+            , E.none
+            )
+
+        ResetEditCallsignUnit ->
+            ( { model 
+                | editCallsignUnitSelectorVisible = False
+                , editCallsignState = 
+                    Maybe.map (\state -> { state | unitId = Nothing }) model.editCallsignState
+              }
+            , E.none
+            )
+
         OpenAddFromUnknownSidebar callsign ->
             case model.network of
                 Success network ->
@@ -2342,6 +2436,8 @@ update shared msg model =
                             , sourceId = Nothing -- No default source ID
                             , radioFreq = Nothing
                             , developing = False
+                            , unitId = Nothing
+                            , unitDeveloping = False
                             }
                     in
                     ( { model
@@ -2935,7 +3031,19 @@ networkCallsignsTableConfig shared model user =
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Підрозділ"
-                , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.unitName) ] }
+                , viewData = \row -> 
+                    let
+                        unitText = Maybe.withDefault "-" row.unitName
+                        unitContent = 
+                            if row.unitDeveloping then
+                                [ text unitText
+                                , span [ class "ml-2 text-xs text-orange-600 bg-orange-100 dark:bg-orange-900 dark:text-orange-300 px-2 py-1 rounded" ] 
+                                    [ text "в дорозвідці" ]
+                                ]
+                            else
+                                [ text unitText ]
+                    in
+                    { attributes = [], children = unitContent }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "16%"
@@ -4865,6 +4973,103 @@ callsignCreateSidebarContent shared model user =
                                 )
                     ]
                 , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Підрозділ" ]
+                    , div [ class "flex items-center gap-2 p-2 border border-border rounded bg-gray-50 dark:bg-gray-700" ]
+                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] 
+                            [ text (case Maybe.andThen .unitId model.callsignCreateState of
+                                Just unitId ->
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Dict.get unitId units
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault "Невідомий підрозділ"
+                                        
+                                        _ ->
+                                            "Завантаження..."
+                                
+                                Nothing ->
+                                    "Підрозділ мережі"
+                              ) ]
+                        , button 
+                            [ type_ "button"
+                            , class "text-blue-600 hover:text-blue-800 text-sm"
+                            , title "Змінити підрозділ"
+                            , onClick ToggleCallsignCreateUnitSelector
+                            ] 
+                            [ text "✏️" ]
+                        , button 
+                            [ type_ "button"
+                            , class "text-gray-600 hover:text-gray-800 text-sm"
+                            , title "Повернути підрозділ мережі"
+                            , onClick ResetCallsignCreateUnit
+                            ] 
+                            [ text "✖️" ]
+                        ]
+                    , if model.callsignCreateUnitSelectorVisible then
+                        -- Показуємо селект підрозділів
+                        div [ class "mt-2" ]
+                            [ let
+                                unitMenu =
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Dict.values units |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                        
+                                        _ ->
+                                            []
+
+                                selectedUnit =
+                                    Maybe.andThen .unitId model.callsignCreateState
+                                        |> Maybe.andThen
+                                            (\unitId ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get unitId units
+                                                            |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                                    
+                                                    _ ->
+                                                        Nothing
+                                            )
+                              in
+                              Html.map CallsignCreateUnitSelMsg <|
+                                  Styled.toUnstyled <|
+                                      Le.Block.Select.renderSelectSingle
+                                          selectedUnit
+                                          model.callsignCreateUnitSelState
+                                          unitMenu
+                                          "Виберіть підрозділ"
+                                          (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                              |> (\opts ->
+                                                      { opts
+                                                          | clearable = True
+                                                      }
+                                                 )
+                                          )
+                            ]
+                      else
+                        text ""
+                    ]
+                , div []
+                    [ label []
+                        [ input
+                            [ type_ "checkbox"
+                            , class "mr-2"
+                            , checked (Maybe.map .unitDeveloping model.callsignCreateState |> Maybe.withDefault False)
+                            , onCheck <|
+                                UpdateCallsignCreateField
+                                    << (\isChecked maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | unitDeveloping = isChecked }
+
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        , span [ class "text-sm font-medium" ] [ text "Підрозділ в дорозвідці" ]
+                        ]
+                    ]
+                , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
                     , input
                         [ type_ "text"
@@ -5068,6 +5273,103 @@ editCallsignSidebarContent shared model user =
                                             }
                                        )
                                 )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Підрозділ" ]
+                    , div [ class "flex items-center gap-2 p-2 border border-border rounded bg-gray-50 dark:bg-gray-700" ]
+                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] 
+                            [ text (case Maybe.andThen .unitId model.editCallsignState of
+                                Just unitId ->
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Dict.get unitId units
+                                                |> Maybe.map .name
+                                                |> Maybe.withDefault "Невідомий підрозділ"
+                                        
+                                        _ ->
+                                            "Завантаження..."
+                                
+                                Nothing ->
+                                    "Підрозділ мережі"
+                              ) ]
+                        , button 
+                            [ type_ "button"
+                            , class "text-blue-600 hover:text-blue-800 text-sm"
+                            , title "Змінити підрозділ"
+                            , onClick ToggleEditCallsignUnitSelector
+                            ] 
+                            [ text "✏️" ]
+                        , button 
+                            [ type_ "button"
+                            , class "text-gray-600 hover:text-gray-800 text-sm"
+                            , title "Повернути підрозділ мережі"
+                            , onClick ResetEditCallsignUnit
+                            ] 
+                            [ text "✖️" ]
+                        ]
+                    , if model.editCallsignUnitSelectorVisible then
+                        -- Показуємо селект підрозділів
+                        div [ class "mt-2" ]
+                            [ let
+                                unitMenu =
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Dict.values units |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                        
+                                        _ ->
+                                            []
+
+                                selectedUnit =
+                                    Maybe.andThen .unitId model.editCallsignState
+                                        |> Maybe.andThen
+                                            (\unitId ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get unitId units
+                                                            |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                                    
+                                                    _ ->
+                                                        Nothing
+                                            )
+                              in
+                              Html.map EditCallsignUnitSelMsg <|
+                                  Styled.toUnstyled <|
+                                      Le.Block.Select.renderSelectSingle
+                                          selectedUnit
+                                          model.editCallsignUnitSelState
+                                          unitMenu
+                                          "Виберіть підрозділ"
+                                          (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                              |> (\opts ->
+                                                      { opts
+                                                          | clearable = True
+                                                      }
+                                                 )
+                                          )
+                            ]
+                      else
+                        text ""
+                    ]
+                , div []
+                    [ label []
+                        [ input
+                            [ type_ "checkbox"
+                            , class "mr-2"
+                            , checked (Maybe.map .unitDeveloping model.editCallsignState |> Maybe.withDefault False)
+                            , onCheck <|
+                                UpdateEditCallsignField
+                                    << (\isChecked maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | unitDeveloping = isChecked }
+
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        , span [ class "text-sm font-medium" ] [ text "Підрозділ в дорозвідці" ]
+                        ]
                     ]
                 , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
