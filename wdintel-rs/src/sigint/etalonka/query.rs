@@ -1268,49 +1268,20 @@ pub async fn load_networks(
         }
     }    
 
-    if req.req.filter_freq.is_some()
-        // || req.req.since_date_inclusive_ms.is_some()
-        // || req.req.till_date_noninclusive_ms.is_some()
-    {
-        let mut subquery = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SigintNetworkFreq.def(),
-            )
+    if let Some(filter_freq) = &req.req.filter_freq {
+        let subquery = sigint_network_freq::Entity::find()
             .select_only()
-            .column(signal_message::Column::Id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-            .filter(sigint_network_freq::Column::ActiveTo.is_null())
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .column(sigint_network_freq::Column::Freq)
             .filter(
                 sigint_network_freq::Column::NetworkId
                     .into_simple_expr()
                     .eq(sigint_network::Column::Id.into_simple_expr()),
-            );
-
-        if let Some(filter_freq) = &req.req.filter_freq {
-            subquery = subquery.filter(Expr::cust_with_values(
+            )
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .filter(Expr::cust_with_values(
                 "sigint_network_freq.freq ilike $1",
                 vec![format!("{filter_freq}%").as_str()],
             ));
-        }
-        // if let Some(since_date_inclusive_ms) = req.req.since_date_inclusive_ms {
-        //     subquery = subquery.filter(
-        //         sigint_inbox_item::Column::Datetime
-        //             .gte(dt_from_millis(since_date_inclusive_ms)?),
-        //     );
-        // }
-        // if let Some(till_date_inclusive_ms) = req.req.till_date_noninclusive_ms {
-        //     subquery = subquery.filter(
-        //         sigint_inbox_item::Column::Datetime
-        //             .lte(dt_from_millis(till_date_inclusive_ms)?),
-        //     );
-        // }
         networks = networks.filter(Expr::exists(subquery.into_query()));
     }
 
