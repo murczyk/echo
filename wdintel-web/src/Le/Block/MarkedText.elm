@@ -4,7 +4,6 @@ import Bindings as B
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
 import Le.Block.Callsign
 import Le.Block.Tooltip as Tooltip
 import Le.Callsign.HintStrategy as HintStrategy
@@ -25,25 +24,21 @@ new contentNodes =
         }
 
 
+{-| DEPRECATED:Використовуйте viewWithHintResults з повним HintResult замість цієї функції
+-}
 view : Dict String ( List B.CallsignInfo, List B.CallsignInfo ) -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> Model msg -> List (Html msg)
 view prioritizedCallsignsDict signals networks mFreq (Model config) =
     viewWithHintResults (Dict.map (\_ -> createHintResultFromTuple) prioritizedCallsignsDict) signals networks mFreq (Model config)
 
 
 {-| Конвертує tuple (prioritized, nonPrioritized) в HintResult
+DEPRECATED: Використовуйте viewWithHintResults з повним HintResult замість цієї функції
 -}
 createHintResultFromTuple : ( List B.CallsignInfo, List B.CallsignInfo ) -> HintStrategy.HintResult
 createHintResultFromTuple ( prioritized, nonPrioritized ) =
     let
-        hasNetwork =
-            List.length prioritized > 0
-
         strategy =
-            if hasNetwork then
-                HintStrategy.NetworkBased { networks = [], units = [] }
-
-            else
-                HintStrategy.SystemWide
+            HintStrategy.NoHints
     in
     { strategy = strategy
     , prioritizedCallsigns = prioritized
