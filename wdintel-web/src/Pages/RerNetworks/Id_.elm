@@ -73,13 +73,17 @@ toLayout user model =
 
 -- Helper functions for filtering callsigns
 
+
 getRegularCallsigns : List B.NetworkCallsign -> List B.NetworkCallsign
 getRegularCallsigns callsigns =
     List.filter (\callsign -> not callsign.developing) callsigns
 
+
 getDevelopingCallsigns : List B.NetworkCallsign -> List B.NetworkCallsign
 getDevelopingCallsigns callsigns =
     List.filter (\callsign -> callsign.developing) callsigns
+
+
 
 -- Navigation helper function
 
@@ -200,6 +204,7 @@ type alias CallsignTableRow =
 
 type ShowAllPopupFor
     = ShowAllComment
+
 
 type FreqActivityFilter
     = AllFreqs
@@ -461,8 +466,8 @@ init route shared () =
       , callsignCreateState = Nothing
       , callsignCreateSaving = False
       , callsignCreateErrors = Dict.empty
-          , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
-          , callsignCreateUnitSelState = Select.initState (Select.selectIdentifier "callsign-create-unit-state")
+      , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "callsign-create-source-state")
+      , callsignCreateUnitSelState = Select.initState (Select.selectIdentifier "callsign-create-unit-state")
       , callsignCreateUnitSelectorVisible = False
       , callsignCreateSources = []
 
@@ -476,8 +481,8 @@ init route shared () =
       , editCallsignSaving = False
       , editCallsignErrors = Dict.empty
       , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "callsign-edit-source-state")
-    , editCallsignUnitSelState = Select.initState (Select.selectIdentifier "callsign-edit-unit-state")
-    , editCallsignUnitSelectorVisible = False
+      , editCallsignUnitSelState = Select.initState (Select.selectIdentifier "callsign-edit-unit-state")
+      , editCallsignUnitSelectorVisible = False
 
               -- Developing callsigns dropdown initialization
         , developingCallsignDropdown = Nothing
@@ -633,12 +638,11 @@ type Msg
     | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
     | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
     | CloseEditCallsignSidebar -- Закриття сайдбару редагування
-
-    -- Developing callsigns dropdown
+      -- Developing callsigns dropdown
     | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
     | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
     | NavigateToCallsignPage Int -- Перейти на сторінку позивного
-    -- Unknown callsigns dropdown
+      -- Unknown callsigns dropdown
     | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
     | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
     | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
@@ -1844,6 +1848,7 @@ update shared msg model =
                                     [] ->
                                         Nothing
                             , unitDeveloping = False
+                            , mainRadioStation = False
                             }
                     in
                     ( { model
@@ -1965,9 +1970,14 @@ update shared msg model =
                 -- Закриваємо селект тільки коли користувач дійсно вибрав підрозділ
                 shouldCloseSelector =
                     case mAction of
-                        Just (Select.Select _) -> True
-                        Just Select.Clear -> True
-                        _ -> False
+                        Just (Select.Select _) ->
+                            True
+
+                        Just Select.Clear ->
+                            True
+
+                        _ ->
+                            False
             in
             ( { model
                 | callsignCreateUnitSelState = imodel2
@@ -2302,7 +2312,7 @@ update shared msg model =
                                     { id = callsign.id
                                     , networkId =
                                         network.id
-                                    , callsign = String.toUpper  callsign.callsign
+                                    , callsign = String.toUpper callsign.callsign
                                     , position = callsign.position
                                     , comment = callsign.comment
                                     , sourceId = callsign.sourceId
@@ -2310,6 +2320,7 @@ update shared msg model =
                                     , developing = callsign.developing
                                     , unitId = callsign.unitId
                                     , unitDeveloping = callsign.unitDeveloping
+                                    , mainRadioStation = callsign.mainRadioStation
                                     }
                             in
                             ( { model
@@ -2333,6 +2344,7 @@ update shared msg model =
                 newDropdown =
                     if model.developingCallsignDropdown == Just callsignId then
                         Nothing
+
                     else
                         Just callsignId
             in
@@ -2349,6 +2361,7 @@ update shared msg model =
                 newDropdown =
                     if model.unknownCallsignDropdown == Just callsign then
                         Nothing
+
                     else
                         Just callsign
             in
@@ -2356,8 +2369,6 @@ update shared msg model =
 
         CloseUnknownCallsignDropdown ->
             ( { model | unknownCallsignDropdown = Nothing }, E.none )
-
-
 
         DeleteCallsignConfirmed callsignId ->
             ( { model | deleteCallsignLoading = True, deleteCallsignConfirmation = Nothing }
@@ -2501,9 +2512,14 @@ update shared msg model =
                 -- Закриваємо селект тільки коли користувач дійсно вибрав підрозділ
                 shouldCloseSelector =
                     case mAction of
-                        Just (Select.Select _) -> True
-                        Just Select.Clear -> True
-                        _ -> False
+                        Just (Select.Select _) ->
+                            True
+
+                        Just Select.Clear ->
+                            True
+
+                        _ ->
+                            False
             in
             ( { model
                 | editCallsignUnitSelState = imodel2
@@ -2561,6 +2577,7 @@ update shared msg model =
                                     [] ->
                                         Nothing
                             , unitDeveloping = False
+                            , mainRadioStation = False
                             }
                     in
                     ( { model
@@ -3129,38 +3146,38 @@ callsignsTableConfig shared model user =
                                             Just ( callsignId, ShowAllComment ) ->
                                                 callsignId == row.id
 
-                                            _ ->
-                                                False
-                                in
-                                Popup.new
-                                    { body =
-                                        span
-                                            [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                                            ]
-                                            [ text "Показати повністю"
-                                            , i [ class "bi bi-chevron-down text-xs" ] []
-                                            ]
-                                    , popupBody =
-                                        div [ class "comment-popup-content p-4" ]
-                                            [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                    [ text "Повний коментар" ]
+                                                _ ->
+                                                    False
+                                    in
+                                    Popup.new
+                                        { body =
+                                            span
+                                                [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                                                 ]
-                                            , div [ class "whitespace-pre-line text-sm" ]
-                                                [ text row.comment ]
-                                            ]
-                                    , isOpen = isOpen
-                                    , onClose = RowShowAllPopupChanged Nothing
-                                    , onOpen = RowShowAllPopupChanged <| Just ( row.id, ShowAllComment )
-                                    , disabled = False
-                                    }
-                                    |> Popup.view
+                                                [ text "Показати повністю"
+                                                , i [ class "bi bi-chevron-down text-xs" ] []
+                                                ]
+                                        , popupBody =
+                                            div [ class "comment-popup-content p-4" ]
+                                                [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                    [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                        [ text "Повний коментар" ]
+                                                    ]
+                                                , div [ class "whitespace-pre-line text-sm" ]
+                                                    [ text row.comment ]
+                                                ]
+                                        , isOpen = isOpen
+                                        , onClose = RowShowAllPopupChanged Nothing
+                                        , onOpen = RowShowAllPopupChanged <| Just ( row.id, ShowAllComment )
+                                        , disabled = False
+                                        }
+                                        |> Popup.view
 
-                              else
-                                text ""
+                                  else
+                                    text ""
+                                ]
                             ]
-                        ]
-                    }
+                        }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "20%"
@@ -3266,7 +3283,23 @@ networkCallsignsTableConfig shared model user =
                 |> Table.withColumnWidth "4%"
             , Table.veryCustomColumn
                 { name = "Позивний"
-                , viewData = \row -> { attributes = [], children = [ text (String.toUpper row.callsign) ] }
+                , viewData =
+                    \row ->
+                        let
+                            callsignText =
+                                String.toUpper row.callsign
+
+                            callsignContent =
+                                if row.mainRadioStation then
+                                    [ text callsignText
+                                    , span [ class "ml-2 badge badge-main-radio" ]
+                                        [ text "ГВЗ" ]
+                                    ]
+
+                                else
+                                    [ text callsignText ]
+                        in
+                        { attributes = [], children = callsignContent }
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
                 }
                 |> Table.withColumnWidth "12%"
@@ -3332,38 +3365,38 @@ networkCallsignsTableConfig shared model user =
                                             Just ( callsignId, ShowAllComment ) ->
                                                 callsignId == row.id
 
-                                            _ ->
-                                                False
-                                in
-                                Popup.new
-                                    { body =
-                                        span
-                                            [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                                            ]
-                                            [ text "Показати повний коментар"
-                                            , i [ class "bi bi-chevron-down text-xs" ] []
-                                            ]
-                                    , popupBody =
-                                        div [ class "comment-popup-content p-4" ]
-                                            [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
-                                                [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
-                                                    [ text "Повний коментар" ]
+                                                _ ->
+                                                    False
+                                    in
+                                    Popup.new
+                                        { body =
+                                            span
+                                                [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                                                 ]
-                                            , div [ class "whitespace-pre-line text-sm" ]
-                                                [ text (Maybe.withDefault "-" row.comment) ]
-                                            ]
-                                    , isOpen = isOpen
-                                    , onClose = RowShowAllPopupChanged Nothing
-                                    , onOpen = RowShowAllPopupChanged <| Just ( row.id, ShowAllComment )
-                                    , disabled = False
-                                    }
-                                    |> Popup.view
+                                                [ text "Показати повний коментар"
+                                                , i [ class "bi bi-chevron-down text-xs" ] []
+                                                ]
+                                        , popupBody =
+                                            div [ class "comment-popup-content p-4" ]
+                                                [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
+                                                    [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
+                                                        [ text "Повний коментар" ]
+                                                    ]
+                                                , div [ class "whitespace-pre-line text-sm" ]
+                                                    [ text (Maybe.withDefault "-" row.comment) ]
+                                                ]
+                                        , isOpen = isOpen
+                                        , onClose = RowShowAllPopupChanged Nothing
+                                        , onOpen = RowShowAllPopupChanged <| Just ( row.id, ShowAllComment )
+                                        , disabled = False
+                                        }
+                                        |> Popup.view
 
-                              else
-                                text ""
+                                  else
+                                    text ""
+                                ]
                             ]
-                        ]
-                    }
+                        }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "15%"
@@ -3407,9 +3440,6 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "8%"
-
-
-
             , Table.veryCustomColumn
                 { name = "Дії"
                 , viewData =
@@ -4406,7 +4436,8 @@ contentBlock user shared network model =
             Success networkCallsigns ->
                 let
                     -- Використовуємо helper функцію для фільтрації звичайних позивних
-                    regularCallsigns = getRegularCallsigns networkCallsigns
+                    regularCallsigns =
+                        getRegularCallsigns networkCallsigns
 
                     -- Спочатку сортуємо всі дані, потім застосовуємо пагінацію
                     sortedCallsigns =
@@ -4438,13 +4469,15 @@ contentBlock user shared network model =
             Success networkCallsigns ->
                 let
                     -- Використовуємо helper функцію для фільтрації позивних що розвиваються
-                    developingCallsigns = getDevelopingCallsigns networkCallsigns
+                    developingCallsigns =
+                        getDevelopingCallsigns networkCallsigns
                 in
                 div [ class "p-3 bg-[var(--color-bg-muted)] rounded" ]
                     [ span [ class "font-medium" ] [ text "В дорозвідці: " ]
                     , if List.isEmpty developingCallsigns then
                         div [ class "text-[var(--color-text-muted)] text-sm mt-2" ]
                             [ text "Немає позивних в дорозвідці" ]
+
                       else
                         div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
                             (List.map
@@ -4476,6 +4509,7 @@ contentBlock user shared network model =
                                 developingCallsigns
                             )
                     ]
+
             _ ->
                 text ""
         , div [ class "mb-[8px] flex justify-between items-center" ]
@@ -4541,8 +4575,7 @@ contentBlock user shared network model =
                             , -- Пейджер для таблиці
                               Pager.view model.callsignsPager
                                 |> Html.map CallsignsPagerMsg
-                            ,
-                              div [ class "mt-4 p-3 bg-[var(--color-bg-muted)] rounded" ]
+                            , div [ class "mt-4 p-3 bg-[var(--color-bg-muted)] rounded" ]
                                 [ span [ class "font-medium" ] [ text "Присутні в перехопленнях: " ]
                                 , div [ class "flex flex-wrap gap-[4px] text-[13px] mt-2" ]
                                     (List.map
@@ -5240,6 +5273,26 @@ callsignCreateSidebarContent shared model user =
                         []
                     ]
                 , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .mainRadioStation model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | mainRadioStation = not s.mainRadioStation }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
                     , let
                         sourceMenu =
@@ -5341,20 +5394,21 @@ callsignCreateSidebarContent shared model user =
                                             )
                               in
                               Html.map CallsignCreateUnitSelMsg <|
-                                  Styled.toUnstyled <|
-                                      Le.Block.Select.renderSelectSingle
-                                          selectedUnit
-                                          model.callsignCreateUnitSelState
-                                          unitMenu
-                                          "Виберіть підрозділ"
-                                          (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
-                                              |> (\opts ->
-                                                      { opts
-                                                          | clearable = True
-                                                      }
-                                                 )
-                                          )
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        selectedUnit
+                                        model.callsignCreateUnitSelState
+                                        unitMenu
+                                        "Виберіть підрозділ"
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                            |> (\opts ->
+                                                    { opts
+                                                        | clearable = True
+                                                    }
+                                               )
+                                        )
                             ]
+
                       else
                         text ""
                     ]
@@ -5362,16 +5416,17 @@ callsignCreateSidebarContent shared model user =
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .unitDeveloping model.callsignCreateState |> Maybe.withDefault False
-                            , onToggle = \_ ->
-                                UpdateCallsignCreateField
-                                    (\maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just { s | unitDeveloping = not s.unitDeveloping }
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | unitDeveloping = not s.unitDeveloping }
 
-                                            Nothing ->
-                                                Nothing
-                                    )
+                                                Nothing ->
+                                                    Nothing
+                                        )
                             }
                             |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
                             |> Checkbox.view
@@ -5434,26 +5489,26 @@ callsignCreateSidebarContent shared model user =
                         []
                     ]
                 , div []
-                    [
-                     div [ class "flex items-center" ]
+                    [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .developing model.callsignCreateState |> Maybe.withDefault False
-                            , onToggle = \_ ->
-                                UpdateCallsignCreateField
-                                    (\maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just { s | developing = not s.developing }
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | developing = not s.developing }
 
-                                            Nothing ->
-                                                Nothing
-                                    )
+                                                Nothing ->
+                                                    Nothing
+                                        )
                             }
                             |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
                             |> Checkbox.view
                         ]
                     ]
-                , if (Maybe.andThen .sourceId model.callsignCreateState) == Just 2 then
+                , if Maybe.andThen .sourceId model.callsignCreateState == Just 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
                         , input
@@ -5507,7 +5562,7 @@ callsignCreateSidebarContent shared model user =
                                         |> Maybe.withDefault True
 
                                 isRO =
-                                    (Maybe.andThen .sourceId model.callsignCreateState) == Just 2
+                                    Maybe.andThen .sourceId model.callsignCreateState == Just 2
 
                                 roFreqEmpty =
                                     if isRO then
@@ -5551,6 +5606,26 @@ editCallsignSidebarContent shared model user =
                                    )
                         ]
                         []
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .mainRadioStation model.editCallsignState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | mainRadioStation = not s.mainRadioStation }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        ]
                     ]
                 , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
@@ -5654,20 +5729,21 @@ editCallsignSidebarContent shared model user =
                                             )
                               in
                               Html.map EditCallsignUnitSelMsg <|
-                                  Styled.toUnstyled <|
-                                      Le.Block.Select.renderSelectSingle
-                                          selectedUnit
-                                          model.editCallsignUnitSelState
-                                          unitMenu
-                                          "Виберіть підрозділ"
-                                          (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
-                                              |> (\opts ->
-                                                      { opts
-                                                          | clearable = True
-                                                      }
-                                                 )
-                                          )
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        selectedUnit
+                                        model.editCallsignUnitSelState
+                                        unitMenu
+                                        "Виберіть підрозділ"
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                            |> (\opts ->
+                                                    { opts
+                                                        | clearable = True
+                                                    }
+                                               )
+                                        )
                             ]
+
                       else
                         text ""
                     ]
@@ -5675,16 +5751,17 @@ editCallsignSidebarContent shared model user =
                     [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .unitDeveloping model.editCallsignState |> Maybe.withDefault False
-                            , onToggle = \_ ->
-                                UpdateEditCallsignField
-                                    (\maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just { s | unitDeveloping = not s.unitDeveloping }
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | unitDeveloping = not s.unitDeveloping }
 
-                                            Nothing ->
-                                                Nothing
-                                    )
+                                                Nothing ->
+                                                    Nothing
+                                        )
                             }
                             |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
                             |> Checkbox.view
@@ -5747,26 +5824,26 @@ editCallsignSidebarContent shared model user =
                         []
                     ]
                 , div []
-                    [
-                     div [ class "flex items-center" ]
+                    [ div [ class "flex items-center" ]
                         [ Checkbox.new
                             { isChecked = Maybe.map .developing model.editCallsignState |> Maybe.withDefault False
-                            , onToggle = \_ ->
-                                UpdateEditCallsignField
-                                    (\maybeState ->
-                                        case maybeState of
-                                            Just s ->
-                                                Just { s | developing = not s.developing }
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | developing = not s.developing }
 
-                                            Nothing ->
-                                                Nothing
-                                    )
+                                                Nothing ->
+                                                    Nothing
+                                        )
                             }
                             |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
                             |> Checkbox.view
                         ]
                     ]
-                , if (Maybe.andThen .sourceId model.editCallsignState) == Just 2 then
+                , if Maybe.andThen .sourceId model.editCallsignState == Just 2 then
                     div []
                         [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
                         , input
@@ -5829,7 +5906,7 @@ editCallsignSidebarContent shared model user =
                                         |> Maybe.withDefault True
 
                                 isRO =
-                                    (Maybe.andThen .sourceId model.editCallsignState) == Just 2
+                                    Maybe.andThen .sourceId model.editCallsignState == Just 2
 
                                 roFreqEmpty =
                                     if isRO then

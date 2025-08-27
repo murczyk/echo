@@ -1339,6 +1339,7 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             unit_developing: Set(rec.unit_developing),
             unit_id: Set(rec.unit_id),
+            main_radio_station: Set(rec.main_radio_station),
         };
 
         let new_rec = if new_record {
