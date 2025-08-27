@@ -1,13 +1,13 @@
-use crate::config::{read_config, Config};
+use crate::config::Config;
 use crate::entities::sea_orm_active_enums::EchoMessageSource;
 use crate::entities::*;
 use crate::error::{AppError, ContextAndError};
+use crate::h;
 use crate::location::SettlementsData;
 use crate::messenger::bl::list_accounts;
 use crate::messenger::id;
-use crate::messenger::types::EchoAccountF1;
+use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
-use crate::{h, new_redis};
 use anyhow::Context;
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
@@ -20,7 +20,7 @@ use std::sync::{Arc, RwLock};
 
 pub async fn receive_thread_nofail(mode: Mode) {
     let (config, settlements, rq, mut redis, dbx) =
-        setup_worker(mode).await.unwrap();
+        crate::utils::setup_worker(mode).await.unwrap();
     info!("started receive_thread_nofail");
     if let Err(e) =
         echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
@@ -59,32 +59,6 @@ pub async fn receive_thread_nofail(mode: Mode) {
     }
 }
 
-async fn setup_worker(
-    mode: Mode,
-) -> anyhow::Result<(
-    Config,
-    Arc<RwLock<SettlementsData>>,
-    Client,
-    ConnectionManager,
-    DatabaseConnection,
-)> {
-    let config = read_config(mode).context(h!())?;
-    let db = crate::new_pg_pool_from_config(&config)
-        .await
-        .context(h!())?;
-    let settlement_paths = config.settlement_paths().context(h!())?;
-    let settlements = Arc::new(RwLock::new(
-        crate::location::load_from_file(settlement_paths, mode)
-            .context(h!())?,
-    ));
-    let rq = Client::builder()
-        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
-        .build()
-        .context(h!())?;
-    let redis = new_redis(&config).await.context(h!())?;
-    Ok((config, settlements, rq, redis, db))
-}
-
 async fn receive_thread(
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
@@ -94,19 +68,25 @@ async fn receive_thread(
     rq: &Client,
     settlements: Arc<RwLock<SettlementsData>>,
 ) -> Result<(), AppError> {
+    let datasource = load_client_datasource(dbx, client_name)
+        .await
+        .context(h!())?;
+    let datasource_id = datasource.id;
+    if datasource.echo_client_lock_id.is_none() {
+        trace!("datasource {datasource_id} is not linked, skipping");
+        return Ok(());
+    }
     echo_im::worker::signal_worker_tick_once(client_name, dbx)
         .await
         .context(h!())?;
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .context(h!())?;
-    if !config.read_from_legacy_data_sources.unwrap_or(true) {
-        let txn = dbx.begin().await.context(h!())?;
-        sync_groups(&txn, client_name, client_groups_sync_ts_map)
-            .await
-            .context(h!())?;
-        txn.commit().await.context(h!())?;
-    }
+    let txn = dbx.begin().await.context(h!())?;
+    sync_groups(&txn, client_name, client_groups_sync_ts_map)
+        .await
+        .context(h!())?;
+    txn.commit().await.context(h!())?;
     sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
         .await
         .context(h!())?;
@@ -126,7 +106,7 @@ async fn sync_groups(
     if let Some(last_updated_ts) =
         client_groups_sync_ts_map.get(client_name).cloned()
     {
-        let stale_at = last_updated_ts + chrono::TimeDelta::minutes(2);
+        let stale_at = last_updated_ts + TimeDelta::minutes(2);
         if now <= stale_at {
             return Ok(()); // already in sync
         }
@@ -380,6 +360,11 @@ async fn sync_inbox(
     let datasource = load_client_datasource(db, client_name)
         .await
         .context(h!())?;
+    let datasource_id = datasource.id;
+    if datasource.echo_client_lock_id.is_none() {
+        trace!("datasource {datasource_id} is not linked, skipping");
+        return Ok(());
+    }
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
     let txn = db.begin().await.context(h!())?;
     let inbox_messages =
@@ -390,12 +375,13 @@ async fn sync_inbox(
 
     sync_senders(db, &inbox_messages).await.context(h!())?;
 
-    for (i, m) in inbox_messages.iter().enumerate() {
+    let total_num = inbox_messages.len();
+    for (i, m) in inbox_messages.into_iter().enumerate() {
         {
             debug!(
                 "processing inbox message {} of {}; m.id={}",
                 i + 1,
-                inbox_messages.len(),
+                total_num,
                 m.id.clone().unwrap_or("".to_string())
             );
             let txn = db.begin().await.context(h!())?;
@@ -412,20 +398,30 @@ async fn sync_inbox(
             //     );
             //     return;
             // }
-            if !config.read_from_legacy_data_sources.unwrap_or(true) {
-                if let Err(e) = receive_once(
-                    m,
-                    &txn,
-                    &datasource,
-                    redis,
-                    config,
-                    rq,
-                    settlements.clone(),
-                )
-                .await
-                {
-                    warn!("bot failed to process a message: {e:?}");
-                }
+            let Some(group_id) = m.group_id else {
+                warn!("skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
+                continue;
+            };
+            let message = Message {
+                body: m.text,
+                group_id,
+                sender: m.sender.map(|s| s.uuid),
+                timestamp: m.timestamp,
+                datasource_id: datasource.id,
+            };
+            if let Err(e) = receive_once(
+                message,
+                m.attachments.into_iter().map(|a| a.path).collect_vec(),
+                redis,
+                settlements.clone(),
+                rq,
+                config,
+                &txn,
+                false,
+            )
+            .await
+            {
+                warn!("bot failed to process a message: {e:?}");
             }
             echo_im::mark_inbox_as_seen(client_name, vec![m.internal_id], &txn)
                 .await
@@ -445,22 +441,19 @@ async fn list_clients(
     Ok(live_clients)
 }
 
-async fn receive_once(
-    m: &MessageF1,
-    txn: &DatabaseTransaction,
-    datasource: &datasource::Model,
+pub async fn receive_once(
+    m: Message,
+    attachment_paths: Vec<String>,
     redis: &mut ConnectionManager,
-    config: &Config,
+    settlements: Arc<RwLock<SettlementsData>>,
     rq: &Client,
-    settlements: Arc<RwLock<crate::location::SettlementsData>>,
-) -> Result<(), AppError> {
-    if m.group_id.is_none() {
-        warn!("skipping message {:?} with no group, possibly a private message: {}", m.id, m.text);
-        return Ok(());
-    }
-    let body = m.text.clone();
+    config: &Config,
+    txn: &DatabaseTransaction,
+    skip_process_inbox_item: bool,
+) -> Result<String, AppError> {
     // Normalize body
-    let body = body.replace("\r\n", "\n");
+    info!("received message: {m:?}");
+    let body = m.body.replace("\r\n", "\n");
     let m_duplicate = crate::sigint::find_duplicate(txn, &body)
         .await
         .context(h!())?;
@@ -469,12 +462,12 @@ async fn receive_once(
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
-        group_master_key: Set(m.group_id.clone()),
+        group_master_key: Set(Some(m.group_id)),
         timestamp: Set(Some(m.timestamp)),
-        sender: Set(m.sender.clone().map(|s| s.uuid)),
+        sender: Set(m.sender),
         duplicate_of: Set(m_duplicate_id),
         format: NotSet,
-        datasource_id: Set(Some(datasource.id)),
+        datasource_id: Set(Some(m.datasource_id)),
         deleted: NotSet,
         external_id: NotSet,
         message_uid: NotSet,
@@ -488,11 +481,13 @@ async fn receive_once(
             .await
             .context(h!())?;
 
-    for a in &m.attachments {
+    let message_uid = signal_message.message_uid.clone().context(h!())?;
+
+    for path in attachment_paths {
         let _signal_attachment = signal_attachment::ActiveModel {
             id: NotSet,
             signal_message_id: Set(signal_message.id),
-            path: Set(a.path.clone()),
+            path: Set(path),
             created_at: NotSet,
         }
         .insert(txn)
@@ -500,24 +495,27 @@ async fn receive_once(
         .context(h!())?;
     }
 
-    crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
-        settlements.clone(),
-        txn,
-        rq,
-        config,
-        redis,
-        signal_message.id,
-        None,
-    )
-    .await;
+    if !skip_process_inbox_item {
+        // inbox item processing happens behind the scene
+        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+            settlements.clone(),
+            txn,
+            rq,
+            config,
+            redis,
+            signal_message.id,
+            None,
+        )
+        .await;
 
-    crate::sigint::worker::incoming_message_after_insert(
-        txn,
-        signal_message.id,
-    )
-    .await
-    .context(h!())?;
-    Ok(())
+        crate::sigint::worker::incoming_message_after_insert(
+            txn,
+            signal_message.id,
+        )
+        .await
+        .context(h!())?;
+    }
+    Ok(message_uid)
 }
 
 async fn load_client_datasource<'a, 'async_trait, C>(

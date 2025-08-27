@@ -46,7 +46,9 @@ pub async fn inbox_item_oneoff_nofail<'a, 'async_trait, C>(
                     "> error while running inbox_item_oneoff_nofail: {e:?}"
                 );
             }
-            Ok(new_recs) => new_recs.iter().for_each(|rec| recs.push(*rec)),
+            Ok(new_recs) => {
+                new_recs.iter().for_each(|rec| recs.push(*rec));
+            }
         }
     }
 }

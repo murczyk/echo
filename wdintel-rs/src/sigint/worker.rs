@@ -72,7 +72,7 @@ pub async fn sigint_worker(mode: Mode) -> Result<(), AppError> {
                 .await
             });
         } else {
-            println!("> unknown datasource kind: {}", datasource.kind);
+            println!("> unsupported datasource kind: {}", datasource.kind);
         }
     }
     jset.await;
@@ -87,16 +87,23 @@ async fn receive_thread_signal_restapi_nofail(
     datasource_id: i64,
 ) {
     loop {
-        if let Err(e) = receive_thread_signal_restapi(
+        let exec_result = receive_thread_signal_restapi(
             settlements.clone(),
             config,
             dbx,
             redis,
             datasource_id,
         )
-        .await
-        {
-            error!("error in receive_thread_signal_restapi_nofail: {e:?}");
+        .await;
+        match exec_result {
+            Ok(res) => {
+                if res {
+                    break;
+                }
+            }
+            Err(e) => {
+                error!("error in receive_thread_signal_restapi_nofail: {e:?}");
+            }
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
@@ -108,7 +115,7 @@ async fn receive_thread_signal_restapi(
     dbx: &sea_orm::DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     datasource_id: i64,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(
             crate::config::RQ_TIMEOUT_SIGNAL_API,
@@ -122,6 +129,16 @@ async fn receive_thread_signal_restapi(
     let mut last_sync_t = std::time::SystemTime::now();
 
     loop {
+        let should_exit = datasource::Entity::find_by_id(datasource_id)
+            .filter(datasource::Column::EchoClientLockId.is_not_null())
+            .count(dbx)
+            .await
+            .context(h!())?
+            > 0;
+        if should_exit {
+            info!("datasource {datasource_id} is handled by echo-im, quitting legacy worker...");
+            return Ok(true);
+        }
         // println!("> receiving messages...");
         let mut messages =
             crate::sigint::restapi::receive_messages(config, &rq, dbx)
@@ -404,74 +421,72 @@ pub async fn process_incoming_message_restapi(
         return Ok(());
     };
 
-    if config.read_from_legacy_data_sources.unwrap_or(true) {
-        let message = signal_message::ActiveModel {
-            id: NotSet,
-            body: Set(Some(body.clone())),
-            created_at: NotSet,
-            group_master_key: Set(Some(group_info.group_id.clone())),
-            timestamp: Set(timestamp),
-            sender: Set(Some(source_uuid.clone().to_string())),
-            duplicate_of: Set(m_duplicate_id),
-            format: Set(Some(2)),
-            datasource_id: Set(Some(datasource_id)),
-            deleted: NotSet,
-            external_id: NotSet,
-            message_uid: NotSet,
-        }
-        .insert(dbx)
+    let message = signal_message::ActiveModel {
+        id: NotSet,
+        body: Set(Some(body.clone())),
+        created_at: NotSet,
+        group_master_key: Set(Some(group_info.group_id.clone())),
+        timestamp: Set(timestamp),
+        sender: Set(Some(source_uuid.clone().to_string())),
+        duplicate_of: Set(m_duplicate_id),
+        format: Set(Some(2)),
+        datasource_id: Set(Some(datasource_id)),
+        deleted: NotSet,
+        external_id: NotSet,
+        message_uid: NotSet,
+    }
+    .insert(dbx)
+    .await
+    .context(h!())?;
+    let db_message_id = message.id;
+
+    id::update_message_with_uid(dbx, config, message)
         .await
         .context(h!())?;
-        let db_message_id = message.id;
 
-        id::update_message_with_uid(dbx, config, message)
+    if let Some(ref attachments) = data_message.attachments {
+        for attachment in attachments.iter() {
+            save_attachment_restapi(
+                config,
+                dbx,
+                attachment,
+                Some(db_message_id),
+            )
             .await
             .context(h!())?;
-
-        if let Some(ref attachments) = data_message.attachments {
-            for attachment in attachments.iter() {
-                save_attachment_restapi(
-                    config,
-                    dbx,
-                    attachment,
-                    Some(db_message_id),
-                )
-                .await
-                .context(h!())?;
-            }
         }
-        if let Some(ref quote) = data_message.quote {
-            for attachment in quote.attachments.iter() {
-                save_attachment_restapi(
-                    config,
-                    dbx,
-                    attachment,
-                    Some(db_message_id),
-                )
-                .await
-                .context(h!())?;
-            }
-        }
-
-        // println!("> before inbox_item_oneoff_nofail");
-
-        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
-            settlements.clone(),
-            dbx,
-            rq,
-            config,
-            redis,
-            db_message_id,
-            None,
-        )
-        .await;
-
-        // println!("> before incoming_message_after_insert");
-
-        incoming_message_after_insert(dbx, db_message_id)
-            .await
-            .context(h!())?;
     }
+    if let Some(ref quote) = data_message.quote {
+        for attachment in quote.attachments.iter() {
+            save_attachment_restapi(
+                config,
+                dbx,
+                attachment,
+                Some(db_message_id),
+            )
+            .await
+            .context(h!())?;
+        }
+    }
+
+    // println!("> before inbox_item_oneoff_nofail");
+
+    crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+        settlements.clone(),
+        dbx,
+        rq,
+        config,
+        redis,
+        db_message_id,
+        None,
+    )
+    .await;
+
+    // println!("> before incoming_message_after_insert");
+
+    incoming_message_after_insert(dbx, db_message_id)
+        .await
+        .context(h!())?;
     sync_state.senders.insert(SyncStateSender {
         uuid: Uuid::parse_str(&source_uuid)?,
         name: Some(source_name.clone()),

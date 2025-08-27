@@ -129,6 +129,7 @@ mod m20250822_190939_add_message_id;
 mod m20250823_115254_trim_callsigns;
 mod m20250823_182737_fix_network_freqs_format;
 mod m20250825_105052_add_unit_developing;
+mod m20250824_080657_add_datasource_api_login;
 mod m20250825_182526_rename_sources;
 mod m20250825_192410_make_callsign_sources_optional;
 mod m20250826_094122_add_datasource_group;
@@ -273,6 +274,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250825_192410_make_callsign_sources_optional::Migration),
             Box::new(m20250826_094122_add_datasource_group::Migration),
             Box::new(m20250826_190501_add_deleted_to_groups::Migration),
+            Box::new(m20250822_190939_add_message_id::Migration),
+            Box::new(m20250824_080657_add_datasource_api_login::Migration),
         ]
     }
 }

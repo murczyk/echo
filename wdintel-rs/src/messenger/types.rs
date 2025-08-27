@@ -1,8 +1,18 @@
 use crate::rer_importer::types::SignalGroupStats;
 use crate::sigint::aor::types::AreaOfResponsibility;
+use chrono::NaiveDateTime;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+
+#[derive(Debug)]
+pub struct Message {
+    pub body: String,
+    pub group_id: String,
+    pub sender: Option<String>,
+    pub timestamp: NaiveDateTime,
+    pub datasource_id: i64,
+}
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct EchoAccountF1 {

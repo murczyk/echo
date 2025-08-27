@@ -205,6 +205,7 @@ pub async fn link_account(
             description: Set(description),
             kind: Set(src_display_name),
             default_aor_id: Set(Some(aor_id)),
+            api_login: NotSet,
         }
         .insert(txn)
         .await

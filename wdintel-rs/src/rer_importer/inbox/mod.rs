@@ -16,7 +16,7 @@ use itertools::Itertools;
 use log::*;
 use sea_orm::*;
 
-mod bl;
+pub(crate) mod bl;
 pub mod query;
 
 #[post("/api/rer-importer/get-inbox-map")]

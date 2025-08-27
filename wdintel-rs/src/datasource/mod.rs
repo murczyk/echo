@@ -52,7 +52,10 @@ pub async fn datasource_group_list(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if datasource.kind == "signal" || datasource.kind == "whatsapp" {
+    if datasource.kind == "signal"
+        || datasource.kind == "whatsapp"
+        || datasource.kind == "echo_operator"
+    {
         let now = Utc::now();
         let mut select = signal_message::Entity::find()
             .select_only()

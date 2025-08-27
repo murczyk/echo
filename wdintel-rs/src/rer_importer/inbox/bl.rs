@@ -169,14 +169,14 @@ pub async fn aggregate_to_inbox_messages(
                 sqlx::query(
                     "select ts_headline('russian', $1, websearch_to_tsquery('russian', $2), 'HighlightAll=true') as headline from sigint_search where id=$3"
                 )
-                .bind(body.clone().to_lowercase())
-                .bind(search.to_lowercase().clone())
-                .bind(message.id)
-                .fetch_one(dbx_raw)
-                .await
-                .ok()
-                .and_then(|row| row.try_get::<Option<String>, _>("headline").ok())
-                .flatten()
+                    .bind(body.clone().to_lowercase())
+                    .bind(search.to_lowercase().clone())
+                    .bind(message.id)
+                    .fetch_one(dbx_raw)
+                    .await
+                    .ok()
+                    .and_then(|row| row.try_get::<Option<String>, _>("headline").ok())
+                    .flatten()
             }
         };
         let text_marked = crate::rer_importer::highlight::highlight(

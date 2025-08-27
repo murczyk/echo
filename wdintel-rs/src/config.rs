@@ -109,7 +109,6 @@ pub struct Config {
     pub feature_strict_networks: Option<bool>,
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
-    pub read_from_legacy_data_sources: Option<bool>,
     /// A unique identifier for the server.
     ///
     /// This is an arbitrary integer value in the range **1-16**.

@@ -178,6 +178,10 @@ pub async fn main_server(
         tokio::spawn(async move {
             crate::messenger::worker::receive_thread_nofail(mode).await;
         });
+        tokio::spawn(async move {
+            crate::operator::worker::run_operator_inbox_worker_nofail(mode)
+                .await;
+        });
     }
 
     if let Err(e) =
@@ -434,6 +438,7 @@ pub async fn main_server(
             .service(crate::messenger::unlink)
             .service(crate::messenger::link)
             .service(crate::messenger::group_update)
+            .service(crate::operator::message_submit)
             .service(actix_files::Files::new(crate::config::get_assets_url(), crate::config::get_assets_folder(&config)).show_files_listing())
     })
         .bind((bind_ip, bind_port))?
