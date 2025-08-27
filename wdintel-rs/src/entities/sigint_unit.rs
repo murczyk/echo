@@ -37,6 +37,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
+    #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
+    SigintNetworkCallsign,
     #[sea_orm(has_many = "super::sigint_network_unit::Entity")]
     SigintNetworkUnit,
     #[sea_orm(
@@ -56,6 +58,12 @@ pub enum Relation {
 impl Related<super::sigint_callsign::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintCallsign.def()
+    }
+}
+
+impl Related<super::sigint_network_callsign::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkCallsign.def()
     }
 }
 

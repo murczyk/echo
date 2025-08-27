@@ -77,7 +77,7 @@ where
             deleted: network.deleted,
         });
     }
-    debug!(
+    trace!(
         "> render_networks execution time for {} networks is: {:?}",
         &networks.len(),
         instant.elapsed()
