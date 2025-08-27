@@ -4237,9 +4237,12 @@ contentBlock user shared network model =
                 [ div [ class "mb-[16px]" ]
                     [ div [ class "flex justify-between items-center mb-[8px]" ]
                         [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
-                        , Button.new { label = "Створити", onClick = OpenConfirmationCreateSidebar }
-                            |> Button.withStyleSecondary
-                            |> Button.view
+                        , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
+                            Button.new { label = "Створити", onClick = OpenConfirmationCreateSidebar }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                          else
+                            text ""
                         ]
                     , div [ class "max-h-[350px] overflow-y-auto" ]
                         (List.map
@@ -4268,14 +4271,18 @@ contentBlock user shared network model =
                                                 ]
                                             ]
                                         , div [ class "flex gap-[8px]" ]
-                                            [ case Dict.get description.id model.descriptionsEditDict of
-                                                Just desc ->
-                                                    i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+                                            (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
+                                                [ case Dict.get description.id model.descriptionsEditDict of
+                                                    Just desc ->
+                                                        i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
 
-                                                Nothing ->
-                                                    i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
-                                            , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
-                                            ]
+                                                    Nothing ->
+                                                        i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
+                                                , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                                ]
+                                              else
+                                                []
+                                            )
                                         ]
                                     , div []
                                         [ case Dict.get description.id model.descriptionsEditDict of
@@ -4308,9 +4315,12 @@ contentBlock user shared network model =
                 , div []
                     [ div [ class "flex justify-between items-center mb-[8px]" ]
                         [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
-                        , Button.new { label = "Створити", onClick = OpenSignsCreateSidebar }
-                            |> Button.withStyleSecondary
-                            |> Button.view
+                        , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
+                            Button.new { label = "Створити", onClick = OpenSignsCreateSidebar }
+                                |> Button.withStyleSecondary
+                                |> Button.view
+                          else
+                            text ""
                         ]
                     , div [ class "max-h-[350px] overflow-y-auto" ]
                         (List.map
@@ -4323,14 +4333,18 @@ contentBlock user shared network model =
                                             , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
                                             ]
                                         , div [ class "flex gap-[8px]" ]
-                                            [ case Dict.get description.id model.descriptionsEditDict of
-                                                Just desc ->
-                                                    i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
+                                            (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
+                                                [ case Dict.get description.id model.descriptionsEditDict of
+                                                    Just desc ->
+                                                        i [ class "bi bi-check2 cursor-pointer", onClick <| DescriptionEditSave desc ] []
 
-                                                Nothing ->
-                                                    i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
-                                            , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
-                                            ]
+                                                    Nothing ->
+                                                        i [ class "bi bi-pencil cursor-pointer", onClick <| DescriptionEditClickedByUser description ] []
+                                                , i [ class "bi bi-trash cursor-pointer", onClick <| DescriptionDeleteClickedByUser description ] []
+                                                ]
+                                              else
+                                                []
+                                            )
                                         ]
                                     , div []
                                         [ case Dict.get description.id model.descriptionsEditDict of
