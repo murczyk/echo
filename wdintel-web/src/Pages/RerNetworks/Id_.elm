@@ -301,6 +301,10 @@ type alias Model =
         
         -- Row show all popup status for comments
         , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
+        
+        -- Sidebar states for creating descriptions
+        , confirmationCreateSidebar : Bool
+        , signsCreateSidebar : Bool
     }
 
 
@@ -467,6 +471,10 @@ init route shared () =
         
         -- Row show all popup status initialization
         , rowShowAllPopupStatus = Nothing
+        
+        -- Sidebar states for creating descriptions initialization
+        , confirmationCreateSidebar = False
+        , signsCreateSidebar = False
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -616,6 +624,12 @@ type Msg
     | DeleteCallsignCanceled -- Скасування видалення позивного
     | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor )) -- Зміна статусу popup для показу повного коментаря
+    
+    -- Sidebar management for creating descriptions
+    | OpenConfirmationCreateSidebar
+    | CloseConfirmationCreateSidebar
+    | OpenSignsCreateSidebar
+    | CloseSignsCreateSidebar
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1163,6 +1177,8 @@ update shared msg model =
 
                                 B.Sign ->
                                     ""
+                        , confirmationCreateSidebar = False
+                        , signsCreateSidebar = False
                     }
             in
             ( { m1 | network = Success network }, E.none )
@@ -2510,6 +2526,19 @@ update shared msg model =
             ( { model | rowShowAllPopupStatus = popupStatus }
             , E.none
             )
+            
+        -- Sidebar management for creating descriptions
+        OpenConfirmationCreateSidebar ->
+            ( { model | confirmationCreateSidebar = True }, E.none )
+            
+        CloseConfirmationCreateSidebar ->
+            ( { model | confirmationCreateSidebar = False }, E.none )
+            
+        OpenSignsCreateSidebar ->
+            ( { model | signsCreateSidebar = True }, E.none )
+            
+        CloseSignsCreateSidebar ->
+            ( { model | signsCreateSidebar = False }, E.none )
 
 
 
@@ -4076,39 +4105,11 @@ contentBlock user shared network model =
               in
               div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col flex-1" ]
                 [ div [ class "mb-[16px]" ]
-                    [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
-                    , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                        [ textarea [ class "textarea__field", placeholder "Введіть обґрунтування прив'язки", value model.addConfirmationInp, onInput ConfirmationInputChangedByUser ] []
-                        , div [ class "flex justify-between w-full" ]
-                            [ div [ class "w-[200px]" ]
-                                [ let
-                                    selectedItem =
-                                        Maybe.map
-                                            (\freq ->
-                                                Select.basicMenuItem
-                                                    { item = freq
-                                                    , label = freq
-                                                    }
-                                            )
-                                            model.addConfirmationFreqSelect.selected
-
-                                    defaultOptions =
-                                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
-                                  in
-                                  Html.map AddConfirmationFreqSelMsg <|
-                                    Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
-                                            selectedItem
-                                            model.addConfirmationFreqSelect.state
-                                            model.addConfirmationFreqSelect.items
-                                            "виберіть частоту"
-                                            defaultOptions
-                                ]
-                            , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation }
-                                |> Button.withStyleSecondary
-                                |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
-                                |> Button.view
-                            ]
+                    [ div [ class "flex justify-between items-center mb-[8px]" ]
+                        [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
+                        , Button.new { label = "Створити", onClick = OpenConfirmationCreateSidebar }
+                            |> Button.withStyleSecondary
+                            |> Button.view
                         ]
                     , div [ class "max-h-[200px] overflow-y-auto" ]
                         (List.map
@@ -4175,12 +4176,10 @@ contentBlock user shared network model =
                         )
                     ]
                 , div []
-                    [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
-                    , div [ class "py-[4px] mb-[8px] flex flex-col items-end gap-[4px]" ]
-                        [ textarea [ class "textarea__field", placeholder "Введіть розвідувальні ознаки", value model.addSignsInp, onInput SignsInputChangedByUser ] []
-                        , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
+                    [ div [ class "flex justify-between items-center mb-[8px]" ]
+                        [ h5 [ class "" ] [ text "Розвідувальні ознаки" ]
+                        , Button.new { label = "Створити", onClick = OpenSignsCreateSidebar }
                             |> Button.withStyleSecondary
-                            |> Button.withDisabled (String.isEmpty model.addSignsInp)
                             |> Button.view
                         ]
                     , div [ class "max-h-[200px] overflow-y-auto" ]
@@ -4483,6 +4482,16 @@ view user shared model =
                     (case model.network of
                         Success network ->
                             contentBlock user shared network model
+                                ++ (if model.confirmationCreateSidebar then
+                                        [ Sidebar.view True CloseConfirmationCreateSidebar [ confirmationCreateSidebarContent shared model user network ] ]
+                                    else
+                                        []
+                                    )
+                                ++ (if model.signsCreateSidebar then
+                                        [ Sidebar.view True CloseSignsCreateSidebar [ signsCreateSidebarContent shared model user network ] ]
+                                    else
+                                        []
+                                    )
 
                         _ ->
                             [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
@@ -5697,6 +5706,95 @@ editCallsignSidebarContent shared model user =
                              callsignEmpty || roFreqEmpty
                             )
                         |> Button.view
+                ]
+            ]
+        ]
+
+
+-- Sidebar content for creating confirmation descriptions
+confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
+confirmationCreateSidebarContent shared model user network =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити обґрунтування прив'язки" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\freq ->
+                                    Select.basicMenuItem
+                                        { item = freq
+                                        , label = freq
+                                        }
+                                )
+                                model.addConfirmationFreqSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map AddConfirmationFreqSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.addConfirmationFreqSelect.state
+                                model.addConfirmationFreqSelect.items
+                                "виберіть частоту"
+                                defaultOptions
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки *" ]
+                    , textarea 
+                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        , placeholder "Введіть обґрунтування прив'язки"
+                        , value model.addConfirmationInp
+                        , onInput ConfirmationInputChangedByUser
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseConfirmationCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation }
+                    |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
+                    |> Button.view
+                ]
+            ]
+        ]
+
+
+-- Sidebar content for creating signs descriptions
+signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
+signsCreateSidebarContent shared model user network =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити розвідувальні ознаки" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Розвідувальні ознаки *" ]
+                    , textarea 
+                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        , placeholder "Введіть розвідувальні ознаки"
+                        , value model.addSignsInp
+                        , onInput SignsInputChangedByUser
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseSignsCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
+                    |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                    |> Button.view
                 ]
             ]
         ]
