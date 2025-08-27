@@ -305,6 +305,17 @@ type alias Model =
         -- Sidebar states for creating descriptions
         , confirmationCreateSidebar : Bool
         , signsCreateSidebar : Bool
+        
+        -- Sidebar state for editing descriptions
+        , editDescriptionSidebar : Maybe ( Int, B.NetworkDescription )
+        
+        -- Input fields for editing descriptions
+        , editDescriptionInp : String
+        , editDescriptionFreqSelect :
+            { state : Select.State
+            , items : List (Select.MenuItem String)
+            , selected : Maybe String
+            }
     }
 
 
@@ -475,6 +486,17 @@ init route shared () =
         -- Sidebar states for creating descriptions initialization
         , confirmationCreateSidebar = False
         , signsCreateSidebar = False
+        
+        -- Sidebar state for editing descriptions initialization
+        , editDescriptionSidebar = Nothing
+        
+        -- Input fields for editing descriptions initialization
+        , editDescriptionInp = ""
+        , editDescriptionFreqSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-description-freq-state")
+            , items = []
+            , selected = Nothing
+            }
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -630,6 +652,14 @@ type Msg
     | CloseConfirmationCreateSidebar
     | OpenSignsCreateSidebar
     | CloseSignsCreateSidebar
+    
+    -- Sidebar management for editing descriptions
+    | OpenEditDescriptionSidebar B.NetworkDescription
+    | CloseEditDescriptionSidebar
+    
+    -- Input field management for editing descriptions
+    | EditDescriptionInputChanged String
+    | EditDescriptionFreqSelMsg (Select.Msg String)
 
 
 update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
@@ -1201,7 +1231,7 @@ update shared msg model =
             ( model, E.networkDeleteDescription DescriptionDeleted { descriptionId = description.id, networkId = description.networkId } )
 
         DescriptionEditClickedByUser description ->
-            ( { model | descriptionsEditDict = Dict.insert description.id description model.descriptionsEditDict }, E.none )
+            ( { model | editDescriptionSidebar = Just ( description.id, description ) }, E.none )
 
         DescriptionEditedByUser descId newDescription ->
             let
@@ -1216,13 +1246,28 @@ update shared msg model =
             ( { model | descriptionsEditDict = descEditDict }, E.none )
 
         DescriptionEditSave description ->
-            ( model
+            let
+                -- Use the current input from the sidebar
+                updatedDescription = model.editDescriptionInp
+                -- Get selected frequency if any
+                selectedFreq = model.editDescriptionFreqSelect.selected
+                -- Find the frequency ID if a frequency is selected
+                networkFreqId = case selectedFreq of
+                    Just freq -> 
+                        case model.freqs of
+                            Success freqs -> 
+                                ListX.find (\f -> f.freq == freq) freqs
+                                    |> Maybe.map .networkFreqId
+                            _ -> Nothing
+                    Nothing -> Nothing
+            in
+            ( { model | editDescriptionSidebar = Nothing }
             , E.networkUpdateDescription (DescriptionEditUpdated description.id)
                 { networkId = description.networkId
                 , descriptionId = description.id
                 , descrType = description.descrType
-                , description = description.description
-                , networkFreqId = Nothing --TOOD
+                , description = updatedDescription
+                , networkFreqId = networkFreqId
                 }
             )
 
@@ -2539,6 +2584,72 @@ update shared msg model =
             
         CloseSignsCreateSidebar ->
             ( { model | signsCreateSidebar = False }, E.none )
+            
+        -- Sidebar management for editing descriptions
+        OpenEditDescriptionSidebar description ->
+            let
+                -- Initialize input fields with current description data
+                initialInput = description.description
+                -- For network descriptions, we don't have frequency info, so we'll leave it empty
+                initialFreq = Nothing
+                freqItems = case model.freqs of
+                    Success freqs -> List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+                    _ -> []
+            in
+            ( { model 
+                | editDescriptionSidebar = Just ( description.id, description )
+                , editDescriptionInp = initialInput
+                , editDescriptionFreqSelect = 
+                    { state = model.editDescriptionFreqSelect.state
+                    , items = freqItems
+                    , selected = initialFreq
+                    }
+              }
+            , E.none
+            )
+            
+        CloseEditDescriptionSidebar ->
+            ( { model 
+                | editDescriptionSidebar = Nothing
+                , editDescriptionInp = ""
+                , editDescriptionFreqSelect = 
+                    { state = model.editDescriptionFreqSelect.state
+                    , items = []
+                    , selected = Nothing
+                    }
+              }
+            , E.none
+            )
+            
+        -- Input field management for editing descriptions
+        EditDescriptionInputChanged input ->
+            ( { model | editDescriptionInp = input }, E.none )
+            
+        EditDescriptionFreqSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.editDescriptionFreqSelect.state
+
+                updatedFreq =
+                    Le.Block.Select.singleUpd mAct model.editDescriptionFreqSelect.selected
+
+                freqsSelect =
+                    model.editDescriptionFreqSelect
+
+                freqsSelect2 =
+                    { freqsSelect
+                        | state = imodel
+                        , selected = updatedFreq
+                    }
+            in
+            ( { model
+                | editDescriptionFreqSelect = freqsSelect2
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    EditDescriptionFreqSelMsg
+                    icmd
+            )
 
 
 
@@ -4492,6 +4603,16 @@ view user shared model =
                                     else
                                         []
                                     )
+                                ++ (if model.editDescriptionSidebar /= Nothing then
+                                        case model.editDescriptionSidebar of
+                                            Just ( _, description ) ->
+                                                [ Sidebar.view True CloseEditDescriptionSidebar [ editDescriptionSidebarContent shared model user network description ] ]
+                                            
+                                            Nothing ->
+                                                []
+                                    else
+                                        []
+                                    )
 
                         _ ->
                             [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
@@ -5794,6 +5915,63 @@ signsCreateSidebarContent shared model user network =
                     |> Button.view
                 , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
                     |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                    |> Button.view
+                ]
+            ]
+        ]
+
+
+-- Sidebar content for editing descriptions
+editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html Msg
+editDescriptionSidebarContent shared model user network description =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати коментар" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\freq ->
+                                    Select.basicMenuItem
+                                        { item = freq
+                                        , label = freq
+                                        }
+                                )
+                                model.editDescriptionFreqSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map EditDescriptionFreqSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.editDescriptionFreqSelect.state
+                                model.editDescriptionFreqSelect.items
+                                "виберіть частоту"
+                                defaultOptions
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Текст коментаря *" ]
+                    , textarea 
+                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        , placeholder "Введіть текст коментаря"
+                        , value model.editDescriptionInp
+                        , onInput EditDescriptionInputChanged
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditDescriptionSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = DescriptionEditSave description }
+                    |> Button.withDisabled (String.isEmpty model.editDescriptionInp)
                     |> Button.view
                 ]
             ]
