@@ -1,5 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::sigint::network::types::ListNetworksSortBy;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
@@ -1194,7 +1195,6 @@ async fn get_map_image(
 
 pub async fn load_networks(
     db: &DatabaseConnection,
-    groups: Vec<String>,
     req: &Json<EtalonkaJimForksReq>,
 ) -> Result<HashMap<String, Vec<NetworkEtalonkaResult>>, AppError> {
     let mut networks = sigint_network::Entity::find()
@@ -1230,70 +1230,68 @@ pub async fn load_networks(
         .column(sigint_network::Column::OperationPeriod)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_network::Column::ActiveFrom)
-        .column(sigint_network::Column::ActiveTo)
-        .filter(sigint_network::Column::Deleted.eq(false));
+        .column(sigint_network::Column::ActiveTo);
 
-    if let Some(filter_unit) = &req.filter_unit {
+    networks = networks.filter(
+        sigint_network::Column::Deleted
+            .eq(req.req.show_only_deleted.unwrap_or(false)),
+    );
+
+    if !req.req.show_inactive.unwrap_or(false) {
+        networks = networks.filter(sigint_network::Column::ActiveTo.is_null());
+    }
+
+    if let Some(filter_unit) = &req.req.filter_unit {
         networks = networks.filter(Expr::cust_with_values(
             "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
             vec![format!("%{}%", filter_unit.to_lowercase())],
         ))
     };
 
-    if req.filter_freq.is_some()
-        || req.since_date_inclusive_ms.is_some()
-        || req.till_date_noninclusive_ms.is_some()
-    {
-        let mut subquery = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SigintNetworkFreq.def(),
-            )
+    if req.req.show_only_further_inverstigation.unwrap_or(false) {
+        networks = networks.filter(sigint_network_unit::Column::Id.is_null());
+    }
+
+    // Optional filter by Areas of Responsibility (AOR) IDs
+    if let Some(aor_ids) = &req.req.aor_ids {
+        if !aor_ids.is_empty() {
+            networks = networks
+                .join_as(
+                    JoinType::InnerJoin,
+                    sigint_network::Relation::SigintNetworkAor.def(),
+                    Alias::new("sigint_network_aor"),
+                )
+                .filter(
+                    sigint_network_aor::Column::AorId.is_in(aor_ids.clone()),
+                );
+        }
+    }
+
+    if let Some(filter_freq) = &req.req.filter_freq {
+        let subquery = sigint_network_freq::Entity::find()
             .select_only()
-            .column(signal_message::Column::Id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-            .filter(sigint_network_freq::Column::ActiveTo.is_null())
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .column(sigint_network_freq::Column::Freq)
             .filter(
                 sigint_network_freq::Column::NetworkId
                     .into_simple_expr()
                     .eq(sigint_network::Column::Id.into_simple_expr()),
-            );
-
-        if let Some(filter_freq) = &req.filter_freq {
-            subquery = subquery.filter(Expr::cust_with_values(
+            )
+            .filter(sigint_network_freq::Column::Deleted.eq(false))
+            .filter(Expr::cust_with_values(
                 "sigint_network_freq.freq ilike $1",
                 vec![format!("{filter_freq}%").as_str()],
             ));
-        }
-        if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
-            subquery = subquery.filter(
-                sigint_inbox_item::Column::Datetime
-                    .gte(dt_from_millis(since_date_inclusive_ms)?),
-            );
-        }
-        if let Some(till_date_inclusive_ms) = req.till_date_noninclusive_ms {
-            subquery = subquery.filter(
-                sigint_inbox_item::Column::Datetime
-                    .lte(dt_from_millis(till_date_inclusive_ms)?),
-            );
-        }
         networks = networks.filter(Expr::exists(subquery.into_query()));
     }
 
-    networks = if let Some(sort_by) = &req.sort_by {
+    networks = if let Some(sort_by) = &req.req.sort_by {
         sort_by
             .iter()
             .fold(networks, |networks, sort_by| match sort_by {
-                EtalonkaJimForksSortBy::NetworkNameAsc => {
+                ListNetworksSortBy::NameAsc => {
                     networks.order_by_asc(sigint_network::Column::Name)
                 }
-                EtalonkaJimForksSortBy::NetworkNameDesc => {
+                ListNetworksSortBy::NameDesc => {
                     networks.order_by_desc(sigint_network::Column::Name)
                 }
             })
@@ -1372,10 +1370,10 @@ pub async fn load_networks_by_id(
         sort_by
             .iter()
             .fold(networks, |networks, sort_by| match sort_by {
-                EtalonkaJimForksSortBy::NetworkNameAsc => {
+                ListNetworksSortBy::NameAsc => {
                     networks.order_by_asc(sigint_network::Column::Name)
                 }
-                EtalonkaJimForksSortBy::NetworkNameDesc => {
+                ListNetworksSortBy::NameDesc => {
                     networks.order_by_desc(sigint_network::Column::Name)
                 }
             })

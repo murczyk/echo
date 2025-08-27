@@ -290,12 +290,30 @@ prepareReportDownloadCmd model =
     case ( model.from.datePosix, model.to.datePosix ) of
         ( Just dtFromPosix, Just dtToPosix ) ->
             let
-                payload =
-                    { sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
-                    , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
-                    , filterFreq = emptySToNothing model.filterState.freq
+                req =
+                    { -- sinceDateInclusiveMs = Just <| Time.posixToMillis dtFromPosix
+                      -- , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                      filterFreq = emptySToNothing model.filterState.freq
                     , filterUnit = emptySToNothing model.filterState.unit
                     , sortBy = Nothing
+                    , showOnlyFurtherInverstigation =
+                        if model.showOnlyInvestigating then
+                            Just True
+
+                        else
+                            Nothing
+                    , showInactive = Just (not model.showOnlyActive)
+                    , showOnlyDeleted = Just model.showArchived
+                    , aorIds =
+                        if List.isEmpty model.aorFilterSelect.selected then
+                            Nothing
+
+                        else
+                            Just model.aorFilterSelect.selected
+                    }
+
+                payload =
+                    { req = req
                     , settings =
                         { networksOnly = model.reportGUROnly
                         , activeFreqsOnly = model.reportActiveFreqsOnly
