@@ -33,7 +33,6 @@ pub struct NetworkCallsignResult {
     pub sc_source_id: Option<i32>,
     pub sc_radio_freq: Option<String>,
     pub sc_developing: Option<bool>,
-    pub sc_created_at: NaiveDateTime,
     pub sc_deleted: Option<bool>,
     /// fields from unit likned to known sigint callsign
     pub sc_unit_id: Option<i64>,
@@ -499,13 +498,6 @@ where
                 sigint_callsign::Column::Developing,
             )),
             "sc_developing",
-        )
-        .column_as(
-            Expr::col((
-                sigint_callsign::Entity,
-                sigint_callsign::Column::CreatedAt,
-            )),
-            "sc_created_at",
         )
         .column_as(
             Expr::col((
