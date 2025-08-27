@@ -5213,24 +5213,22 @@ callsignCreateSidebarContent shared model user =
                         text ""
                     ]
                 , div []
-                    [ label []
-                        [ input
-                            [ type_ "checkbox"
-                            , class "mr-2"
-                            , checked (Maybe.map .unitDeveloping model.callsignCreateState |> Maybe.withDefault False)
-                            , onCheck <|
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .unitDeveloping model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle = \_ ->
                                 UpdateCallsignCreateField
-                                    << (\isChecked maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | unitDeveloping = isChecked }
+                                    (\maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | unitDeveloping = not s.unitDeveloping }
 
-                                                Nothing ->
-                                                    Nothing
-                                       )
-                            ]
-                            []
-                        , span [ class "text-sm font-medium" ] [ text "Підрозділ в дорозвідці" ]
+                                            Nothing ->
+                                                Nothing
+                                    )
+                            }
+                            |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
+                            |> Checkbox.view
                         ]
                     ]
                 , div []
@@ -5528,24 +5526,22 @@ editCallsignSidebarContent shared model user =
                         text ""
                     ]
                 , div []
-                    [ label []
-                        [ input
-                            [ type_ "checkbox"
-                            , class "mr-2"
-                            , checked (Maybe.map .unitDeveloping model.editCallsignState |> Maybe.withDefault False)
-                            , onCheck <|
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .unitDeveloping model.editCallsignState |> Maybe.withDefault False
+                            , onToggle = \_ ->
                                 UpdateEditCallsignField
-                                    << (\isChecked maybeState ->
-                                            case maybeState of
-                                                Just s ->
-                                                    Just { s | unitDeveloping = isChecked }
+                                    (\maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | unitDeveloping = not s.unitDeveloping }
 
-                                                Nothing ->
-                                                    Nothing
-                                       )
-                            ]
-                            []
-                        , span [ class "text-sm font-medium" ] [ text "Підрозділ в дорозвідці" ]
+                                            Nothing ->
+                                                Nothing
+                                    )
+                            }
+                            |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
+                            |> Checkbox.view
                         ]
                     ]
                 , div []
