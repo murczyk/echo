@@ -2395,6 +2395,40 @@ pub async fn oneoff_merge_two_networks(
     Ok(())
 }
 
+pub async fn oneoff_network_activity_stat(
+    mode: crate::types::Mode,
+    ps: &crate::OneoffGetNetworksActivityStatsPs,
+) -> anyhow::Result<(), AppError> {
+    debug!("oneoff_network_activity_stat");
+    let start_dt: NaiveDateTime =
+        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")?;
+    let end_dt: NaiveDateTime =
+        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
+
+    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let groups = crate::users::get_identity_sigint_groups(&dbx, &ps.login)
+        .await
+        .context(h!())?;
+
+    let freqs_count =
+        get_network_active_freqs_count(&dbx, &groups, start_dt, end_dt)
+            .await
+            .context(h!())?;
+
+    let callsigns_count =
+        get_network_active_callsigns_count(&dbx, &groups, start_dt, end_dt)
+            .await
+            .context(h!())?;
+
+    println!("Інтенсивність роботи радіомереж за період з {start_dt} по {end_dt}");
+    println!("-----------------------------------------");
+    println!("К-сть виявлених частот:   {freqs_count}");
+    println!("К-сть виявлених позивних: {callsigns_count}");
+
+    debug!("oneoff_merge_networks completed");
+    Ok(())
+}
+
 pub fn display_network_type(input: Option<&str>) -> Result<String, AppError> {
     match input {
         Some("VHF") => Ok("УКХ".to_string()),

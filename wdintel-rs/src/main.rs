@@ -305,7 +305,7 @@ pub struct OneoffFixAreasOfResponsibilityPs {
 #[derive(clap::Parser, Debug)]
 pub struct OneoffGetNetworksActivityStatsPs {
     #[arg(long, value_enum)]
-    pub user_id: String,
+    pub login: String,
     /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
     #[arg(long, value_enum)]
     pub start: String,
@@ -671,7 +671,7 @@ async fn main() -> Result<(), AppError> {
             .await
         }
         Cmd::OneoffGetNetworksActivityStats(ps) => {
-            crate::sigint::network::oneoff_network_activity_stat(mode, ps).await
+            crate::sigint::network::oneoff_network_activity_stat(mode, &ps).await
         }
     }
 }
