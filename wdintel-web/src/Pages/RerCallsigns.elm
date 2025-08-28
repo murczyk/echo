@@ -1,4 +1,4 @@
-module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, page)
+module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, page, processTabDelimitedInput, mkAddState, cellsToTriples)
 
 import Api
 import Auth
@@ -575,25 +575,7 @@ update req shared msg model =
         AddStateMsg pos state ->
             let
                 triples : List AddState
-                triples =
-                    state.inpCallsign
-                        |> String.lines
-                        |> List.map (String.split "\t")
-                        |> List.filterMap
-                            (\row ->
-                                case row of
-                                    [ a, b, c ] ->
-                                        Just
-                                            { inpCallsign = a
-                                            , inpPosition = b
-                                            , inpComment = c
-                                            , inpDeveloping = False
-                                            , inpRadioFreq = ""
-                                            }
-
-                                    _ ->
-                                        Nothing
-                            )
+                triples = processTabDelimitedInput state.inpCallsign
 
                 addState =
                     if pos > 0 || triples == [] then
@@ -1937,6 +1919,8 @@ contentBlock shared model user =
                     [ div [ class "flex flex-col" ]
                         [ input
                             [ class "form-input uppercase w-full"
+                            , id "callsign-input"
+                            , name "callsign"
                             , rows 1
                             , Attr.disabled (not hasEditorRole)
                             , placeholder "Позивний"
@@ -2413,6 +2397,52 @@ unitsBlock shared model =
                 )
                 model.unitStats
             ]
+
+
+mkAddState : String -> String -> String -> AddState
+mkAddState a b c =
+    { inpCallsign = String.trim a
+    , inpPosition = String.trim b
+    , inpComment = String.trim c
+    , inpDeveloping = False
+    , inpRadioFreq = ""
+    }
+
+
+cellsToTriples : List String -> List AddState
+cellsToTriples cells =
+    case cells of
+        a :: b :: c :: rest ->
+            mkAddState a b c :: cellsToTriples rest
+
+        a :: b :: [] ->
+            [ mkAddState a b "" ]
+
+        a :: [] ->
+            [ mkAddState a "" "" ]
+
+        [] ->
+            []
+
+
+processTabDelimitedInput : String -> List AddState
+processTabDelimitedInput input =
+    input
+        |> String.lines
+        |> List.concatMap
+            (\line ->
+                let
+                    cells = String.split "\t" line
+                in
+                case cells of
+                    -- Exact triple                                    
+                    [ a, b, c ] ->
+                        [ mkAddState a b c ]
+ 
+                    -- Anything else: treat as a flat sequence of cells to be chunked into triples
+                    _ ->
+                        cellsToTriples cells
+            )
 
 
 view : Bool -> Shared.Model -> B.User -> Model -> View Msg
