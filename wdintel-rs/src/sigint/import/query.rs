@@ -4,6 +4,29 @@ use anyhow::Context;
 use sea_orm::*;
 use std::collections::BTreeMap;
 
+pub async fn find_existing_areas_of_responsibility<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<area_of_responsibility::Model>,
+) -> anyhow::Result<BTreeMap<String, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let names = recs.iter().map(|rec| rec.name.clone()).collect::<Vec<_>>();
+    if names.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Name.is_in(names))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|rec| (rec.name, rec.id))
+        .collect();
+    Ok(ids_map)
+}
+
 pub async fn find_existing_modulations<'a, 'async_trait, C>(
     txn: &C,
     recs: &Vec<modulation::Model>,
@@ -59,19 +82,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_signal::Entity::find()
-        .filter(sigint_signal::Column::MothershipId.is_in(ids))
+        .filter(sigint_signal::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -85,19 +108,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::MothershipId.is_in(ids))
+        .filter(sigint_unit::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -111,19 +134,71 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network::Entity::find()
-        .filter(sigint_network::Column::MothershipId.is_in(ids))
+        .filter(sigint_network::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
+pub async fn find_existing_sigint_network_aors<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<sigint_network_aor::Model>,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let ids = recs
+        .iter()
+        .flat_map(|rec| rec.sigint_origin_id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = sigint_network_aor::Entity::find()
+        .filter(sigint_network_aor::Column::SigintOriginId.is_in(ids))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
+pub async fn find_existing_sigint_zone_aors<'a, 'async_trait, C>(
+    txn: &C,
+    recs: &Vec<sigint_zone_aor::Model>,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let ids = recs
+        .iter()
+        .flat_map(|rec| rec.sigint_origin_id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = sigint_zone_aor::Entity::find()
+        .filter(sigint_zone_aor::Column::SigintOriginId.is_in(ids))
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -137,19 +212,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_post::Entity::find()
-        .filter(sigint_post::Column::MothershipId.is_in(ids))
+        .filter(sigint_post::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -163,19 +238,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_description::Entity::find()
-        .filter(sigint_network_description::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_description::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -189,19 +264,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_freq::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -215,19 +290,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_callsign::Entity::find()
-        .filter(sigint_network_callsign::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_callsign::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -241,19 +316,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_callsign::Entity::find()
-        .filter(sigint_callsign::Column::MothershipId.is_in(ids))
+        .filter(sigint_callsign::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -267,19 +342,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_unit::Entity::find()
-        .filter(sigint_network_unit::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_unit::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -293,19 +368,21 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_unit_changelog::Entity::find()
-        .filter(sigint_network_unit_changelog::Column::MothershipId.is_in(ids))
+        .filter(
+            sigint_network_unit_changelog::Column::SigintOriginId.is_in(ids),
+        )
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -319,19 +396,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_callsign_changelog::Entity::find()
-        .filter(sigint_callsign_changelog::Column::MothershipId.is_in(ids))
+        .filter(sigint_callsign_changelog::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -345,19 +422,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_signal_changelog::Entity::find()
-        .filter(sigint_signal_changelog::Column::MothershipId.is_in(ids))
+        .filter(sigint_signal_changelog::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -371,19 +448,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_post::Entity::find()
-        .filter(sigint_network_post::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_post::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -397,19 +474,21 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_freq_changelog::Entity::find()
-        .filter(sigint_network_freq_changelog::Column::MothershipId.is_in(ids))
+        .filter(
+            sigint_network_freq_changelog::Column::SigintOriginId.is_in(ids),
+        )
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }
@@ -423,19 +502,19 @@ where
 {
     let ids = recs
         .iter()
-        .flat_map(|rec| rec.mothership_id)
+        .flat_map(|rec| rec.sigint_origin_id)
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
 
     let ids_map = sigint_network_changelog::Entity::find()
-        .filter(sigint_network_changelog::Column::MothershipId.is_in(ids))
+        .filter(sigint_network_changelog::Column::SigintOriginId.is_in(ids))
         .all(txn)
         .await
         .context(h!())?
         .into_iter()
-        .flat_map(|rec| rec.mothership_id.map(|id| (id, rec.id)))
+        .flat_map(|rec| rec.sigint_origin_id.map(|id| (id, rec.id)))
         .collect();
     Ok(ids_map)
 }

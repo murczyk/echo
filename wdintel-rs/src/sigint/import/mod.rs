@@ -5,7 +5,6 @@ use crate::sigint::import::types::*;
 use crate::types::Mode;
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Confirm};
-use echo_migration::Expr;
 use log::*;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait,
@@ -38,12 +37,11 @@ pub async fn oneoff_import_etalon_data(
     mode: Mode,
     path: String,
     origin_name: String,
-    mothership_ids_destination_path: Option<String>,
+    sigint_origin_ids_destination_path: Option<String>,
     autocommit: bool,
 ) -> Result<(), AppError> {
-    let from_mothership = origin_name.eq("mothership");
-    if mothership_ids_destination_path.is_none() && !from_mothership {
-        return Err(AppError::BL { msg: format!("mothership_ids_destination_path is required when importing from {origin_name}") });
+    if sigint_origin_ids_destination_path.is_none() {
+        return Err(AppError::BL { msg: format!("sigint_origin_ids_destination_path is required when importing from {origin_name}") });
     }
     let autocommit_txt = match autocommit {
         true => "autocommit on",
@@ -70,15 +68,10 @@ pub async fn oneoff_import_etalon_data(
     };
     let (committed, mut import_result) = {
         let txn = dbx.begin().await.context(h!())?;
-        let (ok, import_result) = import_etalon_data(
-            &txn,
-            etalon.clone(),
-            origin.id,
-            true,
-            from_mothership,
-        )
-        .await
-        .context(h!())?;
+        let (ok, import_result) =
+            import_etalon_data(&txn, etalon.clone(), origin.id, true)
+                .await
+                .context(h!())?;
         let should_commit = ok && autocommit;
         if should_commit {
             txn.commit().await.context(h!())?;
@@ -92,15 +85,10 @@ pub async fn oneoff_import_etalon_data(
             .interact()
             .context(h!())?
         {
-            let (_, fin_result) = import_etalon_data(
-                &dbx,
-                etalon.clone(),
-                origin.id,
-                false,
-                from_mothership,
-            )
-            .await
-            .context(h!())?;
+            let (_, fin_result) =
+                import_etalon_data(&dbx, etalon.clone(), origin.id, false)
+                    .await
+                    .context(h!())?;
             import_result = fin_result;
             info!("Import completed.");
             true
@@ -112,333 +100,14 @@ pub async fn oneoff_import_etalon_data(
     } else {
         true
     };
-    if committed && !from_mothership {
-        let file_path = mothership_ids_destination_path.context(h!())?;
+    if committed {
+        let file_path = sigint_origin_ids_destination_path.context(h!())?;
         let content = serde_json::to_string(&import_result).context(h!())?;
         let mut file = File::create(file_path.clone()).await.context(h!())?;
         file.write_all(content.as_bytes()).await.context(h!())?;
-        info!("import result needs to be imported back to {origin_name}. it' at {file_path}");
+        info!("import result needs to be imported back to {origin_name}. it's at {file_path}");
     }
 
-    Ok(())
-}
-
-pub async fn oneoff_clear_mothership_ids(mode: Mode) -> Result<(), AppError> {
-    info!("clearing mothership ids");
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
-    let txn = dbx.begin().await.context(h!())?;
-
-    sigint_signal::Entity::update_many()
-        .col_expr(
-            sigint_signal::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_signal_changelog::Entity::update_many()
-        .col_expr(
-            sigint_signal_changelog::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_unit::Entity::update_many()
-        .col_expr(sigint_unit::Column::MothershipId, Expr::value(None::<i64>))
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network_description::Entity::update_many()
-        .col_expr(
-            sigint_network_description::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network_changelog::Entity::update_many()
-        .col_expr(
-            sigint_network_changelog::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network::Entity::update_many()
-        .col_expr(
-            sigint_network::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network_freq::Entity::update_many()
-        .col_expr(
-            sigint_network_freq::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network_unit::Entity::update_many()
-        .col_expr(
-            sigint_network_unit::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network_unit_changelog::Entity::update_many()
-        .col_expr(
-            sigint_network_unit_changelog::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_network_freq_changelog::Entity::update_many()
-        .col_expr(
-            sigint_network_freq_changelog::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_callsign::Entity::update_many()
-        .col_expr(
-            sigint_callsign::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    sigint_callsign_changelog::Entity::update_many()
-        .col_expr(
-            sigint_callsign_changelog::Column::MothershipId,
-            Expr::value(None::<i64>),
-        )
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    modulation::Entity::update_many()
-        .col_expr(modulation::Column::MothershipId, Expr::value(None::<i32>))
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    source::Entity::update_many()
-        .col_expr(source::Column::MothershipId, Expr::value(None::<i64>))
-        .exec(&txn)
-        .await
-        .context(h!())?;
-
-    txn.commit().await.context(h!())?;
-    info!("completed.");
-    Ok(())
-}
-
-pub async fn oneoff_import_mothership_ids(
-    mode: Mode,
-    path: String,
-) -> Result<(), AppError> {
-    info!("importing mothership ids from  file {path}");
-    let mut file_read = File::open(path).await.context(h!())?;
-    let mut buffer = Vec::new();
-    file_read.read_to_end(&mut buffer).await.context(h!())?;
-    let etalon = String::from_utf8_lossy(&buffer).to_string();
-    let ids: EtalonImportResult =
-        serde_json::from_str(&etalon).context(h!())?;
-
-    let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
-    let txn = dbx.begin().await.context(h!())?;
-
-    for (original_id, mothership_id) in ids.sigint_signal.ids_map {
-        sigint_signal::Entity::update_many()
-            .filter(sigint_signal::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_signal::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_signal_changelog.ids_map {
-        sigint_signal_changelog::Entity::update_many()
-            .filter(sigint_signal_changelog::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_signal_changelog::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_unit.ids_map {
-        sigint_unit::Entity::update_many()
-            .filter(sigint_unit::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_unit::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_network_description.ids_map {
-        sigint_network_description::Entity::update_many()
-            .filter(sigint_network_description::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network_description::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_network_changelog.ids_map {
-        sigint_network_changelog::Entity::update_many()
-            .filter(sigint_network_changelog::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network_changelog::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_network.ids_map {
-        sigint_network::Entity::update_many()
-            .filter(sigint_network::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_network_freq.ids_map {
-        sigint_network_freq::Entity::update_many()
-            .filter(sigint_network_freq::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network_freq::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_network_unit.ids_map {
-        sigint_network_unit::Entity::update_many()
-            .filter(sigint_network_unit::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network_unit::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in
-        ids.sigint_network_unit_changelog.ids_map
-    {
-        sigint_network_unit_changelog::Entity::update_many()
-            .filter(sigint_network_unit_changelog::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network_unit_changelog::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in
-        ids.sigint_network_freq_changelog.ids_map
-    {
-        sigint_network_freq_changelog::Entity::update_many()
-            .filter(sigint_network_freq_changelog::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_network_freq_changelog::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_callsign.ids_map {
-        sigint_callsign::Entity::update_many()
-            .filter(sigint_callsign::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_callsign::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.sigint_callsign_changelog.ids_map {
-        sigint_callsign_changelog::Entity::update_many()
-            .filter(sigint_callsign_changelog::Column::Id.eq(original_id))
-            .col_expr(
-                sigint_callsign_changelog::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.modulation.ids_map {
-        modulation::Entity::update_many()
-            .filter(modulation::Column::Id.eq(original_id))
-            .col_expr(
-                modulation::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    for (original_id, mothership_id) in ids.source.ids_map {
-        source::Entity::update_many()
-            .filter(source::Column::Id.eq(original_id))
-            .col_expr(
-                source::Column::MothershipId,
-                Expr::value(Some(mothership_id)),
-            )
-            .exec(&txn)
-            .await
-            .context(h!())?;
-    }
-
-    txn.commit().await.context(h!())?;
-    info!("completed.");
     Ok(())
 }
 
@@ -573,8 +242,23 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    let area_of_responsibility = area_of_responsibility::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let sigint_network_aor = sigint_network_aor::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let sigint_zone_aor = sigint_zone_aor::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
 
     let result = EtalonData {
+        area_of_responsibility,
+        sigint_network_aor,
+        sigint_zone_aor,
         sigint_unit,
         sigint_signal,
         sigint_signal_changelog,
@@ -601,41 +285,58 @@ async fn import_etalon_data<'a, 'async_trait, C>(
     data: EtalonData,
     origin_id: i64,
     dry_run: bool,
-    from_mothership: bool,
 ) -> anyhow::Result<(bool, EtalonImportResult)>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let mut import_warnings = vec![];
+    let default_zone_id = sigint_zone::Entity::find()
+        .filter(sigint_zone::Column::Deleted.eq(false))
+        .order_by_asc(sigint_zone::Column::CreatedAt)
+        .one(txn)
+        .await
+        .context(h!())?
+        .context(h!())?
+        .id;
 
-    let modulation_import_result = import_modulation_data(
-        txn,
-        origin_id,
-        data.modulation,
-        from_mothership,
-    )
-    .await
-    .context(h!())?;
+    let area_of_responsibility_import_result =
+        import_area_of_responsibility_data(
+            txn,
+            origin_id,
+            data.area_of_responsibility,
+        )
+        .await
+        .context(h!())?;
 
-    let source_import_result =
-        import_source_data(txn, origin_id, data.source, from_mothership)
+    let modulation_import_result =
+        import_modulation_data(txn, origin_id, data.modulation)
             .await
             .context(h!())?;
 
-    let sigint_unit_import_result = import_sigint_unit_data(
-        txn,
-        origin_id,
-        data.sigint_unit,
-        from_mothership,
-    )
-    .await
-    .context(h!())?;
+    let source_import_result = import_source_data(txn, origin_id, data.source)
+        .await
+        .context(h!())?;
 
-    let sigint_network_import_result = import_sigint_network_data(
+    let sigint_unit_import_result =
+        import_sigint_unit_data(txn, origin_id, data.sigint_unit)
+            .await
+            .context(h!())?;
+
+    let sigint_network_import_result =
+        import_sigint_network_data(txn, origin_id, data.sigint_network)
+            .await
+            .context(h!())?;
+
+    let sigint_network_aor_import_result =
+        import_sigint_network_aor_data(txn, origin_id, data.sigint_network_aor)
+            .await
+            .context(h!())?;
+
+    let sigint_zone_aor_import_result = import_sigint_zone_aor_data(
         txn,
         origin_id,
-        data.sigint_network,
-        from_mothership,
+        default_zone_id,
+        data.sigint_zone_aor,
     )
     .await
     .context(h!())?;
@@ -647,7 +348,6 @@ where
             data.sigint_network_changelog,
             sigint_network_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
@@ -659,7 +359,6 @@ where
         sigint_network_import_result.ids_map.clone(),
         modulation_import_result.ids_map.clone(),
         &mut import_warnings,
-        from_mothership,
     )
     .await
     .context(h!())?;
@@ -671,7 +370,6 @@ where
             data.sigint_network_freq_changelog,
             sigint_network_freq_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
@@ -684,7 +382,6 @@ where
             sigint_network_import_result.ids_map.clone(),
             sigint_network_freq_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
@@ -695,7 +392,6 @@ where
         data.sigint_signal,
         sigint_unit_import_result.ids_map.clone(),
         &mut import_warnings,
-        from_mothership,
     )
     .await
     .context(h!())?;
@@ -707,7 +403,6 @@ where
             data.sigint_signal_changelog,
             sigint_signal_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
@@ -719,7 +414,6 @@ where
         sigint_network_import_result.ids_map.clone(),
         sigint_unit_import_result.ids_map.clone(),
         &mut import_warnings,
-        from_mothership,
     )
     .await
     .context(h!())?;
@@ -731,7 +425,6 @@ where
             data.sigint_network_unit_changelog,
             sigint_network_unit_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
@@ -743,7 +436,6 @@ where
         sigint_unit_import_result.ids_map.clone(),
         source_import_result.ids_map.clone(),
         &mut import_warnings,
-        from_mothership,
     )
     .await
     .context(h!())?;
@@ -755,19 +447,14 @@ where
             data.sigint_callsign_changelog,
             sigint_callsign_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
 
-    let sigint_post_import_result = import_sigint_post_data(
-        txn,
-        origin_id,
-        data.sigint_post,
-        from_mothership,
-    )
-    .await
-    .context(h!())?;
+    let sigint_post_import_result =
+        import_sigint_post_data(txn, origin_id, data.sigint_post)
+            .await
+            .context(h!())?;
 
     let sigint_network_post_import_result = import_sigint_network_post_data(
         txn,
@@ -776,7 +463,6 @@ where
         sigint_network_import_result.ids_map.clone(),
         sigint_post_import_result.ids_map.clone(),
         &mut import_warnings,
-        from_mothership,
     )
     .await
     .context(h!())?;
@@ -788,12 +474,12 @@ where
             data.sigint_network_callsign,
             sigint_network_import_result.ids_map.clone(),
             &mut import_warnings,
-            from_mothership,
         )
         .await
         .context(h!())?;
 
     let etalon_import_result = EtalonImportResult {
+        area_of_responsibility: area_of_responsibility_import_result,
         sigint_signal: sigint_signal_import_result,
         sigint_signal_changelog: sigint_signal_changelog_import_result,
         sigint_unit: sigint_unit_import_result,
@@ -813,6 +499,8 @@ where
         sigint_post: sigint_post_import_result,
         sigint_network_post: sigint_network_post_import_result,
         sigint_network_callsign: sigint_network_callsign_import_result,
+        sigint_network_aor: sigint_network_aor_import_result,
+        sigint_zone_aor: sigint_zone_aor_import_result,
     };
 
     if dry_run {
@@ -833,11 +521,90 @@ where
 ///
 /// IMPORT METHODS GO HERE
 ///
+async fn import_area_of_responsibility_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    recs: Vec<area_of_responsibility::Model>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut max_id = area_of_responsibility::Entity::find()
+        .select_only()
+        .column(area_of_responsibility::Column::Id)
+        .order_by_desc(area_of_responsibility::Column::Id)
+        .into_tuple()
+        .one(txn)
+        .await
+        .context(h!())?
+        .unwrap_or(0);
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids =
+        query::find_existing_areas_of_responsibility(txn, &recs)
+            .await
+            .context(h!())?;
+
+    let mut result = BTreeMap::new();
+    for rec in recs {
+        let id = existing_record_ids.get(&rec.name);
+        let (id, new_record) = match id {
+            None => {
+                max_id += 1;
+                (Set(max_id), true)
+            }
+            Some(id) => (Set(*id), false),
+        };
+
+        if rec.is_top_level || rec.is_default {
+            result.insert(rec.id, rec.id);
+            continue;
+        }
+
+        let model = area_of_responsibility::ActiveModel {
+            id,
+            created_at: Set(rec.created_at),
+            deleted: Set(rec.deleted),
+            is_top_level: Set(rec.is_top_level),
+            name: Set(rec.name),
+            description: Set(rec.description),
+            left_bound: Set(rec.left_bound),
+            right_bound: Set(rec.right_bound),
+            left_lat: Set(rec.left_lat),
+            left_lon: Set(rec.left_lon),
+            right_lat: Set(rec.right_lat),
+            right_lon: Set(rec.right_lon),
+            left_settlement: Set(rec.left_settlement),
+            right_settlement: Set(rec.right_settlement),
+            updated_by: Set(rec.updated_by),
+            updated_at: Set(rec.updated_at),
+            is_default: Set(rec.is_default),
+            sigint_origin_id: Set(Some(origin_id)),
+        };
+
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+    }
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
+
 async fn import_modulation_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<modulation::Model>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i32>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -870,7 +637,6 @@ where
 
         let model = modulation::ActiveModel {
             id,
-            mothership_id: Set(rec.mothership_id),
             created_at: Set(rec.created_at),
             name: Set(rec.name),
             lft: Set(rec.lft),
@@ -889,13 +655,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -911,7 +670,6 @@ async fn import_sigint_signal_data<'a, 'async_trait, C>(
     recs: Vec<sigint_signal::Model>,
     sigint_unit_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -924,7 +682,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -953,7 +711,6 @@ where
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -966,13 +723,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -986,7 +736,6 @@ async fn import_source_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<source::Model>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1009,7 +758,6 @@ where
             created_at: Set(rec.created_at),
             name: Set(rec.name),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
             deleted: Set(rec.deleted),
         };
 
@@ -1023,13 +771,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1043,7 +784,6 @@ async fn import_sigint_unit_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<sigint_unit::Model>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1056,7 +796,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1077,7 +817,6 @@ where
             comment: Set(rec.comment),
             battalion: Set(rec.battalion),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -1090,13 +829,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1110,7 +842,6 @@ async fn import_sigint_network_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<sigint_network::Model>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1124,7 +855,7 @@ where
     let mut new_records = vec![];
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1146,7 +877,6 @@ where
             active_from: Set(rec.active_from),
             name: Set(rec.name),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
             location: Set(rec.location),
             active_to: Set(rec.active_to),
         };
@@ -1160,14 +890,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-        let new_rec = if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?
-        } else {
-            new_rec
-        };
         result.insert(rec.id, new_id);
         new_records.push(new_rec.clone());
     }
@@ -1189,11 +911,116 @@ where
     })
 }
 
+async fn import_sigint_network_aor_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    recs: Vec<sigint_network_aor::Model>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids =
+        query::find_existing_sigint_network_aors(txn, &recs)
+            .await
+            .context(h!())?;
+    let mut result = BTreeMap::new();
+    let mut new_records = vec![];
+    for rec in recs {
+        let id = rec
+            .sigint_origin_id
+            .and_then(|id| existing_record_ids.get(&{ id }));
+        let (id, new_record) = match id {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
+
+        let model = sigint_network_aor::ActiveModel {
+            id,
+            network_id: Set(rec.network_id),
+            aor_id: Set(rec.aor_id),
+            created_at: Set(rec.created_at),
+            sigint_origin_id: Set(Some(origin_id)),
+        };
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+        new_records.push(new_rec.clone());
+    }
+
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
+
+async fn import_sigint_zone_aor_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    zone_id: i64,
+    recs: Vec<sigint_zone_aor::Model>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids = query::find_existing_sigint_zone_aors(txn, &recs)
+        .await
+        .context(h!())?;
+    let mut result = BTreeMap::new();
+    let mut new_records = vec![];
+    for rec in recs {
+        let id = rec
+            .sigint_origin_id
+            .and_then(|id| existing_record_ids.get(&{ id }));
+        let (id, new_record) = match id {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
+
+        let model = sigint_zone_aor::ActiveModel {
+            id,
+            zone_id: Set(zone_id),
+            aor_id: Set(rec.aor_id),
+            created_at: Set(rec.created_at),
+            sigint_origin_id: Set(Some(origin_id)),
+        };
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+        new_records.push(new_rec.clone());
+    }
+
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
+
 async fn import_sigint_post_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<sigint_post::Model>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1206,7 +1033,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1220,7 +1047,6 @@ where
             name: Set(rec.name),
             origin: Set(rec.origin),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
             description: Set(rec.description),
         };
 
@@ -1234,13 +1060,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1257,7 +1076,6 @@ async fn import_sigint_network_description_data<'a, 'async_trait, C>(
     sigint_network_ids_map: BTreeMap<i64, i64>,
     sigint_network_freq_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1296,7 +1114,7 @@ where
             }
         };
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1314,7 +1132,6 @@ where
             created_at: Set(rec.created_at),
             sigint_network_freq_id,
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -1327,13 +1144,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1350,7 +1160,6 @@ async fn import_sigint_network_freq_data<'a, 'async_trait, C>(
     sigint_network_ids_map: BTreeMap<i64, i64>,
     modulation_ids_map: BTreeMap<i32, i32>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1387,7 +1196,7 @@ where
             }
         };
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&{ id }));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1405,7 +1214,6 @@ where
             active_to: Set(rec.active_to),
             deleted: Set(false),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -1418,13 +1226,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1440,7 +1241,6 @@ async fn import_sigint_network_callsign_data<'a, 'async_trait, C>(
     recs: Vec<sigint_network_callsign::Model>,
     sigint_network_import_result: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1464,7 +1264,7 @@ where
             continue;
         };
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1484,7 +1284,6 @@ where
             radio_freq: Set(rec.radio_freq),
             developing: Set(rec.developing),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
             unit_developing: Set(rec.unit_developing),
             unit_id: Set(rec.unit_id),
         };
@@ -1499,13 +1298,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1522,7 +1314,6 @@ async fn import_sigint_network_post_data<'a, 'async_trait, C>(
     sigint_network_import_result: BTreeMap<i64, i64>,
     sigint_post_import_result: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1552,7 +1343,7 @@ where
             continue;
         };
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1566,7 +1357,6 @@ where
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -1579,13 +1369,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1602,7 +1385,6 @@ async fn import_sigint_callsign_data<'a, 'async_trait, C>(
     sigint_unit_ids_map: BTreeMap<i64, i64>,
     source_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1627,7 +1409,7 @@ where
             continue;
         };
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1646,7 +1428,6 @@ where
             developing: Set(rec.developing),
             radio_freq: Set(rec.radio_freq),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -1659,13 +1440,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1682,7 +1456,6 @@ async fn import_sigint_network_unit_data<'a, 'async_trait, C>(
     sigint_network_ids_map: BTreeMap<i64, i64>,
     sigint_unit_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1711,7 +1484,7 @@ where
             continue;
         };
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&(id)));
         let (id, new_record) = match id {
             None => (NotSet, true),
@@ -1724,7 +1497,6 @@ where
             unit_id: Set(unit_id),
             created_at: Set(rec.created_at),
             sigint_origin_id: Set(Some(origin_id)),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = if new_record {
@@ -1737,13 +1509,6 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1759,7 +1524,6 @@ async fn import_sigint_network_unit_changelog_data<'a, 'async_trait, C>(
     recs: Vec<sigint_network_unit_changelog::Model>,
     sigint_network_unit_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1772,7 +1536,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
@@ -1798,20 +1562,12 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             new_value: Set(rec.new_value),
             old_value: Set(rec.old_value),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = model.insert(txn).await.context(h!())?;
         num_created += 1;
 
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
 
         result.insert(rec.id, new_id);
     }
@@ -1828,7 +1584,6 @@ async fn import_sigint_callsign_changelog_data<'a, 'async_trait, C>(
     recs: Vec<sigint_callsign_changelog::Model>,
     sigint_callsign_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1841,7 +1596,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
@@ -1867,21 +1622,12 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             new_value: Set(rec.new_value),
             old_value: Set(rec.old_value),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = model.insert(txn).await.context(h!())?;
         num_created += 1;
 
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
-
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {
@@ -1897,7 +1643,6 @@ async fn import_sigint_signal_changelog_data<'a, 'async_trait, C>(
     recs: Vec<sigint_signal_changelog::Model>,
     sigint_signal_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1910,7 +1655,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
@@ -1935,20 +1680,12 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             new_value: Set(rec.new_value),
             old_value: Set(rec.old_value),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = model.insert(txn).await.context(h!())?;
         num_created += 1;
 
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
 
         result.insert(rec.id, new_id);
     }
@@ -1965,7 +1702,6 @@ async fn import_sigint_network_freq_changelog_data<'a, 'async_trait, C>(
     recs: Vec<sigint_network_freq_changelog::Model>,
     sigint_network_freq_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -1978,7 +1714,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
@@ -2004,20 +1740,12 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             new_value: Set(rec.new_value),
             old_value: Set(rec.old_value),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = model.insert(txn).await.context(h!())?;
         num_created += 1;
 
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
 
         result.insert(rec.id, new_id);
     }
@@ -2034,7 +1762,6 @@ async fn import_sigint_network_changelog_data<'a, 'async_trait, C>(
     recs: Vec<sigint_network_changelog::Model>,
     sigint_network_ids_map: BTreeMap<i64, i64>,
     import_warnings: &mut Vec<String>,
-    from_mothership: bool,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -2047,7 +1774,7 @@ where
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = rec
-            .mothership_id
+            .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&id));
         if id.is_some() {
             continue;
@@ -2072,20 +1799,12 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             new_value: Set(rec.new_value),
             old_value: Set(rec.old_value),
-            mothership_id: Set(rec.mothership_id),
         };
 
         let new_rec = model.insert(txn).await.context(h!())?;
         num_created += 1;
 
         let new_id = new_rec.id;
-
-        if !from_mothership {
-            let new_id = new_rec.id;
-            let mut model = new_rec.into_active_model();
-            model.mothership_id = Set(Some(new_id));
-            model.update(txn).await.context(h!())?;
-        }
 
         result.insert(rec.id, new_id);
     }

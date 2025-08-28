@@ -647,7 +647,6 @@ pub async fn merge_two_networks(
             old_value: Set(Some(json_old)),
             req: Set(None),
             sigint_origin_id: NotSet,
-            mothership_id: NotSet,
         }
         .insert(txn)
         .await

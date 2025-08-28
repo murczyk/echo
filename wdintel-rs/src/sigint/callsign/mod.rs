@@ -347,7 +347,6 @@ pub async fn bl_callsign_create(
         developing: Set(req.developing),
         radio_freq: Set(req.radio_freq.clone().unwrap_or("".to_string())),
         sigint_origin_id: NotSet,
-        mothership_id: NotSet,
     }
     .insert(txn)
     .await
@@ -362,7 +361,6 @@ pub async fn bl_callsign_create(
 
     let _changelog = sigint_callsign_changelog::ActiveModel {
         sigint_origin_id: NotSet,
-        mothership_id: NotSet,
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
         login: Set(user_id.to_string()),
@@ -445,7 +443,6 @@ pub async fn bl_callsign_update(
         old_value: Set(Some(callsign_json_old)),
         req: Set(None),
         sigint_origin_id: NotSet,
-        mothership_id: NotSet,
     }
     .insert(txn)
     .await
@@ -489,7 +486,6 @@ pub async fn delete_callsign(
         old_value: Set(Some(callsign_json_old)),
         req: Set(None),
         sigint_origin_id: NotSet,
-        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;

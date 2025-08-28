@@ -22,7 +22,6 @@ pub struct Model {
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub req: Option<Json>,
     pub sigint_origin_id: Option<i64>,
-    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

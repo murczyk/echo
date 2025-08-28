@@ -37,6 +37,7 @@ pub struct Model {
     pub deleted: bool,
     pub is_top_level: bool,
     pub is_default: bool,
+    pub sigint_origin_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -53,6 +54,14 @@ pub enum Relation {
     Login,
     #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
     SigintNetworkAor,
+    #[sea_orm(
+        belongs_to = "super::sigint_origin::Entity",
+        from = "Column::SigintOriginId",
+        to = "super::sigint_origin::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintOrigin,
     #[sea_orm(has_many = "super::sigint_zone_aor::Entity")]
     SigintZoneAor,
     #[sea_orm(has_many = "super::signal_group_aor::Entity")]
@@ -74,6 +83,12 @@ impl Related<super::login::Entity> for Entity {
 impl Related<super::sigint_network_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkAor.def()
+    }
+}
+
+impl Related<super::sigint_origin::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintOrigin.def()
     }
 }
 
