@@ -135,6 +135,7 @@ mod m20250825_192410_make_callsign_sources_optional;
 mod m20250826_094122_add_datasource_group;
 mod m20250826_190501_add_deleted_to_groups;
 mod m20250828_164520_drop_mothership_id;
+mod m20250828_185442_add_aor_sigint_origin_id;
 
 pub struct Migrator;
 
@@ -277,6 +278,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250826_094122_add_datasource_group::Migration),
             Box::new(m20250826_190501_add_deleted_to_groups::Migration),
             Box::new(m20250828_164520_drop_mothership_id::Migration),
+            Box::new(m20250828_185442_add_aor_sigint_origin_id::Migration),
         ]
     }
 }

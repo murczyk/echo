@@ -242,8 +242,23 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    let area_of_responsibility = area_of_responsibility::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let sigint_network_aor = sigint_network_aor::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let sigint_zone_aor = sigint_zone_aor::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?;
 
     let result = EtalonData {
+        area_of_responsibility,
+        sigint_network_aor,
+        sigint_zone_aor,
         sigint_unit,
         sigint_signal,
         sigint_signal_changelog,
@@ -275,6 +290,23 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut import_warnings = vec![];
+    let default_zone_id = sigint_zone::Entity::find()
+        .filter(sigint_zone::Column::Deleted.eq(false))
+        .order_by_asc(sigint_zone::Column::CreatedAt)
+        .one(txn)
+        .await
+        .context(h!())?
+        .context(h!())?
+        .id;
+
+    let area_of_responsibility_import_result =
+        import_area_of_responsibility_data(
+            txn,
+            origin_id,
+            data.area_of_responsibility,
+        )
+        .await
+        .context(h!())?;
 
     let modulation_import_result =
         import_modulation_data(txn, origin_id, data.modulation)
@@ -294,6 +326,20 @@ where
         import_sigint_network_data(txn, origin_id, data.sigint_network)
             .await
             .context(h!())?;
+
+    let sigint_network_aor_import_result =
+        import_sigint_network_aor_data(txn, origin_id, data.sigint_network_aor)
+            .await
+            .context(h!())?;
+
+    let sigint_zone_aor_import_result = import_sigint_zone_aor_data(
+        txn,
+        origin_id,
+        default_zone_id,
+        data.sigint_zone_aor,
+    )
+    .await
+    .context(h!())?;
 
     let sigint_network_changelog_import_result =
         import_sigint_network_changelog_data(
@@ -433,6 +479,7 @@ where
         .context(h!())?;
 
     let etalon_import_result = EtalonImportResult {
+        area_of_responsibility: area_of_responsibility_import_result,
         sigint_signal: sigint_signal_import_result,
         sigint_signal_changelog: sigint_signal_changelog_import_result,
         sigint_unit: sigint_unit_import_result,
@@ -452,6 +499,8 @@ where
         sigint_post: sigint_post_import_result,
         sigint_network_post: sigint_network_post_import_result,
         sigint_network_callsign: sigint_network_callsign_import_result,
+        sigint_network_aor: sigint_network_aor_import_result,
+        sigint_zone_aor: sigint_zone_aor_import_result,
     };
 
     if dry_run {
@@ -472,6 +521,81 @@ where
 ///
 /// IMPORT METHODS GO HERE
 ///
+async fn import_area_of_responsibility_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    recs: Vec<area_of_responsibility::Model>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut max_id = area_of_responsibility::Entity::find()
+        .select_only()
+        .column(area_of_responsibility::Column::Id)
+        .order_by_desc(area_of_responsibility::Column::Id)
+        .into_tuple()
+        .one(txn)
+        .await
+        .context(h!())?
+        .unwrap_or(0);
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids =
+        query::find_existing_areas_of_responsibility(txn, &recs)
+            .await
+            .context(h!())?;
+
+    let mut result = BTreeMap::new();
+    for rec in recs {
+        let id = existing_record_ids.get(&rec.name);
+        let (id, new_record) = match id {
+            None => {
+                max_id += 1;
+                (Set(max_id), true)
+            }
+            Some(id) => (Set(*id), false),
+        };
+
+        let model = area_of_responsibility::ActiveModel {
+            id,
+            created_at: Set(rec.created_at),
+            deleted: Set(rec.deleted),
+            is_top_level: Set(rec.is_top_level),
+            name: Set(rec.name),
+            description: Set(rec.description),
+            left_bound: Set(rec.left_bound),
+            right_bound: Set(rec.right_bound),
+            left_lat: Set(rec.left_lat),
+            left_lon: Set(rec.left_lon),
+            right_lat: Set(rec.right_lat),
+            right_lon: Set(rec.right_lon),
+            left_settlement: Set(rec.left_settlement),
+            right_settlement: Set(rec.right_settlement),
+            updated_by: Set(rec.updated_by),
+            updated_at: Set(rec.updated_at),
+            is_default: Set(rec.is_default),
+            sigint_origin_id: Set(Some(origin_id)),
+        };
+
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+    }
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
+
 async fn import_modulation_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
@@ -773,6 +897,112 @@ where
         let mut model = new_rec.into_active_model();
         model.merged_to = Set(result.get(&merged_into).cloned());
         model.update(txn).await.context(h!())?;
+    }
+
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
+
+async fn import_sigint_network_aor_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    recs: Vec<sigint_network_aor::Model>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids =
+        query::find_existing_sigint_network_aors(txn, &recs)
+            .await
+            .context(h!())?;
+    let mut result = BTreeMap::new();
+    let mut new_records = vec![];
+    for rec in recs {
+        let id = rec
+            .sigint_origin_id
+            .and_then(|id| existing_record_ids.get(&{ id }));
+        let (id, new_record) = match id {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
+
+        let model = sigint_network_aor::ActiveModel {
+            id,
+            network_id: Set(rec.network_id),
+            aor_id: Set(rec.aor_id),
+            created_at: Set(rec.created_at),
+            sigint_origin_id: Set(Some(origin_id)),
+        };
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+        new_records.push(new_rec.clone());
+    }
+
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
+
+async fn import_sigint_zone_aor_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    zone_id: i64,
+    recs: Vec<sigint_zone_aor::Model>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids = query::find_existing_sigint_zone_aors(txn, &recs)
+        .await
+        .context(h!())?;
+    let mut result = BTreeMap::new();
+    let mut new_records = vec![];
+    for rec in recs {
+        let id = rec
+            .sigint_origin_id
+            .and_then(|id| existing_record_ids.get(&{ id }));
+        let (id, new_record) = match id {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
+
+        let model = sigint_zone_aor::ActiveModel {
+            id,
+            zone_id: Set(zone_id),
+            aor_id: Set(rec.aor_id),
+            created_at: Set(rec.created_at),
+            sigint_origin_id: Set(Some(origin_id)),
+        };
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+        new_records.push(new_rec.clone());
     }
 
     Ok(ImportResult {

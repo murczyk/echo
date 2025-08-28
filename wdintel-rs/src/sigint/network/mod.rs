@@ -2493,6 +2493,7 @@ where
         created_at: NotSet,
         id: NotSet,
         network_id: Set(network.id),
+        sigint_origin_id: NotSet,
     };
     network_aor.insert(dbx).await.context(h!())?;
     Ok(())
@@ -2516,6 +2517,7 @@ async fn save_network_aors(
             network_id: Set(network_id),
             aor_id: Set(aor_id),
             created_at: NotSet,
+            sigint_origin_id: NotSet,
         }
         .insert(txn)
         .await

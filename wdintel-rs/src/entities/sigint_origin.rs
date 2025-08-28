@@ -16,6 +16,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::area_of_responsibility::Entity")]
+    AreaOfResponsibility,
     #[sea_orm(has_many = "super::modulation::Entity")]
     Modulation,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
@@ -24,6 +26,8 @@ pub enum Relation {
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_network::Entity")]
     SigintNetwork,
+    #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
+    SigintNetworkAor,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
     SigintNetworkCallsign,
     #[sea_orm(has_many = "super::sigint_network_changelog::Entity")]
@@ -50,8 +54,16 @@ pub enum Relation {
     SigintUnit,
     #[sea_orm(has_many = "super::sigint_zone::Entity")]
     SigintZone,
+    #[sea_orm(has_many = "super::sigint_zone_aor::Entity")]
+    SigintZoneAor,
     #[sea_orm(has_many = "super::source::Entity")]
     Source,
+}
+
+impl Related<super::area_of_responsibility::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AreaOfResponsibility.def()
+    }
 }
 
 impl Related<super::modulation::Entity> for Entity {
@@ -75,6 +87,12 @@ impl Related<super::sigint_callsign_changelog::Entity> for Entity {
 impl Related<super::sigint_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetwork.def()
+    }
+}
+
+impl Related<super::sigint_network_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkAor.def()
     }
 }
 
@@ -153,6 +171,12 @@ impl Related<super::sigint_unit::Entity> for Entity {
 impl Related<super::sigint_zone::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintZone.def()
+    }
+}
+
+impl Related<super::sigint_zone_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintZoneAor.def()
     }
 }
 

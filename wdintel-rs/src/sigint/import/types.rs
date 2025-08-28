@@ -5,10 +5,12 @@ use std::fmt::Debug;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EtalonData {
+    pub area_of_responsibility: Vec<area_of_responsibility::Model>,
     pub sigint_signal: Vec<sigint_signal::Model>,
     pub sigint_signal_changelog: Vec<sigint_signal_changelog::Model>,
     pub sigint_unit: Vec<sigint_unit::Model>,
     pub sigint_network: Vec<sigint_network::Model>,
+    pub sigint_network_aor: Vec<sigint_network_aor::Model>,
     pub sigint_network_changelog: Vec<sigint_network_changelog::Model>,
     pub sigint_network_description: Vec<sigint_network_description::Model>,
     pub sigint_network_freq: Vec<sigint_network_freq::Model>,
@@ -22,6 +24,7 @@ pub struct EtalonData {
     pub modulation: Vec<modulation::Model>,
     pub source: Vec<source::Model>,
     pub sigint_post: Vec<sigint_post::Model>,
+    pub sigint_zone_aor: Vec<sigint_zone_aor::Model>,
     pub sigint_network_post: Vec<sigint_network_post::Model>,
     pub sigint_network_callsign: Vec<sigint_network_callsign::Model>,
 }
@@ -35,6 +38,7 @@ pub struct ImportResult<ID: Id> {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct EtalonImportResult {
+    pub area_of_responsibility: ImportResult<i64>,
     pub sigint_signal: ImportResult<i64>,
     pub sigint_signal_changelog: ImportResult<i64>,
     pub sigint_unit: ImportResult<i64>,
@@ -52,6 +56,8 @@ pub struct EtalonImportResult {
     pub sigint_post: ImportResult<i64>,
     pub sigint_network_post: ImportResult<i64>,
     pub sigint_network_callsign: ImportResult<i64>,
+    pub sigint_network_aor: ImportResult<i64>,
+    pub sigint_zone_aor: ImportResult<i64>,
 }
 
 pub trait Id: Sized + Ord + Copy + Debug {}
