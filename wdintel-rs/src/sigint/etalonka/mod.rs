@@ -336,6 +336,10 @@ pub async fn generate_networks_docx_report(
                 &correspondents_number,
             );
             doc = add_field(doc, "5. Позивні: ", "");
+            let has_main_radio_station = net_callsigns.iter().any(|nc| nc.main_radio_station);
+
+            
+
             if !net_callsigns.is_empty() {
                 // add callsigns assignet to the network
                 if let Some(table) = build_network_callsigns_table(
