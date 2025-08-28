@@ -302,6 +302,18 @@ pub struct OneoffFixAreasOfResponsibilityPs {
     pub force_all_networks: bool,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffGetNetworksActivityStatsPs {
+    #[arg(long, value_enum)]
+    pub user_id: String,
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: String,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -353,6 +365,7 @@ enum Cmd {
     OneoffFixAreasOfResponsibility(OneoffFixAreasOfResponsibilityPs),
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
+    OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -656,6 +669,9 @@ async fn main() -> Result<(), AppError> {
                 ps.dry_run.unwrap_or(true),
             )
             .await
+        }
+        Cmd::OneoffGetNetworksActivityStats(ps) => {
+            crate::sigint::network::oneoff_network_activity_stat(mode, ps).await
         }
     }
 }
