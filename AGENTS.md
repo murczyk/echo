@@ -1,4 +1,4 @@
-## General project into
+## General project info
 
 - Read README.md to understand the general project purpose
 
