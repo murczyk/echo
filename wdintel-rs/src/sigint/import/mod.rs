@@ -556,6 +556,11 @@ where
             Some(id) => (Set(*id), false),
         };
 
+        if rec.is_top_level || rec.is_default {
+            result.insert(rec.id, rec.id);
+            continue;
+        }
+
         let model = area_of_responsibility::ActiveModel {
             id,
             created_at: Set(rec.created_at),
