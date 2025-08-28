@@ -140,8 +140,10 @@ pub async fn report_docx(
     } else if req.kind == "mouse" {
         self::mouse::report_docx_kind_mouse(user, &env, &req, &outpath).await?;
     } else if req.kind == "pelengs" {
-        self::mouse::report_xlsx_kind_pelengs1(user, &env, &req, &outpath)
-            .await?;
+        self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
+            user, &env, &req, &outpath,
+        )
+        .await?;
     } else if req.kind == "senders" {
         self::senders::report_xlsx_kind_senders(
             ReportAggregation::ByProfile,

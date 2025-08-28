@@ -12,6 +12,9 @@ use sea_orm::*;
 use sea_query::SimpleExpr;
 use std::collections::BTreeMap;
 
+use geoconvert::{LatLon, Mgrs};
+use std::path::PathBuf;
+
 pub async fn get_inbox_messages_report(
     user: &Identity,
     env: &Env,
@@ -239,6 +242,211 @@ pub async fn get_inbox_messages_report(
 
     info!("[get_inbox_messages_report] {}: query done", Utc::now());
     Ok(res)
+}
+
+fn xls_title() -> rust_xlsxwriter::Format {
+    rust_xlsxwriter::Format::new()
+        .set_bold()
+        .set_border(rust_xlsxwriter::FormatBorder::Thin)
+        .set_align(rust_xlsxwriter::FormatAlign::Center)
+        .set_font_size(12.0)
+}
+
+/// XLSX report for "пеленги" with sender column ("Відправник")
+pub async fn report_xlsx_kind_pelengs1(
+    user: actix_identity::Identity,
+    env: &Env,
+    req: &super::ReportPreviewReq,
+    outpath: &PathBuf,
+) -> Result<(), AppError> {
+    info!("[report_xlsx_kind_pelengs1] started");
+
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?;
+    let coltitle = xls_title();
+
+    let till: DateTime<Utc> = chrono::Utc
+        .timestamp_millis_opt(req.req.till_date_inclusive_ms.unwrap_or(0))
+        .single()
+        .unwrap();
+    let since: DateTime<Utc> = chrono::Utc
+        .timestamp_millis_opt(req.req.since_date_inclusive_ms.unwrap_or(0))
+        .single()
+        .unwrap();
+
+    let tz = crate::config::get_tz();
+    let since_tz = since.with_timezone(&tz);
+    let till_tz = till.with_timezone(&tz);
+
+    sheet1
+        .merge_range(
+            0,
+            0,
+            0,
+            9,
+            &format!(
+                "Розвідувальне донесення з результатів пеленгації за період {} - {}",
+                since_tz.format("%d.%m.%y %H:%M"),
+                till_tz.format("%d.%m.%y %H:%M")
+            ),
+            &coltitle,
+        )
+        .context(h!())?;
+
+    // Header row (row index 1)
+    sheet1
+        .write_string_with_format(1, 0, "№", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(0, 4.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 1, "Назва р/м", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(1, 40.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 2, "Частота", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(2, 10.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 3, "Час", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(3, 14.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 4, "Відправник", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(4, 24.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 5, "Позивний/приналежність", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(5, 30.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 6, "Район", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(6, 30.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 7, "XY", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(7, 18.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 8, "WSG", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(8, 20.0).context(h!())?;
+    sheet1
+        .write_string_with_format(1, 9, "MGRS", &coltitle)
+        .context(h!())?;
+    sheet1.set_column_width(9, 18.0).context(h!())?;
+
+    info!("[report_xlsx_kind_pelengs1] {}: querying data", Utc::now());
+    let messages: Vec<(i64, Option<(f64, f64)>, InboxMessage)> =
+        crate::rer_importer::reports::report_xlsx_kind_pelengs::get_inbox_messages_report(
+            &user,
+            env,
+            &req.req,
+        )
+        .await?;
+    info!("[report_xlsx_kind_pelengs1] {}: query done", Utc::now());
+
+    // Build sender display names map (uuid -> profile entry)
+    let sender_uuids = messages
+        .iter()
+        .filter_map(|(_, _, m)| m.sender.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let sender_names: BTreeMap<String, Option<SignalProfileEntry>> =
+        crate::rer_importer::collect_profiles_data(&env.dbx, sender_uuids)
+            .await
+            .context(h!())?;
+
+    let mut i: u32 = 1;
+    for (_, m_coords, m) in messages.iter() {
+        let Some(coords) = m.coords.as_ref() else {
+            continue;
+        };
+        if coords.is_empty() {
+            continue;
+        }
+        let Some((lat, lng)) = *m_coords else {
+            continue;
+        };
+        let Some(date) = m.date.as_ref() else {
+            continue;
+        };
+        let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+        let Some(time) = m.time.as_ref() else {
+            continue;
+        };
+        let Some(freq) = m.freq.as_ref() else {
+            continue;
+        };
+
+        i += 1;
+
+        let usk2000 = &milgeo_rs::coordinates::usk2000::wgs84_to_usk2000(
+            milgeo_rs::coordinates::Wgs84 { lat, lng },
+        )?;
+
+        sheet1.write_number(i, 0, (i - 1) as f64).context(h!())?;
+        sheet1
+            .write_string(i, 1, m.unit.clone().unwrap_or("НВ".to_string()))
+            .context(h!())?;
+        sheet1.write_string(i, 2, freq).context(h!())?;
+        sheet1
+            .write_string(
+                i,
+                3,
+                format!("{}, {}", &time, &date.format("%d.%m.%y")),
+            )
+            .context(h!())?;
+        // Resolve human-readable sender name
+        let sender_name =
+            match m.sender.as_ref().and_then(|id| sender_names.get(id)) {
+                Some(Some(profile)) => {
+                    let gn = profile.given_name.clone().unwrap_or_default();
+                    let fnm = profile.family_name.clone().unwrap_or_default();
+                    let full = format!(
+                        "{}{}{}",
+                        gn,
+                        if gn.is_empty() || fnm.is_empty() {
+                            ""
+                        } else {
+                            " "
+                        },
+                        fnm
+                    );
+                    if full.trim().is_empty() {
+                        "(невідомо)".to_string()
+                    } else {
+                        full
+                    }
+                }
+                _ => "(невідомо)".to_string(),
+            };
+        sheet1.write_string(i, 4, sender_name).context(h!())?;
+        sheet1
+            .write_string(i, 5, m.callsigns.join(", "))
+            .context(h!())?;
+        sheet1
+            .write_string(i, 6, m.location.clone().unwrap_or("".to_string()))
+            .context(h!())?;
+        sheet1
+            .write_string(i, 7, format!("{} {}", usk2000.x, usk2000.y))
+            .context(h!())?;
+        sheet1
+            .write_string(i, 8, format!("{lat} {lng}"))
+            .context(h!())?;
+        sheet1
+            .write_string(
+                i,
+                9,
+                Mgrs::from_latlon(&LatLon::create(lat, lng).unwrap(), 5)
+                    .to_string(),
+            )
+            .context(h!())?;
+    }
+
+    workbook.save(outpath).context(h!())?;
+    info!("[report_xlsx_kind_pelengs1] {}: completed", Utc::now());
+    Ok(())
 }
 
 fn build_location(
