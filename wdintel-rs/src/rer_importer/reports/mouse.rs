@@ -18,7 +18,6 @@ use docx_rs::TableRow;
 use docx_rs::VAlignType;
 use docx_rs::VMergeType;
 use docx_rs::WidthType;
-use geoconvert::{LatLon, Mgrs};
 use sea_orm::*;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -1030,14 +1029,6 @@ pub async fn report_docx_kind_mouse(
         .pack(file)
         .context(h!())?;
     Ok(())
-}
-
-fn xls_title() -> rust_xlsxwriter::Format {
-    rust_xlsxwriter::Format::new()
-        .set_bold()
-        .set_border(rust_xlsxwriter::FormatBorder::Thin)
-        .set_align(rust_xlsxwriter::FormatAlign::Center)
-        .set_font_size(12.0)
 }
 
 // report_xlsx_kind_pelengs
