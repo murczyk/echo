@@ -17,7 +17,6 @@ pub struct Model {
     pub deleted: bool,
     pub created_at: DateTime,
     pub sigint_origin_id: Option<i64>,
-    pub mothership_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

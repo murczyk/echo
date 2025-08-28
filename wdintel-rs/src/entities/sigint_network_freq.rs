@@ -20,7 +20,6 @@ pub struct Model {
     pub active_from: DateTime,
     pub active_to: Option<DateTime>,
     pub sigint_origin_id: Option<i64>,
-    pub mothership_id: Option<i64>,
     pub deleted: bool,
 }
 

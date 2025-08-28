@@ -16,7 +16,6 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub sigint_callsign: String,
     pub sigint_origin_id: Option<i64>,
-    pub mothership_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub position: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]

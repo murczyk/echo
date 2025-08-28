@@ -190,7 +190,6 @@ pub async fn create_unit(
         name: Set(unit_name_req(&req)),
         deleted: Set(false),
         sigint_origin_id: NotSet,
-        mothership_id: NotSet,
     }
     .insert(&env.dbx)
     .await
@@ -454,7 +453,6 @@ async fn swap_units(
             old_value: Set(Some(json_old)),
             req: Set(None),
             sigint_origin_id: NotSet,
-            mothership_id: NotSet,
         }
         .insert(dbx)
         .await
@@ -495,7 +493,6 @@ async fn swap_units(
             old_value: Set(Some(json_old)),
             req: Set(None),
             sigint_origin_id: NotSet,
-            mothership_id: NotSet,
         }
         .insert(dbx)
         .await
@@ -533,7 +530,6 @@ async fn swap_units(
             old_value: Set(Some(json_old)),
             req: Set(None),
             sigint_origin_id: NotSet,
-            mothership_id: NotSet,
         }
         .insert(dbx)
         .await

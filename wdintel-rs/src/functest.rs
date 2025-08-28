@@ -303,9 +303,6 @@ pub mod tests {
         if out.sigint_origin_id == NotSet {
             out.sigint_origin_id = Set(None);
         }
-        if out.mothership_id == NotSet {
-            out.mothership_id = Set(None);
-        }
         out
     }
 

@@ -247,17 +247,11 @@ pub struct OneoffImportEtalonDataPs {
     #[arg(long, value_enum)]
     pub path: String,
     #[arg(long, value_enum)]
-    pub mothership_ids_destination_path: Option<String>,
+    pub origin_ids_destination_path: Option<String>,
     #[arg(long, value_enum)]
     pub origin: String,
     #[arg(long, action)]
     pub autocommit: Option<bool>,
-}
-
-#[derive(clap::Parser, Debug)]
-pub struct OneoffImportMothershipIdsPs {
-    #[arg(long, value_enum)]
-    pub path: String,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -352,8 +346,6 @@ enum Cmd {
     OneoffInstall(OneoffInstallPs),
     OneoffReprocessUnitsSearchIndex,
     OneoffImportEtalonData(OneoffImportEtalonDataPs),
-    OneoffImportMothershipIds(OneoffImportMothershipIdsPs),
-    OneoffClearMothershipIds,
     OneoffExportEtalonData(OneoffExportEtalonDataPs),
     OneoffBackupVaultSecretsToBitwarden,
     OneoffRestoreVaultSecretsFromBitwarden,
@@ -629,17 +621,10 @@ async fn main() -> Result<(), AppError> {
                 mode,
                 ps.path,
                 ps.origin,
-                ps.mothership_ids_destination_path,
+                ps.origin_ids_destination_path,
                 ps.autocommit.unwrap_or(false),
             )
             .await
-        }
-        Cmd::OneoffImportMothershipIds(ps) => {
-            crate::sigint::import::oneoff_import_mothership_ids(mode, ps.path)
-                .await
-        }
-        Cmd::OneoffClearMothershipIds => {
-            crate::sigint::import::oneoff_clear_mothership_ids(mode).await
         }
         Cmd::OneoffBackupVaultSecretsToBitwarden => {
             crate::secret::oneoff_backup_vault_secrets_to_bitwarden(mode).await
