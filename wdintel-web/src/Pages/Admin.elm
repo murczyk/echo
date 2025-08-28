@@ -3133,6 +3133,9 @@ renderOrphanGroupsTable model groups =
                                 "whatsapp" ->
                                     ( "bi-whatsapp", "WhatsApp", "text-green-600" )
 
+                                "echo_operator" ->
+                                    ( "bi-link", "ЕХО Оператор", "text-red-600" )
+
                                 _ ->
                                     ( "bi-question-circle", datasource.displayName, "text-gray-500" )
 
@@ -3403,6 +3406,9 @@ groupDatasourcesByType zoneId model =
                                 "whatsapp" ->
                                     "bi-whatsapp"
 
+                                "echo_operator" ->
+                                    "bi-link"
+
                                 _ ->
                                     "bi-question-circle"
 
@@ -3470,6 +3476,9 @@ zoneCard2 isDark model user ( zoneId, zone ) =
 
                                         "whatsapp" ->
                                             "bi-whatsapp"
+
+                                        "echo_operator" ->
+                                            "bi-link"
 
                                         _ ->
                                             "bi-question-circle"

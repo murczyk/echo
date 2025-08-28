@@ -17,7 +17,19 @@ pub async fn receive_thread_nofail(
         println!("> whatsapp::receive_thread_nofail: whatsapp_api_phone is empty, skipping");
         return;
     }
+    let datasource_id = datasource.id;
     loop {
+        let should_exit = datasource::Entity::find_by_id(datasource_id)
+            .filter(datasource::Column::EchoClientLockId.is_not_null())
+            .count(dbx)
+            .await
+            .context(h!())
+            .unwrap_or(1)
+            > 0;
+        if should_exit {
+            info!("datasource {datasource_id} is handled by echo-im, quitting legacy worker...");
+            return;
+        }
         if let Err(e) =
             receive_thread(settlements.clone(), config, dbx, redis, datasource)
                 .await
@@ -88,72 +100,70 @@ async fn receive_once(
             .await
             .context(h!())?;
         let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
-        if config.read_from_legacy_data_sources.unwrap_or(true) {
-            let message = signal_message::ActiveModel {
-                id: NotSet,
-                body: Set(Some(body.clone())),
-                created_at: NotSet,
-                group_master_key: Set(Some(wq.group_jid.clone())),
-                timestamp: Set(Some(wq.timestamp)),
-                sender: Set(Some(wq.from_jid.clone())),
-                duplicate_of: Set(m_duplicate_id),
-                format: NotSet,
-                datasource_id: Set(Some(datasource.id)),
-                deleted: NotSet,
-                external_id: NotSet,
-                message_uid: NotSet,
-            }
-            .insert(dbx)
-            .await
-            .context(h!())?;
-
-            let signal_message =
-                id::update_message_with_uid(dbx, config, message)
-                    .await
-                    .context(h!())?;
-
-            if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
-                // attachments if any
-                let attachments = whatsapp_queue_attachment::Entity::find()
-                    .filter(
-                        whatsapp_queue_attachment::Column::WhatsappId
-                            .eq(whatsapp_id),
-                    )
-                    .all(&txn)
-                    .await
-                    .context(h!())?;
-                for a in attachments {
-                    let _signal_attachment = signal_attachment::ActiveModel {
-                        id: NotSet,
-                        signal_message_id: Set(signal_message.id),
-                        path: Set(a.path.clone()),
-                        created_at: NotSet,
-                    }
-                    .insert(&txn)
-                    .await
-                    .context(h!())?;
-                    a.delete(&txn).await.context(h!())?;
-                }
-            }
-
-            crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
-                settlements.clone(),
-                &txn,
-                rq,
-                config,
-                redis,
-                signal_message.id,
-                None,
-            )
-            .await;
-
-            crate::sigint::worker::incoming_message_after_insert(
-                &txn,
-                signal_message.id,
-            )
-            .await
-            .context(h!())?;
+        let message = signal_message::ActiveModel {
+            id: NotSet,
+            body: Set(Some(body.clone())),
+            created_at: NotSet,
+            group_master_key: Set(Some(wq.group_jid.clone())),
+            timestamp: Set(Some(wq.timestamp)),
+            sender: Set(Some(wq.from_jid.clone())),
+            duplicate_of: Set(m_duplicate_id),
+            format: NotSet,
+            datasource_id: Set(Some(datasource.id)),
+            deleted: NotSet,
+            external_id: NotSet,
+            message_uid: NotSet,
         }
+        .insert(dbx)
+        .await
+        .context(h!())?;
+
+        let signal_message = id::update_message_with_uid(dbx, config, message)
+            .await
+            .context(h!())?;
+
+        if let Some(whatsapp_id) = wq.whatsapp_id.as_ref() {
+            // attachments if any
+            let attachments = whatsapp_queue_attachment::Entity::find()
+                .filter(
+                    whatsapp_queue_attachment::Column::WhatsappId
+                        .eq(whatsapp_id),
+                )
+                .all(&txn)
+                .await
+                .context(h!())?;
+            for a in attachments {
+                let _signal_attachment = signal_attachment::ActiveModel {
+                    id: NotSet,
+                    signal_message_id: Set(signal_message.id),
+                    path: Set(a.path.clone()),
+                    created_at: NotSet,
+                }
+                .insert(&txn)
+                .await
+                .context(h!())?;
+                a.delete(&txn).await.context(h!())?;
+            }
+        }
+
+        crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
+            settlements.clone(),
+            &txn,
+            rq,
+            config,
+            redis,
+            signal_message.id,
+            None,
+        )
+        .await;
+
+        crate::sigint::worker::incoming_message_after_insert(
+            &txn,
+            signal_message.id,
+        )
+        .await
+        .context(h!())?;
+
         wq.delete(&txn).await.context(h!())?;
         txn.commit().await.context(h!())?;
     }

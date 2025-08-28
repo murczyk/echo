@@ -511,6 +511,9 @@ getMessengerTypeLabel messengerType =
         "whatsapp" ->
             "WhatsApp"
 
+        "echo_operator" ->
+            "ЕХО Оператор"
+
         _ ->
             messengerType
 
@@ -523,6 +526,7 @@ messengerTypeMenuItems : List (Select.MenuItem String)
 messengerTypeMenuItems =
     [ Select.basicMenuItem { item = "signal", label = "Signal" }
     , Select.basicMenuItem { item = "whatsapp", label = "WhatsApp" }
+    , Select.basicMenuItem { item = "echo_operator", label = "ЕХО Оператор" }
     ]
 
 
@@ -1634,6 +1638,9 @@ messengerAccountsTableConfig isLoading aorList =
 
                                 "whatsapp" ->
                                     i [ class "bi bi-whatsapp text-green-500", title "WhatsApp" ] []
+
+                                "echo_operator" ->
+                                    i [ class "bi bi-link text-red-500", title "ЕХО Оператор" ] []
 
                                 _ ->
                                     i [ class "bi bi-chat-fill text-gray-500", title account.messenger ] []

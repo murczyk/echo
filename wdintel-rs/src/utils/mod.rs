@@ -1,7 +1,13 @@
+use crate::config::{read_config, Config};
 use crate::error::AppError;
+use crate::location::SettlementsData;
+use crate::new_redis;
 use crate::types::*;
 use chrono::prelude::*;
 use chrono_tz::Europe::Kyiv;
+use redis::aio::ConnectionManager;
+use reqwest::Client;
+use sea_orm::DatabaseConnection;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use tokio::io::AsyncBufReadExt;
@@ -166,6 +172,32 @@ pub async fn read_lines_from_file<P: AsRef<Path>>(
         lines.push(line);
     }
     Ok(lines)
+}
+
+pub async fn setup_worker(
+    mode: Mode,
+) -> anyhow::Result<(
+    Config,
+    Arc<RwLock<SettlementsData>>,
+    Client,
+    ConnectionManager,
+    DatabaseConnection,
+)> {
+    let config = read_config(mode).context(h!())?;
+    let db = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    let settlement_paths = config.settlement_paths().context(h!())?;
+    let settlements = Arc::new(RwLock::new(
+        crate::location::load_from_file(settlement_paths, mode)
+            .context(h!())?,
+    ));
+    let rq = Client::builder()
+        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
+        .build()
+        .context(h!())?;
+    let redis = new_redis(&config).await.context(h!())?;
+    Ok((config, settlements, rq, redis, db))
 }
 
 #[macro_export]

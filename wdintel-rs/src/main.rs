@@ -35,6 +35,7 @@ pub mod migration;
 pub mod ml;
 pub mod nlp;
 pub mod oneoff;
+pub mod operator;
 pub mod organism;
 pub mod rer_importer;
 pub mod secret;
