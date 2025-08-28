@@ -229,7 +229,7 @@ type alias Model =
     , addConfirmationFreqSelect : Le.Block.Select.SelectTypeSingle String
     , addSignsInp : String
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
-    , descriptionsEditDict : Dict Int B.NetworkDescription
+
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
     , reportNetworksOnly : Bool
@@ -374,7 +374,7 @@ init route shared () =
             }
       , addSignsInp = ""
       , signals = NotAsked
-      , descriptionsEditDict = Dict.empty
+
       , reportModalOpened = False
       , reportDownloadInProgress = False
       , reportNetworksOnly = False
@@ -566,7 +566,7 @@ type Msg
     | DescriptionEditClickedByUser B.NetworkDescription
     | DescriptionEditSave B.NetworkDescription
     | DescriptionEditUpdated Int (Result ApiError B.Network)
-    | DescriptionEditedByUser Int String
+    
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
     | ReportModalOpenedByUser
@@ -1242,19 +1242,22 @@ update shared msg model =
             ( { model | deleteDescriptionConfirmation = Just description }, E.none )
 
         DescriptionEditClickedByUser description ->
-            ( { model | editDescriptionSidebar = Just ( description.id, description ) }, E.none )
-
-        DescriptionEditedByUser descId newDescription ->
             let
-                descEditDict =
-                    case Dict.get descId model.descriptionsEditDict of
-                        Just d ->
-                            Dict.update descId (\_ -> Just { d | description = newDescription }) model.descriptionsEditDict
-
-                        Nothing ->
-                            model.descriptionsEditDict
+                freqItems = case model.freqs of
+                    Success freqs -> List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+                    _ -> []
             in
-            ( { model | descriptionsEditDict = descEditDict }, E.none )
+            ( { model 
+                | editDescriptionSidebar = Just ( description.id, description )
+                , editDescriptionInp = description.description
+                , editDescriptionFreqSelect =
+                    { state = model.editDescriptionFreqSelect.state
+                    , items = freqItems
+                    , selected = Nothing
+                    }
+              }, E.none )
+
+
 
         DescriptionEditSave description ->
             let
@@ -1288,7 +1291,7 @@ update shared msg model =
             )
 
         DescriptionEditUpdated descrId (Ok res) ->
-            ( { model | network = Success res, descriptionsEditDict = Dict.remove descrId model.descriptionsEditDict }, E.none )
+            ( { model | network = Success res }, E.none )
 
         DescriptionDeleted (Err e) ->
             ( model
@@ -4289,14 +4292,8 @@ contentBlock user shared network model =
                                                     ]
                                                 , div [ class "flex gap-2" ]
                                                     (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
-                                                        [ case Dict.get description.id model.descriptionsEditDict of
-                                                            Just desc ->
-                                                                button [ class "p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditSave desc, title "Зберегти зміни" ]
-                                                                    [ i [ class "bi bi-check2 text-lg" ] [] ]
-
-                                                            Nothing ->
-                                                                button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
-                                                                    [ i [ class "bi bi-pencil text-lg" ] [] ]
+                                                        [ button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
+                                                            [ i [ class "bi bi-pencil text-lg" ] [] ]
                                                         , button [ class "p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
                                                             [ i [ class "bi bi-trash text-lg" ] [] ]
                                                         ]
@@ -4305,19 +4302,7 @@ contentBlock user shared network model =
                                                     )
                                                 ]
                                             , div [ class "mt-2" ]
-                                                [ case Dict.get description.id model.descriptionsEditDict of
-                                                    Just desc ->
-                                                        textarea
-                                                            [ class "w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                                            , placeholder "Введіть обґрунтування прив'язки"
-                                                            , value desc.description
-                                                            , onInput <| DescriptionEditedByUser desc.id
-                                                            , style "min-height" "80px"
-                                                            ]
-                                                            []
-
-                                                    Nothing ->
-                                                        div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
+                                                [ div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
                                                 ]
                                             ]
                                         )
@@ -4360,14 +4345,8 @@ contentBlock user shared network model =
                                                 ]
                                             , div [ class "flex gap-2" ]
                                                 (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
-                                                    [ case Dict.get description.id model.descriptionsEditDict of
-                                                        Just desc ->
-                                                            button [ class "p-2 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditSave desc, title "Зберегти зміни" ]
-                                                                [ i [ class "bi bi-check2 text-lg" ] [] ]
-
-                                                        Nothing ->
-                                                            button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
-                                                                [ i [ class "bi bi-pencil text-lg" ] [] ]
+                                                    [ button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
+                                                        [ i [ class "bi bi-pencil text-lg" ] [] ]
                                                     , button [ class "p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
                                                         [ i [ class "bi bi-trash text-lg" ] [] ]
                                                     ]
@@ -4376,19 +4355,7 @@ contentBlock user shared network model =
                                                 )
                                             ]
                                         , div [ class "mt-2" ]
-                                            [ case Dict.get description.id model.descriptionsEditDict of
-                                                Just desc ->
-                                                    textarea
-                                                        [ class "w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                                        , placeholder "Введіть розвідувальні ознаки"
-                                                        , value desc.description
-                                                        , onInput <| DescriptionEditedByUser desc.id
-                                                        , style "min-height" "80px"
-                                                        ]
-                                                        []
-
-                                                Nothing ->
-                                                    div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
+                                            [ div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
                                             ]
                                         ]
                                     )
