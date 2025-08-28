@@ -311,29 +311,29 @@ pub async fn report_xlsx_kind_pelengs1(
         .context(h!())?;
     sheet1.set_column_width(3, 14.0).context(h!())?;
     sheet1
-        .write_string_with_format(1, 4, "Відправник", &coltitle)
+        .write_string_with_format(1, 4, "Позивний/приналежність", &coltitle)
         .context(h!())?;
-    sheet1.set_column_width(4, 24.0).context(h!())?;
+    sheet1.set_column_width(4, 30.0).context(h!())?;
     sheet1
-        .write_string_with_format(1, 5, "Позивний/приналежність", &coltitle)
+        .write_string_with_format(1, 5, "Район", &coltitle)
         .context(h!())?;
     sheet1.set_column_width(5, 30.0).context(h!())?;
     sheet1
-        .write_string_with_format(1, 6, "Район", &coltitle)
+        .write_string_with_format(1, 6, "XY", &coltitle)
         .context(h!())?;
-    sheet1.set_column_width(6, 30.0).context(h!())?;
+    sheet1.set_column_width(6, 18.0).context(h!())?;
     sheet1
-        .write_string_with_format(1, 7, "XY", &coltitle)
+        .write_string_with_format(1, 7, "WSG", &coltitle)
         .context(h!())?;
-    sheet1.set_column_width(7, 18.0).context(h!())?;
+    sheet1.set_column_width(7, 20.0).context(h!())?;
     sheet1
-        .write_string_with_format(1, 8, "WSG", &coltitle)
+        .write_string_with_format(1, 8, "MGRS", &coltitle)
         .context(h!())?;
-    sheet1.set_column_width(8, 20.0).context(h!())?;
+    sheet1.set_column_width(8, 18.0).context(h!())?;
     sheet1
-        .write_string_with_format(1, 9, "MGRS", &coltitle)
+        .write_string_with_format(1, 9, "Відправник", &coltitle)
         .context(h!())?;
-    sheet1.set_column_width(9, 18.0).context(h!())?;
+    sheet1.set_column_width(9, 24.0).context(h!())?;
 
     info!("[report_xlsx_kind_pelengs1] {}: querying data", Utc::now());
     let messages: Vec<(i64, Option<(f64, f64)>, InboxMessage)> =
@@ -397,7 +397,7 @@ pub async fn report_xlsx_kind_pelengs1(
                 format!("{}, {}", &time, &date.format("%d.%m.%y")),
             )
             .context(h!())?;
-        // Resolve human-readable sender name
+        // Resolve human-readable sender name (written as the last column)
         let sender_name =
             match m.sender.as_ref().and_then(|id| sender_names.get(id)) {
                 Some(Some(profile)) => {
@@ -421,27 +421,27 @@ pub async fn report_xlsx_kind_pelengs1(
                 }
                 _ => "(невідомо)".to_string(),
             };
-        sheet1.write_string(i, 4, sender_name).context(h!())?;
         sheet1
-            .write_string(i, 5, m.callsigns.join(", "))
+            .write_string(i, 4, m.callsigns.join(", "))
             .context(h!())?;
         sheet1
-            .write_string(i, 6, m.location.clone().unwrap_or("".to_string()))
+            .write_string(i, 5, m.location.clone().unwrap_or("".to_string()))
             .context(h!())?;
         sheet1
-            .write_string(i, 7, format!("{} {}", usk2000.x, usk2000.y))
+            .write_string(i, 6, format!("{} {}", usk2000.x, usk2000.y))
             .context(h!())?;
         sheet1
-            .write_string(i, 8, format!("{lat} {lng}"))
+            .write_string(i, 7, format!("{lat} {lng}"))
             .context(h!())?;
         sheet1
             .write_string(
                 i,
-                9,
+                8,
                 Mgrs::from_latlon(&LatLon::create(lat, lng).unwrap(), 5)
                     .to_string(),
             )
             .context(h!())?;
+        sheet1.write_string(i, 9, sender_name).context(h!())?;
     }
 
     workbook.save(outpath).context(h!())?;
