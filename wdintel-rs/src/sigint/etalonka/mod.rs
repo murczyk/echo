@@ -31,6 +31,12 @@ const DEFAULT_MODULATION: &str = "уточнюється";
 pub mod query;
 pub mod types;
 
+pub enum CallsignTableType {
+    MainRadioStations,
+    OtherStations,
+    AbsentMainStation,
+}
+
 /// Generate etalonka report for filtered set of networks
 #[post("/api/sigint/etalonka/report-networks")]
 pub async fn report_networks(
@@ -336,14 +342,41 @@ pub async fn generate_networks_docx_report(
                 &correspondents_number,
             );
             doc = add_field(doc, "5. Позивні: ", "");
-            let has_main_radio_station = net_callsigns.iter().any(|nc| nc.main_radio_station);
+            let has_main_radio_station =
+                net_callsigns.iter().any(|nc| nc.main_radio_station);
+            if has_main_radio_station {
+                // add callsigns for main radio station
+                let nc_for_main_radio_station = net_callsigns
+                    .iter()
+                    .filter(|nc| nc.main_radio_station)
+                    .cloned()
+                    .collect();
 
-            
+                if let Some(table) = build_network_callsigns_table(
+                    &CallsignTableType::MainRadioStations,
+                    &nc_for_main_radio_station,
+                    &sources,
+                    width_unit,
+                    &table_header_style_id,
+                    settings.networks_only,
+                ) {
+                    doc = doc.add_table(table).add_paragraph(Paragraph::new());
+                }
+            }
 
             if !net_callsigns.is_empty() {
                 // add callsigns assignet to the network
                 if let Some(table) = build_network_callsigns_table(
-                    &net_callsigns,
+                    if has_main_radio_station {
+                        &CallsignTableType::OtherStations
+                    } else {
+                        &CallsignTableType::AbsentMainStation
+                    },
+                    &net_callsigns
+                        .iter()
+                        .filter(|nc| !nc.main_radio_station)
+                        .cloned() // requires NetworkCallsign: Clone
+                        .collect(),
                     &sources,
                     width_unit,
                     &table_header_style_id,
@@ -545,7 +578,8 @@ pub async fn generate_networks_docx_report(
 
 /// Helper: Generate the network callsigns table
 fn build_network_callsigns_table(
-    net_callsigns: &[NetworkCallsign],
+    callsigns_table_type: &CallsignTableType,
+    net_callsigns: &Vec<NetworkCallsign>,
     sources: &HashMap<i64, String>,
     width_unit: usize,
     table_header_style_id: &str,
@@ -738,20 +772,40 @@ fn build_network_callsigns_table(
         )
     };
 
+    // --- build extra title row if needed ---
+    let title_row = match callsigns_table_type {
+        CallsignTableType::MainRadioStations => Some("Головна радіостанція"),
+        CallsignTableType::OtherStations => Some("Підлеглі радіостанції"),
+        _ => None,
+    }
+    .map(|title| {
+        TableRow::new(vec![create_table_header_cell(
+            width_unit * 48,
+            None,
+            table_header_style_id,
+            title,
+            false,
+        )])
+    });
+
+    // --- assemble rows ---
+    let mut rows = Vec::new();
+    if let Some(r) = title_row {
+        rows.push(r);
+    }
+    rows.push(TableRow::new(headers));
+    rows.extend(
+        net_callsigns
+            .iter()
+            .filter(|nc| !nc.developing)
+            .map(|callsign| TableRow::new(row_builder(callsign))),
+    );
+
     Some(
-        Table::new(
-            std::iter::once(TableRow::new(headers))
-                .chain(
-                    net_callsigns
-                        .iter()
-                        .filter(|nc| !nc.developing)
-                        .map(|callsign| TableRow::new(row_builder(callsign))),
-                )
-                .collect(),
-        )
-        .width(width_unit * 48, WidthType::Dxa)
-        .layout(TableLayoutType::Fixed)
-        .set_borders(TableBorders::with_empty()),
+        Table::new(rows)
+            .width(width_unit * 48, WidthType::Dxa)
+            .layout(TableLayoutType::Fixed)
+            .set_borders(TableBorders::with_empty()),
     )
 }
 

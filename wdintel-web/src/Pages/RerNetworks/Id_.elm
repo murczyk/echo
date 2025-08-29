@@ -234,7 +234,6 @@ type alias Model =
     , addConfirmationFreqSelect : Le.Block.Select.SelectTypeSingle String
     , addSignsInp : String
     , signals : RemoteData ApiError (List B.NetworkSignalsRes)
-
     , reportModalOpened : Bool
     , reportDownloadInProgress : Bool
     , reportNetworksOnly : Bool
@@ -302,29 +301,30 @@ type alias Model =
 
     -- Developing callsigns dropdown
     , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
-            -- Unknown callsigns dropdown
-        , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
 
-        -- Row show all popup status for comments
-        , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
+    -- Unknown callsigns dropdown
+    , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
 
-        -- Sidebar states for creating descriptions
-        , confirmationCreateSidebar : Bool
-        , signsCreateSidebar : Bool
+    -- Row show all popup status for comments
+    , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
 
-        -- Sidebar state for editing descriptions
-        , editDescriptionSidebar : Maybe ( Int, B.NetworkDescription )
+    -- Sidebar states for creating descriptions
+    , confirmationCreateSidebar : Bool
+    , signsCreateSidebar : Bool
 
-        -- Input fields for editing descriptions
-        , editDescriptionInp : String
-        , editDescriptionFreqSelect :
-            { state : Select.State
-            , items : List (Select.MenuItem String)
-            , selected : Maybe String
-            }
+    -- Sidebar state for editing descriptions
+    , editDescriptionSidebar : Maybe ( Int, B.NetworkDescription )
 
-        -- Delete confirmation dialog state
-        , deleteDescriptionConfirmation : Maybe B.NetworkDescription
+    -- Input fields for editing descriptions
+    , editDescriptionInp : String
+    , editDescriptionFreqSelect :
+        { state : Select.State
+        , items : List (Select.MenuItem String)
+        , selected : Maybe String
+        }
+
+    -- Delete confirmation dialog state
+    , deleteDescriptionConfirmation : Maybe B.NetworkDescription
     }
 
 
@@ -379,7 +379,6 @@ init route shared () =
             }
       , addSignsInp = ""
       , signals = NotAsked
-
       , reportModalOpened = False
       , reportDownloadInProgress = False
       , reportNetworksOnly = False
@@ -484,31 +483,32 @@ init route shared () =
       , editCallsignUnitSelState = Select.initState (Select.selectIdentifier "callsign-edit-unit-state")
       , editCallsignUnitSelectorVisible = False
 
-              -- Developing callsigns dropdown initialization
-        , developingCallsignDropdown = Nothing
-        -- Unknown callsigns dropdown initialization
-        , unknownCallsignDropdown = Nothing
+      -- Developing callsigns dropdown initialization
+      , developingCallsignDropdown = Nothing
 
-        -- Row show all popup status initialization
-        , rowShowAllPopupStatus = Nothing
+      -- Unknown callsigns dropdown initialization
+      , unknownCallsignDropdown = Nothing
 
-        -- Sidebar states for creating descriptions initialization
-        , confirmationCreateSidebar = False
-        , signsCreateSidebar = False
+      -- Row show all popup status initialization
+      , rowShowAllPopupStatus = Nothing
 
-        -- Sidebar state for editing descriptions initialization
-        , editDescriptionSidebar = Nothing
+      -- Sidebar states for creating descriptions initialization
+      , confirmationCreateSidebar = False
+      , signsCreateSidebar = False
 
-        -- Input fields for editing descriptions initialization
-        , editDescriptionInp = ""
-        , editDescriptionFreqSelect =
+      -- Sidebar state for editing descriptions initialization
+      , editDescriptionSidebar = Nothing
+
+      -- Input fields for editing descriptions initialization
+      , editDescriptionInp = ""
+      , editDescriptionFreqSelect =
             { state = Select.initState (Select.selectIdentifier "edit-description-freq-state")
             , items = []
             , selected = Nothing
             }
 
-        -- Delete confirmation dialog initialization
-        , deleteDescriptionConfirmation = Nothing
+      -- Delete confirmation dialog initialization
+      , deleteDescriptionConfirmation = Nothing
       }
     , case String.toInt route.params.id of
         Just id ->
@@ -571,7 +571,6 @@ type Msg
     | DescriptionEditClickedByUser B.NetworkDescription
     | DescriptionEditSave B.NetworkDescription
     | DescriptionEditUpdated Int (Result ApiError B.Network)
-
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
     | ReportModalOpenedByUser
@@ -657,22 +656,18 @@ type Msg
     | DeleteCallsignCanceled -- Скасування видалення позивного
     | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor )) -- Зміна статусу popup для показу повного коментаря
-
-    -- Sidebar management for creating descriptions
+      -- Sidebar management for creating descriptions
     | OpenConfirmationCreateSidebar
     | CloseConfirmationCreateSidebar
     | OpenSignsCreateSidebar
     | CloseSignsCreateSidebar
-
-    -- Sidebar management for editing descriptions
+      -- Sidebar management for editing descriptions
     | OpenEditDescriptionSidebar B.NetworkDescription
     | CloseEditDescriptionSidebar
-
-    -- Input field management for editing descriptions
+      -- Input field management for editing descriptions
     | EditDescriptionInputChanged String
     | EditDescriptionFreqSelMsg (Select.Msg String)
-
-    -- Delete confirmation dialog management
+      -- Delete confirmation dialog management
     | DeleteDescriptionConfirmed B.NetworkDescription
     | DeleteDescriptionCanceled
 
@@ -1247,9 +1242,13 @@ update shared msg model =
 
         DescriptionEditClickedByUser description ->
             let
-                freqItems = case model.freqs of
-                    Success freqs -> List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
-                    _ -> []
+                freqItems =
+                    case model.freqs of
+                        Success freqs ->
+                            List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+
+                        _ ->
+                            []
             in
             ( { model
                 | editDescriptionSidebar = Just ( description.id, description )
@@ -1259,25 +1258,34 @@ update shared msg model =
                     , items = freqItems
                     , selected = Nothing
                     }
-              }, E.none )
-
-
+              }
+            , E.none
+            )
 
         DescriptionEditSave description ->
             let
                 -- Use the current input from the sidebar
-                updatedDescription = model.editDescriptionInp
+                updatedDescription =
+                    model.editDescriptionInp
+
                 -- Get selected frequency if any
-                selectedFreq = model.editDescriptionFreqSelect.selected
+                selectedFreq =
+                    model.editDescriptionFreqSelect.selected
+
                 -- Find the frequency ID if a frequency is selected
-                networkFreqId = case selectedFreq of
-                    Just freq ->
-                        case model.freqs of
-                            Success freqs ->
-                                ListX.find (\f -> f.freq == freq) freqs
-                                    |> Maybe.map .networkFreqId
-                            _ -> Nothing
-                    Nothing -> Nothing
+                networkFreqId =
+                    case selectedFreq of
+                        Just freq ->
+                            case model.freqs of
+                                Success freqs ->
+                                    ListX.find (\f -> f.freq == freq) freqs
+                                        |> Maybe.map .networkFreqId
+
+                                _ ->
+                                    Nothing
+
+                        Nothing ->
+                            Nothing
             in
             ( { model | editDescriptionSidebar = Nothing }
             , E.networkUpdateDescription (DescriptionEditUpdated description.id)
@@ -1982,7 +1990,11 @@ update shared msg model =
             ( { model
                 | callsignCreateUnitSelState = imodel2
                 , callsignCreateUnitSelectorVisible =
-                    if shouldCloseSelector then False else model.callsignCreateUnitSelectorVisible
+                    if shouldCloseSelector then
+                        False
+
+                    else
+                        model.callsignCreateUnitSelectorVisible
                 , callsignCreateState =
                     Maybe.map (\state -> { state | unitId = updatedUnitId }) model.callsignCreateState
               }
@@ -1998,18 +2010,20 @@ update shared msg model =
             ( { model
                 | callsignCreateUnitSelectorVisible = False
                 , callsignCreateState =
-                    Maybe.map (\state ->
-                        { state |
-                            unitId =
-                                -- Повертаємо до першого підрозділу мережі
-                                case model.editUnitsSelect.selected of
-                                    firstUnitId :: _ ->
-                                        Just firstUnitId
+                    Maybe.map
+                        (\state ->
+                            { state
+                                | unitId =
+                                    -- Повертаємо до першого підрозділу мережі
+                                    case model.editUnitsSelect.selected of
+                                        firstUnitId :: _ ->
+                                            Just firstUnitId
 
-                                    [] ->
-                                        Nothing
-                        }
-                    ) model.callsignCreateState
+                                        [] ->
+                                            Nothing
+                            }
+                        )
+                        model.callsignCreateState
               }
             , E.none
             )
@@ -2524,7 +2538,11 @@ update shared msg model =
             ( { model
                 | editCallsignUnitSelState = imodel2
                 , editCallsignUnitSelectorVisible =
-                    if shouldCloseSelector then False else model.editCallsignUnitSelectorVisible
+                    if shouldCloseSelector then
+                        False
+
+                    else
+                        model.editCallsignUnitSelectorVisible
                 , editCallsignState =
                     Maybe.map (\state -> { state | unitId = updatedUnitId }) model.editCallsignState
               }
@@ -2540,18 +2558,20 @@ update shared msg model =
             ( { model
                 | editCallsignUnitSelectorVisible = False
                 , editCallsignState =
-                    Maybe.map (\state ->
-                        { state |
-                            unitId =
-                                -- Повертаємо до першого підрозділу мережі
-                                case model.editUnitsSelect.selected of
-                                    firstUnitId :: _ ->
-                                        Just firstUnitId
+                    Maybe.map
+                        (\state ->
+                            { state
+                                | unitId =
+                                    -- Повертаємо до першого підрозділу мережі
+                                    case model.editUnitsSelect.selected of
+                                        firstUnitId :: _ ->
+                                            Just firstUnitId
 
-                                    [] ->
-                                        Nothing
-                        }
-                    ) model.editCallsignState
+                                        [] ->
+                                            Nothing
+                            }
+                        )
+                        model.editCallsignState
               }
             , E.none
             )
@@ -2620,12 +2640,20 @@ update shared msg model =
         OpenEditDescriptionSidebar description ->
             let
                 -- Initialize input fields with current description data
-                initialInput = description.description
+                initialInput =
+                    description.description
+
                 -- For network descriptions, we don't have frequency info, so we'll leave it empty
-                initialFreq = Nothing
-                freqItems = case model.freqs of
-                    Success freqs -> List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
-                    _ -> []
+                initialFreq =
+                    Nothing
+
+                freqItems =
+                    case model.freqs of
+                        Success freqs ->
+                            List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+
+                        _ ->
+                            []
             in
             ( { model
                 | editDescriptionSidebar = Just ( description.id, description )
@@ -3128,23 +3156,24 @@ callsignsTableConfig shared model user =
                 |> Table.withColumnWidth "18%"
             , Table.veryCustomColumn
                 { name = "Коментар"
-                , viewData = \row ->
-                    { attributes = [ class "relative" ]
-                    , children =
-                        [ div [ class "flex flex-col gap-2" ]
-                            [ div
-                                [ class "comment-preview"
-                                , style "max-height" "4.5rem" -- ~3 рядки
-                                , style "overflow" "hidden"
-                                , style "white-space" "pre-line"
-                                ]
-                                [ text row.comment ]
-                            , if String.length row.comment > 100 then
-                                let
-                                    isOpen =
-                                        case model.rowShowAllPopupStatus of
-                                            Just ( callsignId, ShowAllComment ) ->
-                                                callsignId == row.id
+                , viewData =
+                    \row ->
+                        { attributes = [ class "relative" ]
+                        , children =
+                            [ div [ class "flex flex-col gap-2" ]
+                                [ div
+                                    [ class "comment-preview"
+                                    , style "max-height" "4.5rem" -- ~3 рядки
+                                    , style "overflow" "hidden"
+                                    , style "white-space" "pre-line"
+                                    ]
+                                    [ text row.comment ]
+                                , if String.length row.comment > 100 then
+                                    let
+                                        isOpen =
+                                            case model.rowShowAllPopupStatus of
+                                                Just ( callsignId, ShowAllComment ) ->
+                                                    callsignId == row.id
 
                                                 _ ->
                                                     False
@@ -3329,41 +3358,46 @@ networkCallsignsTableConfig shared model user =
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Підрозділ"
-                , viewData = \row ->
-                    let
-                        unitText = Maybe.withDefault "-" row.unitName
-                        unitContent =
-                            if row.unitDeveloping then
-                                [ text unitText
-                                , span [ class "ml-2 badge badge-no-unit" ]
-                                    [ text "в дорозвідці" ]
-                                ]
-                            else
-                                [ text unitText ]
-                    in
-                    { attributes = [], children = unitContent }
+                , viewData =
+                    \row ->
+                        let
+                            unitText =
+                                Maybe.withDefault "-" row.unitName
+
+                            unitContent =
+                                if row.unitDeveloping then
+                                    [ text unitText
+                                    , span [ class "ml-2 badge badge-no-unit" ]
+                                        [ text "в дорозвідці" ]
+                                    ]
+
+                                else
+                                    [ text unitText ]
+                        in
+                        { attributes = [], children = unitContent }
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "16%"
             , Table.veryCustomColumn
                 { name = "Коментар"
-                , viewData = \row ->
-                    { attributes = [ class "relative" ]
-                    , children =
-                        [ div [ class "flex flex-col gap-2" ]
-                            [ div
-                                [ class "comment-preview"
-                                , style "max-height" "4.5rem" -- ~3 рядки
-                                , style "overflow" "hidden"
-                                , style "white-space" "pre-line"
-                                ]
-                                [ text (Maybe.withDefault "-" row.comment) ]
-                            , if String.length (Maybe.withDefault "" row.comment) > 100 then
-                                let
-                                    isOpen =
-                                        case model.rowShowAllPopupStatus of
-                                            Just ( callsignId, ShowAllComment ) ->
-                                                callsignId == row.id
+                , viewData =
+                    \row ->
+                        { attributes = [ class "relative" ]
+                        , children =
+                            [ div [ class "flex flex-col gap-2" ]
+                                [ div
+                                    [ class "comment-preview"
+                                    , style "max-height" "4.5rem" -- ~3 рядки
+                                    , style "overflow" "hidden"
+                                    , style "white-space" "pre-line"
+                                    ]
+                                    [ text (Maybe.withDefault "-" row.comment) ]
+                                , if String.length (Maybe.withDefault "" row.comment) > 100 then
+                                    let
+                                        isOpen =
+                                            case model.rowShowAllPopupStatus of
+                                                Just ( callsignId, ShowAllComment ) ->
+                                                    callsignId == row.id
 
                                                 _ ->
                                                     False
@@ -4186,6 +4220,8 @@ freqsTableEditing updateFreqReq freq model shared =
                 []
             ]
         ]
+
+
 descriptionItem : B.NetworkDescription -> B.Network -> Auth.User -> Shared.Model -> Html Msg
 descriptionItem description network user shared =
     div [ class "border rounded-lg p-2 mb-3 shadow-sm hover:shadow-md transition-shadow duration-200 border-border bg-card" ]
@@ -4194,23 +4230,25 @@ descriptionItem description network user shared =
                 [ div [ class "flex items-center gap-2 text-sm text-muted" ]
                     (List.concat
                         [ [ i [ class "bi bi-person-circle", style "color" "var(--color-primary)" ] []
-                        , span [ class "font-medium" ] [ text description.login ]
-                        , span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
-                        , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
-                        ]
+                          , span [ class "font-medium" ] [ text description.login ]
+                          , span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
+                          , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                          ]
                         , if description.networkFrequencyId /= Nothing then
                             [ span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
                             , span [ class "font-medium", style "color" "var(--color-primary)" ]
-                                [ text <| Maybe.withDefault ""
-                                    (description.networkFrequencyId
-                                        |> Maybe.andThen
-                                            (\freqId ->
-                                                ListX.find (\freq -> freq.id == freqId) network.freqs
-                                            )
-                                        |> Maybe.map .freq
-                                    )
+                                [ text <|
+                                    Maybe.withDefault ""
+                                        (description.networkFrequencyId
+                                            |> Maybe.andThen
+                                                (\freqId ->
+                                                    ListX.find (\freq -> freq.id == freqId) network.freqs
+                                                )
+                                            |> Maybe.map .freq
+                                        )
                                 ]
                             ]
+
                           else
                             []
                         ]
@@ -4223,7 +4261,8 @@ descriptionItem description network user shared =
                     , button [ class "p-1 rounded-md transition-colors duration-200 description-item-delete-btn", style "color" "var(--color-error)", style "background-color" "transparent", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
                         [ i [ class "bi bi-trash text-lg" ] [] ]
                     ]
-                  else
+
+                 else
                     []
                 )
             ]
@@ -4231,6 +4270,7 @@ descriptionItem description network user shared =
             [ div [ class "leading-relaxed", style "color" "var(--color-text)", style "white-space" "pre-line" ] [ text description.description ]
             ]
         ]
+
 
 contentBlock : Auth.User -> Shared.Model -> B.Network -> Model -> List (Html Msg)
 contentBlock user shared network model =
@@ -4319,27 +4359,27 @@ contentBlock user shared network model =
                             Button.new { label = "Створити", onClick = OpenConfirmationCreateSidebar }
                                 |> Button.withStyleSecondary
                                 |> Button.view
+
                           else
                             text ""
                         ]
-                    , Html.Keyed.node "div" [ class "h-[350px] overflow-y-auto" ]
-                        (
-                            (List.sortWith
-                                (\a b ->
-                                    if a.createdAt > b.createdAt then
-                                        LT
+                    , Html.Keyed.node "div"
+                        [ class "h-[350px] overflow-y-auto" ]
+                        (List.sortWith
+                            (\a b ->
+                                if a.createdAt > b.createdAt then
+                                    LT
 
-                                    else
-                                        GT
-                                )
-                                confirmations
-                                |> List.map
-                                    (\description ->
-                                        ( String.fromInt description.id
-                                        , descriptionItem description network user shared
-                                        )
-                                    )
+                                else
+                                    GT
                             )
+                            confirmations
+                            |> List.map
+                                (\description ->
+                                    ( String.fromInt description.id
+                                    , descriptionItem description network user shared
+                                    )
+                                )
                         )
                     ]
                 , div []
@@ -4349,10 +4389,12 @@ contentBlock user shared network model =
                             Button.new { label = "Створити", onClick = OpenSignsCreateSidebar }
                                 |> Button.withStyleSecondary
                                 |> Button.view
+
                           else
                             text ""
                         ]
-                    , Html.Keyed.node "div" [ class "h-[350px] overflow-y-auto" ]
+                    , Html.Keyed.node "div"
+                        [ class "h-[350px] overflow-y-auto" ]
                         (List.sortWith
                             (\a b ->
                                 if a.createdAt > b.createdAt then
@@ -4627,14 +4669,16 @@ view user shared model =
                             contentBlock user shared network model
                                 ++ (if model.confirmationCreateSidebar then
                                         [ Sidebar.view True CloseConfirmationCreateSidebar [ confirmationCreateSidebarContent shared model user network ] ]
+
                                     else
                                         []
-                                    )
+                                   )
                                 ++ (if model.signsCreateSidebar then
                                         [ Sidebar.view True CloseSignsCreateSidebar [ signsCreateSidebarContent shared model user network ] ]
+
                                     else
                                         []
-                                    )
+                                   )
                                 ++ (if model.editDescriptionSidebar /= Nothing then
                                         case model.editDescriptionSidebar of
                                             Just ( _, description ) ->
@@ -4642,9 +4686,10 @@ view user shared model =
 
                                             Nothing ->
                                                 []
+
                                     else
                                         []
-                                    )
+                                   )
 
                         _ ->
                             [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
@@ -5326,33 +5371,35 @@ callsignCreateSidebarContent shared model user =
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Підрозділ" ]
                     , div [ class "flex items-center gap-2 p-2 border border-border rounded bg-gray-50 dark:bg-gray-700" ]
                         [ span [ class "text-sm text-gray-700 dark:text-gray-300" ]
-                            [ text (case Maybe.andThen .unitId model.callsignCreateState of
-                                Just unitId ->
-                                    case shared.masterUnits of
-                                        Success units ->
-                                            Dict.get unitId units
-                                                |> Maybe.map .name
-                                                |> Maybe.withDefault "Невідомий підрозділ"
+                            [ text
+                                (case Maybe.andThen .unitId model.callsignCreateState of
+                                    Just unitId ->
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Dict.get unitId units
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault "Невідомий підрозділ"
 
-                                        _ ->
-                                            "Завантаження..."
+                                            _ ->
+                                                "Завантаження..."
 
-                                Nothing ->
-                                    -- Показуємо назву першого підрозділу мережі
-                                    case model.editUnitsSelect.selected of
-                                        firstUnitId :: _ ->
-                                            case shared.masterUnits of
-                                                Success units ->
-                                                    Dict.get firstUnitId units
-                                                        |> Maybe.map .name
-                                                        |> Maybe.withDefault "Підрозділ мережі"
+                                    Nothing ->
+                                        -- Показуємо назву першого підрозділу мережі
+                                        case model.editUnitsSelect.selected of
+                                            firstUnitId :: _ ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get firstUnitId units
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault "Підрозділ мережі"
 
-                                                _ ->
-                                                    "Підрозділ мережі"
+                                                    _ ->
+                                                        "Підрозділ мережі"
 
-                                        [] ->
-                                            "Підрозділ мережі"
-                              ) ]
+                                            [] ->
+                                                "Підрозділ мережі"
+                                )
+                            ]
                         , button
                             [ type_ "button"
                             , class "text-blue-600 hover:text-blue-800 text-sm"
@@ -5661,33 +5708,35 @@ editCallsignSidebarContent shared model user =
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Підрозділ" ]
                     , div [ class "flex items-center gap-2 p-2 border border-border rounded bg-gray-50 dark:bg-gray-700" ]
                         [ span [ class "text-sm text-gray-700 dark:text-gray-300" ]
-                            [ text (case Maybe.andThen .unitId model.editCallsignState of
-                                Just unitId ->
-                                    case shared.masterUnits of
-                                        Success units ->
-                                            Dict.get unitId units
-                                                |> Maybe.map .name
-                                                |> Maybe.withDefault "Невідомий підрозділ"
+                            [ text
+                                (case Maybe.andThen .unitId model.editCallsignState of
+                                    Just unitId ->
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Dict.get unitId units
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault "Невідомий підрозділ"
 
-                                        _ ->
-                                            "Завантаження..."
+                                            _ ->
+                                                "Завантаження..."
 
-                                Nothing ->
-                                    -- Показуємо назву першого підрозділу мережі
-                                    case model.editUnitsSelect.selected of
-                                        firstUnitId :: _ ->
-                                            case shared.masterUnits of
-                                                Success units ->
-                                                    Dict.get firstUnitId units
-                                                        |> Maybe.map .name
-                                                        |> Maybe.withDefault "Підрозділ мережі"
+                                    Nothing ->
+                                        -- Показуємо назву першого підрозділу мережі
+                                        case model.editUnitsSelect.selected of
+                                            firstUnitId :: _ ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get firstUnitId units
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault "Підрозділ мережі"
 
-                                                _ ->
-                                                    "Підрозділ мережі"
+                                                    _ ->
+                                                        "Підрозділ мережі"
 
-                                        [] ->
-                                            "Підрозділ мережі"
-                              ) ]
+                                            [] ->
+                                                "Підрозділ мережі"
+                                )
+                            ]
                         , button
                             [ type_ "button"
                             , class "text-blue-600 hover:text-blue-800 text-sm"
@@ -5925,7 +5974,10 @@ editCallsignSidebarContent shared model user =
         ]
 
 
+
 -- Sidebar content for creating confirmation descriptions
+
+
 confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
 confirmationCreateSidebarContent shared model user network =
     div [ class "flex flex-col h-full" ]
@@ -5982,7 +6034,10 @@ confirmationCreateSidebarContent shared model user network =
         ]
 
 
+
 -- Sidebar content for creating signs descriptions
+
+
 signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
 signsCreateSidebarContent shared model user network =
     div [ class "flex flex-col h-full" ]
@@ -6014,7 +6069,10 @@ signsCreateSidebarContent shared model user network =
         ]
 
 
+
 -- Sidebar content for editing descriptions
+
+
 editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html Msg
 editDescriptionSidebarContent shared model user network description =
     div [ class "flex flex-col h-full" ]
