@@ -4188,16 +4188,16 @@ descriptionItem description network user shared =
                 ]
             , div [ class "flex gap-2" ]
                 (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
-                    [ button [ class "p-2 rounded-md transition-colors duration-200 description-item-edit-btn", style "color" "var(--color-primary)", style "background-color" "transparent", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
+                    [ button [ class "p-1 rounded-md transition-colors duration-200 description-item-edit-btn", style "color" "var(--color-primary)", style "background-color" "transparent", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
                         [ i [ class "bi bi-pencil text-lg" ] [] ]
-                    , button [ class "p-2 rounded-md transition-colors duration-200 description-item-delete-btn", style "color" "var(--color-error)", style "background-color" "transparent", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
+                    , button [ class "p-1 rounded-md transition-colors duration-200 description-item-delete-btn", style "color" "var(--color-error)", style "background-color" "transparent", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
                         [ i [ class "bi bi-trash text-lg" ] [] ]
                     ]
                   else
                     []
                 )
             ]
-        , div [ class "mt-2" ]
+        , div []
             [ div [ class "leading-relaxed", style "color" "var(--color-text)", style "white-space" "pre-line" ] [ text description.description ]
             ]
         ]

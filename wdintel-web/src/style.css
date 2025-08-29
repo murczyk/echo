@@ -419,19 +419,7 @@
 /* } */
 
 
-[id^=waterfall-wf-]::-webkit-scrollbar {
-    width: 6px;
-}
-
-[id^=waterfall-wf-]::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-[id^=waterfall-wf-]::-webkit-scrollbar-thumb {
-    background-color: rgba(155, 155, 155, 0.5);
-    border-radius: 20px;
-    border: transparent;
-}
+/* Waterfall scrollbar styles moved to _scrollbar.css */
 
 .badge-highlighed-nearby-font {
     font-size: 1rem;
