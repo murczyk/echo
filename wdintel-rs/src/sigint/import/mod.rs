@@ -62,46 +62,33 @@ pub async fn oneoff_import_etalon_data(
             msg: format!("origin not found: {origin_name}"),
         });
     };
-    let txn = dbx.begin().await.context(h!())?;
     let (ok, import_result) =
-        import_etalon_data(&txn, etalon.clone(), origin.id, true)
+        import_etalon_data(&dbx, etalon.clone(), origin.id, true)
             .await
             .context(h!())?;
     debug!("import result: {import_result:?}");
     let should_commit = ok && autocommit;
-    if should_commit {
-        txn.commit().await.context(h!())?;
-        info!("Import completed.");
-        return Ok(());
+    if !should_commit {
+        let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Confirm import?")
+            .interact()
+            .context(h!())?;
+        if !import_confirmed {
+            return Err(AppError::BL {
+                msg: "Import aborted.".to_string(),
+            });
+        }
     };
-    let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt("Confirm import?")
-        .interact()
-        .context(h!())?;
-    if !import_confirmed {
-        return Err(AppError::BL {
-            msg: "Import aborted.".to_string(),
-        });
-    }
-    let (ok, import_result) =
+    let (_, import_result) =
         import_etalon_data(&dbx, etalon.clone(), origin.id, false)
             .await
             .context(h!())?;
-    info!("Import completed (ok={ok}).");
+    info!("Import completed.");
     debug!("import result: {import_result:?}");
     Ok(())
 }
 
 fn describe_etalon(etalon: &EtalonImportResult) {
-    fn print_import_stats<ID: Id>(import_stats: &ImportResult<ID>) -> String {
-        format!(
-            "total {}, new {}, updated {}",
-            import_stats.ids_map.len(),
-            import_stats.num_created,
-            import_stats.num_updated
-        )
-    }
-
     info!("------------------");
     info!("Importing etalon data");
     info!(
@@ -157,6 +144,13 @@ fn describe_etalon(etalon: &EtalonImportResult) {
         "- modulation records: {}",
         print_import_stats(&etalon.modulation)
     );
+}
+
+fn print_import_stats<ID: Id>(import_stats: &ImportResult<ID>) -> String {
+    format!(
+        "new {}, updated {}",
+        import_stats.num_created, import_stats.num_updated
+    )
 }
 
 async fn export_etalon_data<'a, 'async_trait, C>(
@@ -261,62 +255,68 @@ where
     Ok(result)
 }
 
-async fn import_etalon_data<'a, 'async_trait, C>(
-    txn: &'a C,
+async fn import_etalon_data(
+    dbx: &DatabaseConnection,
     data: EtalonData,
     origin_id: i64,
     dry_run: bool,
-) -> anyhow::Result<(bool, EtalonImportResult)>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> anyhow::Result<(bool, EtalonImportResult)> {
     let mut import_warnings = vec![];
+    let mut txn = dbx.begin().await.context(h!())?;
     let default_zone_id = sigint_zone::Entity::find()
         .filter(sigint_zone::Column::Deleted.eq(false))
         .order_by_asc(sigint_zone::Column::CreatedAt)
-        .one(txn)
+        .one(&txn)
         .await
         .context(h!())?
         .context(h!())?
         .id;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let area_of_responsibility_import_result =
         import_area_of_responsibility_data(
-            txn,
+            &txn,
             origin_id,
             data.area_of_responsibility.clone(),
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
+
     let aors_map = with_default_aors_mapping(
         &area_of_responsibility_import_result.ids_map,
         data.area_of_responsibility,
-        txn,
+        &txn,
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let modulation_import_result =
-        import_modulation_data(txn, origin_id, data.modulation)
+        import_modulation_data(&txn, origin_id, data.modulation)
             .await
             .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
-    let source_import_result = import_source_data(txn, origin_id, data.source)
+    let source_import_result = import_source_data(&txn, origin_id, data.source)
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_unit_import_result =
-        import_sigint_unit_data(txn, origin_id, data.sigint_unit)
+        import_sigint_unit_data(&txn, origin_id, data.sigint_unit)
             .await
             .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_import_result =
-        import_sigint_network_data(txn, origin_id, data.sigint_network)
+        import_sigint_network_data(&txn, origin_id, data.sigint_network)
             .await
             .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_aor_import_result = import_sigint_network_aor_data(
-        txn,
+        &txn,
         origin_id,
         data.sigint_network_aor,
         &aors_map,
@@ -324,9 +324,10 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_zone_aor_import_result = import_sigint_zone_aor_data(
-        txn,
+        &txn,
         origin_id,
         default_zone_id,
         data.sigint_zone_aor,
@@ -334,10 +335,11 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_changelog_import_result =
         import_sigint_network_changelog_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_network_changelog,
             sigint_network_import_result.ids_map.clone(),
@@ -345,9 +347,10 @@ where
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_freq_import_result = import_sigint_network_freq_data(
-        txn,
+        &txn,
         origin_id,
         data.sigint_network_freq,
         sigint_network_import_result.ids_map.clone(),
@@ -356,10 +359,11 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_freq_changelog_import_result =
         import_sigint_network_freq_changelog_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_network_freq_changelog,
             sigint_network_freq_import_result.ids_map.clone(),
@@ -367,10 +371,11 @@ where
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_description_import_result =
         import_sigint_network_description_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_network_description,
             sigint_network_import_result.ids_map.clone(),
@@ -379,9 +384,10 @@ where
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_signal_import_result = import_sigint_signal_data(
-        txn,
+        &txn,
         origin_id,
         data.sigint_signal,
         sigint_unit_import_result.ids_map.clone(),
@@ -389,10 +395,11 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_signal_changelog_import_result =
         import_sigint_signal_changelog_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_signal_changelog,
             sigint_signal_import_result.ids_map.clone(),
@@ -400,9 +407,10 @@ where
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_unit_import_result = import_sigint_network_unit_data(
-        txn,
+        &txn,
         origin_id,
         data.sigint_network_unit,
         sigint_network_import_result.ids_map.clone(),
@@ -411,10 +419,11 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_unit_changelog_import_result =
         import_sigint_network_unit_changelog_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_network_unit_changelog,
             sigint_network_unit_import_result.ids_map.clone(),
@@ -422,9 +431,10 @@ where
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_callsign_import_result = import_sigint_callsign_data(
-        txn,
+        &txn,
         origin_id,
         data.sigint_callsign,
         sigint_unit_import_result.ids_map.clone(),
@@ -433,10 +443,11 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_callsign_changelog_import_result =
         import_sigint_callsign_changelog_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_callsign_changelog,
             sigint_callsign_import_result.ids_map.clone(),
@@ -444,14 +455,16 @@ where
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_post_import_result =
-        import_sigint_post_data(txn, origin_id, data.sigint_post)
+        import_sigint_post_data(&txn, origin_id, data.sigint_post)
             .await
             .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_post_import_result = import_sigint_network_post_data(
-        txn,
+        &txn,
         origin_id,
         data.sigint_network_post,
         sigint_network_import_result.ids_map.clone(),
@@ -460,10 +473,11 @@ where
     )
     .await
     .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let sigint_network_callsign_import_result =
         import_sigint_network_callsign_data(
-            txn,
+            &txn,
             origin_id,
             data.sigint_network_callsign,
             sigint_network_import_result.ids_map.clone(),
@@ -471,6 +485,7 @@ where
         )
         .await
         .context(h!())?;
+    maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let etalon_import_result = EtalonImportResult {
         area_of_responsibility: area_of_responsibility_import_result,
@@ -915,7 +930,6 @@ where
         model.merged_to = Set(result.get(&merged_into).cloned());
         model.update(txn).await.context(h!())?;
     }
-
     Ok(ImportResult {
         ids_map: result,
         num_created,
@@ -974,7 +988,6 @@ where
         result.insert(rec.id, new_id);
         new_records.push(new_rec.clone());
     }
-
     Ok(ImportResult {
         ids_map: result,
         num_created,
@@ -1028,7 +1041,6 @@ where
         result.insert(rec.id, new_id);
         new_records.push(new_rec.clone());
     }
-
     Ok(ImportResult {
         ids_map: result,
         num_created,
@@ -1844,4 +1856,16 @@ where
         num_created,
         num_updated: 0,
     })
+}
+
+async fn maybe_commit(
+    txn: DatabaseTransaction,
+    dbx: &DatabaseConnection,
+    dry_run: bool,
+) -> anyhow::Result<DatabaseTransaction> {
+    if dry_run {
+        return Ok(txn);
+    };
+    txn.commit().await.context(h!())?;
+    dbx.begin().await.context(h!())
 }
