@@ -154,6 +154,7 @@ async fn create_network_callsign_linked(
         unit_id: NotSet,
         unit_developing: NotSet,
         main_radio_station: Set(main_radio_station),
+        original_id: NotSet,
     }
     .insert(txn)
     .await
