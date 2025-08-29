@@ -114,6 +114,7 @@ async fn create_network_callsign_not_linked(
         unit_developing: Set(req.unit_developing),
         developing: Set(req.developing),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(txn)
     .await
@@ -160,6 +161,7 @@ pub async fn bl_add_as_known_network_callsigns(
             sigint_origin_id: NotSet,
             unit_id: NotSet,
             unit_developing: NotSet,
+            original_id: NotSet,
         }
         .insert(txn)
         .await

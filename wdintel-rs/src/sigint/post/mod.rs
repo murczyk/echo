@@ -128,6 +128,7 @@ pub async fn create_post(
         deleted: NotSet,
         created_at: NotSet,
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await

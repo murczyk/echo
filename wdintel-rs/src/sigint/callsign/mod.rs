@@ -347,6 +347,7 @@ pub async fn bl_callsign_create(
         developing: Set(req.developing),
         radio_freq: Set(req.radio_freq.clone().unwrap_or("".to_string())),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(txn)
     .await
@@ -369,6 +370,7 @@ pub async fn bl_callsign_create(
         new_value: Set(Some(callsign_json)),
         old_value: NotSet,
         req: Set(Some(serde_json::to_value(req).context(h!())?)),
+        original_id: NotSet,
     }
     .insert(txn)
     .await
@@ -443,6 +445,7 @@ pub async fn bl_callsign_update(
         old_value: Set(Some(callsign_json_old)),
         req: Set(None),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(txn)
     .await
@@ -486,6 +489,7 @@ pub async fn delete_callsign(
         old_value: Set(Some(callsign_json_old)),
         req: Set(None),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await?;
