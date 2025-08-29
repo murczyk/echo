@@ -310,6 +310,7 @@ pub async fn create_network(
         active_from: Set(active_from),
         active_to: Set(active_to),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&txn)
     .await
@@ -335,6 +336,7 @@ pub async fn create_network(
         old_value: NotSet,
         req: Set(Some(serde_json::to_value(&req).context(h!())?)),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&txn)
     .await
@@ -359,6 +361,7 @@ pub async fn create_network(
             modulation_id: Set(frequency.modulation_id),
             deleted: Set(false),
             sigint_origin_id: NotSet,
+            original_id: NotSet,
         }
         .insert(&txn)
         .await
@@ -383,6 +386,7 @@ pub async fn create_network(
                 unit_id: Set(unit_id),
                 created_at: NotSet,
                 sigint_origin_id: NotSet,
+                original_id: NotSet,
             })
             .collect();
         if !network_units.is_empty() {
@@ -404,6 +408,7 @@ pub async fn create_network(
             deleted: NotSet,
             created_at: NotSet,
             sigint_origin_id: NotSet,
+            original_id: NotSet,
         })
         .collect();
     if !network_posts.is_empty() {
@@ -592,6 +597,7 @@ pub async fn delete_network(
         old_value: Set(Some(network_json_old)),
         req: Set(None),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
     .insert(&env.dbx)
     .await
@@ -1039,6 +1045,7 @@ pub async fn update_freq_networks(
                         unit_id: Set(*unit_id),
                         created_at: NotSet,
                         sigint_origin_id: NotSet,
+                        original_id: NotSet,
                     };
                     network_unit.save(&txn).await.context(h!())?;
                 }
@@ -1082,6 +1089,7 @@ pub async fn update_freq_networks(
                     unit_id: Set(*unit_id),
                     created_at: NotSet,
                     sigint_origin_id: NotSet,
+                    original_id: NotSet,
                 };
                 let _updated_entry =
                     network_unit.save(&txn).await.context(h!())?;
@@ -1207,6 +1215,7 @@ pub async fn add_network_freq(
             active_to: Set(active_to),
             deleted: Set(false),
             sigint_origin_id: NotSet,
+            original_id: NotSet,
         };
 
         network_freq.insert(&txn).await.context(h!())?
@@ -1908,6 +1917,7 @@ pub async fn update_network_posts(
             deleted: NotSet,
             created_at: NotSet,
             sigint_origin_id: NotSet,
+            original_id: NotSet,
         };
         network_post.insert(&txn).await.context(h!())?;
     }
@@ -2023,6 +2033,7 @@ pub async fn update_network_units(
             unit_id: Set(unit_id),
             created_at: NotSet,
             sigint_origin_id: NotSet,
+            original_id: NotSet,
         };
         network_unit.insert(&txn).await.context(h!())?;
     }
@@ -2287,6 +2298,7 @@ fn map_add_network_description(
         deleted: Set(false),
         created_at: NotSet,
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
 }
 
@@ -2307,6 +2319,7 @@ fn map_add_network_frequency_description(
         deleted: Set(false),
         created_at: NotSet,
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     }
 }
 
@@ -2359,6 +2372,7 @@ where
         id: NotSet,
         network_id: Set(network.id),
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     };
     network_aor.insert(dbx).await.context(h!())?;
     Ok(())
@@ -2383,6 +2397,7 @@ async fn save_network_aors(
             aor_id: Set(aor_id),
             created_at: NotSet,
             sigint_origin_id: NotSet,
+            original_id: NotSet,
         }
         .insert(txn)
         .await

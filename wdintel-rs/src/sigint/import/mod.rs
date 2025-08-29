@@ -62,11 +62,9 @@ pub async fn oneoff_import_etalon_data(
             msg: format!("origin not found: {origin_name}"),
         });
     };
-    let (ok, import_result) =
-        import_etalon_data(&dbx, etalon.clone(), origin.id, true)
-            .await
-            .context(h!())?;
-    debug!("import result: {import_result:?}");
+    let ok = import_etalon_data(&dbx, etalon.clone(), origin.id, true)
+        .await
+        .context(h!())?;
     let should_commit = ok && autocommit;
     if !should_commit {
         let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
@@ -79,18 +77,40 @@ pub async fn oneoff_import_etalon_data(
             });
         }
     };
-    let (_, import_result) =
-        import_etalon_data(&dbx, etalon.clone(), origin.id, false)
-            .await
-            .context(h!())?;
+    import_etalon_data(&dbx, etalon.clone(), origin.id, false)
+        .await
+        .context(h!())?;
     info!("Import completed.");
-    debug!("import result: {import_result:?}");
     Ok(())
 }
 
 fn describe_etalon(etalon: &EtalonImportResult) {
     info!("------------------");
     info!("Importing etalon data");
+    info!(
+        "- sigint_network_post records: {}",
+        print_import_stats(&etalon.sigint_network_post)
+    );
+    info!(
+        "- area_of_responsibility records: {}",
+        print_import_stats(&etalon.area_of_responsibility)
+    );
+    info!(
+        "- sigint_zone_aor records: {}",
+        print_import_stats(&etalon.sigint_zone_aor)
+    );
+    info!(
+        "- sigint_network_callsign records: {}",
+        print_import_stats(&etalon.sigint_network_callsign)
+    );
+    info!(
+        "- sigint_network_aor records: {}",
+        print_import_stats(&etalon.sigint_network_aor)
+    );
+    info!(
+        "- sigint_post records: {}",
+        print_import_stats(&etalon.sigint_post)
+    );
     info!(
         "- sigint_signal records: {}",
         print_import_stats(&etalon.sigint_signal)
@@ -260,7 +280,7 @@ async fn import_etalon_data(
     data: EtalonData,
     origin_id: i64,
     dry_run: bool,
-) -> anyhow::Result<(bool, EtalonImportResult)> {
+) -> anyhow::Result<bool> {
     let mut import_warnings = vec![];
     let mut txn = dbx.begin().await.context(h!())?;
     let default_zone_id = sigint_zone::Entity::find()
@@ -512,9 +532,7 @@ async fn import_etalon_data(
         sigint_zone_aor: sigint_zone_aor_import_result,
     };
 
-    if dry_run {
-        describe_etalon(&etalon_import_result);
-    }
+    describe_etalon(&etalon_import_result);
 
     let is_ok = import_warnings.is_empty();
     if !is_ok && dry_run {
@@ -524,7 +542,7 @@ async fn import_etalon_data(
         }
     };
 
-    Ok((is_ok, etalon_import_result))
+    Ok(is_ok)
 }
 
 async fn with_default_aors_mapping<'a, 'async_trait, C>(
@@ -568,13 +586,18 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_areas_of_responsibility(txn, &recs)
+        query::find_existing_areas_of_responsibility(txn, &recs, origin_id)
             .await
             .context(h!())?;
 
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = existing_record_ids.get(&rec.name);
+        if rec.is_top_level && rec.is_default {
+            let default_aor = load_default_aor(txn).await.context(h!())?;
+            result.insert(rec.id, default_aor.id);
+            continue;
+        }
+        let id = existing_record_ids.get(&rec.id);
         let (id, new_record) = match id {
             None => {
                 max_id += 1;
@@ -583,12 +606,8 @@ where
             Some(id) => (Set(*id), false),
         };
 
-        if rec.is_top_level || rec.is_default {
-            result.insert(rec.id, rec.id);
-            continue;
-        }
-
         let model = area_of_responsibility::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             created_at: Set(rec.created_at),
             deleted: Set(rec.deleted),
@@ -603,7 +622,7 @@ where
             right_lon: Set(rec.right_lon),
             left_settlement: Set(rec.left_settlement),
             right_settlement: Set(rec.right_settlement),
-            updated_by: Set(rec.updated_by),
+            updated_by: Set(Some("system".to_string())),
             updated_at: Set(rec.updated_at),
             is_default: Set(rec.is_default),
             sigint_origin_id: Set(Some(origin_id)),
@@ -663,6 +682,7 @@ where
         };
 
         let model = modulation::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             created_at: Set(rec.created_at),
             name: Set(rec.name),
@@ -703,15 +723,13 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sigint_signals(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sigint_signals(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&(id)));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
@@ -730,6 +748,7 @@ where
         };
 
         let model = sigint_signal::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             text: Set(rec.text),
             meaning: Set(rec.meaning),
@@ -769,9 +788,10 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sources(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sources(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
         let id = existing_record_ids.get(&rec.name);
@@ -781,6 +801,7 @@ where
         };
 
         let model = source::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             created_at: Set(rec.created_at),
             name: Set(rec.name),
@@ -817,20 +838,19 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sigint_units(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sigint_units(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_unit::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             company: Set(rec.company),
             regiment: Set(rec.regiment),
@@ -875,21 +895,21 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sigint_networks(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sigint_networks(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     let mut new_records = vec![];
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let original_id = rec.id;
+        let (id, new_record) = match existing_record_ids.get(&original_id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_network::ActiveModel {
+            original_id: Set(Some(original_id)),
             id,
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),
@@ -917,7 +937,7 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
-        result.insert(rec.id, new_id);
+        result.insert(original_id, new_id);
         new_records.push(new_rec.clone());
     }
 
@@ -950,16 +970,13 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_aors(txn, &recs)
+        query::find_existing_sigint_network_aors(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
     let mut new_records = vec![];
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
@@ -969,6 +986,7 @@ where
             .cloned()
             .context(h!())?;
         let model = sigint_network_aor::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             network_id: Set(network_id),
             aor_id: Set(aors_map.get(&rec.aor_id).cloned().context(h!())?),
@@ -1007,21 +1025,20 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sigint_zone_aors(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sigint_zone_aors(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     let mut new_records = vec![];
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_zone_aor::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             zone_id: Set(zone_id),
             aor_id: Set(aors_map.get(&rec.aor_id).cloned().context(h!())?),
@@ -1058,9 +1075,10 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sigint_posts(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sigint_posts(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     // currently post name is unique
     let mut existing_posts_by_name = sigint_post::Entity::find()
@@ -1075,15 +1093,13 @@ where
             result.insert(rec.id, post_id);
             continue;
         }
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_post::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),
@@ -1126,7 +1142,7 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_descriptions(txn, &recs)
+        query::find_existing_sigint_network_descriptions(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
@@ -1156,15 +1172,13 @@ where
                 Set(Some(sigint_network_freq_id))
             }
         };
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_network_description::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             network_id: Set(sigint_network_id),
             login: Set("system".to_string()),
@@ -1210,7 +1224,7 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_freqs(txn, &recs)
+        query::find_existing_sigint_network_freqs(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
@@ -1238,15 +1252,13 @@ where
                 Set(Some(modulation_id))
             }
         };
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&{ id }));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_network_freq::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             modulation_id,
             network_id: Set(sigint_network_id),
@@ -1291,7 +1303,7 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_callsigns(txn, &recs)
+        query::find_existing_sigint_network_callsigns(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
@@ -1306,15 +1318,13 @@ where
             ));
             continue;
         };
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&(id)));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_network_callsign::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             sigint_network_id: Set(network_id),
             deleted: Set(rec.deleted),
@@ -1364,7 +1374,7 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_posts(txn, &recs)
+        query::find_existing_sigint_network_posts(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
@@ -1385,15 +1395,13 @@ where
             ));
             continue;
         };
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&(id)));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_network_post::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             network_id: Set(network_id),
             post_id: Set(post_id),
@@ -1434,9 +1442,10 @@ where
 {
     let mut num_created = 0;
     let mut num_updated = 0;
-    let existing_record_ids = query::find_existing_sigint_callsigns(txn, &recs)
-        .await
-        .context(h!())?;
+    let existing_record_ids =
+        query::find_existing_sigint_callsigns(txn, &recs, origin_id)
+            .await
+            .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
         // Convert source_id to Option<i32> first
@@ -1451,15 +1460,13 @@ where
                 .push(format!("sigint_unit with id {} not found", rec.unit_id));
             continue;
         };
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&(id)));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_callsign::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             callsign: Set(rec.callsign),
             position: Set(rec.position),
@@ -1506,7 +1513,7 @@ where
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_units(txn, &recs)
+        query::find_existing_sigint_network_units(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
@@ -1526,15 +1533,13 @@ where
             ));
             continue;
         };
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&(id)));
-        let (id, new_record) = match id {
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
             None => (NotSet, true),
             Some(id) => (Set(*id), false),
         };
 
         let model = sigint_network_unit::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id,
             network_id: Set(sigint_network_id),
             unit_id: Set(unit_id),
@@ -1572,18 +1577,15 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut num_created = 0;
+    let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_unit_changelogs(txn, &recs)
-            .await
-            .context(h!())?;
+        query::find_existing_sigint_network_unit_changelogs(
+            txn, &recs, origin_id,
+        )
+        .await
+        .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&id));
-        if id.is_some() {
-            continue;
-        }
         let Some(sigint_network_unit_id) = sigint_network_unit_ids_map
             .get(&rec.sigint_network_unit_id)
             .cloned()
@@ -1594,8 +1596,10 @@ where
             ));
             continue;
         };
+        let new_record = !existing_record_ids.contains_key(&rec.id);
 
         let model = sigint_network_unit_changelog::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id: NotSet,
             sigint_network_unit_id: Set(sigint_network_unit_id),
             login: Set("system".to_string()),
@@ -1607,8 +1611,15 @@ where
             old_value: Set(rec.old_value),
         };
 
-        let new_rec = model.insert(txn).await.context(h!())?;
-        num_created += 1;
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
 
         let new_id = new_rec.id;
 
@@ -1617,7 +1628,7 @@ where
     Ok(ImportResult {
         ids_map: result,
         num_created,
-        num_updated: 0,
+        num_updated,
     })
 }
 
@@ -1632,18 +1643,13 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut num_created = 0;
+    let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_callsign_changelogs(txn, &recs)
+        query::find_existing_sigint_callsign_changelogs(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&id));
-        if id.is_some() {
-            continue;
-        }
         let Some(sigint_callsign_id) = sigint_callsign_ids_map
             .get(&rec.sigint_callsign_id)
             .cloned()
@@ -1654,8 +1660,10 @@ where
             ));
             continue;
         };
+        let new_record = !existing_record_ids.contains_key(&rec.id);
 
         let model = sigint_callsign_changelog::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id: NotSet,
             sigint_callsign_id: Set(sigint_callsign_id),
             login: Set("system".to_string()),
@@ -1667,8 +1675,15 @@ where
             old_value: Set(rec.old_value),
         };
 
-        let new_rec = model.insert(txn).await.context(h!())?;
-        num_created += 1;
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
 
         let new_id = new_rec.id;
         result.insert(rec.id, new_id);
@@ -1676,7 +1691,7 @@ where
     Ok(ImportResult {
         ids_map: result,
         num_created,
-        num_updated: 0,
+        num_updated,
     })
 }
 
@@ -1691,18 +1706,13 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut num_created = 0;
+    let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_signal_changelogs(txn, &recs)
+        query::find_existing_sigint_signal_changelogs(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&id));
-        if id.is_some() {
-            continue;
-        }
         let Some(sigint_signal_id) =
             sigint_signal_ids_map.get(&rec.sigint_signal_id).cloned()
         else {
@@ -1712,8 +1722,10 @@ where
             ));
             continue;
         };
+        let new_record = !existing_record_ids.contains_key(&rec.id);
 
         let model = sigint_signal_changelog::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id: NotSet,
             sigint_signal_id: Set(sigint_signal_id),
             login: Set("system".to_string()),
@@ -1725,8 +1737,15 @@ where
             old_value: Set(rec.old_value),
         };
 
-        let new_rec = model.insert(txn).await.context(h!())?;
-        num_created += 1;
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
 
         let new_id = new_rec.id;
 
@@ -1735,7 +1754,7 @@ where
     Ok(ImportResult {
         ids_map: result,
         num_created,
-        num_updated: 0,
+        num_updated,
     })
 }
 
@@ -1750,18 +1769,15 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut num_created = 0;
+    let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_freq_changelogs(txn, &recs)
-            .await
-            .context(h!())?;
+        query::find_existing_sigint_network_freq_changelogs(
+            txn, &recs, origin_id,
+        )
+        .await
+        .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&id));
-        if id.is_some() {
-            continue;
-        }
         let Some(sigint_network_freq_id) = sigint_network_freq_ids_map
             .get(&rec.sigint_network_freq_id)
             .cloned()
@@ -1772,8 +1788,10 @@ where
             ));
             continue;
         };
+        let new_record = !existing_record_ids.contains_key(&rec.id);
 
         let model = sigint_network_freq_changelog::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id: NotSet,
             sigint_network_freq_id: Set(sigint_network_freq_id),
             login: Set("system".to_string()),
@@ -1785,8 +1803,15 @@ where
             old_value: Set(rec.old_value),
         };
 
-        let new_rec = model.insert(txn).await.context(h!())?;
-        num_created += 1;
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
 
         let new_id = new_rec.id;
 
@@ -1795,7 +1820,7 @@ where
     Ok(ImportResult {
         ids_map: result,
         num_created,
-        num_updated: 0,
+        num_updated,
     })
 }
 
@@ -1810,18 +1835,13 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut num_created = 0;
+    let mut num_updated = 0;
     let existing_record_ids =
-        query::find_existing_sigint_network_changelogs(txn, &recs)
+        query::find_existing_sigint_network_changelogs(txn, &recs, origin_id)
             .await
             .context(h!())?;
     let mut result = BTreeMap::new();
     for rec in recs {
-        let id = rec
-            .sigint_origin_id
-            .and_then(|id| existing_record_ids.get(&id));
-        if id.is_some() {
-            continue;
-        }
         let Some(sigint_network_id) =
             sigint_network_ids_map.get(&rec.sigint_network_id).cloned()
         else {
@@ -1831,8 +1851,10 @@ where
             ));
             continue;
         };
+        let new_record = !existing_record_ids.contains_key(&rec.id);
 
         let model = sigint_network_changelog::ActiveModel {
+            original_id: Set(Some(rec.id)),
             id: NotSet,
             sigint_network_id: Set(sigint_network_id),
             login: Set("system".to_string()),
@@ -1844,8 +1866,15 @@ where
             old_value: Set(rec.old_value),
         };
 
-        let new_rec = model.insert(txn).await.context(h!())?;
-        num_created += 1;
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
 
         let new_id = new_rec.id;
 
@@ -1854,7 +1883,7 @@ where
     Ok(ImportResult {
         ids_map: result,
         num_created,
-        num_updated: 0,
+        num_updated,
     })
 }
 

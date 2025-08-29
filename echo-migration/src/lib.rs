@@ -136,6 +136,7 @@ mod m20250826_094122_add_datasource_group;
 mod m20250826_190501_add_deleted_to_groups;
 mod m20250828_164520_drop_mothership_id;
 mod m20250828_185442_add_aor_sigint_origin_id;
+mod m20250829_133754_add_original_id;
 
 pub struct Migrator;
 
@@ -279,6 +280,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250826_190501_add_deleted_to_groups::Migration),
             Box::new(m20250828_164520_drop_mothership_id::Migration),
             Box::new(m20250828_185442_add_aor_sigint_origin_id::Migration),
+            Box::new(m20250829_133754_add_original_id::Migration),
         ]
     }
 }

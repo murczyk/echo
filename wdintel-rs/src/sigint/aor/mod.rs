@@ -246,6 +246,7 @@ async fn map_insert(
         is_top_level: Set(req.is_top_level),
         is_default: NotSet,
         sigint_origin_id: NotSet,
+        original_id: NotSet,
     };
     Ok(model)
 }
