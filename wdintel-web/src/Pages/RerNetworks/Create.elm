@@ -163,7 +163,7 @@ init route shared () =
     ( { formErrors = Dict.empty
       , toasts = Le.Block.Toast.init
       , createNetworkState =
-            { freqs = []
+            { freqs = Nothing
             , unitIds = Nothing
             , areaOfResponsibilityIds = Nothing
             , name = "управління"
@@ -684,10 +684,10 @@ update shared msg model =
                     { currentFreqState | description = description }
 
                 newFreqs =
-                    freqWithDescription :: oldNetworkState.freqs
+                    freqWithDescription :: getFreqsList oldNetworkState
 
                 newNetworkState =
-                    { oldNetworkState | freqs = newFreqs }
+                    { oldNetworkState | freqs = Just newFreqs }
 
                 -- Reset frequency form
                 resetFreqState =
@@ -1089,7 +1089,7 @@ viewFrequenciesSection shared model =
                     ]
                     [ i [ class "bi bi-plus-lg" ] [] ]
                 ]
-            , if List.isEmpty model.createNetworkState.freqs then
+            , if List.isEmpty (getFreqsList model.createNetworkState) then
                 div [ class "flex flex-col items-center justify-center h-48 border-2 border-dashed border-border rounded-lg text-muted-foreground bg-muted/20" ]
                     [ h3 [ class "text-lg font-semibold" ] [ text "Частоти відсутні" ]
                     , p [ class "text-sm text-muted-foreground/80" ] [ text "Додайте частоти для роботи з мережею." ]
@@ -1103,7 +1103,7 @@ viewFrequenciesSection shared model =
 
               else
                 div [ class "space-y-2" ]
-                    (List.indexedMap (viewFrequencyRow shared model) model.createNetworkState.freqs
+                    (List.indexedMap (viewFrequencyRow shared model) (getFreqsList model.createNetworkState)
                         ++ [ div [ class "flex justify-center mt-3" ]
                                 [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
                                     |> Button.withStyleSecondary
@@ -1175,7 +1175,7 @@ viewFrequencyRow shared model index freq =
                         (\state ->
                             { state
                                 | freqs =
-                                    List.take index state.freqs ++ List.drop (index + 1) state.freqs
+                                    Just (List.take index (getFreqsList state) ++ List.drop (index + 1) (getFreqsList state))
                             }
                         )
                     )
@@ -1433,7 +1433,10 @@ viewActionButtons model =
 
 
 
--- Helper function to create the main info block for creation
+-- Helper functions for working with Maybe (List AddNetworkFreq)
+getFreqsList : B.CreateNetworkReq -> List B.AddNetworkFreq
+getFreqsList req =
+    Maybe.withDefault [] req.freqs
 
 
 createMainInfoBlock : B.CreateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
