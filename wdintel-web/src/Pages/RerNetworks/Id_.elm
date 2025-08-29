@@ -566,7 +566,7 @@ type Msg
     | DescriptionEditClickedByUser B.NetworkDescription
     | DescriptionEditSave B.NetworkDescription
     | DescriptionEditUpdated Int (Result ApiError B.Network)
-    
+
     | DescriptionDeleted (Result ApiError B.Network)
     | AddConfirmationFreqSelMsg (Select.Msg String)
     | ReportModalOpenedByUser
@@ -1247,7 +1247,7 @@ update shared msg model =
                     Success freqs -> List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
                     _ -> []
             in
-            ( { model 
+            ( { model
                 | editDescriptionSidebar = Just ( description.id, description )
                 , editDescriptionInp = description.description
                 , editDescriptionFreqSelect =
@@ -4156,7 +4156,51 @@ freqsTableEditing updateFreqReq freq model shared =
                 []
             ]
         ]
-
+descriptionItem : B.NetworkDescription -> B.Network -> Auth.User -> Shared.Model -> Html Msg
+descriptionItem description network user shared =
+    div [ class "min-h-[60px] border rounded-lg p-2 mb-3 shadow-sm hover:shadow-md transition-shadow duration-200", style "border-color" "var(--color-border)", style "background-color" "var(--color-card)" ]
+        [ div [ class "flex justify-between items-start mb-1" ]
+            [ div [ class "flex flex-col gap-1" ]
+                [ div [ class "flex items-center gap-2 text-sm", style "color" "var(--color-text-muted)" ]
+                    (List.concat
+                        [ [ i [ class "bi bi-person-circle", style "color" "var(--color-primary)" ] []
+                        , span [ class "font-medium" ] [ text description.login ]
+                        , span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
+                        , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
+                        ]
+                        , if description.networkFrequencyId /= Nothing then
+                            [ span [ style "color" "var(--color-text-muted)" ] [ text "•" ]
+                            , span [ class "font-medium", style "color" "var(--color-primary)" ]
+                                [ text <| Maybe.withDefault ""
+                                    (description.networkFrequencyId
+                                        |> Maybe.andThen
+                                            (\freqId ->
+                                                ListX.find (\freq -> freq.id == freqId) network.freqs
+                                            )
+                                        |> Maybe.map .freq
+                                    )
+                                ]
+                            ]
+                          else
+                            []
+                        ]
+                    )
+                ]
+            , div [ class "flex gap-2" ]
+                (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
+                    [ button [ class "p-2 rounded-md transition-colors duration-200 description-item-edit-btn", style "color" "var(--color-primary)", style "background-color" "transparent", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
+                        [ i [ class "bi bi-pencil text-lg" ] [] ]
+                    , button [ class "p-2 rounded-md transition-colors duration-200 description-item-delete-btn", style "color" "var(--color-error)", style "background-color" "transparent", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
+                        [ i [ class "bi bi-trash text-lg" ] [] ]
+                    ]
+                  else
+                    []
+                )
+            ]
+        , div [ class "mt-2" ]
+            [ div [ class "leading-relaxed", style "color" "var(--color-text)", style "white-space" "pre-line" ] [ text description.description ]
+            ]
+        ]
 
 contentBlock : Auth.User -> Shared.Model -> B.Network -> Model -> List (Html Msg)
 contentBlock user shared network model =
@@ -4248,7 +4292,7 @@ contentBlock user shared network model =
                           else
                             text ""
                         ]
-                    , Html.Keyed.node "div" [ class "max-h-[350px] overflow-y-auto p-1", style "scrollbar-width" "thin", style "scrollbar-color" "#d1d5db #f3f4f6" ]
+                    , Html.Keyed.node "div" [ class "max-h-[350px] overflow-y-auto p-1" ]
                         (
                             (List.sortWith
                                 (\a b ->
@@ -4262,49 +4306,7 @@ contentBlock user shared network model =
                                 |> List.map
                                     (\description ->
                                         ( String.fromInt description.id
-                                        , div [ class "min-h-[60px] border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-3 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200" ]
-                                            [ div [ class "flex justify-between items-start mb-1" ]
-                                                [ div [ class "flex flex-col gap-1" ]
-                                                    [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
-                                                        (List.concat
-                                                            [ [ i [ class "bi bi-person-circle text-blue-500" ] []
-                                                            , span [ class "font-medium" ] [ text description.login ]
-                                                            , span [ class "text-gray-400" ] [ text "•" ]
-                                                            , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
-                                                            ]
-                                                            , if description.networkFrequencyId /= Nothing then
-                                                                [ span [ class "text-gray-400" ] [ text "•" ]
-                                                                , span [ class "text-blue-600 dark:text-blue-400 font-medium" ]
-                                                                    [ text <| Maybe.withDefault ""
-                                                                        (description.networkFrequencyId
-                                                                            |> Maybe.andThen
-                                                                                (\freqId ->
-                                                                                    ListX.find (\freq -> freq.id == freqId) network.freqs
-                                                                                )
-                                                                            |> Maybe.map .freq
-                                                                        )
-                                                                    ]
-                                                                ]
-                                                              else
-                                                                []
-                                                            ]
-                                                        )
-                                                    ]
-                                                , div [ class "flex gap-2" ]
-                                                    (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
-                                                        [ button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
-                                                            [ i [ class "bi bi-pencil text-lg" ] [] ]
-                                                        , button [ class "p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
-                                                            [ i [ class "bi bi-trash text-lg" ] [] ]
-                                                        ]
-                                                      else
-                                                        []
-                                                    )
-                                                ]
-                                            , div [ class "mt-2" ]
-                                                [ div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
-                                                ]
-                                            ]
+                                        , descriptionItem description network user shared
                                         )
                                     )
                             )
@@ -4320,7 +4322,7 @@ contentBlock user shared network model =
                           else
                             text ""
                         ]
-                    , Html.Keyed.node "div" [ class "max-h-[350px] overflow-y-auto", style "scrollbar-width" "thin", style "scrollbar-color" "#d1d5db #f3f4f6" ]
+                    , Html.Keyed.node "div" [ class "max-h-[350px] overflow-y-auto" ]
                         (List.sortWith
                             (\a b ->
                                 if a.createdAt > b.createdAt then
@@ -4333,31 +4335,7 @@ contentBlock user shared network model =
                             |> List.map
                                 (\description ->
                                     ( String.fromInt description.id
-                                    , div [ class "min-h-[60px] border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-3 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200" ]
-                                        [ div [ class "flex justify-between items-start mb-3" ]
-                                            [ div [ class "flex flex-col gap-1" ]
-                                                [ div [ class "flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400" ]
-                                                    [ i [ class "bi bi-person-circle text-blue-500" ] []
-                                                    , span [ class "font-medium" ] [ text description.login ]
-                                                    , span [ class "text-gray-400" ] [ text "•" ]
-                                                    , span [] [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix description.createdAt) ]
-                                                    ]
-                                                ]
-                                            , div [ class "flex gap-2" ]
-                                                (if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user || Le.Auth.hasRole "CallsignsEditor" user then
-                                                    [ button [ class "p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionEditClickedByUser description, title "Редагувати" ]
-                                                        [ i [ class "bi bi-pencil text-lg" ] [] ]
-                                                    , button [ class "p-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors duration-200", onClick <| DescriptionDeleteClickedByUser description, title "Видалити" ]
-                                                        [ i [ class "bi bi-trash text-lg" ] [] ]
-                                                    ]
-                                                  else
-                                                    []
-                                                )
-                                            ]
-                                        , div [ class "mt-2" ]
-                                            [ div [ class "text-gray-800 dark:text-gray-200 leading-relaxed", style "white-space" "pre-line" ] [ text description.description ]
-                                            ]
-                                        ]
+                                    , descriptionItem description network user shared
                                     )
                                 )
                         )
@@ -5964,7 +5942,7 @@ editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network 
 editDescriptionSidebarContent shared model user network description =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
-            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати коментар" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати опис" ]
             , div [ class "space-y-4" ]
                 [ div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
@@ -5992,10 +5970,10 @@ editDescriptionSidebarContent shared model user network description =
                                 defaultOptions
                     ]
                 , div []
-                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Текст коментаря *" ]
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Текст опису *" ]
                     , textarea
                         [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
-                        , placeholder "Введіть текст коментаря"
+                        , placeholder "Введіть текст опису"
                         , value model.editDescriptionInp
                         , onInput EditDescriptionInputChanged
                         ]
