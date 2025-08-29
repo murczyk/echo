@@ -302,6 +302,18 @@ pub struct OneoffFixAreasOfResponsibilityPs {
     pub force_all_networks: bool,
 }
 
+#[derive(clap::Parser, Debug)]
+pub struct OneoffGetNetworksActivityStatsPs {
+    #[arg(long, value_enum)]
+    pub login: String,
+    /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
+    #[arg(long, value_enum)]
+    pub start: String,
+    /// Start datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long, value_enum)]
+    pub end: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -353,6 +365,7 @@ enum Cmd {
     OneoffFixAreasOfResponsibility(OneoffFixAreasOfResponsibilityPs),
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
+    OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -596,11 +609,14 @@ async fn main() -> Result<(), AppError> {
             crate::rer_importer::unit::import_unit(mode, &ps).await
         }
         Cmd::OneoffMergeAllNetworks => {
-            crate::sigint::network::oneoff_merge_all_possible_networks(mode)
-                .await
+            crate::sigint::network::oneoff::oneoff_merge_all_possible_networks(
+                mode,
+            )
+            .await
         }
         Cmd::OneoffMergeTwoNetworks(ps) => {
-            crate::sigint::network::oneoff_merge_two_networks(mode, &ps).await
+            crate::sigint::network::oneoff::oneoff_merge_two_networks(mode, &ps)
+                .await
         }
         Cmd::OneoffInstall(ps) => crate::install::mount_tmp(&ps)
             .await
@@ -654,6 +670,12 @@ async fn main() -> Result<(), AppError> {
             crate::messenger::id::oneoff_assign_message_ids(
                 mode,
                 ps.dry_run.unwrap_or(true),
+            )
+            .await
+        }
+        Cmd::OneoffGetNetworksActivityStats(ps) => {
+            crate::sigint::network::oneoff::oneoff_network_activity_stat(
+                mode, &ps,
             )
             .await
         }

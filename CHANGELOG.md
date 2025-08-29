@@ -8,6 +8,7 @@
 
 ## NEXT
 
+- [#1392](https://github.com/echoua/echo/issues/1392) ✅ OneOff: Додано oneoff-get-networks-activity-stats - iнтенсивність роботи радіомереж за період
 - [#1339](https://github.com/echoua/echo/issues/1339) ✅ Звіт Пеленги: додано колонку з позивним
 
 ## 2025-08-28
