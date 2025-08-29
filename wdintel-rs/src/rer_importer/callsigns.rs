@@ -125,26 +125,38 @@ pub async fn find_known_callsigns(
     Ok(res)
 }
 
+fn push_if_unique_callsign(
+    callsign: &CNCallsign,
+    container: &mut Vec<CNCallsign>,
+) {
+    if !container.iter().any(|c| c.text == callsign.text) {
+        container.push(callsign.to_owned());
+    }
+}
+
 fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
     let body = &demoji::demoji(body);
-    let mut res = vec![];
+    let mut res: Vec<CNCallsign> = vec![];
     for callsign in extract_kazhanchik_callsigns(body)? {
-        res.push(callsign);
+        push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_buran_callsigns(body)? {
-        res.push(callsign);
+        push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_kharkiv_callsigns(body)? {
-        res.push(callsign);
+        push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_digital_callsigns(body)? {
-        res.push(callsign);
+        push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_non_caps_callsigns(body)? {
-        res.push(callsign);
+        push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_sender_receiver_pair(body)? {
-        res.push(callsign);
+        push_if_unique_callsign(&callsign, &mut res);
+    }
+    for callsign in extract_avia_callsigns(body)? {
+        push_if_unique_callsign(&callsign, &mut res);
     }
     Ok(res)
 }
@@ -349,7 +361,8 @@ fn add_callsign(
     if (callsign == "й") || callsign == "нв" {
         return false;
     }
-    if !callsign.chars().any(|c| c.is_alphabetic()) {
+    if !callsign.chars().any(|c| c.is_alphabetic()) 
+        && !is_numeric_callsign(&callsign) {
         return false;
     }
     res.push(CNCallsign {
@@ -752,6 +765,99 @@ fn is_non_caps_format(lines: &Vec<String>) -> Result<bool, AppError> {
     }
     let line2 = &lines[2];
     if !RE_DATE.is_match(line2) {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+/// Extracts callsigns if the text is in "авіа барʼєр"'s format
+fn extract_avia_callsigns(
+    input: &str,
+) -> Result<Vec<CNCallsign>, AppError> {
+    let lines: Vec<String> =
+        input.trim().lines().map(|x| x.to_string()).collect();
+    
+    if !is_avia_format(&lines)? {
+        return Ok(vec![]);
+    }
+
+    let skip_lines = 5;
+    let mut msg_pos: usize = lines
+        .iter()
+        .take(skip_lines)
+        .map(|line| cline_len(line))
+        .sum::<usize>()
+        + 1;
+    
+    const LITERAL_CALLSIGN_STR: &str = r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
+    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{5})";
+
+    lazy_static! {
+        // Regex for matching a single callsign
+        static ref CALLSIGN_REGEX: Regex = Regex::new(&format!(
+            r"^\s*(?P<callsign>(({LITERAL_CALLSIGN_STR})|({DIGITAL_CALLSIGN_STR})))\s*$"
+        )).unwrap();
+    }
+
+    let mut res: Vec<CNCallsign> = vec![];
+
+    for line in lines.iter() {
+        for capture in CALLSIGN_REGEX.captures_iter(line) {
+            if capture.name("callsign").is_some() {
+                add_callsign(
+                    &capture, "callsign", line, msg_pos, false, &mut res,
+                );
+            }
+        }
+        msg_pos += cline_len(line) + 1;
+    }
+
+    Ok(res)
+}
+
+fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
+
+
+//     Отримано з поста 35
+// --------------------------------------
+// 24.08.2025, 10:05:15
+// 128.9000
+// 🟠 УКХ р/м НВ підрозділу 128.900 МГц
+    lazy_static! {
+        static ref RE_POST: Regex = Regex::new(r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_"]+\s*$"#).unwrap();
+        static ref RE_SEPARATOR: Regex = Regex::new(r"^--------------------------------------$").unwrap();
+        static ref RE_DATE: Regex = Regex::new(r"^\s*\d{2}.\d{2}.\d{4},\s+\d{2}:\d{2}:\d{2}\s*$").unwrap();
+        static ref RE_FREQ: Regex = Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
+        static ref RE_NETWORK: Regex = Regex::new(r"^\s*(🟠|🔴|🔷|🟡)?\s*(УКХ р/м .*)\s*$").unwrap();
+    }
+
+    if lines.len() < 8 {
+        return Ok(false);
+    }
+    let line0 = &lines[0];
+    if !RE_POST.is_match(line0) {
+        println!("RE_POST");
+        return Ok(false);
+    }
+    let line1 = &lines[1];
+    if !RE_SEPARATOR.is_match(line1) {
+        println!("RE_SEPARATOR");
+        return Ok(false);
+    }
+    let line2 = &lines[2];
+    if !RE_DATE.is_match(line2) {
+        println!("RE_DATE");
+        return Ok(false);
+    }
+    let line3 = &lines[3];
+    if !RE_FREQ.is_match(line3) {
+        println!("RE_FREQ {line3}");
+        return Ok(false);
+    }
+    let line4 = &lines[4];
+    if !RE_NETWORK.is_match(line4) {
+        println!("RE_NETWORK {line4}");
         return Ok(false);
     }
 
@@ -2326,4 +2432,204 @@ mod tests {
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_no_caps_5_digits() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+18.08.2025, 13:32:10
+128.500
+УКХ р/м НВ підрозділу 128.500 МГц
+44307
+Саксофон
+
+— Саксофон-контроль 44307 под ваше, следую на правдивый по обратному"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["44307".to_string(), "Саксофон".to_string()];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_nv() {
+    let body = r#"Отримано з поста 35
+--------------------------------------
+24.08.2025, 10:05:15
+128.9000
+🟠 УКХ р/м НВ підрозділу 128.900 МГц
+НВ
+НВ
+
+— 50 на 150, 8 точка 5.
+— Э, условия принял. Посадочный  2 7 0."#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_3_digits() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+24.08.2025, 10:34:29
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+669-й
+16Й
+
+- с вами контрольная эш 245"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["669-й".to_string(), "16Й".to_string()];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_5_digits_caps() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+24.08.2025, 12:36:35
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["46131".to_string(), "САКСОФОН".to_string()];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_callsign_with_digit() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+24.08.2025, 12:36:35
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+16-Й
+КОРШУН 4
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["16-Й".to_string(), "КОРШУН 4".to_string()];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_callsign_with_defis() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+24.08.2025, 12:36:35
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+321Й
+Саксофон-контроль
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec!["321Й".to_string(), "Саксофон-контроль".to_string()];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_no_post_line() {
+    let body = r#"--------------------------------------
+24.08.2025, 12:36:35
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_no_date_line() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_unexpected_date_line() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+2025.08.21, 123635
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_no_sep_line() {
+    let body = r#"Отримано з поста 31_1
+24.08.2025, 12:36:35
+128.5000
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_no_freq_line() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+24.08.2025, 12:36:35
+🟠 УКХ р/м управління Московського ЗЦ ЄСУПР (Московського зонального центру Єдиної системи управління повітряним рухом) ПКС зс рф (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_no_net_line() {
+    let body = r#"Отримано з поста 31_1
+--------------------------------------
+24.08.2025, 12:36:35
+128.5000
+46131
+САКСОФОН
+
+— С Ворсовко отработал не возражает проход"#;
+    let res = extract_avia_callsigns(body).unwrap();
+    let expected: Vec<String> = vec![];
+    let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+    assert_eq!(ress, expected);
 }
