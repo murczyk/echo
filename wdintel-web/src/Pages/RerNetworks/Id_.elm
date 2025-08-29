@@ -4158,10 +4158,10 @@ freqsTableEditing updateFreqReq freq model shared =
         ]
 descriptionItem : B.NetworkDescription -> B.Network -> Auth.User -> Shared.Model -> Html Msg
 descriptionItem description network user shared =
-    div [ class "min-h-[60px] border rounded-lg p-2 mb-3 shadow-sm hover:shadow-md transition-shadow duration-200", style "border-color" "var(--color-border)", style "background-color" "var(--color-card)" ]
+    div [ class "border rounded-lg p-2 mb-3 shadow-sm hover:shadow-md transition-shadow duration-200 border-border bg-card" ]
         [ div [ class "flex justify-between items-start mb-1" ]
             [ div [ class "flex flex-col gap-1" ]
-                [ div [ class "flex items-center gap-2 text-sm", style "color" "var(--color-text-muted)" ]
+                [ div [ class "flex items-center gap-2 text-sm text-muted" ]
                     (List.concat
                         [ [ i [ class "bi bi-person-circle", style "color" "var(--color-primary)" ] []
                         , span [ class "font-medium" ] [ text description.login ]
@@ -4281,7 +4281,7 @@ contentBlock user shared network model =
                 ( confirmations, signs ) =
                     List.partition (\description -> description.descrType == B.Confirmation) network.descriptions
               in
-              div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col flex-1" ]
+              div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
                 [ div [ class "mb-[16px]" ]
                     [ div [ class "flex justify-between items-center mb-[8px]" ]
                         [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
@@ -4292,7 +4292,7 @@ contentBlock user shared network model =
                           else
                             text ""
                         ]
-                    , Html.Keyed.node "div" [ class "max-h-[350px] overflow-y-auto p-1" ]
+                    , Html.Keyed.node "div" [ class "h-[350px] overflow-y-auto" ]
                         (
                             (List.sortWith
                                 (\a b ->
@@ -4322,7 +4322,7 @@ contentBlock user shared network model =
                           else
                             text ""
                         ]
-                    , Html.Keyed.node "div" [ class "max-h-[350px] overflow-y-auto" ]
+                    , Html.Keyed.node "div" [ class "h-[350px] overflow-y-auto" ]
                         (List.sortWith
                             (\a b ->
                                 if a.createdAt > b.createdAt then
