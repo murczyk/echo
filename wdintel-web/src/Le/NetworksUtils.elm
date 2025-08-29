@@ -55,7 +55,7 @@ renderNetwork network masterUnits =
                     )
             , text <|
                 if network.location /= "" then
-                    " (" ++ String.toUpper network.location ++ ")"
+                    " (" ++ network.location ++ ")"
 
                 else
                     ""
