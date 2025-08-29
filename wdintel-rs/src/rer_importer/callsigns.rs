@@ -138,31 +138,24 @@ fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
     let body = &demoji::demoji(body);
     let mut res: Vec<CNCallsign> = vec![];
     for callsign in extract_kazhanchik_callsigns(body)? {
-        println!("extract_kazhanchik_callsigns {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_buran_callsigns(body)? {
-        println!("extract_buran_callsigns {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_kharkiv_callsigns(body)? {
-        println!("extract_kharkiv_callsigns {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_digital_callsigns(body)? {
-        println!("extract_digital_callsigns {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_non_caps_callsigns(body)? {
-        println!("extract_non_caps_callsigns {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_sender_receiver_pair(body)? {
-        println!("extract_sender_receiver_pair {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in extract_avia_callsigns(body)? {
-        println!("extract_avia_callsigns {}", callsign.text);
         push_if_unique_callsign(&callsign, &mut res);
     }
     Ok(res)
