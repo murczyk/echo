@@ -899,6 +899,7 @@ where
         query::find_existing_sigint_networks(txn, &recs, origin_id)
             .await
             .context(h!())?;
+    info!("import_sigint_network_data: existing={existing_record_ids:?}");
     let mut result = BTreeMap::new();
     let mut new_records = vec![];
     for rec in recs {
@@ -1596,11 +1597,14 @@ where
             ));
             continue;
         };
-        let new_record = !existing_record_ids.contains_key(&rec.id);
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
 
         let model = sigint_network_unit_changelog::ActiveModel {
             original_id: Set(Some(rec.id)),
-            id: NotSet,
+            id,
             sigint_network_unit_id: Set(sigint_network_unit_id),
             login: Set("system".to_string()),
             action: Set(rec.action),
@@ -1660,11 +1664,14 @@ where
             ));
             continue;
         };
-        let new_record = !existing_record_ids.contains_key(&rec.id);
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
 
         let model = sigint_callsign_changelog::ActiveModel {
             original_id: Set(Some(rec.id)),
-            id: NotSet,
+            id,
             sigint_callsign_id: Set(sigint_callsign_id),
             login: Set("system".to_string()),
             action: Set(rec.action),
@@ -1722,11 +1729,14 @@ where
             ));
             continue;
         };
-        let new_record = !existing_record_ids.contains_key(&rec.id);
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
 
         let model = sigint_signal_changelog::ActiveModel {
             original_id: Set(Some(rec.id)),
-            id: NotSet,
+            id,
             sigint_signal_id: Set(sigint_signal_id),
             login: Set("system".to_string()),
             action: Set(rec.action),
@@ -1788,11 +1798,14 @@ where
             ));
             continue;
         };
-        let new_record = !existing_record_ids.contains_key(&rec.id);
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
 
         let model = sigint_network_freq_changelog::ActiveModel {
             original_id: Set(Some(rec.id)),
-            id: NotSet,
+            id,
             sigint_network_freq_id: Set(sigint_network_freq_id),
             login: Set("system".to_string()),
             action: Set(rec.action),
@@ -1851,11 +1864,14 @@ where
             ));
             continue;
         };
-        let new_record = !existing_record_ids.contains_key(&rec.id);
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
 
         let model = sigint_network_changelog::ActiveModel {
             original_id: Set(Some(rec.id)),
-            id: NotSet,
+            id,
             sigint_network_id: Set(sigint_network_id),
             login: Set("system".to_string()),
             action: Set(rec.action),

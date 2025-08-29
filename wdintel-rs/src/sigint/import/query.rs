@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::h;
 use anyhow::Context;
+use log::info;
 use sea_orm::*;
 use std::collections::BTreeMap;
 
@@ -12,15 +13,13 @@ pub async fn find_existing_areas_of_responsibility<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    info!("{}", h!());
     // let names = recs.iter().map(|rec| rec.name.clone()).collect::<Vec<_>>();
     // if names.is_empty() {
     //     return Ok(BTreeMap::new());
     // };
 
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -44,10 +43,8 @@ pub async fn find_existing_modulations<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -70,10 +67,8 @@ pub async fn find_existing_sources<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -98,10 +93,8 @@ pub async fn find_existing_sigint_signals<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -126,10 +119,8 @@ pub async fn find_existing_sigint_units<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -154,10 +145,8 @@ pub async fn find_existing_sigint_networks<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -182,10 +171,8 @@ pub async fn find_existing_sigint_network_aors<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -210,10 +197,8 @@ pub async fn find_existing_sigint_zone_aors<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -238,10 +223,8 @@ pub async fn find_existing_sigint_posts<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -266,10 +249,8 @@ pub async fn find_existing_sigint_network_descriptions<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -296,10 +277,8 @@ pub async fn find_existing_sigint_network_freqs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -324,10 +303,8 @@ pub async fn find_existing_sigint_network_callsigns<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -352,10 +329,8 @@ pub async fn find_existing_sigint_callsigns<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -380,10 +355,8 @@ pub async fn find_existing_sigint_network_units<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -408,10 +381,8 @@ pub async fn find_existing_sigint_network_unit_changelogs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -438,10 +409,8 @@ pub async fn find_existing_sigint_callsign_changelogs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -466,10 +435,8 @@ pub async fn find_existing_sigint_signal_changelogs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -494,10 +461,8 @@ pub async fn find_existing_sigint_network_posts<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -522,10 +487,8 @@ pub async fn find_existing_sigint_network_freq_changelogs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };
@@ -552,10 +515,8 @@ pub async fn find_existing_sigint_network_changelogs<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let ids = recs
-        .iter()
-        .flat_map(|rec| rec.sigint_origin_id)
-        .collect::<Vec<_>>();
+    info!("{}", h!());
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     };

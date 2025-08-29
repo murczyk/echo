@@ -361,8 +361,9 @@ fn add_callsign(
     if (callsign == "й") || callsign == "нв" {
         return false;
     }
-    if !callsign.chars().any(|c| c.is_alphabetic()) 
-        && !is_numeric_callsign(&callsign) {
+    if !callsign.chars().any(|c| c.is_alphabetic())
+        && !is_numeric_callsign(&callsign)
+    {
         return false;
     }
     res.push(CNCallsign {
@@ -772,12 +773,10 @@ fn is_non_caps_format(lines: &Vec<String>) -> Result<bool, AppError> {
 }
 
 /// Extracts callsigns if the text is in "авіа барʼєр"'s format
-fn extract_avia_callsigns(
-    input: &str,
-) -> Result<Vec<CNCallsign>, AppError> {
+fn extract_avia_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
     let lines: Vec<String> =
         input.trim().lines().map(|x| x.to_string()).collect();
-    
+
     if !is_avia_format(&lines)? {
         return Ok(vec![]);
     }
@@ -789,8 +788,9 @@ fn extract_avia_callsigns(
         .map(|line| cline_len(line))
         .sum::<usize>()
         + 1;
-    
-    const LITERAL_CALLSIGN_STR: &str = r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
+
+    const LITERAL_CALLSIGN_STR: &str =
+        r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
     const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{5})";
 
     lazy_static! {
@@ -817,19 +817,25 @@ fn extract_avia_callsigns(
 }
 
 fn is_avia_format(lines: &Vec<String>) -> Result<bool, AppError> {
-
-
-//     Отримано з поста 35
-// --------------------------------------
-// 24.08.2025, 10:05:15
-// 128.9000
-// 🟠 УКХ р/м НВ підрозділу 128.900 МГц
+    //     Отримано з поста 35
+    // --------------------------------------
+    // 24.08.2025, 10:05:15
+    // 128.9000
+    // 🟠 УКХ р/м НВ підрозділу 128.900 МГц
     lazy_static! {
-        static ref RE_POST: Regex = Regex::new(r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_"]+\s*$"#).unwrap();
-        static ref RE_SEPARATOR: Regex = Regex::new(r"^--------------------------------------$").unwrap();
-        static ref RE_DATE: Regex = Regex::new(r"^\s*\d{2}.\d{2}.\d{4},\s+\d{2}:\d{2}:\d{2}\s*$").unwrap();
-        static ref RE_FREQ: Regex = Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
-        static ref RE_NETWORK: Regex = Regex::new(r"^\s*(🟠|🔴|🔷|🟡)?\s*(УКХ р/м .*)\s*$").unwrap();
+        static ref RE_POST: Regex = Regex::new(
+            r#"^\s*Отримано з поста\s+[\p{Cyrillic}0-9A-Z-_"]+\s*$"#
+        )
+        .unwrap();
+        static ref RE_SEPARATOR: Regex =
+            Regex::new(r"^--------------------------------------$").unwrap();
+        static ref RE_DATE: Regex =
+            Regex::new(r"^\s*\d{2}.\d{2}.\d{4},\s+\d{2}:\d{2}:\d{2}\s*$")
+                .unwrap();
+        static ref RE_FREQ: Regex =
+            Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
+        static ref RE_NETWORK: Regex =
+            Regex::new(r"^\s*(🟠|🔴|🔷|🟡)?\s*(УКХ р/м .*)\s*$").unwrap();
     }
 
     if lines.len() < 8 {
@@ -2446,7 +2452,8 @@ async fn test_extract_callsigns_avia_format_no_caps_5_digits() {
 
 — Саксофон-контроль 44307 под ваше, следую на правдивый по обратному"#;
     let res = extract_avia_callsigns(body).unwrap();
-    let expected: Vec<String> = vec!["44307".to_string(), "Саксофон".to_string()];
+    let expected: Vec<String> =
+        vec!["44307".to_string(), "Саксофон".to_string()];
     let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
@@ -2498,7 +2505,8 @@ async fn test_extract_callsigns_avia_format_5_digits_caps() {
 
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
-    let expected: Vec<String> = vec!["46131".to_string(), "САКСОФОН".to_string()];
+    let expected: Vec<String> =
+        vec!["46131".to_string(), "САКСОФОН".to_string()];
     let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
@@ -2515,7 +2523,8 @@ async fn test_extract_callsigns_avia_format_callsign_with_digit() {
 
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
-    let expected: Vec<String> = vec!["16-Й".to_string(), "КОРШУН 4".to_string()];
+    let expected: Vec<String> =
+        vec!["16-Й".to_string(), "КОРШУН 4".to_string()];
     let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
@@ -2532,7 +2541,8 @@ async fn test_extract_callsigns_avia_format_callsign_with_defis() {
 
 — С Ворсовко отработал не возражает проход"#;
     let res = extract_avia_callsigns(body).unwrap();
-    let expected: Vec<String> = vec!["321Й".to_string(), "Саксофон-контроль".to_string()];
+    let expected: Vec<String> =
+        vec!["321Й".to_string(), "Саксофон-контроль".to_string()];
     let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
     assert_eq!(ress, expected);
 }
