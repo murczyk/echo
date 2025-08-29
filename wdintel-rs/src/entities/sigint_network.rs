@@ -30,7 +30,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub operation_period: Option<String>,
     pub merged_to: Option<i64>,
-    pub active_from: DateTime,
+    pub active_from: Option<DateTime>,
     pub active_to: Option<DateTime>,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
@@ -46,8 +46,6 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
-    #[sea_orm(has_many = "super::sigint_network_activity_history::Entity")]
-    SigintNetworkActivityHistory,
     #[sea_orm(has_many = "super::sigint_network_aor::Entity")]
     SigintNetworkAor,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
@@ -75,12 +73,6 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
-    }
-}
-
-impl Related<super::sigint_network_activity_history::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintNetworkActivityHistory.def()
     }
 }
 

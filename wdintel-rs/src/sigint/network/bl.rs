@@ -73,7 +73,9 @@ where
             operation_period: network.operation_period.clone(),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
             last_updated_by: network.updated_by.clone(),
-            active_from: network.active_from.and_utc().timestamp_millis(),
+            active_from: network
+                .active_from
+                .map(|d| d.and_utc().timestamp_millis()),
             active_to: network
                 .active_to
                 .map(|d| d.and_utc().timestamp_millis()),
@@ -786,7 +788,7 @@ fn concat_unique(to: Option<String>, from: Option<String>) -> Option<String> {
 pub async fn get_network_activity_range<'a, 'async_trait, C>(
     txn: &'a C,
     network_id: i64,
-) -> Result<(NaiveDateTime, Option<NaiveDateTime>), AppError>
+) -> Result<(Option<NaiveDateTime>, Option<NaiveDateTime>), AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -797,7 +799,7 @@ where
         .context(h!())?;
 
     if freqs.is_empty() {
-        return Err(AppError::NotFound);
+        return Ok((None, None));
     }
 
     let ranges: Vec<(NaiveDateTime, Option<NaiveDateTime>)> = freqs
@@ -805,32 +807,27 @@ where
         .map(|f| (f.active_from, f.active_to))
         .collect();
 
-    Ok(compute_network_activity_range(&ranges))
+    Ok(compute_network_activity_range(&Some(ranges)))
 }
 
 /// Обраховує діапазон активності мережі на основі активності частот
 pub fn compute_network_activity_range(
-    freq_ranges: &[(NaiveDateTime, Option<NaiveDateTime>)],
-) -> (NaiveDateTime, Option<NaiveDateTime>) {
-    // Find earliest active_from date
-    let network_active_from = freq_ranges
-        .iter()
-        .map(|(from, _)| *from) // Dereference the borrowed NaiveDateTime
-        .min() // Find minimum date
-        .unwrap_or_else(|| Utc::now().naive_utc());
+    freq_ranges: &Option<Vec<(NaiveDateTime, Option<NaiveDateTime>)>>,
+) -> (Option<NaiveDateTime>, Option<NaiveDateTime>) {
+    match freq_ranges {
+        Some(ranges) if !ranges.is_empty() => {
+            let active_from = ranges.iter().map(|(from, _)| *from).min();
 
-    // Find latest active_to date, but only if all frequencies have end dates
-    let network_active_to = if !freq_ranges.iter().any(|(_, to)| to.is_none()) {
-        // Only proceed if no frequency has None as active_to
-        freq_ranges
-            .iter()
-            .filter_map(|(_, to)| *to) // Extract and dereference Option<NaiveDateTime>
-            .max() // Find maximum date
-    } else {
-        None
-    };
+            let active_to = if ranges.iter().all(|(_, to)| to.is_some()) {
+                ranges.iter().filter_map(|(_, to)| *to).max()
+            } else {
+                None
+            };
 
-    (network_active_from, network_active_to)
+            (active_from, active_to)
+        }
+        _ => (None, None),
+    }
 }
 
 #[derive(FromQueryResult)]

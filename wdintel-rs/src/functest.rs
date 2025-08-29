@@ -46,10 +46,6 @@ pub mod tests {
             .context(h!())?;
 
         // Delete entities that depend on sigint_network first
-        sigint_network_activity_history::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
         sigint_network_aor::Entity::delete_many()
             .exec(&env.dbx)
             .await

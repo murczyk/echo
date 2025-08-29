@@ -179,21 +179,8 @@ async fn bl_restore_network(
     txn: &DatabaseTransaction,
     network: sigint_network::Model,
 ) -> Result<sigint_network::Model, AppError> {
-    if let Some(active_to) = network.active_to {
-        sigint_network_activity_history::ActiveModel {
-            id: NotSet,
-            sigint_network_id: Set(network.id),
-            active_from: Set(network.active_from),
-            active_to: Set(active_to),
-            created_at: NotSet,
-        }
-        .insert(txn)
-        .await
-        .context(h!())?;
-    }
-
     let mut network = network.into_active_model();
-    network.active_from = Set(Utc::now().naive_utc());
+    network.active_from = Set(Some(Utc::now().naive_utc()));
     network.active_to = Set(None);
     let result = network.update(txn).await.context(h!())?;
     Ok(result)
@@ -270,28 +257,27 @@ pub async fn create_network(
 
     let areas_of_responsibility_ids: Vec<i64> =
         req.area_of_responsibility_ids.clone().unwrap_or_default();
-    if req.freqs.is_empty() {
-        return Err(AppError::Form(BTreeMap::from_iter([(
-            "freqs".to_string(),
-            "Мережа має містити як мінімум одну частоту".to_string(),
-        )])));
-    }
 
-    let freq_ranges: Vec<(NaiveDateTime, Option<NaiveDateTime>)> = req
-        .freqs
-        .iter()
-        .map(|f| {
-            let from_millis = f
-                .active_from
-                .unwrap_or_else(|| Utc::now().timestamp_millis());
-            let from = dt_from_millis(from_millis)
-                .unwrap_or_else(|_| Utc::now().naive_utc());
+    // Build freq_ranges only if provided
+    let freq_ranges: Option<Vec<(NaiveDateTime, Option<NaiveDateTime>)>> =
+        req.freqs.as_ref().map(|freqs| {
+            freqs
+                .iter()
+                .map(|f| {
+                    let from_millis = f
+                        .active_from
+                        .unwrap_or_else(|| Utc::now().timestamp_millis());
+                    let from = dt_from_millis(from_millis)
+                        .unwrap_or_else(|_| Utc::now().naive_utc());
 
-            let to = f.active_to.and_then(|millis| dt_from_millis(millis).ok());
+                    let to = f
+                        .active_to
+                        .and_then(|millis| dt_from_millis(millis).ok());
 
-            (from, to)
-        })
-        .collect();
+                    (from, to)
+                })
+                .collect()
+        });
 
     let (active_from, active_to) = compute_network_activity_range(&freq_ranges);
 
@@ -344,38 +330,41 @@ pub async fn create_network(
     .await
     .context(h!())?;
 
-    for frequency in req.freqs.clone() {
-        let active_from = frequency
-            .active_from
-            .map(dt_from_millis)
-            .transpose()?
-            .unwrap_or(Utc::now().naive_utc());
-        let active_to = frequency.active_to.map(dt_from_millis).transpose()?;
+    if let Some(freqs) = req.freqs.clone() {
+        for frequency in freqs {
+            let active_from = frequency
+                .active_from
+                .map(dt_from_millis)
+                .transpose()?
+                .unwrap_or(Utc::now().naive_utc());
+            let active_to =
+                frequency.active_to.map(dt_from_millis).transpose()?;
 
-        let freq_id = sigint_network_freq::ActiveModel {
-            id: NotSet,
-            network_id: Set(network.id),
-            freq: Set(frequency.freq),
-            created_at: NotSet,
-            active_from: Set(active_from),
-            active_to: Set(active_to),
-            kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
-            modulation_id: Set(frequency.modulation_id),
-            deleted: Set(false),
-            sigint_origin_id: NotSet,
-            original_id: NotSet,
+            let freq_id = sigint_network_freq::ActiveModel {
+                id: NotSet,
+                network_id: Set(network.id),
+                freq: Set(frequency.freq),
+                created_at: NotSet,
+                active_from: Set(active_from),
+                active_to: Set(active_to),
+                kind: Set(SigintNetworkKind::try_from_value(&frequency.kind)?),
+                modulation_id: Set(frequency.modulation_id),
+                deleted: Set(false),
+                sigint_origin_id: NotSet,
+                original_id: NotSet,
         }
-        .insert(&txn)
-        .await
-        .context(h!())?
-        .id;
-        if let Some(descr) = frequency.description {
-            network_descr.push(map_add_network_frequency_description(
-                &user_login,
-                &network,
-                freq_id,
-                descr,
-            ));
+            .insert(&txn)
+            .await
+            .context(h!())?
+            .id;
+            if let Some(descr) = frequency.description {
+                network_descr.push(map_add_network_frequency_description(
+                    &user_login,
+                    &network,
+                    freq_id,
+                    descr,
+                ));
+            }
         }
     }
 
