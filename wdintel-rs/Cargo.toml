@@ -104,7 +104,7 @@ rev = "bb7d7a08c35a3d8ccc95f9b5ab9b48d3f84096e9"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
-rev = "5f6cd460862dcf1965d341717e4358a52617fa3a"
+rev = "a8c039d42468b98e9efdffa82e403fe27733d76d"
 
 [dependencies.opencv]
 git = "https://github.com/twistedfall/opencv-rust"
@@ -121,8 +121,9 @@ optional = true
 chrono = { workspace = true }
 
 [features]
-default = []
+default = ["proj"]
 opencv = ["dep:opencv"]
+proj = ["milgeo-rs/proj"]
 
 
 

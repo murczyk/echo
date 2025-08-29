@@ -3451,10 +3451,11 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "milgeo-rs"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=5f6cd460862dcf1965d341717e4358a52617fa3a#5f6cd460862dcf1965d341717e4358a52617fa3a"
+source = "git+ssh://git@github.com/echoua/milgeo-rs.git?rev=a8c039d42468b98e9efdffa82e403fe27733d76d#a8c039d42468b98e9efdffa82e403fe27733d76d"
 dependencies = [
  "anyhow",
  "chrono",
+ "env_logger 0.11.8",
  "geoconvert",
  "geomorph",
  "itertools",
