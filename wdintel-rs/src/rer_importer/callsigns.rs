@@ -796,9 +796,7 @@ fn extract_avia_callsigns(
     lazy_static! {
         // Regex for matching a single callsign
         static ref CALLSIGN_REGEX: Regex = Regex::new(&format!(
-            r"^\s*(?P<callsign>(({})|({})))\s*$",
-            LITERAL_CALLSIGN_STR,
-            DIGITAL_CALLSIGN_STR
+            r"^\s*(?P<callsign>(({LITERAL_CALLSIGN_STR})|({DIGITAL_CALLSIGN_STR})))\s*$"
         )).unwrap();
     }
 
