@@ -140,6 +140,9 @@ type alias Model =
     , freqDescriptionInp : String
     , freqFormatError : Maybe String
     , freqShowActiveTo : Bool
+
+    -- New states for two-stage creation
+    , networkCreated : Maybe B.Network  -- нова мережа після створення
     }
 
 
@@ -239,6 +242,9 @@ init route shared () =
       , freqDescriptionInp = ""
       , freqFormatError = Nothing
       , freqShowActiveTo = False
+
+      -- New states for two-stage creation
+      , networkCreated = Nothing
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -755,9 +761,21 @@ view user shared model =
                 [ Sidebar.view model.freqSidebarOpen CloseFreqSidebar (viewFreqSidebar shared model)
                 , div [ class "w-[85vw] mx-auto py-[16px]" ]
                     [ viewHeader model
+
+                    , viewNetworkCreatedInfo model
                     , viewMainLayout shared model
-                    , viewFrequenciesSection shared model
+
+
+                    , if model.networkCreated /= Nothing then
+                        div [] [ 
+                            viewFrequenciesSection shared model
+                            , viewCallsignsSection shared model
+                        ]
+                      else
+                        text ""
                     , viewActionButtons model
+
+
                     ]
                 ]
         ]
@@ -767,7 +785,10 @@ view user shared model =
 viewHeader : Model -> Html Msg
 viewHeader model =
     div [ class "flex justify-between items-center mb-[16px]" ]
-        [ h2 [] [ text "Створення нової мережі" ]
+        [ div []
+            [ h2 [] [ text "Створення нової мережі" ]
+
+            ]
         ]
 
 
@@ -777,6 +798,31 @@ viewMainLayout shared model =
         [ viewLeftColumn shared model
         , viewRightColumn model
         ]
+
+
+viewNetworkCreatedInfo : Model -> Html Msg
+viewNetworkCreatedInfo model =
+    case model.networkCreated of
+        Just network ->
+            div [ class "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6" ]
+                [ div [ class "flex items-center justify-between" ]
+                    [ div [ class "flex items-center gap-3" ]
+                        [ i [ class "bi bi-check-circle text-green-600 text-xl" ] []
+                        , div []
+                            [ h3 [ class "text-lg font-semibold text-green-800 dark:text-green-200" ] 
+                                [ text "Мережу створено успішно!" ]
+                            , p [ class "text-green-700 dark:text-green-300 mt-1" ] 
+                                [ text ("ID: " ++ String.fromInt network.id ++ " | Назва: " ++ network.name) ]
+                            ]
+                        ]
+                    ]
+                    , Button.new { label = "Переглянути мережу", onClick = CreateClicked }
+                        |> Button.withStyleSecondary
+                        |> Button.view
+                ]
+        
+        Nothing ->
+            text ""
 
 
 viewLeftColumn : Shared.Model -> Model -> Html Msg
@@ -1027,7 +1073,15 @@ viewFrequenciesSection shared model =
     section [ class "grid grid-cols-12 gap-[30px] mt-[30px]" ]
         [ div [ class "col-span-12 bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
             [ div [ class "mb-[8px] flex justify-between items-center" ]
-                [ h4 [] [ text "Частоти" ]
+                [ div []
+                    [ h4 [] [ text "Частоти" ]
+                    , if model.networkCreated /= Nothing then
+                        p [ class "text-sm text-muted-foreground mt-1" ] 
+                            [ text "Додавайте частоти до створеної мережі" ]
+                      else
+                        p [ class "text-sm text-muted-foreground mt-1" ] 
+                            [ text "Додайте частоти для роботи з мережею" ]
+                    ]
                 , button
                     [ title "Додати частоту"
                     , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
@@ -1322,6 +1376,24 @@ viewFreqSidebar shared model =
     ]
 
 
+viewCallsignsSection : Shared.Model -> Model -> Html Msg
+viewCallsignsSection shared model =
+    section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
+        [ div [ class "mb-[8px] flex justify-between items-center" ]
+            [ div []
+                [ h4 [ class "" ] [ text "Позивні мережі" ]
+                , p [ class "text-sm text-muted-foreground mt-1" ] 
+                    [ text "Додайте позивні для роботи з мережею" ]
+                ]
+            , Button.new { label = "Створити", onClick = CreateClicked }
+                |> Button.withStyleSecondary
+                |> Button.view
+            ]
+        , div [ class "text-center text-gray-500 p-4" ]
+            [ text "Секція позивних буде доступна після створення мережі" ]
+        ]
+
+
 viewActionButtons : Model -> Html Msg
 viewActionButtons model =
     let
@@ -1338,18 +1410,22 @@ viewActionButtons model =
             else if String.trim model.createNetworkState.location == "" then
                 "Введіть район функціонування/розгортання"
 
-
-
             else if Maybe.withDefault [] model.createNetworkState.areaOfResponsibilityIds |> List.isEmpty then
                 "Оберіть смугу відповідальності"
 
             else
                 ""
+
+        buttonLabel =
+            if model.networkCreated /= Nothing then
+                "Зберегти мережу"
+              else
+                "Продовжити"
     in
     div [ class "flex justify-end gap-[8px] mt-[16px]" ]
         [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
         , div [ Attr.title disabledTooltip ]
-            [ Button.new { label = "Зберегти", onClick = CreateClicked }
+            [ Button.new { label = buttonLabel, onClick = CreateClicked }
                 |> Button.withDisabled isSaveDisabled
                 |> Button.view
             ]

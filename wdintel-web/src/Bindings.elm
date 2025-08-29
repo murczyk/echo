@@ -4354,7 +4354,7 @@ type alias Network =
     , operationPeriod : Maybe String
     , lastUpdatedAt : Int
     , lastUpdatedBy : Maybe String
-    , activeFrom : Int
+    , activeFrom : Maybe Int
     , activeTo : Maybe Int
     , postIds : List Int
     , descriptions : List NetworkDescription
@@ -4379,7 +4379,7 @@ networkEncoder struct =
         , ( "operation_period", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.operationPeriod )
         , ( "last_updated_at", Json.Encode.int struct.lastUpdatedAt )
         , ( "last_updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.string) struct.lastUpdatedBy )
-        , ( "active_from", Json.Encode.int struct.activeFrom )
+        , ( "active_from", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeFrom )
         , ( "active_to", (Maybe.withDefault Json.Encode.null << Maybe.map Json.Encode.int) struct.activeTo )
         , ( "post_ids", Json.Encode.list Json.Encode.int struct.postIds )
         , ( "descriptions", Json.Encode.list networkDescriptionEncoder struct.descriptions )
@@ -4402,7 +4402,7 @@ updateFreqNetworksReqEncoder struct =
 
 
 type alias CreateNetworkReq =
-    { freqs : List AddNetworkFreq
+    { freqs : Maybe (List AddNetworkFreq)
     , unitIds : Maybe (List Int)
     , areaOfResponsibilityIds : Maybe (List Int)
     , name : String
@@ -4420,7 +4420,7 @@ type alias CreateNetworkReq =
 createNetworkReqEncoder : CreateNetworkReq -> Json.Encode.Value
 createNetworkReqEncoder struct =
     Json.Encode.object
-        [ ( "freqs", Json.Encode.list addNetworkFreqEncoder struct.freqs )
+        [ ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list addNetworkFreqEncoder)) struct.freqs )
         , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.unitIds )
         , ( "area_of_responsibility_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.int)) struct.areaOfResponsibilityIds )
         , ( "name", Json.Encode.string struct.name )
@@ -8169,7 +8169,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation_period" (Json.Decode.nullable Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_at" Json.Decode.int))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_updated_by" (Json.Decode.nullable Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" Json.Decode.int))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_from" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_to" (Json.Decode.nullable Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_ids" (Json.Decode.list Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list networkDescriptionDecoder)))
@@ -8186,7 +8186,7 @@ updateFreqNetworksReqDecoder =
 createNetworkReqDecoder : Json.Decode.Decoder CreateNetworkReq
 createNetworkReqDecoder =
     Json.Decode.succeed CreateNetworkReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list addNetworkFreqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list addNetworkFreqDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.nullable (Json.Decode.list Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" Json.Decode.string))
