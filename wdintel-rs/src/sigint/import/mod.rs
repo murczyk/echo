@@ -899,7 +899,6 @@ where
         query::find_existing_sigint_networks(txn, &recs, origin_id)
             .await
             .context(h!())?;
-    info!("import_sigint_network_data: existing={existing_record_ids:?}");
     let mut result = BTreeMap::new();
     let mut new_records = vec![];
     for rec in recs {
