@@ -29,14 +29,14 @@ pub struct EtalonData {
     pub sigint_network_callsign: Vec<sigint_network_callsign::Model>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ImportResult<ID: Id> {
     pub ids_map: BTreeMap<ID, ID>,
     pub num_created: usize,
     pub num_updated: usize,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EtalonImportResult {
     pub area_of_responsibility: ImportResult<i64>,
     pub sigint_signal: ImportResult<i64>,

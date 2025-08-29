@@ -37,12 +37,8 @@ pub async fn oneoff_import_etalon_data(
     mode: Mode,
     path: String,
     origin_name: String,
-    sigint_origin_ids_destination_path: Option<String>,
     autocommit: bool,
 ) -> Result<(), AppError> {
-    if sigint_origin_ids_destination_path.is_none() {
-        return Err(AppError::BL { msg: format!("sigint_origin_ids_destination_path is required when importing from {origin_name}") });
-    }
     let autocommit_txt = match autocommit {
         true => "autocommit on",
         false => "autocommit off",
@@ -66,48 +62,33 @@ pub async fn oneoff_import_etalon_data(
             msg: format!("origin not found: {origin_name}"),
         });
     };
-    let (committed, mut import_result) = {
-        let txn = dbx.begin().await.context(h!())?;
-        let (ok, import_result) =
-            import_etalon_data(&txn, etalon.clone(), origin.id, true)
-                .await
-                .context(h!())?;
-        let should_commit = ok && autocommit;
-        if should_commit {
-            txn.commit().await.context(h!())?;
-            info!("Import completed.")
-        }
-        (should_commit, import_result)
+    let txn = dbx.begin().await.context(h!())?;
+    let (ok, import_result) =
+        import_etalon_data(&txn, etalon.clone(), origin.id, true)
+            .await
+            .context(h!())?;
+    debug!("import result: {import_result:?}");
+    let should_commit = ok && autocommit;
+    if should_commit {
+        txn.commit().await.context(h!())?;
+        info!("Import completed.");
+        return Ok(());
     };
-    let committed = if !committed {
-        if Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Confirm import?")
-            .interact()
-            .context(h!())?
-        {
-            let (_, fin_result) =
-                import_etalon_data(&dbx, etalon.clone(), origin.id, false)
-                    .await
-                    .context(h!())?;
-            import_result = fin_result;
-            info!("Import completed.");
-            true
-        } else {
-            return Err(AppError::BL {
-                msg: "Import aborted.".to_string(),
-            });
-        }
-    } else {
-        true
-    };
-    if committed {
-        let file_path = sigint_origin_ids_destination_path.context(h!())?;
-        let content = serde_json::to_string(&import_result).context(h!())?;
-        let mut file = File::create(file_path.clone()).await.context(h!())?;
-        file.write_all(content.as_bytes()).await.context(h!())?;
-        info!("import result needs to be imported back to {origin_name}. it's at {file_path}");
+    let import_confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Confirm import?")
+        .interact()
+        .context(h!())?;
+    if !import_confirmed {
+        return Err(AppError::BL {
+            msg: "Import aborted.".to_string(),
+        });
     }
-
+    let (ok, import_result) =
+        import_etalon_data(&dbx, etalon.clone(), origin.id, false)
+            .await
+            .context(h!())?;
+    info!("Import completed (ok={ok}).");
+    debug!("import result: {import_result:?}");
     Ok(())
 }
 

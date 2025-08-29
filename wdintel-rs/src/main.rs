@@ -247,7 +247,6 @@ pub struct OneoffImportEtalonDataPs {
     #[arg(long, value_enum)]
     pub path: String,
     #[arg(long, value_enum)]
-    pub origin_ids_destination_path: Option<String>,
     #[arg(long, value_enum)]
     pub origin: String,
     #[arg(long, action)]
@@ -621,7 +620,6 @@ async fn main() -> Result<(), AppError> {
                 mode,
                 ps.path,
                 ps.origin,
-                ps.origin_ids_destination_path,
                 ps.autocommit.unwrap_or(false),
             )
             .await
