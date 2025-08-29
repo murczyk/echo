@@ -609,11 +609,14 @@ async fn main() -> Result<(), AppError> {
             crate::rer_importer::unit::import_unit(mode, &ps).await
         }
         Cmd::OneoffMergeAllNetworks => {
-            crate::sigint::network::oneoff_merge_all_possible_networks(mode)
-                .await
+            crate::sigint::network::oneoff::oneoff_merge_all_possible_networks(
+                mode,
+            )
+            .await
         }
         Cmd::OneoffMergeTwoNetworks(ps) => {
-            crate::sigint::network::oneoff_merge_two_networks(mode, &ps).await
+            crate::sigint::network::oneoff::oneoff_merge_two_networks(mode, &ps)
+                .await
         }
         Cmd::OneoffInstall(ps) => crate::install::mount_tmp(&ps)
             .await
@@ -671,7 +674,10 @@ async fn main() -> Result<(), AppError> {
             .await
         }
         Cmd::OneoffGetNetworksActivityStats(ps) => {
-            crate::sigint::network::oneoff_network_activity_stat(mode, &ps).await
+            crate::sigint::network::oneoff::oneoff_network_activity_stat(
+                mode, &ps,
+            )
+            .await
         }
     }
 }
