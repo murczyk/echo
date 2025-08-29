@@ -837,12 +837,12 @@ struct CountResult {
     count: i64,
 }
 
-pub async fn get_network_active_freqs_count(
+pub async fn bl_get_network_active_freqs_count(
     dbx: &DbConn,
     groups: &Vec<String>,
     start_date: NaiveDateTime,
     end_date: NaiveDateTime,
-) -> Result<i64, DbErr> {
+) -> Result<i64, AppError> {
     // First CTE - network_freqs
     let network_freqs = build_network_freqs_query();
     let network_freqs_cte = CommonTableExpression::new()
@@ -851,6 +851,13 @@ pub async fn get_network_active_freqs_count(
         .to_owned();
 
     let nf = Alias::new("nf");
+    let conditions = build_signal_message_conditions(
+        groups,
+        start_date,
+        end_date,
+        nf.clone(),
+    );
+
     // Second CTE - network_messages
     let network_messages = Query::select()
         .columns([
@@ -871,51 +878,7 @@ pub async fn get_network_active_freqs_count(
                     sigint_inbox_item::Column::Id,
                 )),
         )
-        .and_where(signal_message::Column::Deleted.eq(false))
-        .and_where(signal_message::Column::GroupMasterKey.is_in(groups))
-        .and_where(
-            SeaExpr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Datetime,
-            ))
-            .gte(start_date),
-        )
-        .and_where(
-            SeaExpr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Datetime,
-            ))
-            .lt(end_date),
-        )
-        .and_where(SeaExpr::exists(
-            Query::select()
-                .expr(SeaExpr::value(1))
-                .from_as(Alias::new("network_freqs"), nf.clone())
-                .and_where(SeaExpr::col((nf.clone(), "freq")).equals((
-                    sigint_inbox_item::Entity,
-                    sigint_inbox_item::Column::Freq,
-                )))
-                .and_where(
-                    SeaExpr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Datetime,
-                    ))
-                    .gte(SeaExpr::col((nf.clone(), "active_from"))),
-                )
-                .and_where(
-                    SeaExpr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Datetime,
-                    ))
-                    .lt(SeaExpr::expr(
-                        SeaExpr::cust_with_values(
-                            "COALESCE(nf.active_to, $1)",
-                            vec![end_date],
-                        ),
-                    )),
-                )
-                .to_owned(),
-        ))
+        .cond_where(conditions)
         .to_owned();
     let network_messages_cte = CommonTableExpression::new()
         .query(network_messages)
@@ -937,22 +900,15 @@ pub async fn get_network_active_freqs_count(
         .query(main_query)
         .to_owned();
 
-    let (sql, values) = query.build(PostgresQueryBuilder);
-    let result = CountResult::find_by_statement(
-        Statement::from_sql_and_values(DbBackend::Postgres, sql, values),
-    )
-    .one(dbx)
-    .await?;
-
-    Ok(result.map_or(0, |r| r.count))
+    fetch_count(dbx, query).await
 }
 
-pub async fn get_network_active_callsigns_count(
+pub async fn bl_get_network_active_callsigns_count(
     dbx: &DbConn,
     groups: &Vec<String>,
     start_date: NaiveDateTime,
     end_date: NaiveDateTime,
-) -> Result<i64, DbErr> {
+) -> Result<i64, AppError> {
     // First CTE - network_freqs
     let network_freqs = build_network_freqs_query();
     let network_freqs_cte = CommonTableExpression::new()
@@ -969,6 +925,13 @@ pub async fn get_network_active_callsigns_count(
 
     // Third CTE: network_messages
     let nf = Alias::new("nf");
+    let conditions = build_signal_message_conditions(
+        groups,
+        start_date,
+        end_date,
+        nf.clone(),
+    );
+
     let network_messages = Query::select()
         .columns([
             (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id),
@@ -979,7 +942,9 @@ pub async fn get_network_active_callsigns_count(
             ),
         ])
         .expr_as(
-            Expr::cust("jsonb_array_elements_text(sigint_inbox_item.callsigns)"),
+            Expr::cust(
+                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
+            ),
             Alias::new("callsign"),
         )
         .from(signal_message::Entity)
@@ -992,51 +957,7 @@ pub async fn get_network_active_callsigns_count(
                     sigint_inbox_item::Column::Id,
                 )),
         )
-        .and_where(signal_message::Column::Deleted.eq(false))
-        .and_where(signal_message::Column::GroupMasterKey.is_in(groups))
-        .and_where(
-            Expr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Datetime,
-            ))
-            .gte(start_date),
-        )
-        .and_where(
-            Expr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Datetime,
-            ))
-            .lt(end_date),
-        )
-        .and_where(Expr::exists(
-            Query::select()
-                .expr(Expr::value(1))
-                .from_as(Alias::new("network_freqs"), nf.clone())
-                .and_where(Expr::col((nf.clone(), "freq")).equals((
-                    sigint_inbox_item::Entity,
-                    sigint_inbox_item::Column::Freq,
-                )))
-                .and_where(
-                    Expr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Datetime,
-                    ))
-                    .gte(Expr::col((nf.clone(), "active_from"))),
-                )
-                .and_where(
-                    Expr::col((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Datetime,
-                    ))
-                    .lt(Expr::expr(
-                        Expr::cust_with_values(
-                            "COALESCE(nf.active_to, $1)",
-                            vec![end_date],
-                        ),
-                    )),
-                )
-                .to_owned(),
-        ))
+        .cond_where(conditions)
         .to_owned();
 
     let network_messages_cte = CommonTableExpression::new()
@@ -1071,7 +992,16 @@ pub async fn get_network_active_callsigns_count(
         .query(main_query)
         .to_owned();
 
+    fetch_count(dbx, query).await
+}
+
+/// Run a COUNT(*) query and return the result as `i64`
+pub async fn fetch_count(
+    dbx: &DatabaseConnection,
+    query: WithQuery,
+) -> Result<i64, AppError> {
     let (sql, values) = query.build(PostgresQueryBuilder);
+
     let result = CountResult::find_by_statement(
         Statement::from_sql_and_values(DbBackend::Postgres, sql, values),
     )
@@ -1081,6 +1011,7 @@ pub async fn get_network_active_callsigns_count(
     Ok(result.map_or(0, |r| r.count))
 }
 
+/// Build query to select all network frequencies
 fn build_network_freqs_query() -> sea_query::SelectStatement {
     Query::select()
         .columns([
@@ -1116,6 +1047,7 @@ fn build_network_freqs_query() -> sea_query::SelectStatement {
         .to_owned()
 }
 
+/// Build query to select all network callsigns
 fn build_network_callsigns_query() -> sea_query::SelectStatement {
     Query::select()
         .columns([
@@ -1141,4 +1073,59 @@ fn build_network_callsigns_query() -> sea_query::SelectStatement {
         .and_where(sigint_network::Column::Deleted.eq(false))
         .and_where(sigint_network_callsign::Column::Deleted.eq(false))
         .to_owned()
+}
+
+/// Builds a reusable condition for filtering signal messages
+pub fn build_signal_message_conditions(
+    groups: &Vec<String>,
+    start_date: NaiveDateTime,
+    end_date: NaiveDateTime,
+    nf: Alias,
+) -> Condition {
+    Condition::all()
+        .add(signal_message::Column::Deleted.eq(false))
+        .add(signal_message::Column::GroupMasterKey.is_in(groups))
+        .add(
+            SeaExpr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Datetime,
+            ))
+            .gte(start_date),
+        )
+        .add(
+            SeaExpr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Datetime,
+            ))
+            .lt(end_date),
+        )
+        .add(SeaExpr::exists(
+            Query::select()
+                .expr(SeaExpr::value(1))
+                .from_as(Alias::new("network_freqs"), nf.clone())
+                .and_where(SeaExpr::col((nf.clone(), "freq")).equals((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Freq,
+                )))
+                .and_where(
+                    SeaExpr::col((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Datetime,
+                    ))
+                    .gte(SeaExpr::col((nf.clone(), "active_from"))),
+                )
+                .and_where(
+                    Expr::col((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Datetime,
+                    ))
+                    .lt(Expr::expr(
+                        Expr::cust_with_values(
+                            "COALESCE(nf.active_to, $1)",
+                            vec![end_date],
+                        ),
+                    )),
+                )
+                .to_owned(),
+        ))
 }
