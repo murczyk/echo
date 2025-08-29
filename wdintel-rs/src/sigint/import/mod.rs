@@ -1,17 +1,17 @@
 use crate::entities::*;
+use crate::entities::{
+    area_of_responsibility, sigint_network_aor, sigint_zone_aor,
+};
 use crate::error::AppError;
 use crate::h;
+use crate::sigint::aor::load_default_aor;
 use crate::sigint::import::types::*;
 use crate::types::Mode;
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use log::*;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait,
-    IntoActiveModel, NotSet, QueryFilter, QueryOrder, QuerySelect, Set,
-    TransactionTrait,
-};
-use std::collections::BTreeMap;
+use sea_orm::*;
+use std::collections::{BTreeMap, HashMap};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -284,10 +284,17 @@ where
         import_area_of_responsibility_data(
             txn,
             origin_id,
-            data.area_of_responsibility,
+            data.area_of_responsibility.clone(),
         )
         .await
         .context(h!())?;
+    let aors_map = with_default_aors_mapping(
+        &area_of_responsibility_import_result.ids_map,
+        data.area_of_responsibility,
+        txn,
+    )
+    .await
+    .context(h!())?;
 
     let modulation_import_result =
         import_modulation_data(txn, origin_id, data.modulation)
@@ -308,16 +315,22 @@ where
             .await
             .context(h!())?;
 
-    let sigint_network_aor_import_result =
-        import_sigint_network_aor_data(txn, origin_id, data.sigint_network_aor)
-            .await
-            .context(h!())?;
+    let sigint_network_aor_import_result = import_sigint_network_aor_data(
+        txn,
+        origin_id,
+        data.sigint_network_aor,
+        &aors_map,
+        &sigint_network_import_result.ids_map,
+    )
+    .await
+    .context(h!())?;
 
     let sigint_zone_aor_import_result = import_sigint_zone_aor_data(
         txn,
         origin_id,
         default_zone_id,
         data.sigint_zone_aor,
+        &aors_map,
     )
     .await
     .context(h!())?;
@@ -497,6 +510,24 @@ where
     };
 
     Ok((is_ok, etalon_import_result))
+}
+
+async fn with_default_aors_mapping<'a, 'async_trait, C>(
+    mapping: &BTreeMap<i64, i64>,
+    areas: Vec<area_of_responsibility::Model>,
+    txn: &'a C,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut result = mapping.clone();
+    let default_aor =
+        areas.into_iter().find(|a| a.is_default && a.is_top_level);
+    if let Some(default_aor) = default_aor {
+        let target_default_aor = load_default_aor(txn).await.context(h!())?;
+        result.insert(default_aor.id, target_default_aor.id);
+    };
+    Ok(result)
 }
 
 ///
@@ -896,6 +927,8 @@ async fn import_sigint_network_aor_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
     recs: Vec<sigint_network_aor::Model>,
+    aors_map: &BTreeMap<i64, i64>,
+    sigint_network_import_result: &BTreeMap<i64, i64>,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -917,10 +950,14 @@ where
             Some(id) => (Set(*id), false),
         };
 
+        let network_id = sigint_network_import_result
+            .get(&rec.network_id)
+            .cloned()
+            .context(h!())?;
         let model = sigint_network_aor::ActiveModel {
             id,
-            network_id: Set(rec.network_id),
-            aor_id: Set(rec.aor_id),
+            network_id: Set(network_id),
+            aor_id: Set(aors_map.get(&rec.aor_id).cloned().context(h!())?),
             created_at: Set(rec.created_at),
             sigint_origin_id: Set(Some(origin_id)),
         };
@@ -950,6 +987,7 @@ async fn import_sigint_zone_aor_data<'a, 'async_trait, C>(
     origin_id: i64,
     zone_id: i64,
     recs: Vec<sigint_zone_aor::Model>,
+    aors_map: &BTreeMap<i64, i64>,
 ) -> anyhow::Result<ImportResult<i64>>
 where
     C: ConnectionTrait + 'async_trait,
@@ -973,7 +1011,7 @@ where
         let model = sigint_zone_aor::ActiveModel {
             id,
             zone_id: Set(zone_id),
-            aor_id: Set(rec.aor_id),
+            aor_id: Set(aors_map.get(&rec.aor_id).cloned().context(h!())?),
             created_at: Set(rec.created_at),
             sigint_origin_id: Set(Some(origin_id)),
         };
@@ -1012,7 +1050,19 @@ where
         .await
         .context(h!())?;
     let mut result = BTreeMap::new();
+    // currently post name is unique
+    let mut existing_posts_by_name = sigint_post::Entity::find()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|p| (p.name, p.id))
+        .collect::<HashMap<_, _>>();
     for rec in recs {
+        if let Some(post_id) = existing_posts_by_name.remove(&rec.name) {
+            result.insert(rec.id, post_id);
+            continue;
+        }
         let id = rec
             .sigint_origin_id
             .and_then(|id| existing_record_ids.get(&{ id }));
