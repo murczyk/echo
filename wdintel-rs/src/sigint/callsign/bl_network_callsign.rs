@@ -151,7 +151,6 @@ async fn create_network_callsign_linked(
         radio_freq: NotSet,
         developing: NotSet,
         sigint_origin_id: NotSet,
-        mothership_id: NotSet,
         unit_id: NotSet,
         unit_developing: NotSet,
         main_radio_station: Set(main_radio_station),
