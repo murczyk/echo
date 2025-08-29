@@ -52,7 +52,6 @@ validateCreateNetworkReq req =
             Dict.empty
                 |> validateRequiredString "name" req.name
                 |> validateRequiredString "location" req.location
-                |> validateRequiredFreqs "freqs" req.freqs
     in
     { errors = errors
     , isValid = Dict.isEmpty errors
@@ -79,7 +78,6 @@ isFormValid req =
             == ""
             || String.trim req.location
             == ""
-            || List.isEmpty req.freqs
             || not hasAor
         )
 
@@ -93,13 +91,7 @@ validateRequiredString fieldName value errors =
         errors
 
 
-validateRequiredFreqs : String -> List a -> Dict String String -> Dict String String
-validateRequiredFreqs fieldName freqsList errors =
-    if List.isEmpty freqsList then
-        Dict.insert fieldName "Додайте хоча б одну частоту до мережі" errors
 
-    else
-        errors
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -1043,13 +1035,12 @@ viewFrequenciesSection shared model =
                     ]
                     [ i [ class "bi bi-plus-lg" ] [] ]
                 ]
-            , div [] (fieldError "freqs" model.formErrors)
             , if List.isEmpty model.createNetworkState.freqs then
                 div [ class "flex flex-col items-center justify-center h-48 border-2 border-dashed border-border rounded-lg text-muted-foreground bg-muted/20" ]
-                    [ h3 [ class "text-lg font-semibold" ] [ text "Потрібно додати частоти" ]
-                    , p [ class "text-sm text-muted-foreground/80" ] [ text "Збереження неможливе без хоча б однієї частоти." ]
+                    [ h3 [ class "text-lg font-semibold" ] [ text "Частоти відсутні" ]
+                    , p [ class "text-sm text-muted-foreground/80" ] [ text "Додайте частоти для роботи з мережею." ]
                     , div [ class "flex justify-center mt-3" ]
-                        [ Button.new { label = "Додати ще", onClick = OpenFreqSidebar }
+                        [ Button.new { label = "Додати частоту", onClick = OpenFreqSidebar }
                             |> Button.withStyleSecondary
                             |> Button.withIcon [ i [ class "bi bi-plus-lg" ] [] ]
                             |> Button.view
@@ -1347,8 +1338,7 @@ viewActionButtons model =
             else if String.trim model.createNetworkState.location == "" then
                 "Введіть район функціонування/розгортання"
 
-            else if List.isEmpty model.createNetworkState.freqs then
-                "Додайте хоча б одну частоту"
+
 
             else if Maybe.withDefault [] model.createNetworkState.areaOfResponsibilityIds |> List.isEmpty then
                 "Оберіть смугу відповідальності"
