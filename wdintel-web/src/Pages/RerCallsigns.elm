@@ -574,9 +574,19 @@ update req shared msg model =
 
         AddStateMsg pos state ->
             let
+                isTabDelimitedInput =
+                    pos
+                        == 0
+                        && String.contains "\t" state.inpCallsign
+                        || String.contains "\n" state.inpCallsign
+
                 triples : List AddState
                 triples =
-                    processTabDelimitedInput state.inpCallsign
+                    if isTabDelimitedInput then
+                        processTabDelimitedInput state.inpCallsign
+
+                    else
+                        []
 
                 addState =
                     if pos > 0 || triples == [] then
