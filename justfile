@@ -46,6 +46,10 @@ build-front:
 dev-back:
     (cd wdintel-rs && {{ rust_log }}cargo watch -- cargo run -- --mode=debug server {{ dev_back_args }})
 
+dev-back-noproj:
+    # Run backend without `proj` feature for local development
+    (cd wdintel-rs && {{ rust_log }}cargo watch -- cargo run --no-default-features -- --mode=debug server {{ dev_back_args }})
+
 dev-back-sudo:
     (cd wdintel-rs && cargo build && {{ rust_log }}sudo ./target/debug/wdintel-rs --mode=debug server {{ dev_back_args }})
 
