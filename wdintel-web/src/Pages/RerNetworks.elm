@@ -74,7 +74,6 @@ type alias Model =
     , requestCounter : Int
     , networksMergeStatus : NetworksMergeStatus
     , networksMergeInProgress : Bool
-    , callsignsByNetwork : RemoteData ApiError E.CallsignsByNetwork
     , callsignsOpenedPopupId : Maybe Int
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , callsigns : List String
@@ -133,7 +132,6 @@ init _ =
             , networksMergeStatus = NotCalculatedSuggestionsYet
             , networksMergeInProgress = False
             , networksGroupsActivity = NotAsked
-            , callsignsByNetwork = NotAsked
             , callsignsOpenedPopupId = Nothing
             , callsignsInfo = Dict.empty
             , callsigns = []
@@ -251,7 +249,6 @@ type Msg
     | NetworksMergeSwapOrder
     | CallsignsPopupOpenedByUser Int
     | CallsignsPopupClosedByUser
-    | CallsignsByNetworkReturnedByApi (Result ApiError E.CallsignsByNetwork)
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | MapOpenedByUser Int
     | MapClosedByUser
@@ -452,9 +449,6 @@ update shared msg model =
                             { networkIds = networks |> List.map .id
                             , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
                             }
-                        , E.getNetworksCallsigns CallsignsByNetworkReturnedByApi
-                            { networkIds = networks |> List.map .id
-                            }
                         ]
 
                 _ ->
@@ -474,42 +468,6 @@ update shared msg model =
 
         CallsignsPopupClosedByUser ->
             ( { model | callsignsOpenedPopupId = Nothing }, E.none )
-
-        CallsignsByNetworkReturnedByApi (Ok rsp) ->
-            let
-                mergedResult =
-                    Dict.merge
-                        (\key existingCs result -> Dict.insert key existingCs result)
-                        (\key _ newCs result -> Dict.insert key newCs result)
-                        (\key newCs result -> Dict.insert key newCs result)
-                        Dict.empty
-                        (RD.withDefault Dict.empty model.callsignsByNetwork)
-                        rsp
-
-                newCallsigns =
-                    Dict.values rsp
-                        |> List.concat
-                        |> List.filter (\callsign -> not (List.member callsign model.callsigns))
-            in
-            ( { model
-                | callsignsByNetwork = Success mergedResult
-                , callsigns =
-                    newCallsigns
-                        ++ model.callsigns
-                        |> Set.fromList
-                        |> Set.toList
-              }
-            , if List.length newCallsigns > 0 then
-                E.getCallsignsInfo CallsignsInfoReturnedByApi { callsigns = newCallsigns }
-
-              else
-                E.none
-            )
-
-        CallsignsByNetworkReturnedByApi (Err err) ->
-            ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
-            )
 
         CallsignsInfoReturnedByApi (Err e) ->
             ( model
@@ -1252,7 +1210,7 @@ networksTableConfig user shared model =
                                 }
                         , sorter = Table.unsortable
                         }
-                        |> Table.withColumnWidth "11%"
+                        |> Table.withColumnWidth "20%"
                    , Table.veryCustomColumn
                         { name = "Пеленги"
                         , viewData =
@@ -1285,53 +1243,6 @@ networksTableConfig user shared model =
                         , sorter = Table.unsortable
                         }
                         |> Table.withColumnWidth "18%"
-                   , Table.veryCustomColumn
-                        { name = "Позивні"
-                        , viewData =
-                            \network ->
-                                { attributes = []
-                                , children =
-                                    [ case model.callsignsByNetwork of
-                                        Success cbn ->
-                                            let
-                                                callsigns =
-                                                    case Dict.get (String.fromInt network.id) cbn of
-                                                        Nothing ->
-                                                            []
-
-                                                        Just v ->
-                                                            v
-
-                                                isOpen =
-                                                    case model.callsignsOpenedPopupId of
-                                                        Just openCallsignsPopup ->
-                                                            openCallsignsPopup == network.id
-
-                                                        Nothing ->
-                                                            False
-                                            in
-                                            case shared.masterUnits of
-                                                Success units ->
-                                                    CallsignsPopup.view
-                                                        { isOpened = isOpen
-                                                        , onClose = CallsignsPopupClosedByUser
-                                                        , onOpen = CallsignsPopupOpenedByUser network.id
-                                                        , callsigns = callsigns
-                                                        , callsignsInfo = model.callsignsInfo
-                                                        , masterUnits = units
-                                                        }
-                                                        (NetworksPage network)
-
-                                                _ ->
-                                                    Le.Block.Spinner.loadingSpinnerSm
-
-                                        _ ->
-                                            Le.Block.Spinner.loadingSpinnerSm
-                                    ]
-                                }
-                        , sorter = Table.unsortable
-                        }
-                        |> Table.withColumnWidth "9%"
                    , Table.veryCustomColumn
                         { name = "Активність"
                         , viewData =
@@ -1610,7 +1521,7 @@ filterPanel user shared model =
                 [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
                     [ div [ class "pb-12" ]
                         [ h2 [] [ text "Звіт \"еталонка\"" ]
-                        , p [] [ text "Еталонка по фільтру дата/частота/підрозділ" ]
+                        , p [] [ text "Еталонка по фільтру частота/підрозділ/смуга" ]
                         , div [ class "grid grid-cols-2 gap-[8px] h-[80px]" ]
                             [ Checkbox.new { isChecked = model.reportGUROnly, onToggle = ReportGURCheckedByUser }
                                 |> Checkbox.withContent [ span [] [ text "Згідно форми" ] ]

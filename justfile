@@ -943,7 +943,15 @@ export-datasource-to-target:
     ssh {{ target }} -t 'sudo mkdir -p /var/log/echo_ds_import/ && sudo touch /var/log/echo_ds_import/{{ server }}-{{ dt1 }}.log && sudo chmod 777 /var/log/echo_ds_import/{{ server }}-{{ dt1 }}.log'
     ssh {{ target }} 'sudo nohup {{ echo_bin }} --mode=live oneoff-import-data-source --source-path /tmp/ds_import_{{ dt1 }}.json >> /var/log/echo_ds_import/{{ server }}-{{ dt1 }}.log 2>&1 &'
 
+# import from `server` to `target` etalon data (callsigns, networks, etc)
 import-etalon-to-target:
+    #!/bin/bash
+    set -euxo pipefail
+
+    if [ -z "$origin" ]; then
+        echo "`origin` is not set; see prod db for sigint_origin.name"
+        exit 1
+    fi
     ssh -t {{ server }} 'wdintel-rs --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
     scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ target }}:/tmp/et_import_{{ dt1 }}.json
     ssh -t {{ target }} '{{ echo_bin }} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{ origin }}'
