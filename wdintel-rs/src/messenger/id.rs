@@ -196,10 +196,8 @@ pub async fn oneoff_assign_message_ids(
         }
         if !errors.is_empty() {
             let msg = format!("Collisions occurred: {}", errors.len());
-            error!("{msg}");
-            for e in errors {
-                error!("{e}");
-            }
+            let errors = errors.join("\n");
+            warn!("{msg}\n--------------\n{errors}");
             if dry_run {
                 return Err(AppError::BL { msg });
             }
