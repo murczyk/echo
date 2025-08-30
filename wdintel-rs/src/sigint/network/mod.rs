@@ -676,15 +676,12 @@ pub async fn network_callsigns(
     let mut cutoff_since: Option<PrimitiveDateTime> = None;
     if let (Some(min_from), Some(max_to)) = (min_from, max_to) {
         let span_days = (max_to - min_from).whole_days();
-        if span_days > NETWORK_CALLSIGNS_MAX_WINDOW_DAYS as i64 {
+        if span_days > NETWORK_CALLSIGNS_MAX_WINDOW_DAYS {
             let cut =
                 max_to - TimeDuration::days(NETWORK_CALLSIGNS_MAX_WINDOW_DAYS);
             cutoff_since = Some(cut);
             warn!(
-                "network-callsigns: active window {} days > {}, cutting since {}",
-                span_days,
-                NETWORK_CALLSIGNS_MAX_WINDOW_DAYS,
-                cut
+                "network-callsigns: active window {span_days} days > {NETWORK_CALLSIGNS_MAX_WINDOW_DAYS}, cutting since {cut}"
             );
         }
     }
