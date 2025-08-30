@@ -2505,22 +2505,6 @@ freqEditSidebarContent shared model user freqId updateReq =
 
 -- VIEW
 
-
-freqsActivityFilterView : Model -> Html Msg
-freqsActivityFilterView model =
-    let
-        options =
-            [ { value = AllFreqs, label = "Всі" }
-            , { value = ActiveFreqs, label = "Активні" }
-            , { value = InactiveFreqs, label = "Неактивні" }
-            ]
-    in
-    div [ class "flex gap-2 items-center mb-4" ]
-        [ SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
-            |> SegmentedControl.view
-        ]
-
-
 missingFieldsBlock : Auth.User -> B.Network -> Shared.Model -> Model -> List (Html Msg)
 missingFieldsBlock user network shared model =
     [ div [ class "mb-[8px] flex justify-between items-center" ]
@@ -3002,24 +2986,7 @@ contentBlock user shared network model =
                 ]
             ]
         ]
-    , section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
-        [ div [ class "mb-[8px] flex justify-between items-center" ]
-            [ h4 [ class "" ] [ text "Частоти" ]
-            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
-                Button.new { label = "Створити", onClick = OpenFreqCreateSidebar }
-                    |> Button.withStyleSecondary
-                    |> Button.view
-
-              else
-                text ""
-            ]
-        , freqsActivityFilterView model
-        , case model.freqs of
-            Success freqs ->
-                FreqsTable.view freqs model user shared
-            _ ->
-                Le.Block.Spinner.loadingSpinnerSm
-        ]
+    , FreqsTable.view model user shared
     , section [ class "bg-w dark:bg-[#1C1C21] w-full mt-[30px] p-[16px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
             [ h4 [ class "" ] [ text "Позивні мережі" ]

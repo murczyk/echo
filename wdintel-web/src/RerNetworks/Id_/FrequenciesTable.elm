@@ -66,17 +66,50 @@ filterFreqsByActivity filter freqs =
             List.filter (\freq -> not freq.isActive) freqs
 
 
-view freqs model user shared =
-    let
-        filteredFreqs =
-            filterFreqsByActivity model.freqsActivityFilter freqs
-    in
-    div [ class "table-responsive-modern" ]
-        [ if List.isEmpty filteredFreqs then
-            emptyFreqsPlaceholder model.freqsActivityFilter
+view model user shared =
+    section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
+        [ div [ class "mb-[8px] flex justify-between items-center" ]
+            [ h4 [ class "" ] [ text "Частоти" ]
+            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                Button.new { label = "Створити", onClick = OpenFreqCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
 
-          else
-            Table.view (freqsTableConfig shared model user) model.freqsTableState filteredFreqs
+              else
+                text ""
+            ]
+        , freqsActivityFilterView model
+        , case model.freqs of
+            Success freqs_ ->
+                let
+                    filteredFreqs =
+                        filterFreqsByActivity model.freqsActivityFilter freqs_
+                in
+                div [ class "table-responsive-modern" ]
+                    [ if List.isEmpty filteredFreqs then
+                        emptyFreqsPlaceholder model.freqsActivityFilter
+
+                      else
+                        Table.view (freqsTableConfig shared model user) model.freqsTableState filteredFreqs
+                    ]
+
+            _ ->
+                Le.Block.Spinner.loadingSpinnerSm
+        ]
+
+
+freqsActivityFilterView : Model -> Html Msg
+freqsActivityFilterView model =
+    let
+        options =
+            [ { value = AllFreqs, label = "Всі" }
+            , { value = ActiveFreqs, label = "Активні" }
+            , { value = InactiveFreqs, label = "Неактивні" }
+            ]
+    in
+    div [ class "flex gap-2 items-center mb-4" ]
+        [ SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
+            |> SegmentedControl.view
         ]
 
 
