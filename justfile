@@ -945,6 +945,9 @@ export-datasource-to-target:
 
 # import from `server` to `target` etalon data (callsigns, networks, etc)
 import-etalon-to-target:
+    #!/bin/bash
+    set -euxo pipefail
+
     if [ -z "$origin" ]; then
         echo "`origin` is not set; see prod db for sigint_origin.name"
         exit 1
