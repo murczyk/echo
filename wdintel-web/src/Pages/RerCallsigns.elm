@@ -1,4 +1,4 @@
-module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, page, processTabDelimitedInput, mkAddState, cellsToTriples)
+module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, cellsToTriples, mkAddState, page, processTabDelimitedInput)
 
 import Api
 import Auth
@@ -574,8 +574,19 @@ update req shared msg model =
 
         AddStateMsg pos state ->
             let
+                isTabDelimitedInput =
+                    pos
+                        == 0
+                        && String.contains "\t" state.inpCallsign
+                        || String.contains "\n" state.inpCallsign
+
                 triples : List AddState
-                triples = processTabDelimitedInput state.inpCallsign
+                triples =
+                    if isTabDelimitedInput then
+                        processTabDelimitedInput state.inpCallsign
+
+                    else
+                        []
 
                 addState =
                     if pos > 0 || triples == [] then
@@ -2432,13 +2443,14 @@ processTabDelimitedInput input =
         |> List.concatMap
             (\line ->
                 let
-                    cells = String.split "\t" line
+                    cells =
+                        String.split "\t" line
                 in
                 case cells of
-                    -- Exact triple                                    
+                    -- Exact triple
                     [ a, b, c ] ->
                         [ mkAddState a b c ]
- 
+
                     -- Anything else: treat as a flat sequence of cells to be chunked into triples
                     _ ->
                         cellsToTriples cells
