@@ -61,14 +61,14 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
             let Some(b) = m_cap_s(&capts, "freq_b") else {
                 continue;
             };
-            let main_band = (110..530).contains(&a);
-            let special_1 = a == 900;
-            let special_2 = a == 700;
+            let main_band = (100..999).contains(&a);
+            // let special_1 = a == 900;
+            // let special_2 = a == 700;
             let special_3 = a == 0;
             if special_3 {
                 val_a = String::from("000");
             }
-            if main_band || special_1 || special_2 || special_3 {
+            if main_band || special_3 {
                 return Ok(Some(etalon(&format!("{val_a}.{b}"))));
             } else {
                 continue;
