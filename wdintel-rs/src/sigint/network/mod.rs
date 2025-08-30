@@ -352,7 +352,7 @@ pub async fn create_network(
                 deleted: Set(false),
                 sigint_origin_id: NotSet,
                 original_id: NotSet,
-        }
+            }
             .insert(&txn)
             .await
             .context(h!())?
