@@ -17,7 +17,35 @@ pub async fn add_group<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let new_group = group.insert(dbx).await.context(h!())?;
+    // Capture the master_key before the insert consumes the model
+    let master_key = match group.master_key.clone() {
+        sea_orm::ActiveValue::Set(v) => v,
+        _ => anyhow::bail!("master_key must be set when adding group"),
+    };
+
+    // Upsert by primary key to avoid duplicate key violations when the group
+    // already exists (e.g., from concurrent syncs or prior runs). Also revive
+    // soft-deleted groups by setting deleted=false and refresh the name.
+    signal_group::Entity::insert(group)
+        .on_conflict(
+            sea_query::OnConflict::column(signal_group::Column::MasterKey)
+                .update_columns([
+                    signal_group::Column::Name,
+                    signal_group::Column::Deleted,
+                ])
+                .to_owned(),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+
+    // Load the resulting row to return a full Model
+    let new_group = signal_group::Entity::find_by_id(master_key)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
     if let Err(e) = insert_group_aor(dbx, &new_group).await {
         error!("failed to insert group's area of responsibility: {e:?}")
     }
@@ -36,7 +64,7 @@ pub async fn fix_group_areas_of_responsibility(
         .filter(signal_group_aor::Column::Id.is_null())
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for g in groups {
         if let Err(e) = insert_group_aor(db, &g).await {
             error!("failed to insert group's area of responsibility: {e:?}")

@@ -24,6 +24,8 @@ use sea_orm::{
     QuerySelect,
 };
 use sea_query::{Alias, Expr, Query};
+use sqlx::FromRow;
+use time::{Duration as TimeDuration, PrimitiveDateTime};
 
 pub mod bl;
 pub mod oneoff;
@@ -642,90 +644,179 @@ pub async fn network_callsigns(
         .await
         .context(h!())?;
 
-    let mut query = Query::select();
-    query
+    let groups = crate::users::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+
+    // Compute active window across selected networks (typed row, no try_get)
+    #[derive(Debug, FromRow)]
+    struct ActiveWindowRow {
+        min_from: Option<PrimitiveDateTime>,
+        max_to: Option<PrimitiveDateTime>,
+    }
+
+    let ActiveWindowRow { min_from, max_to } = sqlx::query_as::<_, ActiveWindowRow>(
+        r#"
+        SELECT
+            min(active_from) AS min_from,
+            max(COALESCE(active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS max_to
+        FROM sigint_network_freq
+        WHERE network_id = ANY($1)
+        "#,
+    )
+    .bind(req.network_ids.clone())
+    .fetch_one(env.dbx.get_postgres_connection_pool())
+    .await
+    .context(h!())?;
+
+    let mut cutoff_since: Option<PrimitiveDateTime> = None;
+    if let (Some(min_from), Some(max_to)) = (min_from, max_to) {
+        let span_days = (max_to - min_from).whole_days();
+        if span_days > NETWORK_CALLSIGNS_MAX_WINDOW_DAYS as i64 {
+            let cut =
+                max_to - TimeDuration::days(NETWORK_CALLSIGNS_MAX_WINDOW_DAYS);
+            cutoff_since = Some(cut);
+            warn!(
+                "network-callsigns: active window {} days > {}, cutting since {}",
+                span_days,
+                NETWORK_CALLSIGNS_MAX_WINDOW_DAYS,
+                cut
+            );
+        }
+    }
+
+    // SeaQuery CTE approach (no raw SQL string construction)
+    let network_freqs = Query::select()
         .expr_as(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Id)),
-            Alias::new("id"),
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
+            Alias::new("network_id"),
         )
         .expr_as(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns)),
-            Alias::new("callsigns"),
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
+            Alias::new("freq"),
         )
-        .from(SigintNetwork::Table)
-        .join(
-            JoinType::InnerJoin,
-            SigintNetworkFreq::Table,
+        .expr_as(
+            Expr::col((
+                SigintNetworkFreq::Table,
+                SigintNetworkFreq::ActiveFrom,
+            )),
+            Alias::new("active_from"),
+        )
+        .expr_as(
+            Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::ActiveTo)),
+            Alias::new("active_to"),
+        )
+        .from(SigintNetworkFreq::Table)
+        .and_where(
             Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId))
-                .equals((SigintNetwork::Table, SigintNetwork::Id)),
+                .is_in(req.network_ids.clone()),
         )
+        .to_owned();
+
+    let network_freqs_cte = CommonTableExpression::new()
+        .query(network_freqs)
+        .table_name(Alias::new("network_freqs"))
+        .to_owned();
+
+    let mut network_messages = Query::select()
+        .expr_as(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
+            Alias::new("freq"),
+        )
+        .expr_as(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)),
+            Alias::new("datetime"),
+        )
+        .expr_as(
+            Expr::cust(
+                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
+            ),
+            Alias::new("callsign"),
+        )
+        .from(SignalMessage::Table)
         .join(
             JoinType::InnerJoin,
             SigintInboxItem::Table,
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-                .equals((SigintNetworkFreq::Table, SigintNetworkFreq::Freq)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            SignalMessage::Table,
             Expr::col((SignalMessage::Table, SignalMessage::Id))
                 .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-        )
-        .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
-                .is_in(req.network_ids.clone()),
-        )
-        .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
-                .is_in(
-                    crate::users::get_identity_sigint_groups_noimport(
-                        &env.dbx,
-                        &user,
-                        &env.config,
-                    )
-                    .await
-                    .context(h!())?,
-                ),
         )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
         .and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).gte(
-                Expr::col((
-                    SigintNetworkFreq::Table,
-                    SigintNetworkFreq::ActiveFrom,
-                )),
-            ),
+            Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
+                .is_in(groups),
         )
-        .and_where(
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime)).lt(
-               Expr::cust("COALESCE(sigint_network_freq.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
-            ),
+        .to_owned();
+    if let Some(cut) = cutoff_since {
+        network_messages.and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
+                .gte(cut),
         );
+    }
+    let network_messages_cte = CommonTableExpression::new()
+        .query(network_messages)
+        .table_name(Alias::new("network_messages"))
+        .to_owned();
+
+    let nf = Alias::new("network_freqs");
+    let nm = Alias::new("network_messages");
+    let main_query = Query::select()
+        .expr_as(Expr::col((nf.clone(), "network_id")), Alias::new("id"))
+        .expr_as(
+            Expr::cust(
+                "array_to_json(array_agg(DISTINCT network_messages.callsign))",
+            ),
+            Alias::new("callsigns"),
+        )
+        .from_as(nf.clone(), nf.clone())
+        .join(
+            JoinType::InnerJoin,
+            nm.clone(),
+            Expr::col((nf.clone(), "freq"))
+                .equals((nm.clone(), "freq"))
+                .and(
+                    Expr::col((nm.clone(), "datetime"))
+                        .gte(Expr::col((nf.clone(), "active_from"))),
+                )
+                .and(
+                    Expr::col((nm.clone(), "datetime")).lt(Expr::cust(
+                        "COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
+                    )),
+                ),
+        )
+        .group_by_col((nf.clone(), "network_id"))
+        .to_owned();
+
+    let combined_query = Query::with()
+        .cte(network_freqs_cte)
+        .clone()
+        .cte(network_messages_cte)
+        .clone()
+        .query(main_query)
+        .to_string(PostgresQueryBuilder);
 
     let rows = env
         .dbx
         .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
-            query.to_string(PostgresQueryBuilder),
+            combined_query,
         ))
         .await
         .context(h!())?;
     let mut callsigns = HashMap::new();
     for row in rows {
         let id: i64 = row.try_get("", "id").context(h!())?;
-        let row_callsigns = row.try_get("", "callsigns").context(h!())?;
-        let hashmap_value =
-            callsigns.entry(id.to_string()).or_insert_with(Vec::new);
+        let row_callsigns: serde_json::Value =
+            row.try_get("", "callsigns").context(h!())?;
         let all_callsigns =
             serde_json::from_value::<Vec<String>>(row_callsigns)
-                .context(h!())?;
-        for callsign in all_callsigns {
-            if !hashmap_value.contains(&callsign) {
-                hashmap_value.push(callsign);
-            }
-        }
+                .unwrap_or_default();
+        callsigns.insert(id.to_string(), all_callsigns);
     }
 
     Ok(Json(callsigns))
