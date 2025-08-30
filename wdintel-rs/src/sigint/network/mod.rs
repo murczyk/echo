@@ -20,7 +20,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use log::*;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
     QuerySelect,
 };
 use sea_query::{Alias, Expr, Query};
@@ -1614,27 +1614,25 @@ async fn cleanup_networks_worker_1(
         .column(sigint_network::Column::Location)
         .column(sigint_network::Column::Name)
         .filter(
-            Condition::any().add(
-                sigint_network_freq::Column::Freq.not_in_subquery(
-                    Query::select()
-                        .column(sigint_inbox_item::Column::Freq)
-                        .from(sigint_inbox_item::Entity)
-                        .and_where(
-                            Expr::expr(Expr::col(
-                                sigint_inbox_item::Column::Datetime,
-                            ))
+            Expr::exists(
+                Query::select()
+                    .expr(Expr::value(1))
+                    .from(sigint_inbox_item::Entity)
+                    .and_where(
+                        Expr::col(sigint_inbox_item::Column::Freq)
+                            .equals(sigint_network_freq::Column::Freq),
+                    )
+                    .and_where(
+                        Expr::col(sigint_inbox_item::Column::Datetime)
                             .gte(cleanup_time),
-                        )
-                        .and_where(
-                            Expr::expr(Expr::col(
-                                sigint_inbox_item::Column::Freq,
-                            ))
+                    )
+                    .and_where(
+                        Expr::col(sigint_inbox_item::Column::Freq)
                             .is_not_null(),
-                        )
-                        .group_by_col(sigint_inbox_item::Column::Freq)
-                        .to_owned(),
-                ),
-            ),
+                    )
+                    .to_owned(),
+            )
+            .not(),
         )
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -1654,10 +1652,13 @@ async fn cleanup_networks_worker_1(
     let network_ids: Vec<i64> = networks_freqs_to_remove
         .iter()
         .map(|n| n.network_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
-    let networks_desc = load_networks_units_desc(ids.clone(), dbx, h!())
-        .await
-        .context(h!())?;
+    let networks_desc =
+        load_networks_units_desc(network_ids.clone(), dbx, h!())
+            .await
+            .context(h!())?;
 
     let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Id.is_in(network_ids.clone()))
@@ -1713,6 +1714,7 @@ async fn cleanup_networks_worker_1(
 
         let freq_locations_to_remove = freq_location::Entity::find()
             .filter(freq_location::Column::Freq.eq(freq))
+            .filter(freq_location::Column::Deleted.eq(false))
             .all(dbx)
             .await
             .context(h!())?;
@@ -1735,17 +1737,16 @@ async fn cleanup_networks_worker_1(
         .await
         .context(h!())?;
     for (network, network_freqs) in other_networks {
-        let should_delete = if network_freqs.is_empty() {
-            true
-        } else {
-            network_freqs
-                .iter()
-                .filter(|x| x.active_to.is_none())
-                .count()
-                == 0
-        };
-        if should_delete {
+        let should_delete = network_freqs.is_empty();
+        let should_deactivate = network_freqs
+            .iter()
+            .filter(|x| x.active_to.is_none())
+            .count()
+            == 0;
+
+        if should_delete || should_deactivate {
             let mut network = network.into_active_model();
+            network.deleted = Set(should_delete);
             network.active_to = Set(Some(start_time.naive_utc()));
             network.update(dbx).await.context(h!())?;
         }
