@@ -34,6 +34,9 @@ pub struct Model {
     pub default_aor_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub api_login: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub updated_by: Option<String>,
+    pub deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -63,7 +66,15 @@ pub enum Relation {
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
-    Login,
+    Login2,
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::UpdatedBy",
+        to = "super::login::Column::Login",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login1,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
     #[sea_orm(has_many = "super::signal_group::Entity")]
@@ -87,12 +98,6 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::echo_client_lock::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoClientLock.def()
-    }
-}
-
-impl Related<super::login::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Login.def()
     }
 }
 

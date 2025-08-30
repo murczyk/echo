@@ -29,8 +29,6 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::area_of_responsibility::Entity")]
     AreaOfResponsibility,
-    #[sea_orm(has_many = "super::datasource::Entity")]
-    Datasource,
     #[sea_orm(
         belongs_to = "super::delta_login::Entity",
         from = "Column::DeltaLoginId",
@@ -80,12 +78,6 @@ pub enum Relation {
 impl Related<super::area_of_responsibility::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AreaOfResponsibility.def()
-    }
-}
-
-impl Related<super::datasource::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Datasource.def()
     }
 }
 

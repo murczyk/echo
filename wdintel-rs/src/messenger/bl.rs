@@ -45,6 +45,7 @@ pub async fn edit_account(
     display_name: String,
     description: Option<String>,
     txn: &DatabaseTransaction,
+    login: &String,
 ) -> Result<EchoAccountF1, AppError> {
     let new_status = if set_active {
         AccountStatus::Active
@@ -61,6 +62,7 @@ pub async fn edit_account(
     account.display_name = Set(display_name);
     account.description = Set(description);
     account.status = Set(new_status);
+    account.updated_by = Set(Some(login.to_string()));
     let result = account.update(txn).await.context(h!())?;
     let account = list_accounts(Some(result.id), txn)
         .await
@@ -74,31 +76,27 @@ pub async fn edit_account(
 pub async fn deactivate_account(
     id: i64,
     txn: &DatabaseTransaction,
+    login: &String,
 ) -> Result<(), AppError> {
     let account = load_echo_account(id, txn).await.context(h!())?;
-    let messenger =
-        EchoMessageSource::try_from_value(&account.messenger).context(h!())?;
-    let service_name = account.system_service_name.context(h!())?;
-    match messenger {
-        EchoMessageSource::Signal => os_specific::stop_signal_client(
-            &service_name,
-            SIGNAL_CLIENT_DIR,
-            SIGNAL_UNIT_NAME,
-        )
+    let datasource = datasource::Entity::find_by_id(account.id)
+        .one(txn)
         .await
-        .context(h!())?,
-        EchoMessageSource::Whatsapp => os_specific::stop_whatsapp_client(
-            &service_name,
-            WHATSAPP_CLIENT_DIR,
-            WHATSAPP_UNIT_NAME,
-        )
-        .await
-        .context(h!())?,
-    };
-    datasource::Entity::delete_by_id(account.id)
-        .exec(txn)
-        .await
+        .context(h!())?
         .context(h!())?;
+    if let Some(service_name) = account.system_service_name {
+        if !datasource.deleted {
+            let source =
+                parse_message_source(&account.messenger).context(h!())?;
+            echo_im::unlink_account(&service_name, source, txn)
+                .await
+                .context(h!())?;
+        }
+    }
+    let mut datasource = datasource.into_active_model();
+    datasource.deleted = Set(true);
+    datasource.updated_by = Set(Some(login.to_string()));
+    datasource.update(txn).await.context(h!())?;
     Ok(())
 }
 
@@ -111,6 +109,7 @@ pub async fn link_account(
     description: Option<String>,
     aor_id: i64,
     txn: &DatabaseTransaction,
+    login: &String,
 ) -> Result<EchoAccountF1, AppError> {
     if !is_valid_service_name(system_service_name) {
         return Err(AppError::BL {
@@ -206,6 +205,8 @@ pub async fn link_account(
             kind: Set(src_display_name),
             default_aor_id: Set(Some(aor_id)),
             api_login: NotSet,
+            updated_by: Set(Some(login.to_string())),
+            deleted: NotSet,
         }
         .insert(txn)
         .await
@@ -241,6 +242,7 @@ pub async fn link_account(
 pub async fn get_qr_code(
     account_id: i64,
     db: &DatabaseConnection,
+    login: &String,
 ) -> Result<String, AppError> {
     let m_account = list_accounts(Some(account_id), db)
         .await
@@ -254,7 +256,7 @@ pub async fn get_qr_code(
         None => {
             debug!("creating new account for datasource {account_id}");
             let txn = db.begin().await.context(h!())?;
-            let result = link_existing_datasource(account_id, &txn)
+            let result = link_existing_datasource(account_id, &txn, login)
                 .await
                 .context(h!())?;
             txn.commit().await.context(h!())?;
@@ -262,11 +264,18 @@ pub async fn get_qr_code(
         }
     };
 
-    let messenger = parse_message_source(&account).context(h!())?;
+    let messenger = parse_message_source(&account.messenger).context(h!())?;
     let system_service_name = account.system_service_name.context(h!())?;
 
     let txn = db.begin().await.context(h!())?;
     let code = echo_im::link_account(&system_service_name, messenger, &txn)
+        .await
+        .context(h!())?;
+    let m_login = Some(login.to_string());
+    datasource::Entity::update_many()
+        .filter(datasource::Column::Id.eq(account.id))
+        .col_expr(datasource::Column::UpdatedBy, Expr::value(m_login))
+        .exec(&txn)
         .await
         .context(h!())?;
     txn.commit().await.context(h!())?;
@@ -277,6 +286,7 @@ pub async fn get_qr_code(
 async fn link_existing_datasource(
     datasource_id: i64,
     txn: &DatabaseTransaction,
+    login: &String,
 ) -> anyhow::Result<EchoAccountF1> {
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(txn)
@@ -299,6 +309,7 @@ async fn link_existing_datasource(
         datasource.description,
         aor_id,
         txn,
+        login,
     )
     .await
     .context(h!())
@@ -346,6 +357,7 @@ where
             JoinType::LeftJoin,
             echo_client_lock::Relation::EchoAccount.def(),
         )
+        .filter(datasource::Column::Deleted.eq(false))
         .select_only()
         .column(datasource::Column::Id)
         .column_as(datasource::Column::DefaultAorId, "aor_id")
@@ -442,10 +454,8 @@ fn is_valid_service_name(s: &str) -> bool {
     })
 }
 
-fn parse_message_source(
-    account: &EchoAccountF1,
-) -> anyhow::Result<MessageSource> {
-    let messenger = account.messenger.to_lowercase();
+fn parse_message_source(messenger: &str) -> anyhow::Result<MessageSource> {
+    let messenger = messenger.to_lowercase();
     match messenger.as_str() {
         "signal" => Ok(MessageSource::Signal),
         "whatsapp" => Ok(MessageSource::Whatsapp),

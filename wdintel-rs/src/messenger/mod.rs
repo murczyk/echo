@@ -39,11 +39,13 @@ pub async fn get_qr(
     env: actix_web::web::Data<Env>,
     req: Json<QrCodeReq>,
 ) -> Result<Json<QrCodeRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
         .await
         .cae(h!())?;
-    let qr_code_base64 =
-        bl::get_qr_code(req.account_id, &env.dbx).await.cae(h!())?;
+    let qr_code_base64 = bl::get_qr_code(req.account_id, &env.dbx, &login)
+        .await
+        .cae(h!())?;
     Ok(Json(QrCodeRsp { qr_code_base64 }))
 }
 
@@ -71,7 +73,8 @@ pub async fn edit(
     env: actix_web::web::Data<Env>,
     req: Json<AccountStatusReq>,
 ) -> Result<Json<EchoAccountF1>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
@@ -83,6 +86,7 @@ pub async fn edit(
         req.display_name.to_string(),
         req.description.clone(),
         &txn,
+        &login,
     )
     .await
     .context(h!())?;
@@ -125,11 +129,12 @@ pub async fn unlink(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteAccountReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    bl::deactivate_account(req.account_id, &txn)
+    bl::deactivate_account(req.account_id, &txn, &login)
         .await
         .context(h!())?;
     txn.commit().await.context(h!())?;
@@ -142,7 +147,8 @@ pub async fn link(
     env: actix_web::web::Data<Env>,
     req: Json<LinkAccountReq>,
 ) -> Result<Json<LinkAccountRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id()?, vec!["Admin"])
+    let login = user.id()?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Admin"])
         .await
         .cae(h!())?;
     let txn = env.dbx.begin().await.cae(h!())?;
@@ -158,6 +164,7 @@ pub async fn link(
         req.description.clone(),
         req.aor_id,
         &txn,
+        &login,
     )
     .await
     .cae(h!())?;
