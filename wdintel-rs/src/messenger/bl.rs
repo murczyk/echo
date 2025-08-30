@@ -195,7 +195,7 @@ pub async fn link_account(
             status: NotSet,
             created_at: NotSet,
             display_name: Set(display_name.to_string()),
-            signal_phone: NotSet,
+            signal_phone: Set(Some(phone_number.to_string())),
             signal_docker_port: NotSet,
             api_endpoint: NotSet,
             enabled: NotSet,
