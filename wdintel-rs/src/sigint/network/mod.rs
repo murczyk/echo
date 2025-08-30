@@ -1844,6 +1844,9 @@ pub async fn network_callsigns_list(
     let callsigns = callsigns_raw
         .into_iter()
         .map(|callsign| NetworkCallsignRes {
+            is_in_dictionary: env
+                .callsigns_whitelist
+                .contains(&callsign.callsign),
             callsign: callsign.callsign,
             known_callsigns: callsign.known_callsigns,
             message_count: callsign.message_count,

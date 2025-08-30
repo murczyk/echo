@@ -268,6 +268,7 @@ pub struct NetworkCallsignRes {
     pub freqs: Option<Vec<String>>,
     pub network_names: Option<Vec<String>>,
     pub is_old: bool,
+    pub is_in_dictionary: bool,
 }
 
 #[derive(

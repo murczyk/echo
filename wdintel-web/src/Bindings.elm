@@ -4854,6 +4854,7 @@ type alias NetworkCallsignRes =
     , freqs : Maybe (List String)
     , networkNames : Maybe (List String)
     , isOld : Bool
+    , isInDictionary : Bool
     }
 
 
@@ -4867,6 +4868,7 @@ networkCallsignResEncoder struct =
         , ( "freqs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.freqs )
         , ( "network_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list Json.Encode.string)) struct.networkNames )
         , ( "is_old", Json.Encode.bool struct.isOld )
+        , ( "is_in_dictionary", Json.Encode.bool struct.isInDictionary )
         ]
 
 
@@ -8456,6 +8458,7 @@ networkCallsignResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_names" (Json.Decode.nullable (Json.Decode.list Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_old" Json.Decode.bool))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_in_dictionary" Json.Decode.bool))
 
 
 postDecoder : Json.Decode.Decoder Post
