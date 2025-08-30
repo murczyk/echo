@@ -37,14 +37,14 @@ where
         )
         .exec(dbx)
         .await
-        .context(h!())?;
+        .c(h!())?;
 
     // Load the resulting row to return a full Model
     let new_group = signal_group::Entity::find_by_id(master_key)
         .one(dbx)
         .await
-        .context(h!())?
-        .context(h!())?;
+        .c(h!())?
+        .c(h!())?;
 
     if let Err(e) = insert_group_aor(dbx, &new_group).await {
         error!("failed to insert group's area of responsibility: {e:?}")
@@ -64,7 +64,7 @@ pub async fn fix_group_areas_of_responsibility(
         .filter(signal_group_aor::Column::Id.is_null())
         .all(db)
         .await
-        .context(h!())?;
+        .c(h!())?;
     for g in groups {
         if let Err(e) = insert_group_aor(db, &g).await {
             error!("failed to insert group's area of responsibility: {e:?}")
