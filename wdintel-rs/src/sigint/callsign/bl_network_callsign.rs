@@ -288,6 +288,7 @@ pub async fn bl_update_network_callsign(
             Set(known_callsign.callsign.clone());
         network_callsign_record.main_radio_station =
             Set(req.main_radio_station);
+        network_callsign_record.unit_developing = Set(req.unit_developing);
         let network_callsign =
             network_callsign_record.update(txn).await.context(h!())?;
 
