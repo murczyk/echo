@@ -504,7 +504,7 @@ mod tests {
 (запит чи треба відвозити о/с)"#;
         let res = extract_freq(input).unwrap();
         assert_eq!(res, None);
-    }    
+    }
 
     #[test]
     fn extract_etalon_01() {

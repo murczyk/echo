@@ -232,7 +232,7 @@ async fn sync_groups(
             None => {
                 let model = signal_group::ActiveModel {
                     name: Set(Some(g.name.clone())),
-                    datasource_id: NotSet,
+                    datasource_id: Set(Some(datasource.id)),
                     created_at: NotSet,
                     ignore_operativny: NotSet,
                     master_key: Set(group_id.clone()),
