@@ -58,6 +58,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        sigint_network_callsign_changelog::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_network_changelog::Entity::delete_many()
             .exec(&env.dbx)
             .await

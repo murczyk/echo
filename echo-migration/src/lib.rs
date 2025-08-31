@@ -141,6 +141,7 @@ mod m20250829_133754_add_original_id;
 mod m20250829_170110_add_new_sigint_origins;
 mod m20250830_065224_add_datasource_mainenatce_attributes;
 mod m20250830_145026_fix_merge_networks_login;
+mod m20250831_075948_add_sigint_network_callsign_changelog;
 
 pub struct Migrator;
 
@@ -289,6 +290,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250829_170110_add_new_sigint_origins::Migration),
             Box::new(m20250830_065224_add_datasource_mainenatce_attributes::Migration),
             Box::new(m20250830_145026_fix_merge_networks_login::Migration),
+            Box::new(m20250831_075948_add_sigint_network_callsign_changelog::Migration),
         ]
     }
 }

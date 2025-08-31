@@ -27,8 +27,8 @@ pub struct Model {
     pub developing: bool,
     pub unit_developing: bool,
     pub unit_id: Option<i64>,
-    pub original_id: Option<i64>,
     pub main_radio_station: bool,
+    pub original_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -49,6 +49,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SigintNetwork,
+    #[sea_orm(has_many = "super::sigint_network_callsign_changelog::Entity")]
+    SigintNetworkCallsignChangelog,
     #[sea_orm(
         belongs_to = "super::sigint_origin::Entity",
         from = "Column::SigintOriginId",
@@ -84,6 +86,12 @@ impl Related<super::sigint_callsign::Entity> for Entity {
 impl Related<super::sigint_network::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetwork.def()
+    }
+}
+
+impl Related<super::sigint_network_callsign_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkCallsignChangelog.def()
     }
 }
 

@@ -27,6 +27,8 @@ pub struct EtalonData {
     pub sigint_zone_aor: Vec<sigint_zone_aor::Model>,
     pub sigint_network_post: Vec<sigint_network_post::Model>,
     pub sigint_network_callsign: Vec<sigint_network_callsign::Model>,
+    pub sigint_network_callsign_changelog:
+        Vec<sigint_network_callsign_changelog::Model>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,6 +58,7 @@ pub struct EtalonImportResult {
     pub sigint_post: ImportResult<i64>,
     pub sigint_network_post: ImportResult<i64>,
     pub sigint_network_callsign: ImportResult<i64>,
+    pub sigint_network_callsign_changelog: ImportResult<i64>,
     pub sigint_network_aor: ImportResult<i64>,
     pub sigint_zone_aor: ImportResult<i64>,
 }

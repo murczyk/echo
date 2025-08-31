@@ -1,3 +1,4 @@
+use super::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::sigint::callsign::types::*;
 use crate::sigint::callsign::{
@@ -76,6 +77,7 @@ pub async fn bl_create_network_callsign(
             &req.callsign,
             known_callsing.id,
             req.main_radio_station,
+            user_id,
             txn,
         )
         .await
@@ -122,6 +124,23 @@ async fn create_network_callsign_not_linked(
     .await
     .context(h!())?;
 
+    let network_callsign_json_new =
+        get_network_callsign_rec_json(network_callsign.id, txn)
+            .await
+            .context(h!())?;
+
+    create_network_callsign_changelog(
+        network_callsign.id,
+        user_id,
+        ChangelogActionEnum::Create,
+        None,
+        Some(network_callsign_json_new),
+        Some(serde_json::to_value(req).context(h!())?),
+        txn,
+    )
+    .await
+    .context(h!())?;
+
     // Update the network's updated_at timestamp
     let mut network_record = network.into_active_model();
     network_record.updated_at = Set(Utc::now().naive_utc());
@@ -136,6 +155,7 @@ async fn create_network_callsign_linked(
     sigint_callsign: &str,
     sigint_callsign_id: i64,
     main_radio_station: bool,
+    user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network_callsign = sigint_network_callsign::ActiveModel {
@@ -160,6 +180,23 @@ async fn create_network_callsign_linked(
     .await
     .context(h!())?;
 
+    let network_callsign_json_new =
+        get_network_callsign_rec_json(network_callsign.id, txn)
+            .await
+            .context(h!())?;
+
+    create_network_callsign_changelog(
+        network_callsign.id,
+        user_id,
+        ChangelogActionEnum::Create,
+        None,
+        Some(network_callsign_json_new),
+        None,
+        txn,
+    )
+    .await
+    .context(h!())?;
+
     Ok(network_callsign.id)
 }
 
@@ -181,6 +218,7 @@ pub async fn bl_add_as_known_network_callsigns(
             &known_callsign.callsign,
             known_callsign_id,
             false,
+            user_id,
             txn,
         )
         .await
@@ -239,6 +277,11 @@ pub async fn bl_update_network_callsign(
                 .await
                 .context(h!())?;
 
+        let network_callsign_json_old =
+            get_network_callsign_rec_json(req.id, txn)
+                .await
+                .context(h!())?;
+
         // Also update the network callsign's callsign string to keep in sync
         let mut network_callsign_record = network_callsign.into_active_model();
         network_callsign_record.sigint_callsign =
@@ -247,6 +290,23 @@ pub async fn bl_update_network_callsign(
             Set(req.main_radio_station);
         let network_callsign =
             network_callsign_record.update(txn).await.context(h!())?;
+
+        let network_callsign_json_new =
+            get_network_callsign_rec_json(req.id, txn)
+                .await
+                .context(h!())?;
+        create_network_callsign_changelog(
+            req.id,
+            user_id,
+            ChangelogActionEnum::Update,
+            Some(network_callsign_json_old),
+            Some(network_callsign_json_new),
+            Some(serde_json::to_value(req).context(h!())?),
+            txn,
+        )
+        .await
+        .context(h!())?;
+
         network_callsign.id
     } else
     // If no known callsign assigned, update the network callsign itself
@@ -270,6 +330,10 @@ async fn update_network_callsign_not_linked(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
+    let network_callsign_json_old = get_network_callsign_rec_json(req.id, txn)
+        .await
+        .context(h!())?;
+
     let mut network_callsign_record = network_callsign.into_active_model();
     network_callsign_record.sigint_network_id = Set(req.network_id);
     network_callsign_record.sigint_callsign =
@@ -286,6 +350,21 @@ async fn update_network_callsign_not_linked(
     let network_callsign =
         network_callsign_record.update(txn).await.context(h!())?;
 
+    let network_callsign_json_new = get_network_callsign_rec_json(req.id, txn)
+        .await
+        .context(h!())?;
+    create_network_callsign_changelog(
+        req.id,
+        user_id,
+        ChangelogActionEnum::Update,
+        Some(network_callsign_json_old),
+        Some(network_callsign_json_new),
+        Some(serde_json::to_value(req).context(h!())?),
+        txn,
+    )
+    .await
+    .context(h!())?;
+
     // Update the network's updated_at timestamp as well as new active_from and active_to
     let mut network_record = network.clone().into_active_model();
     network_record.updated_at = Set(Utc::now().naive_utc());
@@ -297,6 +376,7 @@ async fn update_network_callsign_not_linked(
 
 pub async fn bl_delete_network_callsign(
     id: i64,
+    user_id: &str,
     txn: &DatabaseTransaction,
 ) -> Result<sigint_network_callsign::Model, AppError> {
     let network_callsign = sigint_network_callsign::Entity::find_by_id(id)
@@ -304,10 +384,27 @@ pub async fn bl_delete_network_callsign(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+    let network_callsign_json_old =
+        get_network_callsign_rec_json(id, txn).await.context(h!())?;
     let mut network_callsign_rec = network_callsign.into_active_model();
     network_callsign_rec.deleted = Set(true);
     let network_callsign =
         network_callsign_rec.update(txn).await.context(h!())?;
+
+    let network_callsign_json_new =
+        get_network_callsign_rec_json(id, txn).await.context(h!())?;
+
+    create_network_callsign_changelog(
+        id,
+        user_id,
+        ChangelogActionEnum::Delete,
+        Some(network_callsign_json_old),
+        Some(network_callsign_json_new),
+        None,
+        txn,
+    )
+    .await
+    .context(h!())?;
 
     Ok(network_callsign)
 }
@@ -658,4 +755,44 @@ pub fn render_network_callsign(
         last_datetime: comm_info.and_then(|c| c.last_datetime),
         freqs: comm_info.and_then(|c| c.freqs.clone()),
     })
+}
+
+async fn get_network_callsign_rec_json(
+    id: i64,
+    txn: &DatabaseTransaction,
+) -> Result<serde_json::value::Value, AppError> {
+    let network_callsign_json = sigint_network_callsign::Entity::find_by_id(id)
+        .into_json()
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    Ok(network_callsign_json)
+}
+async fn create_network_callsign_changelog(
+    id: i64,
+    user_id: &str,
+    action: ChangelogActionEnum,
+    old_json: Option<serde_json::Value>,
+    new_json: Option<serde_json::Value>,
+    req: Option<serde_json::Value>,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let changelog = sigint_network_callsign_changelog::ActiveModel {
+        id: NotSet,
+        sigint_network_callsign_id: Set(id),
+        login: Set(user_id.to_string()),
+        action: Set(action),
+        old_value: Set(old_json),
+        new_value: Set(new_json),
+        req: Set(req),
+        created_at: NotSet,
+        sigint_origin_id: NotSet,
+        original_id: NotSet,
+    };
+
+    changelog.insert(txn).await.context(h!())?;
+
+    Ok(())
 }

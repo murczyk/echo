@@ -410,6 +410,40 @@ where
     Ok(ids_map)
 }
 
+pub async fn find_existing_sigint_network_callsign_changelogs<
+    'a,
+    'async_trait,
+    C,
+>(
+    txn: &C,
+    recs: &Vec<sigint_network_callsign_changelog::Model>,
+    origin_id: i64,
+) -> anyhow::Result<BTreeMap<i64, i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let ids = recs.iter().map(|rec| rec.id).collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    };
+
+    let ids_map = sigint_network_callsign_changelog::Entity::find()
+        .filter(
+            sigint_network_callsign_changelog::Column::SigintOriginId
+                .eq(origin_id),
+        )
+        .filter(
+            sigint_network_callsign_changelog::Column::OriginalId.is_in(ids),
+        )
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|rec| rec.original_id.map(|id| (id, rec.id)))
+        .collect();
+    Ok(ids_map)
+}
+
 pub async fn find_existing_sigint_signal_changelogs<'a, 'async_trait, C>(
     txn: &C,
     recs: &Vec<sigint_signal_changelog::Model>,

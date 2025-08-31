@@ -260,8 +260,9 @@ pub async fn delete_network_callsign(
     let txn = env.dbx.begin().await.context(h!())?;
     let req = req.into_inner();
 
-    let network_callsign =
-        bl_delete_network_callsign(req, &txn).await.context(h!())?;
+    let network_callsign = bl_delete_network_callsign(req, &user_id, &txn)
+        .await
+        .context(h!())?;
     txn.commit().await.context(h!())?;
 
     let res = bl_get_network_callsigns_info_batch(
