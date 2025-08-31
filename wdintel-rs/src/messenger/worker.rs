@@ -90,7 +90,6 @@ async fn receive_thread(
     sync_inbox(Utc::now(), dbx, client_name, redis, config, rq, settlements)
         .await
         .context(h!())?;
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     Ok(())
 }
 
