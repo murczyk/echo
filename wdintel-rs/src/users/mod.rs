@@ -691,12 +691,26 @@ pub async fn register_user(
 #[post("/api/user/sigint-groups")]
 pub async fn user_sigint_groups(
     env: actix_web::web::Data<Env>,
-    _req: Json<SigintGroupsReq>,
+    req: Json<SigintGroupsReq>,
     user: Identity,
 ) -> Result<Json<Vec<String>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.context(h!())?;
     let login = user.id()?;
-    let res = get_identity_sigint_groups(&env.dbx, &login)
+    let all_groups = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let Some(since_ts) = &req.since_date_inclusive_ms else {
+        return Ok(Json(all_groups));
+    };
+    let ts = crate::utils::dt_from_millis(*since_ts).context(h!())?;
+    let res = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::GroupMasterKey)
+        .filter(signal_message::Column::Timestamp.gt(ts))
+        .filter(signal_message::Column::GroupMasterKey.is_in(all_groups))
+        .group_by(signal_message::Column::GroupMasterKey)
+        .into_tuple::<String>()
+        .all(&env.dbx)
         .await
         .context(h!())?;
     Ok(Json(res))
