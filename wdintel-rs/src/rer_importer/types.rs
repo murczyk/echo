@@ -1065,4 +1065,3 @@ pub struct MessageTimestampPerGroupStat {
 pub struct FreqPelengsActivityRsp {
     pub freq_pelengs_summary: Vec<FreqPelengsEntry>,
 }
-

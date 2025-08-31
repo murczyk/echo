@@ -93,10 +93,7 @@ pub(crate) async fn build_inbox_query(
         q = q.limit(20);
     }
 
-    trace!(
-        "inbox items query sql: {}",
-        q.build(DbBackend::Postgres)
-    );
+    trace!("inbox items query sql: {}", q.build(DbBackend::Postgres));
     Ok(q)
 }
 
