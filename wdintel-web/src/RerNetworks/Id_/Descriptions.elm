@@ -42,7 +42,7 @@ import Page exposing (Page)
 import RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
 import RerNetworks.Id_.FrequenciesTable as FreqsTable
 import RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
-import RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
+import RerNetworks.Id_.Msg as Msgs exposing (DescriptionsMsg(..), Msg)
 import RerNetworks.Id_.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
@@ -56,6 +56,285 @@ import Url.Builder
 import View exposing (View)
 
 
+update : Shared.Model -> DescriptionsMsg -> Model -> ( Model, Effect DescriptionsMsg )
+update shared msg model =
+    case msg of
+        DescriptionAddClickedByUser networkId descType ->
+            let
+                desc =
+                    case ( descType, model.addConfirmationFreqSelect.selected ) of
+                        ( B.Confirmation, Just freq ) ->
+                            { networkId = networkId
+                            , networkDescriptions =
+                                []
+                            , frequencyDescriptions =
+                                [ { descrType = B.Confirmation
+                                  , description = model.addConfirmationInp
+                                  , freq = freq
+                                  }
+                                ]
+                            }
+
+                        ( B.Confirmation, Nothing ) ->
+                            { networkId = networkId
+                            , networkDescriptions =
+                                [ { descrType = B.Confirmation
+                                  , description = model.addConfirmationInp
+                                  }
+                                ]
+                            , frequencyDescriptions =
+                                []
+                            }
+
+                        ( B.Sign, _ ) ->
+                            { networkId = networkId
+                            , networkDescriptions =
+                                [ { descrType = B.Sign
+                                  , description = model.addSignsInp
+                                  }
+                                ]
+                            , frequencyDescriptions =
+                                []
+                            }
+            in
+            ( model
+            , E.networkAddDescription (NetworkDescriptionAdded descType) desc
+            )
+
+        NetworkDescriptionAdded _ (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання опису мережі" e
+            )
+
+        NetworkDescriptionAdded descType (Ok network) ->
+            let
+                m1 =
+                    { model
+                        | addConfirmationInp =
+                            case descType of
+                                B.Confirmation ->
+                                    ""
+
+                                B.Sign ->
+                                    model.addConfirmationInp
+                        , addSignsInp =
+                            case descType of
+                                B.Confirmation ->
+                                    model.addSignsInp
+
+                                B.Sign ->
+                                    ""
+                        , confirmationCreateSidebar = False
+                        , signsCreateSidebar = False
+                    }
+            in
+            ( { m1 | network = Success network }, E.none )
+
+        ConfirmationInputChangedByUser inp ->
+            ( { model | addConfirmationInp = inp }, E.none )
+
+        SignsInputChangedByUser inp ->
+            ( { model | addSignsInp = inp }, E.none )
+
+        DescriptionDeleteClickedByUser description ->
+            ( { model | deleteDescriptionConfirmation = Just description }, E.none )
+
+        DescriptionEditClickedByUser description ->
+            let
+                freqItems =
+                    case model.freqs of
+                        Success freqs ->
+                            List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+
+                        _ ->
+                            []
+            in
+            ( { model
+                | editDescriptionSidebar = Just ( description.id, description )
+                , editDescriptionInp = description.description
+                , editDescriptionFreqSelect =
+                    { state = model.editDescriptionFreqSelect.state
+                    , items = freqItems
+                    , selected = Nothing
+                    }
+              }
+            , E.none
+            )
+
+        DescriptionEditSave description ->
+            let
+                -- Use the current input from the sidebar
+                updatedDescription =
+                    model.editDescriptionInp
+
+                -- Get selected frequency if any
+                selectedFreq =
+                    model.editDescriptionFreqSelect.selected
+
+                -- Find the frequency ID if a frequency is selected
+                networkFreqId =
+                    case selectedFreq of
+                        Just freq ->
+                            case model.freqs of
+                                Success freqs ->
+                                    ListX.find (\f -> f.freq == freq) freqs
+                                        |> Maybe.map .networkFreqId
+
+                                _ ->
+                                    Nothing
+
+                        Nothing ->
+                            Nothing
+            in
+            ( { model | editDescriptionSidebar = Nothing }
+            , E.networkUpdateDescription (DescriptionEditUpdated description.id)
+                { networkId = description.networkId
+                , descriptionId = description.id
+                , descrType = description.descrType
+                , description = updatedDescription
+                , networkFreqId = networkFreqId
+                }
+            )
+
+        DescriptionEditUpdated _ (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення опису мережі" e
+            )
+
+        DescriptionEditUpdated descrId (Ok res) ->
+            ( { model | network = Success res }, E.none )
+
+        DescriptionDeleted (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення опису мережі" e
+            )
+
+        DescriptionDeleted (Ok res) ->
+            ( { model | network = Success res }, E.none )
+
+        AddConfirmationFreqSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.addConfirmationFreqSelect.state
+
+                updatedFreq =
+                    Le.Block.Select.singleUpd mAct model.addConfirmationFreqSelect.selected
+
+                freqsSelect =
+                    model.addConfirmationFreqSelect
+
+                freqsSelect2 =
+                    { freqsSelect
+                        | state = imodel
+                        , selected = updatedFreq
+                    }
+            in
+            ( { model
+                | addConfirmationFreqSelect = freqsSelect2
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    AddConfirmationFreqSelMsg
+                    icmd
+            )
+
+        OpenConfirmationCreateSidebar ->
+            ( { model | confirmationCreateSidebar = True }, E.none )
+
+        CloseConfirmationCreateSidebar ->
+            ( { model | confirmationCreateSidebar = False }, E.none )
+
+        OpenSignsCreateSidebar ->
+            ( { model | signsCreateSidebar = True }, E.none )
+
+        CloseSignsCreateSidebar ->
+            ( { model | signsCreateSidebar = False }, E.none )
+
+        -- Sidebar management for editing descriptions
+        OpenEditDescriptionSidebar description ->
+            let
+                -- Initialize input fields with current description data
+                initialInput =
+                    description.description
+
+                -- For network descriptions, we don't have frequency info, so we'll leave it empty
+                initialFreq =
+                    Nothing
+
+                freqItems =
+                    case model.freqs of
+                        Success freqs ->
+                            List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+
+                        _ ->
+                            []
+            in
+            ( { model
+                | editDescriptionSidebar = Just ( description.id, description )
+                , editDescriptionInp = initialInput
+                , editDescriptionFreqSelect =
+                    { state = model.editDescriptionFreqSelect.state
+                    , items = freqItems
+                    , selected = initialFreq
+                    }
+              }
+            , E.none
+            )
+
+        CloseEditDescriptionSidebar ->
+            ( { model
+                | editDescriptionSidebar = Nothing
+                , editDescriptionInp = ""
+                , editDescriptionFreqSelect =
+                    { state = model.editDescriptionFreqSelect.state
+                    , items = []
+                    , selected = Nothing
+                    }
+              }
+            , E.none
+            )
+
+        -- Input field management for editing descriptions
+        EditDescriptionInputChanged input ->
+            ( { model | editDescriptionInp = input }, E.none )
+
+        EditDescriptionFreqSelMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.editDescriptionFreqSelect.state
+
+                updatedFreq =
+                    Le.Block.Select.singleUpd mAct model.editDescriptionFreqSelect.selected
+
+                freqsSelect =
+                    model.editDescriptionFreqSelect
+
+                freqsSelect2 =
+                    { freqsSelect
+                        | state = imodel
+                        , selected = updatedFreq
+                    }
+            in
+            ( { model
+                | editDescriptionFreqSelect = freqsSelect2
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    EditDescriptionFreqSelMsg
+                    icmd
+            )
+
+        -- Delete confirmation dialog management
+        DeleteDescriptionConfirmed description ->
+            ( { model | deleteDescriptionConfirmation = Nothing }
+            , E.networkDeleteDescription DescriptionDeleted { descriptionId = description.id, networkId = description.networkId }
+            )
+
+        DeleteDescriptionCanceled ->
+            ( { model | deleteDescriptionConfirmation = Nothing }, E.none )
+
+
+view : B.Network -> Model -> Auth.User -> Shared.Model -> Html DescriptionsMsg
 view network model user shared =
     let
         ( confirmations, signs ) =
@@ -144,7 +423,7 @@ view network model user shared =
         ]
 
 
-descriptionItem : B.NetworkDescription -> B.Network -> Auth.User -> Shared.Model -> Html Msg
+descriptionItem : B.NetworkDescription -> B.Network -> Auth.User -> Shared.Model -> Html DescriptionsMsg
 descriptionItem description network user shared =
     div [ class "border rounded-lg p-2 mb-3 shadow-sm hover:shadow-md transition-shadow duration-200 border-border bg-card" ]
         [ div [ class "flex justify-between items-start mb-1" ]
@@ -194,11 +473,44 @@ descriptionItem description network user shared =
         ]
 
 
+viewDeleteConfirmation : Model -> Html DescriptionsMsg
+viewDeleteConfirmation model =
+    let
+        deleteDescriptionDialogContent =
+            [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                [ div [ class "pb-6" ]
+                    [ h2 [] [ text "Видалити обґрунтування" ]
+                    , p [] [ text "Ви впевнені, що хочете видалити це обґрунтування?" ]
+                    ]
+                , div [ class "flex justify-between" ]
+                    [ Button.new { label = "Скасувати", onClick = DeleteDescriptionCanceled } |> Button.withStyleSecondary |> Button.view
+                    , Button.new { label = "Видалити", onClick = DeleteDescriptionConfirmed (Maybe.withDefault (B.NetworkDescription 0 0 Nothing B.Confirmation "" "" 0) model.deleteDescriptionConfirmation) }
+                        |> Button.withStyleDanger
+                        |> Button.view
+                    ]
+                ]
+            ]
+    in
+    ModalDialog.modalDialog (model.deleteDescriptionConfirmation /= Nothing) DeleteDescriptionCanceled [] deleteDescriptionDialogContent
+
+
 
 -- SIDEBAR CONTENT
 
 
-confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
+confirmationCreateSidebar network model user shared =
+    Sidebar.view True CloseConfirmationCreateSidebar [ confirmationCreateSidebarContent shared model user network ]
+
+
+signsCreateSidebar network model user shared =
+    Sidebar.view True CloseSignsCreateSidebar [ signsCreateSidebarContent shared model user network ]
+
+
+descriptionEditCloseSidebar description network model user shared =
+    Sidebar.view True CloseEditDescriptionSidebar [ editDescriptionSidebarContent shared model user network description ]
+
+
+confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html DescriptionsMsg
 confirmationCreateSidebarContent shared model user network =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
@@ -254,7 +566,7 @@ confirmationCreateSidebarContent shared model user network =
         ]
 
 
-signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
+signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html DescriptionsMsg
 signsCreateSidebarContent shared model user network =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]
@@ -285,7 +597,7 @@ signsCreateSidebarContent shared model user network =
         ]
 
 
-editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html Msg
+editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html DescriptionsMsg
 editDescriptionSidebarContent shared model user network description =
     div [ class "flex flex-col h-full" ]
         [ div [ class "flex-1 p-6 overflow-y-auto" ]

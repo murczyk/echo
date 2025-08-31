@@ -52,48 +52,122 @@ import Url.Builder
 import View exposing (View)
 
 
-type Msg
-    = CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
-    | NetworkReturnedByApi (Result ApiError B.Network)
+type
+    Msg
+    -- =============================================================================
+    -- NETWORK
+    -- =============================================================================
+    = NetworkReturnedByApi (Result ApiError B.Network)
     | MapPointsReturnedByApi (Result ApiError B.ListNetworkPointsRsp)
     | GroupsActivityReturnedByApi (Result ApiError GroupsByDate)
     | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
-    | FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
-    | CallsignsPopupOpenedByUser String
-    | CallsignsPopupClosedByUser
+    | NetworkUpdatedByApi (Result ApiError B.Network)
+    | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
+    | NetworkUnitsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
+    | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
+    | SignalsForNetworkLoaded (Result ApiError B.NetworkSignalsListRes)
+    | MissingFieldsUpdatedByApi (Result ApiError B.Network)
+    | DeleteNetworkReturnedByApi (Result ApiError B.Network)
     | NetworkEditStartedByUser
     | NetworkEditingSavedByUser
     | NetworkEditingCanceledByUser
     | NetworkEditingMsg B.UpdateNetworkReq
-    | MissingFieldsEditStartedByUser
-    | MissingFieldsEditSavedByUser
-    | MissingFieldsEditCanceledByUser
-    | MissingFieldsEditingMsg B.UpdateNetworkReq
-    | MissingFieldsUpdatedByApi (Result ApiError B.Network)
-    | FreqsEditingMsg B.UpdateNetworkFreqReq
-    | FreqsEditStartedByUser
-    | FreqsEditSavedByUser
-    | FreqsEditCanceledByUser
-    | FreqUpdatedByApi (Result ApiError B.Network)
-    | NetworkUpdatedByApi (Result ApiError B.Network)
-    | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
-    | NetworkUnitsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | EditNetworkKindSelMsg (Select.Msg NetworksUtils.NetworkKind)
     | NetworkEditPostsSelMsg (Select.Msg Int)
     | NetworkEditUnitsSelMsg (Select.Msg Int)
     | NetworkEditAorSelMsg (Select.Msg Int)
-    | AorListReturnedByApi (Result ApiError (List B.AreaOfResponsibility))
-    | DescriptionAddClickedByUser Int B.NetworkDescrType
-    | NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
-    | ConfirmationInputChangedByUser String
-    | SignsInputChangedByUser String
-    | SignalsForNetworkLoaded (Result ApiError B.NetworkSignalsListRes)
-    | DescriptionDeleteClickedByUser B.NetworkDescription
-    | DescriptionEditClickedByUser B.NetworkDescription
-    | DescriptionEditSave B.NetworkDescription
-    | DescriptionEditUpdated Int (Result ApiError B.Network)
-    | DescriptionDeleted (Result ApiError B.Network)
-    | AddConfirmationFreqSelMsg (Select.Msg String)
+    | MissingFieldsEditStartedByUser
+    | MissingFieldsEditSavedByUser
+    | MissingFieldsEditCanceledByUser
+    | MissingFieldsEditingMsg B.UpdateNetworkReq
+    | DeleteNetworkClickedByUser
+    | DeleteNetworkConfirmedByUser
+    | DeleteNetworkCanceledByUser
+      -- =============================================================================
+      -- CALLSIGNS
+      -- =============================================================================
+    | CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
+    | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
+    | CallsignCreated (Result ApiError B.NetworkCallsign)
+    | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign))
+    | CallsignUpdated (Result ApiError B.NetworkCallsign)
+    | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign)
+    | GotSources (Result ApiError B.ListSourcesRsp)
+    | OpenCallsignCreateSidebar
+    | CloseCallsignCreateSidebar
+    | UpdateCallsignCreateField (Maybe B.CreateNetworkCallsignReq -> Maybe B.CreateNetworkCallsignReq)
+    | CreateCallsignClicked
+    | CallsignCreateSourceSelMsg (Select.Msg Int)
+    | CallsignCreateUnitSelMsg (Select.Msg Int)
+    | ToggleCallsignCreateUnitSelector -- Показати/сховати селект підрозділів для створення
+    | ResetCallsignCreateUnit -- Повернути підрозділ мережі для створення
+    | AddCallsignToNetwork Int -- Додавання позивного до мережі
+    | OpenAddFromUnknownSidebar String -- Відкриття сайдбару додавання зі списку "Приналежність встановлюється"
+    | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
+    | CloseEditCallsignSidebar -- Закриття сайдбару редагування
+    | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
+    | SaveEditCallsignClicked -- Збереження змін редагування
+    | EditCallsignSourceSelMsg (Select.Msg Int) -- Повідомлення від селекта джерела для редагування
+    | EditCallsignUnitSelMsg (Select.Msg Int) -- Повідомлення від селекта підрозділу для редагування
+    | ToggleEditCallsignUnitSelector -- Показати/сховати селект підрозділів для редагування
+    | ResetEditCallsignUnit -- Повернути підрозділ мережі для редагування
+    | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
+    | DeleteCallsignConfirmed Int -- Підтвердження видалення позивного
+    | DeleteCallsignCanceled -- Скасування видалення позивного
+    | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
+    | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
+    | NavigateToCallsignPage Int -- Перейти на сторінку позивного
+    | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
+    | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
+    | SetCallsignsTableState Table.State
+    | SetNetworkCallsignsTableState Table.State
+    | NetworkCallsignsPagerMsg Pager.Msg
+    | CallsignsPagerMsg Pager.Msg
+    | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
+    | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
+    | CallsignsPopupOpenedByUser String
+    | CallsignsPopupClosedByUser
+      -- =============================================================================
+      -- FREQUENCIES
+      -- =============================================================================
+    | FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
+    | FreqUpdatedByApi (Result ApiError B.Network)
+    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | FreqAddedToNetwork (Result ApiError B.Network)
+    | DeleteFreqReturnedByApi (Result ApiError B.Network)
+    | FreqsEditingMsg B.UpdateNetworkFreqReq
+    | FreqsEditStartedByUser
+    | FreqsEditSavedByUser
+    | FreqsEditCanceledByUser
+    | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
+    | CloseFreqEditSidebar
+    | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
+    | SaveFreqEditSidebar
+    | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
+    | FreqModulationSelectMsg (Select.Msg Int)
+    | ToggleFreqEditShowActiveTo
+    | OpenFreqCreateSidebar
+    | CloseFreqCreateSidebar
+    | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
+    | FreqCreateKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
+    | FreqCreateModulationSelectMsg (Select.Msg Int)
+    | FreqCreateDescriptionInputChangedByUser String
+    | ToggleFreqCreateShowActiveTo
+    | AddFreqToNetwork
+    | DeleteFreqClickedByUser Int String
+    | DeleteFreqConfirmedByUser
+    | DeleteFreqCanceledByUser
+    | OpenFreqDetailPopup String
+    | CloseFreqDetailPopup
+    | FreqsActivityFilterChangedByUser FreqActivityFilter
+    | SetFreqsTableState Table.State
+      -- =============================================================================
+      -- DESCRIPTIONS
+      -- =============================================================================
+    | Descriptions DescriptionsMsg
+      -- =============================================================================
+      -- UI
+      -- =============================================================================
     | ReportModalOpenedByUser
     | ReportModalClosedByUser
     | ReportDownloadClickedByUser
@@ -103,91 +177,27 @@ type Msg
     | ReportIncludePelengsMapCheckedByUser Bool
     | ReportIncludeConfirmationCheckedByUser Bool
     | ReportIncludeSigintSignsCheckedByUser Bool
-    | FreqsActivityFilterChangedByUser FreqActivityFilter
-    | SetFreqsTableState Table.State
-    | SetCallsignsTableState Table.State
-    | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
-    | SetNetworkCallsignsTableState Table.State
-    | NetworkCallsignsPagerMsg Pager.Msg
-    | CallsignsPagerMsg Pager.Msg
-    | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
-    | CloseFreqEditSidebar
-    | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
-    | SaveFreqEditSidebar
-    | OpenFreqDetailPopup String
-    | CloseFreqDetailPopup
-    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
-    | GotSources (Result ApiError B.ListSourcesRsp)
-    | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
-    | FreqModulationSelectMsg (Select.Msg Int)
-    | ToggleFreqEditShowActiveTo
-    | DeleteNetworkClickedByUser
-    | DeleteNetworkConfirmedByUser
-    | DeleteNetworkCanceledByUser
-    | DeleteNetworkReturnedByApi (Result ApiError B.Network)
-      -- Frequency creation messages
-    | OpenFreqCreateSidebar
-    | CloseFreqCreateSidebar
-    | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
-    | FreqCreateKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
-    | FreqCreateModulationSelectMsg (Select.Msg Int)
-    | FreqCreateDescriptionInputChangedByUser String
-    | ToggleFreqCreateShowActiveTo
-    | AddFreqToNetwork
-    | FreqAddedToNetwork (Result ApiError B.Network)
-    | DeleteFreqClickedByUser Int String
-    | DeleteFreqConfirmedByUser
-    | DeleteFreqCanceledByUser
-    | DeleteFreqReturnedByApi (Result ApiError B.Network)
-      -- Network callsign creation messages
-    | OpenCallsignCreateSidebar
-    | CloseCallsignCreateSidebar
-    | UpdateCallsignCreateField (Maybe B.CreateNetworkCallsignReq -> Maybe B.CreateNetworkCallsignReq)
-    | CreateCallsignClicked
-    | CallsignCreated (Result ApiError B.NetworkCallsign)
-    | CallsignCreateSourceSelMsg (Select.Msg Int)
-    | CallsignCreateUnitSelMsg (Select.Msg Int)
-    | ToggleCallsignCreateUnitSelector -- Показати/сховати селект підрозділів для створення
-    | ResetCallsignCreateUnit -- Повернути підрозділ мережі для створення
-      -- Callsign adding functionality
-    | AddCallsignToNetwork Int -- Додавання позивного до мережі
-    | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign)) -- Результат додавання позивного
-    | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
-    | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
-      -- Callsign deletion functionality
-    | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
-    | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
-    | CloseEditCallsignSidebar -- Закриття сайдбару редагування
-      -- Developing callsigns dropdown
-    | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
-    | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
-    | NavigateToCallsignPage Int -- Перейти на сторінку позивного
-      -- Unknown callsigns dropdown
-    | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
-    | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
-    | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
-    | SaveEditCallsignClicked -- Збереження змін редагування
-    | CallsignUpdated (Result ApiError B.NetworkCallsign) -- Результат оновлення позивного
-    | EditCallsignSourceSelMsg (Select.Msg Int) -- Повідомлення від селекта джерела для редагування
-    | EditCallsignUnitSelMsg (Select.Msg Int) -- Повідомлення від селекта підрозділу для редагування
-    | ToggleEditCallsignUnitSelector -- Показати/сховати селект підрозділів для редагування
-    | ResetEditCallsignUnit -- Повернути підрозділ мережі для редагування
-    | OpenAddFromUnknownSidebar String -- Відкриття сайдбару додавання зі списку "Приналежність встановлюється"
-    | DeleteCallsignConfirmed Int -- Підтвердження видалення позивного
-    | DeleteCallsignCanceled -- Скасування видалення позивного
-    | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign) -- Результат видалення позивного
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor )) -- Зміна статусу popup для показу повного коментаря
-      -- Sidebar management for creating descriptions
+
+
+type DescriptionsMsg
+    = NetworkDescriptionAdded B.NetworkDescrType (Result ApiError B.Network)
+    | DescriptionEditUpdated Int (Result ApiError B.Network)
+    | DescriptionDeleted (Result ApiError B.Network)
+    | DescriptionAddClickedByUser Int B.NetworkDescrType
+    | ConfirmationInputChangedByUser String
+    | SignsInputChangedByUser String
+    | AddConfirmationFreqSelMsg (Select.Msg String)
+    | DescriptionEditClickedByUser B.NetworkDescription
+    | DescriptionEditSave B.NetworkDescription
+    | EditDescriptionInputChanged String
+    | EditDescriptionFreqSelMsg (Select.Msg String)
+    | DescriptionDeleteClickedByUser B.NetworkDescription
+    | DeleteDescriptionConfirmed B.NetworkDescription
+    | DeleteDescriptionCanceled
     | OpenConfirmationCreateSidebar
     | CloseConfirmationCreateSidebar
     | OpenSignsCreateSidebar
     | CloseSignsCreateSidebar
-      -- Sidebar management for editing descriptions
     | OpenEditDescriptionSidebar B.NetworkDescription
     | CloseEditDescriptionSidebar
-      -- Input field management for editing descriptions
-    | EditDescriptionInputChanged String
-    | EditDescriptionFreqSelMsg (Select.Msg String)
-      -- Delete confirmation dialog management
-    | DeleteDescriptionConfirmed B.NetworkDescription
-    | DeleteDescriptionCanceled
