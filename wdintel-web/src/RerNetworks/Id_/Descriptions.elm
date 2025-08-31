@@ -61,7 +61,7 @@ view network model user shared =
         ( confirmations, signs ) =
             List.partition (\description -> description.descrType == B.Confirmation) network.descriptions
     in
-    div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col" ]
+    div [ class "bg-w dark:bg-[#1C1C21] p-[16px] flex flex-col flex-1" ]
         [ div [ class "mb-[16px]" ]
             [ div [ class "flex justify-between items-center mb-[8px]" ]
                 [ h5 [ class "" ] [ text "Обґрунтування прив'язки" ]
@@ -190,5 +190,152 @@ descriptionItem description network user shared =
             ]
         , div []
             [ div [ class "leading-relaxed", style "color" "var(--color-text)", style "white-space" "pre-line" ] [ text description.description ]
+            ]
+        ]
+
+
+
+-- SIDEBAR CONTENT
+
+
+confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
+confirmationCreateSidebarContent shared model user network =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити обґрунтування прив'язки" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\freq ->
+                                    Select.basicMenuItem
+                                        { item = freq
+                                        , label = freq
+                                        }
+                                )
+                                model.addConfirmationFreqSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map AddConfirmationFreqSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.addConfirmationFreqSelect.state
+                                model.addConfirmationFreqSelect.items
+                                "виберіть частоту"
+                                defaultOptions
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки *" ]
+                    , textarea
+                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        , placeholder "Введіть обґрунтування прив'язки"
+                        , value model.addConfirmationInp
+                        , onInput ConfirmationInputChangedByUser
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseConfirmationCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Confirmation }
+                    |> Button.withDisabled (String.isEmpty model.addConfirmationInp)
+                    |> Button.view
+                ]
+            ]
+        ]
+
+
+signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html Msg
+signsCreateSidebarContent shared model user network =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити розвідувальні ознаки" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Розвідувальні ознаки *" ]
+                    , textarea
+                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        , placeholder "Введіть розвідувальні ознаки"
+                        , value model.addSignsInp
+                        , onInput SignsInputChangedByUser
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseSignsCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = DescriptionAddClickedByUser network.id B.Sign }
+                    |> Button.withDisabled (String.isEmpty model.addSignsInp)
+                    |> Button.view
+                ]
+            ]
+        ]
+
+
+editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html Msg
+editDescriptionSidebarContent shared model user network description =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати опис" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\freq ->
+                                    Select.basicMenuItem
+                                        { item = freq
+                                        , label = freq
+                                        }
+                                )
+                                model.editDescriptionFreqSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map EditDescriptionFreqSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.editDescriptionFreqSelect.state
+                                model.editDescriptionFreqSelect.items
+                                "виберіть частоту"
+                                defaultOptions
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Текст опису *" ]
+                    , textarea
+                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        , placeholder "Введіть текст опису"
+                        , value model.editDescriptionInp
+                        , onInput EditDescriptionInputChanged
+                        ]
+                        []
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditDescriptionSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Зберегти", onClick = DescriptionEditSave description }
+                    |> Button.withDisabled (String.isEmpty model.editDescriptionInp)
+                    |> Button.view
+                ]
             ]
         ]

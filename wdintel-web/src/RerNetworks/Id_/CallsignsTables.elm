@@ -680,3 +680,690 @@ networkCallsignsTableConfig shared model user =
             ]
         , customizations = customizations
         }
+
+
+
+-- SIDEBAR CONTENTS
+
+
+callsignCreateSidebarContent : Shared.Model -> Model -> Auth.User -> Html Msg
+callsignCreateSidebarContent shared model user =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити позивний мережі" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позивний *" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позивний"
+                        , value (Maybe.map .callsign model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | callsign = String.toUpper v }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .mainRadioStation model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | mainRadioStation = not s.mainRadioStation }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
+                    , let
+                        sourceMenu =
+                            model.callsignCreateSources
+                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+
+                        selectItem =
+                            Maybe.andThen .sourceId model.callsignCreateState
+                                |> Maybe.andThen
+                                    (\sourceId ->
+                                        ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
+                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                    )
+                      in
+                      Html.map CallsignCreateSourceSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.callsignCreateSourceSelState
+                                sourceMenu
+                                "Виберіть джерело (необов'язково)"
+                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                    |> (\opts ->
+                                            { opts
+                                                | clearable = True
+                                            }
+                                       )
+                                )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Підрозділ" ]
+                    , div [ class "flex items-center gap-2 p-2 border border-border rounded bg-gray-50 dark:bg-gray-700" ]
+                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ]
+                            [ text
+                                (case Maybe.andThen .unitId model.callsignCreateState of
+                                    Just unitId ->
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Dict.get unitId units
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault "Невідомий підрозділ"
+
+                                            _ ->
+                                                "Завантаження..."
+
+                                    Nothing ->
+                                        -- Показуємо назву першого підрозділу мережі
+                                        case model.editUnitsSelect.selected of
+                                            firstUnitId :: _ ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get firstUnitId units
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault "Підрозділ мережі"
+
+                                                    _ ->
+                                                        "Підрозділ мережі"
+
+                                            [] ->
+                                                "Підрозділ мережі"
+                                )
+                            ]
+                        , button
+                            [ type_ "button"
+                            , class "text-blue-600 hover:text-blue-800 text-sm"
+                            , title "Змінити підрозділ"
+                            , onClick ToggleCallsignCreateUnitSelector
+                            ]
+                            [ text "✏️" ]
+                        , button
+                            [ type_ "button"
+                            , class "text-gray-600 hover:text-gray-800 text-sm"
+                            , title "Повернути підрозділ мережі"
+                            , onClick ResetCallsignCreateUnit
+                            ]
+                            [ text "✖️" ]
+                        ]
+                    , if model.callsignCreateUnitSelectorVisible then
+                        -- Показуємо селект підрозділів
+                        div [ class "mt-2" ]
+                            [ let
+                                unitMenu =
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Dict.values units |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+
+                                        _ ->
+                                            []
+
+                                selectedUnit =
+                                    Maybe.andThen .unitId model.callsignCreateState
+                                        |> Maybe.andThen
+                                            (\unitId ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get unitId units
+                                                            |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+
+                                                    _ ->
+                                                        Nothing
+                                            )
+                              in
+                              Html.map CallsignCreateUnitSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        selectedUnit
+                                        model.callsignCreateUnitSelState
+                                        unitMenu
+                                        "Виберіть підрозділ"
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                            |> (\opts ->
+                                                    { opts
+                                                        | clearable = True
+                                                    }
+                                               )
+                                        )
+                            ]
+
+                      else
+                        text ""
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .unitDeveloping model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | unitDeveloping = not s.unitDeveloping }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть посаду (необов'язково)"
+                        , value (Maybe.andThen .position model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | position =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
+                    , textarea
+                        [ class "w-full p-2 border border-border rounded resize-none"
+                        , rows 3
+                        , placeholder "Введіть коментар (необов'язково)"
+                        , value (Maybe.andThen .comment model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | comment =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .developing model.callsignCreateState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateCallsignCreateField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | developing = not s.developing }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , if Maybe.andThen .sourceId model.callsignCreateState == Just 2 then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
+                        , input
+                            [ type_ "text"
+                            , class "w-full p-2 border border-border rounded"
+                            , placeholder "Введіть частоту (обов'язково для РО)"
+                            , value (Maybe.andThen .radioFreq model.callsignCreateState |> Maybe.withDefault "")
+                            , onInput <|
+                                UpdateCallsignCreateField
+                                    << (\v maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just
+                                                        { s
+                                                            | radioFreq =
+                                                                if String.trim v == "" then
+                                                                    Nothing
+
+                                                                else
+                                                                    Just v
+                                                        }
+
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        ]
+
+                  else
+                    text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseCallsignCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.callsignCreateSaving then
+                    Button.new { label = "Створення...", onClick = CreateCallsignClicked }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Створити", onClick = CreateCallsignClicked }
+                        |> Button.withDisabled
+                            (let
+                                callsignEmpty =
+                                    Maybe.map .callsign model.callsignCreateState
+                                        |> Maybe.map (String.trim >> (==) "")
+                                        |> Maybe.withDefault True
+
+                                isRO =
+                                    Maybe.andThen .sourceId model.callsignCreateState == Just 2
+
+                                roFreqEmpty =
+                                    if isRO then
+                                        Maybe.andThen .radioFreq model.callsignCreateState
+                                            |> Maybe.map (String.trim >> (==) "")
+                                            |> Maybe.withDefault True
+
+                                    else
+                                        False
+                             in
+                             callsignEmpty || roFreqEmpty
+                            )
+                        |> Button.view
+                ]
+            ]
+        ]
+
+
+editCallsignSidebarContent : Shared.Model -> Model -> B.User -> Html Msg
+editCallsignSidebarContent shared model user =
+    div [ class "flex flex-col h-full" ]
+        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+            [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати позивний мережі" ]
+            , div [ class "space-y-4" ]
+                [ div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Позивний *" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть позивний"
+                        , value (Maybe.map .callsign model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just { s | callsign = String.toUpper v }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .mainRadioStation model.editCallsignState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | mainRadioStation = not s.mainRadioStation }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Головна радіостанція" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Джерело" ]
+                    , let
+                        sourceMenu =
+                            model.callsignCreateSources
+                                |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+
+                        selectItem =
+                            Maybe.andThen .sourceId model.editCallsignState
+                                |> Maybe.andThen
+                                    (\sourceId ->
+                                        ListX.find (\s -> s.id == sourceId) model.callsignCreateSources
+                                            |> Maybe.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
+                                    )
+                      in
+                      Html.map EditCallsignSourceSelMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectItem
+                                model.editCallsignSourceSelState
+                                sourceMenu
+                                "Виберіть джерело (необов'язково)"
+                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                    |> (\opts ->
+                                            { opts
+                                                | clearable = True
+                                            }
+                                       )
+                                )
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Підрозділ" ]
+                    , div [ class "flex items-center gap-2 p-2 border border-border rounded bg-gray-50 dark:bg-gray-700" ]
+                        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ]
+                            [ text
+                                (case Maybe.andThen .unitId model.editCallsignState of
+                                    Just unitId ->
+                                        case shared.masterUnits of
+                                            Success units ->
+                                                Dict.get unitId units
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault "Невідомий підрозділ"
+
+                                            _ ->
+                                                "Завантаження..."
+
+                                    Nothing ->
+                                        -- Показуємо назву першого підрозділу мережі
+                                        case model.editUnitsSelect.selected of
+                                            firstUnitId :: _ ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get firstUnitId units
+                                                            |> Maybe.map .name
+                                                            |> Maybe.withDefault "Підрозділ мережі"
+
+                                                    _ ->
+                                                        "Підрозділ мережі"
+
+                                            [] ->
+                                                "Підрозділ мережі"
+                                )
+                            ]
+                        , button
+                            [ type_ "button"
+                            , class "text-blue-600 hover:text-blue-800 text-sm"
+                            , title "Змінити підрозділ"
+                            , onClick ToggleEditCallsignUnitSelector
+                            ]
+                            [ text "✏️" ]
+                        , button
+                            [ type_ "button"
+                            , class "text-gray-600 hover:text-gray-800 text-sm"
+                            , title "Повернути підрозділ мережі"
+                            , onClick ResetEditCallsignUnit
+                            ]
+                            [ text "✖️" ]
+                        ]
+                    , if model.editCallsignUnitSelectorVisible then
+                        -- Показуємо селект підрозділів
+                        div [ class "mt-2" ]
+                            [ let
+                                unitMenu =
+                                    case shared.masterUnits of
+                                        Success units ->
+                                            Dict.values units |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+
+                                        _ ->
+                                            []
+
+                                selectedUnit =
+                                    Maybe.andThen .unitId model.editCallsignState
+                                        |> Maybe.andThen
+                                            (\unitId ->
+                                                case shared.masterUnits of
+                                                    Success units ->
+                                                        Dict.get unitId units
+                                                            |> Maybe.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+
+                                                    _ ->
+                                                        Nothing
+                                            )
+                              in
+                              Html.map EditCallsignUnitSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelectSingle
+                                        selectedUnit
+                                        model.editCallsignUnitSelState
+                                        unitMenu
+                                        "Виберіть підрозділ"
+                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                            |> (\opts ->
+                                                    { opts
+                                                        | clearable = True
+                                                    }
+                                               )
+                                        )
+                            ]
+
+                      else
+                        text ""
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .unitDeveloping model.editCallsignState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | unitDeveloping = not s.unitDeveloping }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Підрозділ в дорозвідці" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Посада" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть посаду (необов'язково)"
+                        , value (Maybe.andThen .position model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | position =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
+                    , textarea
+                        [ class "w-full p-2 border border-border rounded resize-none"
+                        , rows 3
+                        , placeholder "Введіть коментар (необов'язково)"
+                        , value (Maybe.andThen .comment model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        case maybeState of
+                                            Just s ->
+                                                Just
+                                                    { s
+                                                        | comment =
+                                                            if String.trim v == "" then
+                                                                Nothing
+
+                                                            else
+                                                                Just v
+                                                    }
+
+                                            Nothing ->
+                                                Nothing
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ div [ class "flex items-center" ]
+                        [ Checkbox.new
+                            { isChecked = Maybe.map .developing model.editCallsignState |> Maybe.withDefault False
+                            , onToggle =
+                                \_ ->
+                                    UpdateEditCallsignField
+                                        (\maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just { s | developing = not s.developing }
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                            }
+                            |> Checkbox.withContent [ text "Позначити як позивний в дорозвідці" ]
+                            |> Checkbox.view
+                        ]
+                    ]
+                , if Maybe.andThen .sourceId model.editCallsignState == Just 2 then
+                    div []
+                        [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота *" ]
+                        , input
+                            [ type_ "text"
+                            , class "w-full p-2 border border-border rounded"
+                            , placeholder "Введіть частоту (обов'язково для РО)"
+                            , value (Maybe.andThen .radioFreq model.editCallsignState |> Maybe.withDefault "")
+                            , onInput <|
+                                UpdateEditCallsignField
+                                    << (\v maybeState ->
+                                            case maybeState of
+                                                Just s ->
+                                                    Just
+                                                        { s
+                                                            | radioFreq =
+                                                                if String.trim v == "" then
+                                                                    Nothing
+
+                                                                else
+                                                                    Just v
+                                                        }
+
+                                                Nothing ->
+                                                    Nothing
+                                       )
+                            ]
+                            []
+                        ]
+
+                  else
+                    text ""
+
+                -- Display errors if any
+                , case Dict.get "general" model.editCallsignErrors of
+                    Just error ->
+                        div [ class "p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm" ]
+                            [ text error ]
+
+                    Nothing ->
+                        text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseEditCallsignSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.editCallsignSaving then
+                    Button.new { label = "Збереження...", onClick = SaveEditCallsignClicked }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Зберегти", onClick = SaveEditCallsignClicked }
+                        |> Button.withDisabled
+                            (let
+                                callsignEmpty =
+                                    Maybe.map .callsign model.editCallsignState
+                                        |> Maybe.map (String.trim >> (==) "")
+                                        |> Maybe.withDefault True
+
+                                isRO =
+                                    Maybe.andThen .sourceId model.editCallsignState == Just 2
+
+                                roFreqEmpty =
+                                    if isRO then
+                                        Maybe.andThen .radioFreq model.editCallsignState
+                                            |> Maybe.map (String.trim >> (==) "")
+                                            |> Maybe.withDefault True
+
+                                    else
+                                        False
+                             in
+                             callsignEmpty || roFreqEmpty
+                            )
+                        |> Button.view
+                ]
+            ]
+        ]

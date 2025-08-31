@@ -1,4 +1,4 @@
-module RerNetworks.Id_.FrequenciesTable exposing (view)
+module RerNetworks.Id_.FrequenciesTable exposing (freqCreateSidebarContent, freqEditSidebarContent, view)
 
 import Api
 import Auth
@@ -402,3 +402,355 @@ freqsTableConfig shared model user =
                    )
         , customizations = customizations
         }
+
+
+-- SIDEBAR CONTENT
+freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html Msg)
+freqEditSidebarContent shared model user freqId updateReq =
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Редагувати частоту" ]
+            , p [ class "text-sm text-muted-foreground" ] [ text ("Частота: " ++ freqId) ]
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип" ]
+                    , let
+                        selectedItem =
+                            Just <|
+                                Select.basicMenuItem
+                                    { item = model.freqEditKindSelect.selected
+                                    , label = NetworksUtils.networkKindToLabel model.freqEditKindSelect.selected
+                                    }
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map FreqKindSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.freqEditKindSelect.state
+                                model.freqEditKindSelect.items
+                                "Виберіть тип"
+                                defaultOptions
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Модуляція" ]
+                    , let
+                        selectedItem =
+                            Maybe.map
+                                (\modulationId ->
+                                    Select.basicMenuItem
+                                        { item = modulationId
+                                        , label =
+                                            case model.modulations of
+                                                Success modulations ->
+                                                    modulations
+                                                        |> List.filter (\mod -> mod.id == modulationId)
+                                                        |> List.head
+                                                        |> Maybe.map .name
+                                                        |> Maybe.withDefault ""
+
+                                                _ ->
+                                                    ""
+                                        }
+                                )
+                                model.freqEditModulationSelect.selected
+
+                        defaultOptions =
+                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                      in
+                      Html.map FreqModulationSelectMsg <|
+                        Styled.toUnstyled <|
+                            Le.Block.Select.renderSelectSingle
+                                selectedItem
+                                model.freqEditModulationSelect.state
+                                model.freqEditModulationSelect.items
+                                "Не вибрано"
+                                defaultOptions
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна з" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "date"
+                        , Time.millisToPosix updateReq.activeFrom
+                            |> Le.Time.renderDateF4 shared.timeZone
+                            |> value
+                        , onInput <|
+                            UpdateFreqEditSidebar
+                                << (\v ->
+                                        { updateReq
+                                            | activeFrom =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        updateReq.activeFrom
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+                , div [ class "space-y-2" ]
+                    [ Checkbox.new { isChecked = model.freqEditShowActiveTo, onToggle = \_ -> ToggleFreqEditShowActiveTo }
+                        |> Checkbox.withContent [ text "Частота вже не активна" ]
+                        |> Checkbox.view
+                    ]
+                , if model.freqEditShowActiveTo then
+                    div [ class "space-y-2" ]
+                        [ label [ class "text-sm font-medium text-foreground" ] [ text "Активна по" ]
+                        , input
+                            [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                            , type_ "date"
+                            , Maybe.map Time.millisToPosix updateReq.activeTo
+                                |> Maybe.map (Le.Time.renderDateF4 shared.timeZone)
+                                |> Maybe.withDefault ""
+                                |> value
+                            , onInput <|
+                                UpdateFreqEditSidebar
+                                    << (\v ->
+                                            { updateReq
+                                                | activeTo = updateActiveToFromInput v shared.timeZone updateReq.activeTo
+                                            }
+                                       )
+                            ]
+                            []
+                        ]
+
+                  else
+                    text ""
+                ]
+            ]
+        , div [ class "p-6 border-t border-border" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseFreqEditSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.freqEditSaving then
+                    Button.new { label = "Збереження...", onClick = SaveFreqEditSidebar }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Зберегти", onClick = SaveFreqEditSidebar }
+                        |> Button.view
+                ]
+            ]
+        ]
+    ]
+
+
+freqCreateSidebarContent : Shared.Model -> Model -> Auth.User -> List (Html Msg)
+freqCreateSidebarContent shared model user =
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Додати частоту" ]
+            , p [ class "text-sm text-muted-foreground" ] [ text "Заповніть інформацію про нову частоту" ]
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6 space-y-4" ]
+            [ div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота*" ]
+                , input
+                    [ type_ "text"
+                    , class <|
+                        "w-full p-2 border rounded "
+                            ++ (if String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing then
+                                    "border-red-500"
+
+                                else
+                                    "border-border"
+                               )
+                    , placeholder "наприклад, 146.5000"
+                    , value model.freqCreateState.freq
+                    , onInput (\freq -> UpdateFreqCreateField (\state -> { state | freq = freq }))
+                    ]
+                    []
+                , div [ class "mt-1 min-h-[20px]" ]
+                    [ if String.trim model.freqCreateState.freq == "" then
+                        div [ class "text-sm text-red-600" ]
+                            [ text "Це поле обов'язкове" ]
+
+                      else
+                        case model.freqCreateFormatError of
+                            Just error ->
+                                div [ class "text-sm text-red-600" ]
+                                    [ text error ]
+
+                            Nothing ->
+                                text ""
+                    ]
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Тип" ]
+                , let
+                    selectedItem =
+                        Select.basicMenuItem
+                            { item = model.freqCreateKindSelect.selected
+                            , label = NetworksUtils.networkKindToLabel model.freqCreateKindSelect.selected
+                            }
+
+                    defaultOptions =
+                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                  in
+                  Html.map FreqCreateKindSelectMsg <|
+                    Styled.toUnstyled <|
+                        Le.Block.Select.renderSelectSingle
+                            (Just selectedItem)
+                            model.freqCreateKindSelect.state
+                            model.freqCreateKindSelect.items
+                            "Виберіть тип"
+                            defaultOptions
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Модуляція" ]
+                , case model.modulations of
+                    Success modulations ->
+                        let
+                            selectedItem =
+                                Maybe.map
+                                    (\item ->
+                                        Select.basicMenuItem
+                                            { item = item
+                                            , label =
+                                                modulations
+                                                    |> List.filter (\mod -> mod.id == item)
+                                                    |> List.head
+                                                    |> Maybe.map .name
+                                                    |> Maybe.withDefault ""
+                                            }
+                                    )
+                                    model.freqCreateModulationSelect.selected
+
+                            defaultOptions =
+                                Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                        in
+                        Html.map FreqCreateModulationSelectMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    selectedItem
+                                    model.freqCreateModulationSelect.state
+                                    model.freqCreateModulationSelect.items
+                                    "Не вибрано"
+                                    defaultOptions
+
+                    _ ->
+                        div [ class "text-sm text-muted-foreground" ] [ text "Завантаження модуляцій..." ]
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки" ]
+                , textarea
+                    [ class "w-full p-2 border border-border rounded resize-none"
+                    , rows 3
+                    , placeholder "Введіть обґрунтування прив'язки"
+                    , value model.freqCreateDescriptionInp
+                    , onInput FreqCreateDescriptionInputChangedByUser
+                    ]
+                    []
+                ]
+            , div []
+                [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна з:" ]
+                , input
+                    [ type_ "date"
+                    , class "w-full p-2 border border-border rounded"
+                    , case model.freqCreateState.activeFrom of
+                        Just millis ->
+                            value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                        Nothing ->
+                            value ""
+                    , onInput <|
+                        UpdateFreqCreateField
+                            << (\v state ->
+                                    { state
+                                        | activeFrom =
+                                            case Le.Time.parseDateParts v of
+                                                Err _ ->
+                                                    state.activeFrom
+
+                                                Ok parts ->
+                                                    Time.Extra.partsToPosix shared.timeZone parts
+                                                        |> Time.posixToMillis
+                                                        |> Just
+                                    }
+                               )
+                    ]
+                    []
+                ]
+            , div []
+                [ Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
+                    |> Checkbox.withContent [ text "Частота вже не активна" ]
+                    |> Checkbox.view
+                ]
+            , if model.freqCreateShowActiveTo then
+                div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "Активна по:" ]
+                    , input
+                        [ type_ "date"
+                        , class "w-full p-2 border border-border rounded"
+                        , case model.freqCreateState.activeTo of
+                            Just millis ->
+                                value <| Le.Time.renderDateF4 shared.timeZone <| Time.millisToPosix millis
+
+                            Nothing ->
+                                value ""
+                        , onInput <|
+                            UpdateFreqCreateField
+                                << (\v state ->
+                                        { state
+                                            | activeTo =
+                                                case Le.Time.parseDateParts v of
+                                                    Err _ ->
+                                                        state.activeTo
+
+                                                    Ok parts ->
+                                                        Time.Extra.partsToPosix shared.timeZone parts
+                                                            |> Time.posixToMillis
+                                                            |> Just
+                                        }
+                                   )
+                        ]
+                        []
+                    ]
+
+              else
+                text ""
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseFreqCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , if model.freqEditSaving then
+                    Button.new { label = "Додавання...", onClick = AddFreqToNetwork }
+                        |> Button.withDisabled True
+                        |> Button.view
+
+                  else
+                    Button.new { label = "Додати", onClick = AddFreqToNetwork }
+                        |> Button.withDisabled
+                            (String.trim model.freqCreateState.freq == "" || model.freqCreateFormatError /= Nothing)
+                        |> Button.view
+                ]
+            ]
+        ]
+    ]
+
+
+updateActiveToFromInput : String -> Time.Zone -> Maybe Int -> Maybe Int
+updateActiveToFromInput input timeZone currentValue =
+    case ( String.isEmpty input, Le.Time.parseDateParts input ) of
+        ( True, _ ) ->
+            Nothing
+
+        ( False, Err _ ) ->
+            currentValue
+
+        ( False, Ok parts ) ->
+            Time.Extra.partsToPosix timeZone parts
+                |> Time.posixToMillis
+                |> Just
