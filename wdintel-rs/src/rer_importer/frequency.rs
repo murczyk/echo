@@ -428,7 +428,8 @@ mod tests {
 
 — 5 минут 4, ХИТМАН окончание."#;
         let res = extract_freq(input).unwrap();
-        assert_eq!(res, None);
+        let expected = Some("600.0100".to_string());
+        assert_eq!(res, expected);
     }
 
     #[test]
@@ -441,7 +442,8 @@ mod tests {
 
 — 5 минут 4, ХИТМАН окончание."#;
         let res = extract_freq(input).unwrap();
-        assert_eq!(res, None);
+        let expected = Some("800.0100".to_string());
+        assert_eq!(res, expected);
     }
 
     #[test]
@@ -456,6 +458,53 @@ mod tests {
         let expected = Some("274.7500".to_string());
         assert_eq!(res, expected);
     }
+
+    #[test]
+    fn extract_freq_special_12() {
+        let input = r#"08.03, 12:35:23
+95.6100
+УКХ р/м бойового управління польотами авіації в зоні відповідальності 338 ртп
+ХИТМАН
+НВ
+
+— 5 минут 4, ХИТМАН окончание."#;
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn extract_freq_special_13() {
+        let input = r#"96.5200 п65
+УКХ р/м управління йм. 1 мсб 71 мсп 42 мсд 58 А (НОВОПРОКОПІВКА);
+ОРДА
+МЕДВЕДЬ
+
+— Увидели пидарасов, опознали пидарасов, открывайте по ним огонь 
+— Медведь я Орда, что там горит?
+— Я как понял, это были игрушки для Скабаря и Танкиста. Ой, пакеты для Скабаря и Танкиста.
+— Блядь, Медведь ты слышал?"#;
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn extract_freq_special_14() {
+        let input = r#"2024.02.23
+19:15:00
+1055.2750
+ЄГОРІВКА- ШЕВЧЕНКО-ПЕТРІВСЬКЕ-ЄВГЕНІВКА
+УКХ радіомережа управління зрадн йм. 40 обрмп
+
+- Я говорю коробочку запустили запустили вас надо отвозить вопросительный?
+- Надо
+- Когда готовы будете?
+- .. как принял прием
+- Плюс
+
+(запит чи треба відвозити о/с)"#;
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, None);
+    }    
 
     #[test]
     fn extract_etalon_01() {
