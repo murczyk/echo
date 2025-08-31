@@ -337,6 +337,7 @@ async fn update_network_callsign_not_linked(
 
     let mut network_callsign_record = network_callsign.into_active_model();
     network_callsign_record.sigint_network_id = Set(req.network_id);
+    network_callsign_record.sigint_callsign_id = NotSet;
     network_callsign_record.sigint_callsign =
         Set(req.callsign.clone().trim().to_lowercase());
     network_callsign_record.position = Set(req.position.clone());
