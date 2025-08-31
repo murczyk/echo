@@ -65,6 +65,7 @@ pub mod sigint_network;
 pub mod sigint_network_activity_history;
 pub mod sigint_network_aor;
 pub mod sigint_network_callsign;
+pub mod sigint_network_callsign_changelog;
 pub mod sigint_network_changelog;
 pub mod sigint_network_description;
 pub mod sigint_network_freq;

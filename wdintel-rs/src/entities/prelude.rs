@@ -62,6 +62,7 @@ pub use super::sigint_network::Entity as SigintNetwork;
 pub use super::sigint_network_activity_history::Entity as SigintNetworkActivityHistory;
 pub use super::sigint_network_aor::Entity as SigintNetworkAor;
 pub use super::sigint_network_callsign::Entity as SigintNetworkCallsign;
+pub use super::sigint_network_callsign_changelog::Entity as SigintNetworkCallsignChangelog;
 pub use super::sigint_network_changelog::Entity as SigintNetworkChangelog;
 pub use super::sigint_network_description::Entity as SigintNetworkDescription;
 pub use super::sigint_network_freq::Entity as SigintNetworkFreq;

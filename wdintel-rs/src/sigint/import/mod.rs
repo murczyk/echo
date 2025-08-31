@@ -104,6 +104,10 @@ fn describe_etalon(etalon: &EtalonImportResult) {
         print_import_stats(&etalon.sigint_network_callsign)
     );
     info!(
+        "- sigint_network_callsign_changelog records: {}",
+        print_import_stats(&etalon.sigint_network_callsign_changelog)
+    );
+    info!(
         "- sigint_network_aor records: {}",
         print_import_stats(&etalon.sigint_network_aor)
     );
@@ -237,6 +241,11 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    let sigint_network_callsign_changelog =
+        sigint_network_callsign_changelog::Entity::find()
+            .all(txn)
+            .await
+            .context(h!())?;
     let area_of_responsibility = area_of_responsibility::Entity::find()
         .all(txn)
         .await
@@ -271,6 +280,7 @@ where
         sigint_post,
         sigint_network_post,
         sigint_network_callsign,
+        sigint_network_callsign_changelog,
     };
     Ok(result)
 }
@@ -505,6 +515,18 @@ async fn import_etalon_data(
         )
         .await
         .context(h!())?;
+    txn = maybe_commit(txn, dbx, dry_run).await.context(h!())?;
+
+    let sigint_network_callsign_changelog_import_result =
+        import_sigint_network_callsign_changelog_data(
+            &txn,
+            origin_id,
+            data.sigint_network_callsign_changelog,
+            sigint_network_callsign_import_result.ids_map.clone(),
+            &mut import_warnings,
+        )
+        .await
+        .context(h!())?;
     maybe_commit(txn, dbx, dry_run).await.context(h!())?;
 
     let etalon_import_result = EtalonImportResult {
@@ -528,6 +550,8 @@ async fn import_etalon_data(
         sigint_post: sigint_post_import_result,
         sigint_network_post: sigint_network_post_import_result,
         sigint_network_callsign: sigint_network_callsign_import_result,
+        sigint_network_callsign_changelog:
+            sigint_network_callsign_changelog_import_result,
         sigint_network_aor: sigint_network_aor_import_result,
         sigint_zone_aor: sigint_zone_aor_import_result,
     };
@@ -1361,6 +1385,73 @@ where
     })
 }
 
+async fn import_sigint_network_callsign_changelog_data<'a, 'async_trait, C>(
+    txn: &C,
+    origin_id: i64,
+    recs: Vec<sigint_network_callsign_changelog::Model>,
+    sigint_network_callsign_ids_map: BTreeMap<i64, i64>,
+    import_warnings: &mut Vec<String>,
+) -> anyhow::Result<ImportResult<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut num_created = 0;
+    let mut num_updated = 0;
+    let existing_record_ids =
+        query::find_existing_sigint_network_callsign_changelogs(
+            txn, &recs, origin_id,
+        )
+        .await
+        .context(h!())?;
+    let mut result = BTreeMap::new();
+    for rec in recs {
+        let Some(sigint_network_callsign_id) = sigint_network_callsign_ids_map
+            .get(&rec.sigint_network_callsign_id)
+            .cloned()
+        else {
+            import_warnings.push(format!(
+                "sigint_callsign with id {} not found",
+                rec.sigint_network_callsign_id
+            ));
+            continue;
+        };
+        let (id, new_record) = match existing_record_ids.get(&rec.id) {
+            None => (NotSet, true),
+            Some(id) => (Set(*id), false),
+        };
+
+        let model = sigint_network_callsign_changelog::ActiveModel {
+            original_id: Set(Some(rec.id)),
+            id,
+            sigint_network_callsign_id: Set(sigint_network_callsign_id),
+            login: Set("system".to_string()),
+            action: Set(rec.action),
+            created_at: Set(rec.created_at),
+            req: Set(rec.req),
+            sigint_origin_id: Set(Some(origin_id)),
+            new_value: Set(rec.new_value),
+            old_value: Set(rec.old_value),
+        };
+
+        let new_rec = if new_record {
+            num_created += 1;
+            model.insert(txn)
+        } else {
+            num_updated += 1;
+            model.update(txn)
+        }
+        .await
+        .context(h!())?;
+
+        let new_id = new_rec.id;
+        result.insert(rec.id, new_id);
+    }
+    Ok(ImportResult {
+        ids_map: result,
+        num_created,
+        num_updated,
+    })
+}
 async fn import_sigint_network_post_data<'a, 'async_trait, C>(
     txn: &C,
     origin_id: i64,
