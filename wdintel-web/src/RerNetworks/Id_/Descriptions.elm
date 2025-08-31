@@ -497,15 +497,17 @@ viewDeleteConfirmation model =
 
 -- SIDEBAR CONTENT
 
-
+confirmationCreateSidebar : B.Network -> Model -> Auth.User -> Shared.Model -> Html DescriptionsMsg
 confirmationCreateSidebar network model user shared =
     Sidebar.view True CloseConfirmationCreateSidebar [ confirmationCreateSidebarContent shared model user network ]
 
 
+signsCreateSidebar : B.Network -> Model -> Auth.User -> Shared.Model -> Html DescriptionsMsg
 signsCreateSidebar network model user shared =
     Sidebar.view True CloseSignsCreateSidebar [ signsCreateSidebarContent shared model user network ]
 
 
+descriptionEditCloseSidebar : B.NetworkDescription -> B.Network -> Model -> Auth.User -> Shared.Model -> Html DescriptionsMsg
 descriptionEditCloseSidebar description network model user shared =
     Sidebar.view True CloseEditDescriptionSidebar [ editDescriptionSidebarContent shared model user network description ]
 

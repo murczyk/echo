@@ -2224,6 +2224,7 @@ view user shared model =
                     (case model.network of
                         Success network ->
                             contentBlock user shared network model
+                                --TODO: виглядає тупо, ми в сайдбар ТРУ передаємо завжди
                                 ++ (if model.confirmationCreateSidebar then
                                         [ Html.map Descriptions <| Descriptions.confirmationCreateSidebar network model user shared ]
 
