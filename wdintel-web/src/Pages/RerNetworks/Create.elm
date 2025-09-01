@@ -319,6 +319,7 @@ init route shared () =
         , E.loadPostsFromShared { sortBy = Nothing }
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
         , E.getModulations ModulationsReturnedByApi
+        , E.map Callsigns CallsignsTables.initLoad
         ]
     )
 
@@ -594,9 +595,15 @@ update shared msg model =
                     E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
 
                 Nothing ->
-                    FrequenciesTable.loadFreqsInit network.id
-                        |> List.map (E.map Frequencies)
-                        |> E.batch
+                    E.batch
+                        ([]
+                            ++ (FrequenciesTable.loadFreqsInit network.id
+                                    |> List.map (E.map Frequencies)
+                               )
+                            ++ (CallsignsTables.getCatalogAndNetworkCallsigns network.id
+                                    |> List.map (E.map Callsigns)
+                               )
+                        )
             )
 
         NetworkCreated (Err error) ->
@@ -656,12 +663,11 @@ view user shared model =
         [ div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-screen" ]
             [ div [ class "w-[85vw] mx-auto py-[16px]" ]
                 [ viewHeader model
-                , viewNetworkCreatedInfo model
                 , viewMainLayout shared model
                 , if model.networkCreated /= Nothing then
                     div []
                         [ Html.map Frequencies <| FrequenciesTable.view model user shared
-                        , viewCallsignsSection shared model
+                        , Html.map Callsigns <| CallsignsTables.view model user shared
                         ]
 
                   else
@@ -672,6 +678,9 @@ view user shared model =
             , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
             , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
             , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+            , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
+            , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
+            , Html.map Callsigns <| CallsignsTables.deleteCallsignModal model
             ]
         ]
     }
@@ -692,31 +701,6 @@ viewMainLayout shared model =
         [ viewLeftColumn shared model
         , viewRightColumn model
         ]
-
-
-viewNetworkCreatedInfo : Model -> Html Msg
-viewNetworkCreatedInfo model =
-    case model.networkCreated of
-        Just network ->
-            div [ class "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6" ]
-                [ div [ class "flex items-center justify-between" ]
-                    [ div [ class "flex items-center gap-3" ]
-                        [ i [ class "bi bi-check-circle text-green-600 text-xl" ] []
-                        , div []
-                            [ h3 [ class "text-lg font-semibold text-green-800 dark:text-green-200" ]
-                                [ text "Мережу створено успішно!" ]
-                            , p [ class "text-green-700 dark:text-green-300 mt-1" ]
-                                [ text ("ID: " ++ String.fromInt network.id ++ " | Назва: " ++ network.name) ]
-                            ]
-                        ]
-                    ]
-                , Button.new { label = "Переглянути мережу", onClick = CreateClicked }
-                    |> Button.withStyleSecondary
-                    |> Button.view
-                ]
-
-        Nothing ->
-            text ""
 
 
 viewLeftColumn : Shared.Model -> Model -> Html Msg
@@ -962,11 +946,6 @@ viewSignalsBlock =
         ]
 
 
-viewCallsignsSection : Shared.Model -> Model -> Html Msg
-viewCallsignsSection shared model =
-    text ""
-
-
 viewActionButtons : Model -> Html Msg
 viewActionButtons model =
     let
@@ -1008,11 +987,6 @@ viewActionButtons model =
 
 
 -- Helper functions for working with Maybe (List AddNetworkFreq)
-
-
-getFreqsList : B.CreateNetworkReq -> List B.AddNetworkFreq
-getFreqsList req =
-    Maybe.withDefault [] req.freqs
 
 
 createMainInfoBlock : B.CreateNetworkReq -> Shared.Model -> Model -> List (Html Msg)
