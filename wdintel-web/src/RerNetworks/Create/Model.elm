@@ -58,7 +58,6 @@ type ShowAllPopupFor
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
     , createNetworkState : B.CreateNetworkReq
     , kindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
     , unitSelect : Le.Block.Select.SelectType Int

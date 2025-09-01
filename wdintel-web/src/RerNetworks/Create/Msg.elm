@@ -38,8 +38,7 @@ import View exposing (View)
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | UpdateNetworkState (B.CreateNetworkReq -> B.CreateNetworkReq)
+    = UpdateNetworkState (B.CreateNetworkReq -> B.CreateNetworkReq)
     | KindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
     | UnitSelectMsg (Select.Msg Int)
     | PostsSelectMsg (Select.Msg Int)
@@ -54,6 +53,7 @@ type Msg
     | ValidateField String
     | NetworkCreated (Result ApiError B.Network)
     | Frequencies FrequenciesMsg
+    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
 
 
 type FrequenciesMsg

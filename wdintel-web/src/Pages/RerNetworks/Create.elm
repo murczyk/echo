@@ -7,6 +7,7 @@ import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
 import Components.Sidebar as Sidebar
+import Components.Table as Table
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -19,6 +20,7 @@ import Layouts
 import Le.Block.Select
 import Le.Block.Toast
 import Le.Components exposing (fieldError, isInvalidCls)
+import Le.ErrorHandling
 import Le.NetworksUtils as NetworksUtils
 import Le.RemoteData as RD exposing (RemoteData(..))
 import Le.Time
@@ -26,7 +28,6 @@ import Le.Types exposing (ApiError)
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
 import RerNetworks.Create.FrequenciesTable as FrequenciesTable
-import RerNetworks.Create.Model
 import RerNetworks.Create.Model exposing (FreqActivityFilter(..), Mode(..))
 import RerNetworks.Create.Msg exposing (Msg(..))
 import Route exposing (Route)
@@ -37,7 +38,6 @@ import Shared.Model exposing (isDarkMode)
 import Time
 import Time.Extra
 import View exposing (View)
-import Components.Table as Table
 
 
 type alias ValidationResult =
@@ -134,7 +134,6 @@ init route shared () =
             Maybe.withDefault "" freqFromQuery
     in
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
       , createNetworkState =
             { freqs = Nothing
             , unitIds = Nothing
@@ -262,6 +261,7 @@ init route shared () =
             }
         , E.loadPostsFromShared { sortBy = Nothing }
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
+        , E.getModulations ModulationsReturnedByApi
         ]
     )
 
@@ -283,15 +283,6 @@ update shared msg model =
                     FrequenciesTable.update shared freqsMsg model
             in
             ( m1, E.map Frequencies freqsEff )
-
-        ToastMsg imsg ->
-            let
-                ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
-            in
-            ( { model | toasts = im }
-            , E.sendCmd <| Cmd.map ToastMsg icmds
-            )
 
         UpdateNetworkState updateFunc ->
             ( { model | createNetworkState = updateFunc model.createNetworkState }
@@ -533,16 +524,51 @@ update shared msg model =
             ( { model | formErrors = updatedErrors }, E.none )
 
         NetworkCreated (Ok network) ->
-            ( { model | creatingNetwork = False }
-            , E.batch
-                [ E.sendCmd <| Le.Block.Toast.addWarning ToastMsg "Мережу успішно створено"
-                , E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
-                ]
+            ( { model | creatingNetwork = False, networkCreated = Just network }
+            , case model.networkCreated of
+                Just network_ ->
+                    E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+
+                Nothing ->
+                    FrequenciesTable.loadFreqsInit network.id
+                        |> List.map (E.map Frequencies)
+                        |> E.batch
             )
 
         NetworkCreated (Err error) ->
             ( { model | creatingNetwork = False }
-            , E.sendCmd <| Le.Block.Toast.addError ToastMsg "Помилка при створенні мережі"
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення мережі" error
+            )
+
+        ModulationsReturnedByApi (Err e) ->
+            ( { model | modulations = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            )
+
+        ModulationsReturnedByApi (Ok res) ->
+            let
+                modulationSelect =
+                    model.freqEditModulationSelect
+
+                updatedModulationSelect =
+                    { modulationSelect
+                        | items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
+                    }
+
+                freqCreateModulationSelect =
+                    model.freqCreateModulationSelect
+
+                updatedFreqCreateModulationSelect =
+                    { freqCreateModulationSelect
+                        | items = List.map (\mod -> Select.basicMenuItem { item = mod.id, label = mod.name }) res
+                    }
+            in
+            ( { model
+                | modulations = Success res
+                , freqEditModulationSelect = updatedModulationSelect
+                , freqCreateModulationSelect = updatedFreqCreateModulationSelect
+              }
+            , E.none
             )
 
 
@@ -563,23 +589,26 @@ view : Auth.User -> Shared.Model -> Model -> View Msg
 view user shared model =
     { title = "Створення нової мережі"
     , body =
-        [ Le.Block.Toast.view ToastMsg model.toasts <|
-            div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-screen" ]
-                [ div [ class "w-[85vw] mx-auto py-[16px]" ]
-                    [ viewHeader model
-                    , viewNetworkCreatedInfo model
-                    , viewMainLayout shared model
-                    , if model.networkCreated /= Nothing then
-                        div []
-                            [ viewFrequenciesSection shared model
-                            , viewCallsignsSection shared model
-                            ]
+        [ div [ class "bg-[#F5F7F9] dark:bg-[#0E0E11] rer-network min-h-screen" ]
+            [ div [ class "w-[85vw] mx-auto py-[16px]" ]
+                [ viewHeader model
+                , viewNetworkCreatedInfo model
+                , viewMainLayout shared model
+                , if model.networkCreated /= Nothing then
+                    div []
+                        [ Html.map Frequencies <| FrequenciesTable.view model user shared
+                        , viewCallsignsSection shared model
+                        ]
 
-                      else
-                        text ""
-                    , viewActionButtons model
-                    ]
+                  else
+                    text ""
+                , viewActionButtons model
                 ]
+            , Html.map Frequencies <| FrequenciesTable.editSidebar model user shared
+            , Html.map Frequencies <| FrequenciesTable.createSidebar model user shared
+            , Html.map Frequencies <| FrequenciesTable.deleteFreqConfirmationModal model
+            , Html.map Frequencies <| FrequenciesTable.freqActivityChartDetailed model shared
+            ]
         ]
     }
 
@@ -867,11 +896,6 @@ viewSignalsBlock =
                 [ text "Сигнали будуть доступні після створення мережі" ]
             ]
         ]
-
-
-viewFrequenciesSection : Shared.Model -> Model -> Html Msg
-viewFrequenciesSection shared model =
-    text ""
 
 
 viewCallsignsSection : Shared.Model -> Model -> Html Msg
