@@ -1,4 +1,12 @@
-module RerNetworks.Id_.FrequenciesTable exposing (freqCreateSidebarContent, freqEditSidebarContent, view)
+module RerNetworks.Id_.FrequenciesTable exposing
+    ( createSidebar
+    , deleteFreqConfirmationModal
+    , editSidebar
+    , freqActivityChartDetailed
+    , loadFreqsInit
+    , update
+    , view
+    )
 
 import Api
 import Auth
@@ -40,7 +48,7 @@ import Le.Utils exposing (networkKindVHFMapping)
 import List.Extra as ListX
 import Page exposing (Page)
 import RerNetworks.Id_.Model exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
-import RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
+import RerNetworks.Id_.Msg as Msgs exposing (FrequenciesMsg(..), Msg)
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -51,6 +59,533 @@ import Time
 import Time.Extra
 import Url.Builder
 import View exposing (View)
+
+
+loadFreqsInit networkId =
+    [ E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = networkId }
+    , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId }
+    ]
+
+
+update : Shared.Model -> FrequenciesMsg -> Model -> ( Model, Effect FrequenciesMsg )
+update shared msg model =
+    case msg of
+        NetworkFreqsActivityReturnedByApi (Err e) ->
+            ( { model | networkFreqsActivity = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності частот мережі" e
+            )
+
+        NetworkFreqsActivityReturnedByApi (Ok res) ->
+            ( { model | networkFreqsActivity = Success res }, E.none )
+
+        FreqsEditStartedByUser ->
+            case ( model.freqs, model.network ) of
+                ( Success freqs, Success network ) ->
+                    let
+                        editFreqsDict =
+                            List.map
+                                (\f ->
+                                    ( f.freq
+                                    , { networkId = network.id
+                                      , freq = f.freq
+                                      , kind = Maybe.withDefault "VHF" f.kind
+                                      , modulationId = f.modulationId
+                                      , activeFrom = f.activeFrom
+                                      , activeTo = f.activeTo
+                                      }
+                                    )
+                                )
+                                freqs
+                                |> Dict.fromList
+                    in
+                    ( { model
+                        | freqsEditingState =
+                            Editing editFreqsDict
+                      }
+                    , E.none
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqsEditSavedByUser ->
+            let
+                compareTwoFreqs : B.UpdateNetworkFreqReq -> B.NetworkFreqsRes -> Bool
+                compareTwoFreqs updateReq originalFreq =
+                    updateReq.freq
+                        == originalFreq.freq
+                        && updateReq.activeFrom
+                        == originalFreq.activeFrom
+                        && updateReq.activeTo
+                        == originalFreq.activeTo
+
+                ( m1, eff1 ) =
+                    case model.freqsEditingState of
+                        Editing editingDict ->
+                            let
+                                effects =
+                                    Dict.toList editingDict
+                                        |> List.map Tuple.second
+                                        |> List.filterMap
+                                            (\updateFreqReq ->
+                                                case model.freqs of
+                                                    Success freqs ->
+                                                        ListX.find (\f -> f.freq == updateFreqReq.freq) freqs
+                                                            |> Maybe.andThen
+                                                                (\originalFreq ->
+                                                                    if compareTwoFreqs updateFreqReq originalFreq then
+                                                                        Nothing
+
+                                                                    else
+                                                                        Just updateFreqReq
+                                                                )
+
+                                                    _ ->
+                                                        Nothing
+                                            )
+                                        |> List.map (\updateFreqReq -> E.updateNetworkFreq FreqUpdatedByApi updateFreqReq)
+                            in
+                            ( { model
+                                | freqsEditingState =
+                                    if List.length effects > 0 then
+                                        model.freqsEditingState
+
+                                    else
+                                        Readonly
+                              }
+                            , E.batch effects
+                            )
+
+                        Readonly ->
+                            ( model, E.none )
+            in
+            ( m1
+            , eff1
+            )
+
+        FreqsEditCanceledByUser ->
+            ( { model | freqsEditingState = Readonly }, E.none )
+
+        FreqsEditingMsg updFreqState ->
+            ( { model
+                | freqsEditingState =
+                    case model.freqsEditingState of
+                        Editing editingFreqsDict ->
+                            Editing (Dict.insert updFreqState.freq updFreqState editingFreqsDict)
+
+                        Readonly ->
+                            Readonly
+              }
+            , E.none
+            )
+
+        FreqUpdatedByApi (Err e) ->
+            ( { model | freqEditSaving = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти" e
+            )
+
+        FreqUpdatedByApi (Ok network) ->
+            ( { model
+                | network = Success network
+                , freqsEditingState = Readonly
+                , freqEditSaving = False
+                , freqEditSidebar = Nothing
+              }
+            , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+            )
+
+        FreqsActivityFilterChangedByUser filter ->
+            ( { model | freqsActivityFilter = filter }, E.none )
+
+        SetFreqsTableState newState ->
+            ( { model | freqsTableState = newState }, E.none )
+
+        OpenFreqEditSidebar freqId updateReq ->
+            let
+                -- Оновлюємо селекти з даними з частоти
+                kindSelect =
+                    model.freqEditKindSelect
+
+                updatedKindSelect =
+                    { kindSelect | selected = NetworksUtils.networkKindFromString updateReq.kind }
+
+                modulationSelect =
+                    model.freqEditModulationSelect
+
+                updatedModulationSelect =
+                    { modulationSelect | selected = updateReq.modulationId }
+
+                -- Встановлюємо freqEditShowActiveTo на основі того, чи є activeTo
+                showActiveTo =
+                    updateReq.activeTo /= Nothing
+            in
+            ( { model
+                | freqEditSidebar = Just ( freqId, updateReq )
+                , freqEditKindSelect = updatedKindSelect
+                , freqEditModulationSelect = updatedModulationSelect
+                , freqEditShowActiveTo = showActiveTo
+              }
+            , E.none
+            )
+
+        CloseFreqEditSidebar ->
+            ( { model | freqEditSidebar = Nothing, freqEditShowActiveTo = False }, E.none )
+
+        UpdateFreqEditSidebar updateReq ->
+            ( { model | freqEditSidebar = Maybe.map (\( freqId, _ ) -> ( freqId, updateReq )) model.freqEditSidebar }, E.none )
+
+        SaveFreqEditSidebar ->
+            case model.freqEditSidebar of
+                Just ( _, updateReq ) ->
+                    ( { model | freqEditSaving = True }
+                    , E.updateNetworkFreq FreqUpdatedByApi updateReq
+                    )
+
+                Nothing ->
+                    ( model, E.none )
+
+        OpenFreqDetailPopup freqId ->
+            ( { model | freqDetailPopup = Just freqId }, E.none )
+
+        CloseFreqDetailPopup ->
+            ( { model | freqDetailPopup = Nothing }, E.none )
+
+        FreqsReturnedByApi (Err e) ->
+            ( { model | freqs = Failure e }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e
+            )
+
+        FreqsReturnedByApi (Ok res) ->
+            let
+                callsigns =
+                    List.filterMap .callsigns res.freqs
+                        |> List.concat
+
+                addConfirmationFreqSelect =
+                    model.addConfirmationFreqSelect
+
+                acfs2 =
+                    { addConfirmationFreqSelect | items = List.map .freq res.freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq }) }
+            in
+            ( { model | freqs = Success res.freqs, addConfirmationFreqSelect = acfs2 }, E.getCallsignsInfoShared callsigns )
+
+        FreqKindSelectMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.freqEditKindSelect.state
+
+                updatedNetworkKind =
+                    Le.Block.Select.singleUpdWithDefault mAct model.freqEditKindSelect.selected
+
+                kindSelect =
+                    model.freqEditKindSelect
+
+                kindSelect2 =
+                    { kindSelect
+                        | state = imodel
+                        , selected = updatedNetworkKind
+                    }
+
+                updatedSidebar =
+                    case model.freqEditSidebar of
+                        Just ( freqId, updateReq ) ->
+                            Just ( freqId, { updateReq | kind = NetworksUtils.networkKindToString updatedNetworkKind } )
+
+                        Nothing ->
+                            model.freqEditSidebar
+            in
+            ( { model
+                | freqEditKindSelect = kindSelect2
+                , freqEditSidebar = updatedSidebar
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    FreqKindSelectMsg
+                    icmd
+            )
+
+        FreqModulationSelectMsg imsg ->
+            let
+                ( mAct, imodel, icmd ) =
+                    Select.update imsg model.freqEditModulationSelect.state
+
+                updatedModulationId =
+                    Le.Block.Select.singleUpd mAct model.freqEditModulationSelect.selected
+
+                modulationSelect =
+                    model.freqEditModulationSelect
+
+                modulationSelect2 =
+                    { modulationSelect
+                        | state = imodel
+                        , selected = updatedModulationId
+                    }
+
+                updatedSidebar =
+                    case model.freqEditSidebar of
+                        Just ( freqId, updateReq ) ->
+                            Just ( freqId, { updateReq | modulationId = updatedModulationId } )
+
+                        Nothing ->
+                            model.freqEditSidebar
+            in
+            ( { model
+                | freqEditModulationSelect = modulationSelect2
+                , freqEditSidebar = updatedSidebar
+              }
+            , E.sendCmd <|
+                Cmd.map
+                    FreqModulationSelectMsg
+                    icmd
+            )
+
+        ToggleFreqEditShowActiveTo ->
+            let
+                newShowActiveTo =
+                    not model.freqEditShowActiveTo
+
+                updatedModel =
+                    if not newShowActiveTo then
+                        -- очистити activeTo при знятті чекбокса
+                        case model.freqEditSidebar of
+                            Just ( freqId, updateReq ) ->
+                                let
+                                    newUpdateReq =
+                                        { updateReq | activeTo = Nothing }
+                                in
+                                { model | freqEditSidebar = Just ( freqId, newUpdateReq ) }
+
+                            Nothing ->
+                                model
+
+                    else
+                        model
+            in
+            ( { updatedModel | freqEditShowActiveTo = newShowActiveTo }
+            , E.none
+            )
+
+        DeleteFreqClickedByUser freqId freqStr ->
+            ( { model | deleteFreqConfirmation = Just ( freqId, freqStr ) }
+            , E.none
+            )
+
+        DeleteFreqCanceledByUser ->
+            ( { model | deleteFreqConfirmation = Nothing }
+            , E.none
+            )
+
+        DeleteFreqConfirmedByUser ->
+            case ( model.network, model.deleteFreqConfirmation ) of
+                ( Success network, Just ( freqId, _ ) ) ->
+                    ( { model | deleteFreqLoading = True, deleteFreqConfirmation = Nothing }
+                    , E.removeFreqFromNetwork DeleteFreqReturnedByApi { id = Just freqId, networkId = Nothing, freq = Nothing }
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        DeleteFreqReturnedByApi (Err e) ->
+            ( { model | deleteFreqLoading = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти" e
+            )
+
+        DeleteFreqReturnedByApi (Ok network) ->
+            ( { model | deleteFreqLoading = False, network = Success network }
+            , E.batch
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
+                ]
+            )
+
+        OpenFreqCreateSidebar ->
+            ( { model | freqCreateSidebar = True }, E.none )
+
+        CloseFreqCreateSidebar ->
+            ( { model
+                | freqCreateSidebar = False
+                , freqCreateDescriptionInp = ""
+                , freqCreateFormatError = Nothing
+                , freqCreateShowActiveTo = False
+                , freqCreateState =
+                    { freq = ""
+                    , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
+                    , modulationId = Nothing
+                    , description = Nothing
+                    , activeFrom = Nothing
+                    , activeTo = Nothing
+                    }
+              }
+            , E.none
+            )
+
+        UpdateFreqCreateField updateFunc ->
+            let
+                newFreqState =
+                    updateFunc model.freqCreateState
+
+                formatError =
+                    if String.trim newFreqState.freq == "" then
+                        Nothing
+
+                    else if not (NetworksUtils.validateFrequencyFormat newFreqState.freq) then
+                        Just "Невірний формат частоти (наприклад: 146.5000)"
+
+                    else
+                        Nothing
+            in
+            ( { model
+                | freqCreateState = newFreqState
+                , freqCreateFormatError = formatError
+              }
+            , E.none
+            )
+
+        FreqCreateKindSelectMsg selectMsg ->
+            let
+                ( mAct, newState, selectCmd ) =
+                    Select.update selectMsg model.freqCreateKindSelect.state
+
+                updatedKind =
+                    Le.Block.Select.singleUpdWithDefault mAct model.freqCreateKindSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.freqCreateKindSelect.items
+                    , selected = updatedKind
+                    }
+
+                oldFreqState =
+                    model.freqCreateState
+
+                newFreqState =
+                    { oldFreqState | kind = NetworksUtils.networkKindToString updatedKind }
+            in
+            ( { model | freqCreateKindSelect = newSelect, freqCreateState = newFreqState }
+            , E.sendCmd <| Cmd.map FreqCreateKindSelectMsg selectCmd
+            )
+
+        FreqCreateModulationSelectMsg selectMsg ->
+            let
+                ( mAct, newState, selectCmd ) =
+                    Select.update selectMsg model.freqCreateModulationSelect.state
+
+                updatedModulation =
+                    Le.Block.Select.singleUpd mAct model.freqCreateModulationSelect.selected
+
+                newSelect =
+                    { state = newState
+                    , items = model.freqCreateModulationSelect.items
+                    , selected = updatedModulation
+                    }
+
+                oldFreqState =
+                    model.freqCreateState
+
+                newFreqState =
+                    { oldFreqState | modulationId = updatedModulation }
+            in
+            ( { model | freqCreateModulationSelect = newSelect, freqCreateState = newFreqState }
+            , E.sendCmd <| Cmd.map FreqCreateModulationSelectMsg selectCmd
+            )
+
+        FreqCreateDescriptionInputChangedByUser inp ->
+            ( { model | freqCreateDescriptionInp = inp }, E.none )
+
+        ToggleFreqCreateShowActiveTo ->
+            let
+                newShowActiveTo =
+                    not model.freqCreateShowActiveTo
+
+                updatedFreqState =
+                    if not newShowActiveTo then
+                        -- очистити activeTo при знятті чекбокса
+                        let
+                            freqState =
+                                model.freqCreateState
+                        in
+                        { freqState | activeTo = Nothing }
+
+                    else
+                        model.freqCreateState
+            in
+            ( { model
+                | freqCreateShowActiveTo = newShowActiveTo
+                , freqCreateState = updatedFreqState
+              }
+            , E.none
+            )
+
+        AddFreqToNetwork ->
+            case model.network of
+                Success network ->
+                    let
+                        -- Create description object if input is not empty
+                        description =
+                            if String.trim model.freqCreateDescriptionInp == "" then
+                                Nothing
+
+                            else
+                                Just
+                                    { descrType = B.Confirmation
+                                    , description = model.freqCreateDescriptionInp
+                                    , freq = model.freqCreateState.freq
+                                    }
+
+                        -- Create the API request payload
+                        addFreqReq =
+                            { networkId = network.id
+                            , freqRec =
+                                { freq = model.freqCreateState.freq
+                                , kind = model.freqCreateState.kind
+                                , modulationId = model.freqCreateState.modulationId
+                                , description = description
+                                , activeFrom = model.freqCreateState.activeFrom
+                                , activeTo = model.freqCreateState.activeTo
+                                }
+                            }
+                    in
+                    ( { model | freqEditSaving = True }
+                      -- Reuse existing loading state
+                    , E.addFreqToNetwork FreqAddedToNetwork addFreqReq
+                    )
+
+                _ ->
+                    ( model, E.none )
+
+        FreqAddedToNetwork (Err e) ->
+            ( { model | freqEditSaving = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання частоти до мережі" e
+            )
+
+        FreqAddedToNetwork (Ok network) ->
+            ( { model
+                | network = Success network
+                , freqEditSaving = False
+                , freqCreateSidebar = False
+                , freqCreateDescriptionInp = ""
+                , freqCreateFormatError = Nothing
+                , freqCreateShowActiveTo = False
+                , freqCreateState =
+                    { freq = ""
+                    , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
+                    , modulationId = Nothing
+                    , description = Nothing
+                    , activeFrom = Nothing
+                    , activeTo = Nothing
+                    }
+              }
+            , E.batch
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
+                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
+                ]
+            )
+
+        CallsignsPopupOpenedByUser freq ->
+            ( { model | callsignsOpenedPopupId = Just freq }, E.none )
+
+        CallsignsPopupClosedByUser ->
+            ( { model | callsignsOpenedPopupId = Nothing }, E.none )
 
 
 filterFreqsByActivity : FreqActivityFilter -> List B.NetworkFreqsRes -> List B.NetworkFreqsRes
@@ -66,6 +601,7 @@ filterFreqsByActivity filter freqs =
             List.filter (\freq -> not freq.isActive) freqs
 
 
+view : Model -> Auth.User -> Shared.Model -> Html FrequenciesMsg
 view model user shared =
     section [ class "bg-w dark:bg-[#1C1C21] p-[16px] mt-[30px] flex flex-col" ]
         [ div [ class "mb-[8px] flex justify-between items-center" ]
@@ -98,7 +634,7 @@ view model user shared =
         ]
 
 
-freqsActivityFilterView : Model -> Html Msg
+freqsActivityFilterView : Model -> Html FrequenciesMsg
 freqsActivityFilterView model =
     let
         options =
@@ -111,6 +647,41 @@ freqsActivityFilterView model =
         [ SegmentedControl.new model.freqsActivityFilter FreqsActivityFilterChangedByUser options
             |> SegmentedControl.view
         ]
+
+
+deleteFreqConfirmationModal : Model -> Html FrequenciesMsg
+deleteFreqConfirmationModal model =
+    let
+        ( isOpen, freqStr ) =
+            case model.deleteFreqConfirmation of
+                Just ( _, f ) ->
+                    ( True, f )
+
+                Nothing ->
+                    ( False, "" )
+
+        deleteFreqDialogContent =
+            [ div [ class "flex flex-col justify-between gap-4 p-2 w-[400px]" ]
+                [ div [ class "pb-6" ]
+                    [ h2 [] [ text "Видалити частоту" ]
+                    , p [] [ text ("Ви впевнені, що хочете видалити частоту " ++ freqStr ++ "?") ]
+                    ]
+                , div [ class "flex justify-between" ]
+                    [ Button.new { label = "Скасувати", onClick = DeleteFreqCanceledByUser } |> Button.withStyleSecondary |> Button.view
+                    , Button.new { label = "Видалити", onClick = DeleteFreqConfirmedByUser }
+                        |> Button.withStyleDanger
+                        |> (if model.deleteFreqLoading then
+                                Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
+
+                            else
+                                identity
+                           )
+                        |> Button.view
+                    ]
+                ]
+            ]
+    in
+    ModalDialog.modalDialog isOpen DeleteFreqCanceledByUser [] deleteFreqDialogContent
 
 
 emptyFreqsPlaceholder : FreqActivityFilter -> Html msg
@@ -136,13 +707,13 @@ emptyFreqsPlaceholder filter =
         ]
 
 
-freqsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkFreqsRes Msg
+freqsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.NetworkFreqsRes FrequenciesMsg
 freqsTableConfig shared model user =
     let
         defaultCustomizations =
             Table.defaultCustomizations
 
-        customTheadHelp : ( String, TableConfig.Status, Html.Attribute Msg ) -> Html Msg
+        customTheadHelp : ( String, TableConfig.Status, Html.Attribute FrequenciesMsg ) -> Html FrequenciesMsg
         customTheadHelp ( name, status, click ) =
             let
                 sortIcon =
@@ -184,11 +755,11 @@ freqsTableConfig shared model user =
             in
             Html.th [ click ] [ headerContent ]
 
-        customThead : List ( String, TableConfig.Status, Html.Attribute Msg ) -> TableColumn.HtmlDetails Msg
+        customThead : List ( String, TableConfig.Status, Html.Attribute FrequenciesMsg ) -> TableColumn.HtmlDetails FrequenciesMsg
         customThead headers =
             TableColumn.HtmlDetails [] (List.map customTheadHelp headers)
 
-        customRowAttrs : B.NetworkFreqsRes -> List (Html.Attribute Msg)
+        customRowAttrs : B.NetworkFreqsRes -> List (Html.Attribute FrequenciesMsg)
         customRowAttrs freq =
             if not freq.isActive then
                 [ class "bg-[#f8f9fa] dark:bg-[#2C2C2E]" ]
@@ -404,8 +975,79 @@ freqsTableConfig shared model user =
         }
 
 
+
 -- SIDEBAR CONTENT
-freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html Msg)
+
+
+editSidebar : Model -> Auth.User -> Shared.Model -> Html FrequenciesMsg
+editSidebar model user shared =
+    case model.freqEditSidebar of
+        Just ( freqId, updateReq ) ->
+            Sidebar.view True CloseFreqEditSidebar (freqEditSidebarContent shared model user freqId updateReq)
+
+        Nothing ->
+            text ""
+
+
+createSidebar : Model -> Auth.User -> Shared.Model -> Html FrequenciesMsg
+createSidebar model user shared =
+    if model.freqCreateSidebar then
+        Sidebar.view True CloseFreqCreateSidebar (freqCreateSidebarContent shared model user)
+
+    else
+        text ""
+
+
+freqActivityChartDetailed : Model -> Shared.Model -> Html FrequenciesMsg
+freqActivityChartDetailed model shared =
+    case model.freqDetailPopup of
+        Just freqId ->
+            let
+                -- Знаходимо дані активності для цієї частоти
+                freqActivityData =
+                    case model.networkFreqsActivity of
+                        Success data ->
+                            case Dict.get freqId data of
+                                Just freqActivity ->
+                                    let
+                                        -- Використовуємо новий freq-detail-chart
+                                        freqActivityJson =
+                                            Encode.dict identity (Encode.dict identity Encode.int) (Dict.singleton freqId freqActivity)
+                                    in
+                                    div [ style "width" "100%", style "height" "300px", style "border" "1px solid #e5e7eb", style "border-radius" "8px", style "padding" "16px" ]
+                                        [ h4 [ class "text-sm font-medium mb-4", style "color" "#374151" ] [ text ("Активність частоти " ++ freqId) ]
+                                        , div [ style "width" "100%", style "height" "250px", style "min-height" "250px", style "display" "block" ]
+                                            [ Html.node "freq-detail-chart"
+                                                [ property "data" <| freqActivityJson
+                                                , property "lastDay" <| Encode.int shared.now
+                                                , style "width" "100%"
+                                                , style "height" "100%"
+                                                , style "display" "block"
+                                                ]
+                                                []
+                                            ]
+                                        ]
+
+                                Nothing ->
+                                    div [ class "text-center text-gray-500", style "height" "300px", style "display" "flex", style "align-items" "center", style "justify-content" "center" ] [ text "Немає даних активності" ]
+
+                        _ ->
+                            div [ class "text-center", style "height" "300px", style "display" "flex", style "align-items" "center", style "justify-content" "center" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+            in
+            ModalDialog.modalDialog True
+                CloseFreqDetailPopup
+                []
+                [ div [ class "p-6", style "width" "600px", style "height" "400px" ]
+                    [ h3 [ class "text-lg font-semibold mb-4" ] [ text ("Детальний графік активності: " ++ freqId) ]
+                    , freqActivityData
+                    ]
+                ]
+
+        Nothing ->
+            text ""
+
+
+freqEditSidebarContent : Shared.Model -> Model -> Auth.User -> String -> B.UpdateNetworkFreqReq -> List (Html FrequenciesMsg)
 freqEditSidebarContent shared model user freqId updateReq =
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
@@ -545,7 +1187,7 @@ freqEditSidebarContent shared model user freqId updateReq =
     ]
 
 
-freqCreateSidebarContent : Shared.Model -> Model -> Auth.User -> List (Html Msg)
+freqCreateSidebarContent : Shared.Model -> Model -> Auth.User -> List (Html FrequenciesMsg)
 freqCreateSidebarContent shared model user =
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]

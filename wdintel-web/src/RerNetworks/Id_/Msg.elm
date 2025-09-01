@@ -60,7 +60,6 @@ type
     = NetworkReturnedByApi (Result ApiError B.Network)
     | MapPointsReturnedByApi (Result ApiError B.ListNetworkPointsRsp)
     | GroupsActivityReturnedByApi (Result ApiError GroupsByDate)
-    | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | NetworkUnitsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
@@ -125,42 +124,11 @@ type
     | CallsignsPagerMsg Pager.Msg
     | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
     | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
-    | CallsignsPopupOpenedByUser String
-    | CallsignsPopupClosedByUser
       -- =============================================================================
       -- FREQUENCIES
       -- =============================================================================
-    | FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
-    | FreqUpdatedByApi (Result ApiError B.Network)
+    | Frequencies FrequenciesMsg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
-    | FreqAddedToNetwork (Result ApiError B.Network)
-    | DeleteFreqReturnedByApi (Result ApiError B.Network)
-    | FreqsEditingMsg B.UpdateNetworkFreqReq
-    | FreqsEditStartedByUser
-    | FreqsEditSavedByUser
-    | FreqsEditCanceledByUser
-    | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
-    | CloseFreqEditSidebar
-    | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
-    | SaveFreqEditSidebar
-    | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
-    | FreqModulationSelectMsg (Select.Msg Int)
-    | ToggleFreqEditShowActiveTo
-    | OpenFreqCreateSidebar
-    | CloseFreqCreateSidebar
-    | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
-    | FreqCreateKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
-    | FreqCreateModulationSelectMsg (Select.Msg Int)
-    | FreqCreateDescriptionInputChangedByUser String
-    | ToggleFreqCreateShowActiveTo
-    | AddFreqToNetwork
-    | DeleteFreqClickedByUser Int String
-    | DeleteFreqConfirmedByUser
-    | DeleteFreqCanceledByUser
-    | OpenFreqDetailPopup String
-    | CloseFreqDetailPopup
-    | FreqsActivityFilterChangedByUser FreqActivityFilter
-    | SetFreqsTableState Table.State
       -- =============================================================================
       -- DESCRIPTIONS
       -- =============================================================================
@@ -201,3 +169,39 @@ type DescriptionsMsg
     | CloseSignsCreateSidebar
     | OpenEditDescriptionSidebar B.NetworkDescription
     | CloseEditDescriptionSidebar
+
+
+type FrequenciesMsg
+    = FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
+    | FreqUpdatedByApi (Result ApiError B.Network)
+    | FreqAddedToNetwork (Result ApiError B.Network)
+    | DeleteFreqReturnedByApi (Result ApiError B.Network)
+    | FreqsEditingMsg B.UpdateNetworkFreqReq
+    | FreqsEditStartedByUser
+    | FreqsEditSavedByUser
+    | FreqsEditCanceledByUser
+    | OpenFreqEditSidebar String B.UpdateNetworkFreqReq
+    | CloseFreqEditSidebar
+    | UpdateFreqEditSidebar B.UpdateNetworkFreqReq
+    | SaveFreqEditSidebar
+    | FreqKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
+    | FreqModulationSelectMsg (Select.Msg Int)
+    | ToggleFreqEditShowActiveTo
+    | OpenFreqCreateSidebar
+    | CloseFreqCreateSidebar
+    | UpdateFreqCreateField (B.AddNetworkFreq -> B.AddNetworkFreq)
+    | FreqCreateKindSelectMsg (Select.Msg NetworksUtils.NetworkKind)
+    | FreqCreateModulationSelectMsg (Select.Msg Int)
+    | FreqCreateDescriptionInputChangedByUser String
+    | ToggleFreqCreateShowActiveTo
+    | AddFreqToNetwork
+    | DeleteFreqClickedByUser Int String
+    | DeleteFreqConfirmedByUser
+    | DeleteFreqCanceledByUser
+    | OpenFreqDetailPopup String
+    | CloseFreqDetailPopup
+    | FreqsActivityFilterChangedByUser FreqActivityFilter
+    | SetFreqsTableState Table.State
+    | CallsignsPopupOpenedByUser String
+    | CallsignsPopupClosedByUser
+    | NetworkFreqsActivityReturnedByApi (Result ApiError (Dict String (Dict String Int)))
