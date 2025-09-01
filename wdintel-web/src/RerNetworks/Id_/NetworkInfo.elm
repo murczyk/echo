@@ -195,7 +195,13 @@ missingFieldsBlock user network shared model =
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix network.activeFrom) ]
+                [ case network.activeFrom of
+                    Just activeFrom ->
+                        text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix activeFrom)
+
+                    Nothing ->
+                        text ""
+                ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]
@@ -360,7 +366,13 @@ missingFieldsEditBlock user network updNetworkReq shared model =
         , div [ class "grid grid-cols-3 gap-x-4 items-center mt-[24px]" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Активна з:" ]
             , div [ class "col-span-2 h-[40px] flex items-center" ]
-                [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix network.activeFrom) ]
+                [ case network.activeFrom of
+                    Just activeFrom ->
+                        text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix activeFrom)
+
+                    Nothing ->
+                        text ""
+                ]
             ]
         , div [ class "grid grid-cols-3 gap-x-4 items-center" ]
             [ span [ class "text-[13px] font-medium" ] [ text "Активна по:" ]

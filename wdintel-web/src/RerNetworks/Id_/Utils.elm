@@ -81,7 +81,12 @@ createAnalysisQueryState shared model callsign =
                 Success network ->
                     let
                         fromDate =
-                            Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix network.activeFrom)
+                            case network.activeFrom of
+                                Just activeFrom ->
+                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeFrom)
+
+                                Nothing ->
+                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
 
                         toDate =
                             case network.activeTo of

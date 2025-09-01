@@ -360,11 +360,16 @@ update shared msg model =
                 , editAorSelect = editAorSelect2
               }
             , E.batch
-                ([ E.getNetworkPoints MapPointsReturnedByApi
-                    { networkId = res.id
-                    , sinceDateInclusiveMs = res.activeFrom
-                    , tillDateNoninclusiveMs = res.activeTo
-                    }
+                ([ case res.activeFrom of
+                    Just activeFrom ->
+                        E.getNetworkPoints MapPointsReturnedByApi
+                            { networkId = res.id
+                            , sinceDateInclusiveMs = activeFrom
+                            , tillDateNoninclusiveMs = res.activeTo
+                            }
+
+                    Nothing ->
+                        E.none
                  , E.getSingleNetworkGroupsActivity GroupsActivityReturnedByApi { networkId = res.id, tillDateNoninclusiveMs = Nothing }
 
                  --TODO: do not load if loaded already

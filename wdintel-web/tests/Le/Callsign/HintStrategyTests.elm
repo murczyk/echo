@@ -43,7 +43,7 @@ createNetwork id freqs unitIds =
     , operationPeriod = Nothing
     , lastUpdatedAt = 0
     , lastUpdatedBy = Nothing
-    , activeFrom = 0
+    , activeFrom = Nothing
     , activeTo = Nothing
     , postIds = []
     , descriptions = []
@@ -507,11 +507,13 @@ suite =
                     let
                         -- Повідомлення з мережею (як в RerMessage.elm)
                         message =
-                            { freq = Just "123.45", networkIds = Just [ 1 ] } -- ← Повідомлення ПРИВ'ЯЗАНЕ до мережі
+                            { freq = Just "123.45", networkIds = Just [ 1 ] }
 
+                        -- ← Повідомлення ПРИВ'ЯЗАНЕ до мережі
                         network =
-                            createNetwork 1 [ "123.45" ] [ 1 ] -- Мережа з 1 мсб
+                            createNetwork 1 [ "123.45" ] [ 1 ]
 
+                        -- Мережа з 1 мсб
                         networks =
                             Dict.fromList [ ( 1, network ) ]
 
@@ -535,10 +537,13 @@ suite =
 
                         -- В MessageContext: позивні НЕ з мережі повідомлення мають NoHints
                         zeusHints =
-                            HintStrategy.getCallsignHints HintStrategy.MessageContext message context "зевс" -- В мережі
+                            HintStrategy.getCallsignHints HintStrategy.MessageContext message context "зевс"
 
+                        -- В мережі
                         alfaHints =
-                            HintStrategy.getCallsignHints HintStrategy.MessageContext message context "альфа" -- НЕ в мережі
+                            HintStrategy.getCallsignHints HintStrategy.MessageContext message context "альфа"
+
+                        -- НЕ в мережі
                     in
                     Expect.all
                         [ \_ ->
@@ -567,11 +572,13 @@ suite =
                     let
                         -- Частота з мережею (як в RerFreqs.elm)
                         message =
-                            { freq = Just "123.45", networkIds = Nothing } -- ← Частота БЕЗ прив'язки до мережі
+                            { freq = Just "123.45", networkIds = Nothing }
 
+                        -- ← Частота БЕЗ прив'язки до мережі
                         network =
-                            createNetwork 1 [ "123.45" ] [ 1 ] -- Мережа існує для частоти
+                            createNetwork 1 [ "123.45" ] [ 1 ]
 
+                        -- Мережа існує для частоти
                         networks =
                             Dict.fromList [ ( 1, network ) ]
 
@@ -595,10 +602,13 @@ suite =
 
                         -- В FrequencyContext: позивні НЕ з мережі частоти мають SystemWide
                         zeusHints =
-                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "зевс" -- В мережі частоти
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "зевс"
 
+                        -- В мережі частоти
                         alfaHints =
-                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "альфа" -- НЕ в мережі частоти
+                            HintStrategy.getCallsignHints HintStrategy.FrequencyContext message context "альфа"
+
+                        -- НЕ в мережі частоти
                     in
                     Expect.all
                         [ \_ ->
