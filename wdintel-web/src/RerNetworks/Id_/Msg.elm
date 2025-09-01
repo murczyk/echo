@@ -85,7 +85,32 @@ type
       -- =============================================================================
       -- CALLSIGNS
       -- =============================================================================
-    | CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
+    | Callsigns CallsignsMsg
+      -- =============================================================================
+      -- FREQUENCIES
+      -- =============================================================================
+    | Frequencies FrequenciesMsg
+    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+      -- =============================================================================
+      -- DESCRIPTIONS
+      -- =============================================================================
+    | Descriptions DescriptionsMsg
+      -- =============================================================================
+      -- UI
+      -- =============================================================================
+    | ReportModalOpenedByUser
+    | ReportModalClosedByUser
+    | ReportDownloadClickedByUser
+    | ReportDownloadReturnedByApi (Result ApiError Bytes)
+    | ReportNetworksOnlyCheckedByUser Bool
+    | ReportActiveFreqsOnlyCheckedByUser Bool
+    | ReportIncludePelengsMapCheckedByUser Bool
+    | ReportIncludeConfirmationCheckedByUser Bool
+    | ReportIncludeSigintSignsCheckedByUser Bool
+
+
+type CallsignsMsg
+    = CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
     | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
     | CallsignCreated (Result ApiError B.NetworkCallsign)
     | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign))
@@ -124,27 +149,6 @@ type
     | CallsignsPagerMsg Pager.Msg
     | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
     | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
-      -- =============================================================================
-      -- FREQUENCIES
-      -- =============================================================================
-    | Frequencies FrequenciesMsg
-    | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
-      -- =============================================================================
-      -- DESCRIPTIONS
-      -- =============================================================================
-    | Descriptions DescriptionsMsg
-      -- =============================================================================
-      -- UI
-      -- =============================================================================
-    | ReportModalOpenedByUser
-    | ReportModalClosedByUser
-    | ReportDownloadClickedByUser
-    | ReportDownloadReturnedByApi (Result ApiError Bytes)
-    | ReportNetworksOnlyCheckedByUser Bool
-    | ReportActiveFreqsOnlyCheckedByUser Bool
-    | ReportIncludePelengsMapCheckedByUser Bool
-    | ReportIncludeConfirmationCheckedByUser Bool
-    | ReportIncludeSigintSignsCheckedByUser Bool
     | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor )) -- Зміна статусу popup для показу повного коментаря
 
 
