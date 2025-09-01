@@ -521,7 +521,7 @@ async fn api_user_info(
         .context(h!())?
     else {
         println!("user not found: {}", username.clone());
-        return Err(AppError::Unauthenticated);
+        return Err(AppError::NotFound);
     };
     let delta_login = match login_obj.delta_login_id {
         None => None,
