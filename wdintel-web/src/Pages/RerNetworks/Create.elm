@@ -6,6 +6,7 @@ import Bindings as B
 import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
+import Components.Pager as Pager
 import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Debounce exposing (Debounce)
@@ -34,6 +35,7 @@ import RerNetworks.Create.Msg exposing (Msg(..))
 import Route exposing (Route)
 import Route.Path
 import Select
+import Set exposing (Set)
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Time
@@ -251,6 +253,60 @@ init route shared () =
             , selected = Nothing
             }
 
+      -- CALLSIGNS
+      , callsigns = NotAsked
+      , callsignsPager = Pager.initWithPageSize 5
+      , callsignsTableState = Table.initialSort "Позивний"
+      , developingCallsignDropdown = Nothing
+      , unknownCallsignDropdown = Nothing
+      , deleteCallsignConfirmation = Nothing
+      , deleteCallsignLoading = False
+      , networkCallsigns = NotAsked
+      , networkCallsignsTableState = Table.initialSort "Позивний"
+      , networkCallsignsPager = Pager.initWithPageSize 5
+      , networkCallsignsSearchQuery = ""
+      , editCallsignSidebar = Nothing
+      , editCallsignState = Nothing
+      , editCallsignSaving = False
+      , editCallsignErrors = Dict.empty
+      , editCallsignSourceSelState = Select.initState (Select.selectIdentifier "edit-callsign-source-state")
+      , editCallsignUnitSelState = Select.initState (Select.selectIdentifier "edit-callsign-unit-state")
+      , editCallsignUnitSelectorVisible = False
+      , editKindSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-kind-state")
+            , items =
+                NetworksUtils.networkKinds
+                    |> List.map
+                        (\kind ->
+                            Select.basicMenuItem
+                                { item = kind
+                                , label = NetworksUtils.networkKindToLabel kind
+                                }
+                        )
+            , selected = NetworksUtils.VHF
+            }
+      , editPostsSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-posts-state")
+            , items = []
+            , selected = []
+            }
+      , editUnitsSelect =
+            { state = Select.initState (Select.selectIdentifier "edit-network-units-state")
+            , items = []
+            , selected = []
+            }
+      , callsignCreateSidebar = Nothing
+      , callsignCreateState = Nothing
+      , callsignCreateSaving = False
+      , callsignCreateErrors = Dict.empty
+      , callsignCreateSourceSelState = Select.initState (Select.selectIdentifier "create-callsign-source-state")
+      , callsignCreateUnitSelState = Select.initState (Select.selectIdentifier "create-callsign-unit-state")
+      , callsignCreateUnitSelectorVisible = False
+      , callsignCreateSources = []
+      , callsignAddingInProgress = Set.empty
+      , callsignsSearchQuery = ""
+      , rowShowAllPopupStatus = Nothing
+
       -- New states for two-stage creation
       , networkCreated = Nothing
       }
@@ -290,7 +346,7 @@ update shared msg model =
                 ( m1, callsEff ) =
                     CallsignsTables.update shared callsMsg model
             in
-            ( m1, E.map Frequencies callsEff )
+            ( m1, E.map Callsigns callsEff )
 
         UpdateNetworkState updateFunc ->
             ( { model | createNetworkState = updateFunc model.createNetworkState }
