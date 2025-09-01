@@ -105,7 +105,7 @@ type FrequenciesMsg
     = FreqsReturnedByApi (Result ApiError B.SingleNetworkFreqsListRsp)
     | FreqUpdatedByApi (Result ApiError B.Network)
     | FreqAddedToNetwork (Result ApiError B.Network)
-    | DeleteFreqReturnedByApi (Result ApiError B.Network)
+    | DeleteFreqReturnedByApi Int (Result ApiError B.Network)
     | FreqsEditingMsg B.UpdateNetworkFreqReq
     | FreqsEditStartedByUser
     | FreqsEditSavedByUser
