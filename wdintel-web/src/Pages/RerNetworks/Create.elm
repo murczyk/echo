@@ -27,6 +27,7 @@ import Le.Time
 import Le.Types exposing (ApiError)
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
+import RerNetworks.Create.CallsignsTables as CallsignsTables
 import RerNetworks.Create.FrequenciesTable as FrequenciesTable
 import RerNetworks.Create.Model exposing (FreqActivityFilter(..), Mode(..))
 import RerNetworks.Create.Msg exposing (Msg(..))
@@ -283,6 +284,13 @@ update shared msg model =
                     FrequenciesTable.update shared freqsMsg model
             in
             ( m1, E.map Frequencies freqsEff )
+
+        Callsigns callsMsg ->
+            let
+                ( m1, callsEff ) =
+                    CallsignsTables.update shared callsMsg model
+            in
+            ( m1, E.map Frequencies callsEff )
 
         UpdateNetworkState updateFunc ->
             ( { model | createNetworkState = updateFunc model.createNetworkState }

@@ -43,7 +43,7 @@ import RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopin
 import RerNetworks.Id_.FrequenciesTable as FreqsTable
 import RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
 import RerNetworks.Id_.Msg as Msgs exposing (DescriptionsMsg(..), Msg)
-import RerNetworks.Id_.Utils as IdUtils
+import RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -496,6 +496,7 @@ viewDeleteConfirmation model =
 
 
 -- SIDEBAR CONTENT
+
 
 confirmationCreateSidebar : B.Network -> Model -> Auth.User -> Shared.Model -> Html DescriptionsMsg
 confirmationCreateSidebar network model user shared =

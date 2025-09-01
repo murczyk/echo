@@ -45,7 +45,7 @@ import RerNetworks.Id_.FrequenciesTable as FrequenciesTable
 import RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
 import RerNetworks.Id_.NetworkInfo as NetworkInfo
-import RerNetworks.Id_.Utils as IdUtils
+import RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
 import Select

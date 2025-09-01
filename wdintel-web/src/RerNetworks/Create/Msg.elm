@@ -6,6 +6,7 @@ import Bindings as B
 import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
+import Components.Pager as Pager
 import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Debounce exposing (Debounce)
@@ -26,7 +27,7 @@ import Le.Time
 import Le.Types exposing (ApiError)
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
-import RerNetworks.Create.Model exposing (FreqActivityFilter)
+import RerNetworks.Create.Model exposing (FreqActivityFilter, ShowAllPopupFor)
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -54,6 +55,50 @@ type Msg
     | NetworkCreated (Result ApiError B.Network)
     | Frequencies FrequenciesMsg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
+    | Callsigns CallsignsMsg
+
+
+type CallsignsMsg
+    = CallsignsReturnedByApi (Result ApiError B.SingleNetworkCallsignsListRsp)
+    | NetworkCallsignsReturnedByApi (Result ApiError B.ListNetworkCallsignsRes)
+    | CallsignCreated (Result ApiError B.NetworkCallsign)
+    | CallsignAddedToNetwork (Result ApiError (List B.NetworkCallsign))
+    | CallsignUpdated (Result ApiError B.NetworkCallsign)
+    | CallsignDeletedFromNetwork (Result ApiError B.NetworkCallsign)
+    | GotSources (Result ApiError B.ListSourcesRsp)
+    | OpenCallsignCreateSidebar
+    | CloseCallsignCreateSidebar
+    | UpdateCallsignCreateField (Maybe B.CreateNetworkCallsignReq -> Maybe B.CreateNetworkCallsignReq)
+    | CreateCallsignClicked
+    | CallsignCreateSourceSelMsg (Select.Msg Int)
+    | CallsignCreateUnitSelMsg (Select.Msg Int)
+    | ToggleCallsignCreateUnitSelector -- Показати/сховати селект підрозділів для створення
+    | ResetCallsignCreateUnit -- Повернути підрозділ мережі для створення
+    | AddCallsignToNetwork Int -- Додавання позивного до мережі
+    | OpenAddFromUnknownSidebar String -- Відкриття сайдбару додавання зі списку "Приналежність встановлюється"
+    | EditCallsignClicked Int -- Клік по кнопці редагування позивного з мережі
+    | CloseEditCallsignSidebar -- Закриття сайдбару редагування
+    | UpdateEditCallsignField (Maybe B.UpdateNetworkCallsignReq -> Maybe B.UpdateNetworkCallsignReq) -- Оновлення полів форми редагування
+    | SaveEditCallsignClicked -- Збереження змін редагування
+    | EditCallsignSourceSelMsg (Select.Msg Int) -- Повідомлення від селекта джерела для редагування
+    | EditCallsignUnitSelMsg (Select.Msg Int) -- Повідомлення від селекта підрозділу для редагування
+    | ToggleEditCallsignUnitSelector -- Показати/сховати селект підрозділів для редагування
+    | ResetEditCallsignUnit -- Повернути підрозділ мережі для редагування
+    | DeleteCallsignFromNetwork Int -- Клік по кнопці видалення позивного з мережі
+    | DeleteCallsignConfirmed Int -- Підтвердження видалення позивного
+    | DeleteCallsignCanceled -- Скасування видалення позивного
+    | ToggleDevelopingCallsignDropdown Int -- Відкрити/закрити dropdown для позивного
+    | CloseDevelopingCallsignDropdown -- Закрити всі dropdown
+    | NavigateToCallsignPage Int -- Перейти на сторінку позивного
+    | ToggleUnknownCallsignDropdown String -- Відкрити/закрити dropdown для невідомого позивного
+    | CloseUnknownCallsignDropdown -- Закрити всі dropdown для невідомих позивних
+    | SetCallsignsTableState Table.State
+    | SetNetworkCallsignsTableState Table.State
+    | NetworkCallsignsPagerMsg Pager.Msg
+    | CallsignsPagerMsg Pager.Msg
+    | CallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Всі позивні"
+    | NetworkCallsignsSearchChanged String -- Зміна пошукового запиту для таблиці "Позивні мережі"
+    | RowShowAllPopupChanged (Maybe ( Int, ShowAllPopupFor )) -- Зміна статусу popup для показу повного коментаря
 
 
 type FrequenciesMsg

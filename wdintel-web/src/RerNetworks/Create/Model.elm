@@ -6,6 +6,7 @@ import Bindings as B
 import Char
 import Components.Button as Button
 import Components.Checkbox as Checkbox
+import Components.Pager as Pager
 import Components.Sidebar as Sidebar
 import Components.Table as Table
 import Debounce exposing (Debounce)
@@ -29,6 +30,7 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Select
+import Set exposing (Set)
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Time
@@ -54,6 +56,19 @@ type CallsignCreateMode
 
 type ShowAllPopupFor
     = ShowAllComment
+
+
+type alias CallsignTableRow =
+    { id : Int
+    , callsign : String
+    , messageCount : Int
+    , lastDatetime : Maybe Int
+    , position : String
+    , unitName : String
+    , comment : String
+    , createdAt : Int
+    , sourceName : String
+    }
 
 
 type alias Model =
@@ -93,6 +108,40 @@ type alias Model =
     , freqEditShowActiveTo : Bool
     , modulations : RemoteData ApiError (List B.ModulationRec)
     , addConfirmationFreqSelect : Le.Block.Select.SelectTypeSingle String
+
+    -- CALLSIGNS
+    , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
+    , callsignsPager : Pager.Model
+    , callsignsTableState : Table.State
+    , developingCallsignDropdown : Maybe Int -- ID позивного з відкритим dropdown
+    , unknownCallsignDropdown : Maybe String -- Позивний з відкритим dropdown
+    , deleteCallsignConfirmation : Maybe Int -- ID позивного для видалення
+    , deleteCallsignLoading : Bool -- Стан завантаження видалення
+    , networkCallsigns : RemoteData ApiError (List B.NetworkCallsign)
+    , networkCallsignsTableState : Table.State
+    , networkCallsignsPager : Pager.Model
+    , networkCallsignsSearchQuery : String -- Пошуковий запит для таблиці "Позивні мережі"
+    , editCallsignSidebar : Maybe Int -- ID позивного для редагування
+    , editCallsignState : Maybe B.UpdateNetworkCallsignReq -- Стан форми редагування
+    , editCallsignSaving : Bool -- Стан збереження редагування
+    , editCallsignErrors : Dict String String -- Помилки валідації редагування
+    , editCallsignSourceSelState : Select.State -- Стан селекта джерела для редагування
+    , editCallsignUnitSelState : Select.State -- Стан селекта підрозділу для редагування
+    , editCallsignUnitSelectorVisible : Bool -- Чи показувати селект підрозділів
+    , editKindSelect : Le.Block.Select.SelectTypeSingleNotEmpty NetworksUtils.NetworkKind
+    , editPostsSelect : Le.Block.Select.SelectType Int
+    , editUnitsSelect : Le.Block.Select.SelectType Int
+    , callsignCreateSidebar : Maybe CallsignCreateMode
+    , callsignCreateState : Maybe B.CreateNetworkCallsignReq
+    , callsignCreateSaving : Bool
+    , callsignCreateErrors : Dict String String
+    , callsignCreateSourceSelState : Select.State
+    , callsignCreateUnitSelState : Select.State
+    , callsignCreateUnitSelectorVisible : Bool -- Чи показувати селект підрозділів
+    , callsignCreateSources : List B.Source
+    , callsignAddingInProgress : Set Int -- Позивні, які зараз додаються до мережі
+    , callsignsSearchQuery : String -- Пошуковий запит для таблиці "Всі позивні"
+    , rowShowAllPopupStatus : Maybe ( Int, ShowAllPopupFor )
 
     -- New states for two-stage creation
     , networkCreated : Maybe B.Network -- нова мережа після створення

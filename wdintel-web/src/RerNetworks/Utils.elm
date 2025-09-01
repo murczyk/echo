@@ -1,4 +1,4 @@
-module RerNetworks.Id_.Utils exposing (..)
+module RerNetworks.Utils exposing (..)
 
 import Api
 import Auth
@@ -54,12 +54,12 @@ import Url.Builder
 import View exposing (View)
 
 
-createAnalysisUrl : Shared.Model -> Model -> String -> String
-createAnalysisUrl shared model callsign =
+createAnalysisUrl : Shared.Model -> B.Network -> String -> String
+createAnalysisUrl shared network callsign =
     let
         -- Generate query state with network date range and callsign filter
         queryState =
-            createAnalysisQueryState shared model callsign
+            createAnalysisQueryState shared network callsign
 
         -- Encode the query state
         encodedState =
@@ -72,45 +72,34 @@ createAnalysisUrl shared model callsign =
     Url.Builder.absolute [ "rer-analysis" ] query
 
 
-createAnalysisQueryState : Shared.Model -> Model -> String -> B.RerAnalysisQueryState
-createAnalysisQueryState shared model callsign =
+createAnalysisQueryState : Shared.Model -> B.Network -> String -> B.RerAnalysisQueryState
+createAnalysisQueryState shared network callsign =
     let
         -- Get date range from network
         ( dateFromStr, dateToStr ) =
-            case model.network of
-                Success network ->
-                    let
-                        fromDate =
-                            case network.activeFrom of
-                                Just activeFrom ->
-                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeFrom)
+            let
+                fromDate =
+                    case network.activeFrom of
+                        Just activeFrom ->
+                            Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeFrom)
 
-                                Nothing ->
-                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
+                        Nothing ->
+                            Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
 
-                        toDate =
-                            case network.activeTo of
-                                Just activeTo ->
-                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeTo)
+                toDate =
+                    case network.activeTo of
+                        Just activeTo ->
+                            Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix activeTo)
 
-                                Nothing ->
-                                    -- If no end date, use current date
-                                    Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
-                    in
-                    ( fromDate, toDate )
-
-                _ ->
-                    -- Fallback to empty strings if network not loaded
-                    ( "", "" )
+                        Nothing ->
+                            -- If no end date, use current date
+                            Le.Time.renderDateF4 shared.timeZone (Time.millisToPosix shared.now)
+            in
+            ( fromDate, toDate )
 
         -- Get frequencies from network for pre-selection
         freqsSelected =
-            case model.network of
-                Success network ->
-                    List.map .freq network.freqs
-
-                _ ->
-                    []
+            List.map .freq network.freqs
     in
     { dateFromStr = dateFromStr
     , timeFromStr = ""
