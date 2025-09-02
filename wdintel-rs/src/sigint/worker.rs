@@ -406,7 +406,8 @@ pub async fn process_incoming_message_restapi(
     }
     // Normalize body
     let body = body.replace("\r\n", "\n");
-    let m_duplicate = find_duplicate(dbx, &body).await.context(h!())?;
+    let m_duplicate =
+        find_duplicate(dbx, &body, timestamp).await.context(h!())?;
     let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
     // skip if this is same-group duplicate
     if let Some(ref duplicate) = m_duplicate {

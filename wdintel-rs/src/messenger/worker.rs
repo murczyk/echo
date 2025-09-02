@@ -454,9 +454,10 @@ pub async fn receive_once(
     // Normalize body
     info!("received message: {m:?}");
     let body = m.body.replace("\r\n", "\n");
-    let m_duplicate = crate::sigint::find_duplicate(txn, &body)
-        .await
-        .context(h!())?;
+    let m_duplicate =
+        crate::sigint::find_duplicate(txn, &body, Some(m.timestamp))
+            .await
+            .context(h!())?;
     let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
     let group_id = crate::messenger::group::ensure_group_id(
         txn,

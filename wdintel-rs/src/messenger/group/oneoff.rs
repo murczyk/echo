@@ -3,6 +3,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::Mode;
 use anyhow::Context;
+use echo_migration::Expr;
 use log::{error, info};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -10,7 +11,6 @@ use sea_orm::{
     RelationTrait, Set,
 };
 use std::collections::{HashMap, HashSet};
-use echo_migration::Expr;
 
 pub async fn check_should_populate_signal_message_group_ids<
     'a,
@@ -79,7 +79,10 @@ pub async fn oneoff_populate_signal_message_group_ids(
             }
             signal_message::Entity::update_many()
                 .filter(signal_message::Column::Id.is_in(messages_to_update))
-                .col_expr(signal_message::Column::GroupId, Expr::value(datasource_group.id))
+                .col_expr(
+                    signal_message::Column::GroupId,
+                    Expr::value(datasource_group.id),
+                )
                 .exec(&dbx)
                 .await
                 .context(h!())?;

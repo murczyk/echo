@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
                 alter table signal_message drop column group_id;
             "#,
         )
-            .await?;
+        .await?;
         Ok(())
     }
 }
