@@ -57,6 +57,7 @@ type Msg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | Callsigns CallsignsMsg
     | NavigateToIdPage
+    | NetworkDeleted (Result ApiError B.Network)
 
 
 type CallsignsMsg

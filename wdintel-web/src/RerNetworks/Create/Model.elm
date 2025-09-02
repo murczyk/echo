@@ -145,4 +145,5 @@ type alias Model =
 
     -- New states for two-stage creation
     , networkCreated : Maybe B.Network -- нова мережа після створення
+    , deletingNetwork : Bool -- стан видалення мережі при скасуванні
     }

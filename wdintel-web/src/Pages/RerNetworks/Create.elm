@@ -321,6 +321,7 @@ init route shared () =
 
       -- New states for two-stage creation
       , networkCreated = Nothing
+      , deletingNetwork = False
       }
     , E.batch
         [ E.getUnits UnitsReturnedByApi
@@ -575,7 +576,18 @@ update shared msg model =
             ( clearedModel, E.none )
 
         CancelClicked ->
-            ( model, E.none )
+            case model.networkCreated of
+                Just network ->
+                    -- Сценарій 2: Спочатку видалити мережу, потім перейти назад
+                    ( { model | deletingNetwork = True }
+                    , E.deleteNetwork NetworkDeleted { networkId = network.id }
+                    )
+                
+                Nothing ->
+                    -- Сценарій 1: Просто перейти назад
+                    ( model
+                    , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
+                    )
 
         CreateClicked ->
             let
@@ -665,6 +677,16 @@ update shared msg model =
                 , freqCreateModulationSelect = updatedFreqCreateModulationSelect
               }
             , E.none
+            )
+
+        NetworkDeleted (Ok _) ->
+            ( { model | deletingNetwork = False }
+            , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
+            )
+
+        NetworkDeleted (Err error) ->
+            ( { model | deletingNetwork = False }
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" error
             )
 
 
@@ -1000,7 +1022,16 @@ viewActionButtons model =
                 ""
     in
     div [ class "flex justify-end gap-[8px] mt-[16px]" ]
-        [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
+        [ Button.new { label = "Відмінити", onClick = CancelClicked } 
+            |> Button.withStyleSecondary 
+            |> Button.withDisabled model.deletingNetwork
+            |> Button.withIcon
+                (if model.deletingNetwork then
+                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+                else
+                    []
+                )
+            |> Button.view
         , div [ Attr.title disabledTooltip ]
             [ case model.networkCreated of
                 Just _ ->
