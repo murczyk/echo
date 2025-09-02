@@ -6,6 +6,7 @@ use echo_migration::JoinType;
 use sea_orm::*;
 
 pub mod handlers;
+pub mod oneoff;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
@@ -166,4 +167,43 @@ where
         );
     }
     Ok(result)
+}
+
+pub async fn ensure_group_id<'a, 'async_trait, C>(
+    db: &C,
+    master_key: String,
+    datasource_id: i64,
+) -> anyhow::Result<i64>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let (group_name, datasource_group_id) = signal_group::Entity::find()
+        .left_join(datasource_group::Entity)
+        .filter(signal_group::Column::MasterKey.eq(master_key.clone()))
+        .filter(datasource_group::Column::GroupMasterKey.eq(master_key.clone()))
+        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .select_only()
+        .column(signal_group::Column::Name)
+        .column(datasource_group::Column::Id)
+        .into_tuple::<(Option<String>, Option<i64>)>()
+        .one(db)
+        .await
+        .context(h!())?
+        .unwrap_or((None, None));
+    if let Some(datasource_group_id) = datasource_group_id {
+        return Ok(datasource_group_id);
+    };
+    let group_name = group_name.unwrap_or_default();
+    let new_group = datasource_group::ActiveModel {
+        group_master_key: Set(master_key),
+        name: Set(group_name),
+        datasource_id: Set(datasource_id),
+        created_at: NotSet,
+        id: NotSet,
+        last_sync_at: NotSet,
+    }
+    .insert(db)
+    .await
+    .context(h!())?;
+    Ok(new_group.id)
 }

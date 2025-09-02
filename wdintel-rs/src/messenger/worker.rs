@@ -323,6 +323,7 @@ async fn sync_groups(
                     datasource_id: Set(datasource_id),
                     last_sync_at: NotSet,
                     created_at: NotSet,
+                    name: Set("".to_string()),
                 }
                 .insert(txn)
                 .await
@@ -457,9 +458,17 @@ pub async fn receive_once(
         .await
         .context(h!())?;
     let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
+    let group_id = crate::messenger::group::ensure_group_id(
+        txn,
+        m.group_id.clone(),
+        m.datasource_id,
+    )
+    .await
+    .context(h!())?;
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
+        group_id: Set(Some(group_id)),
         created_at: NotSet,
         group_master_key: Set(Some(m.group_id)),
         timestamp: Set(Some(m.timestamp)),

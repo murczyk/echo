@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::entities::signal_restapi_error;
 use crate::h;
+use crate::messenger::group::oneoff::check_should_populate_signal_message_group_ids;
 use crate::types::*;
 use anyhow::Context;
 use chrono::*;
@@ -35,6 +36,9 @@ pub async fn run_healthcheck_worker(
             return Ok(None);
         }
     }
+    check_should_populate_signal_message_group_ids(dbx)
+        .await
+        .context(h!())?;
     let since_last_restart =
         Utc::now() - TimeDelta::seconds(RESTART_TIME as i64);
     let timeouts = signal_restapi_error::Entity::find()

@@ -714,6 +714,7 @@ where
             rgt: Set(rec.rgt),
             enabled: Set(rec.enabled),
             sigint_origin_id: Set(Some(origin_id)),
+            mothership_id: NotSet,
         };
 
         let new_rec = if new_record {

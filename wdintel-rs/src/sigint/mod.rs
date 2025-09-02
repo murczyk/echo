@@ -389,10 +389,20 @@ async fn xlsx_import_process_one(
         .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
     // Normalize body
     let body = body.replace("\r\n", "\n");
+
+    let group_id = crate::messenger::group::ensure_group_id(
+        dbx,
+        group_id.to_string(),
+        datasource_id,
+    )
+    .await
+    .context(h!())?;
+
     let message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
+        group_id: Set(Some(group_id)),
         group_master_key: Set(Some(group_id.to_string())),
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(sender_uuid.to_string())),

@@ -25,6 +25,7 @@ pub struct Model {
     pub external_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
+    pub group_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -37,6 +38,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Datasource,
+    #[sea_orm(
+        belongs_to = "super::datasource_group::Entity",
+        from = "Column::GroupId",
+        to = "super::datasource_group::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    DatasourceGroup,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
@@ -59,6 +68,12 @@ pub enum Relation {
 impl Related<super::datasource::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Datasource.def()
+    }
+}
+
+impl Related<super::datasource_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DatasourceGroup.def()
     }
 }
 

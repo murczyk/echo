@@ -120,6 +120,7 @@ pub async fn upsert_signal_groups(
                             datasource_id: Set(target_datasource_id),
                             last_sync_at: NotSet,
                             created_at: NotSet,
+                            name: Set(inserted.name.clone().unwrap_or_default()),
                         }
                         .insert(db)
                         .await
@@ -134,6 +135,7 @@ pub async fn upsert_signal_groups(
                 }
             }
             Some(existing_group) => {
+                let name = existing_group.name.clone().unwrap_or_default();
                 let mut rec = existing_group.into_active_model();
                 if let Some(name) = new_group.name {
                     rec.name = Set(Some(name));
@@ -165,6 +167,7 @@ pub async fn upsert_signal_groups(
                         datasource_id: Set(target_datasource_id),
                         last_sync_at: NotSet,
                         created_at: NotSet,
+                        name: Set(name),
                     }
                     .insert(db)
                     .await

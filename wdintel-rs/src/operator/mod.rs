@@ -134,7 +134,7 @@ async fn ensure_group(
     }
     let model = signal_group::ActiveModel {
         master_key: Set(echo_id.clone()),
-        name: Set(Some(group.name)),
+        name: Set(Some(group.name.clone())),
         datasource_id: Set(Some(datasource_id)),
         created_at: NotSet,
         ignore_operativny: NotSet,
@@ -165,6 +165,7 @@ async fn ensure_group(
                 datasource_id: Set(datasource_id),
                 last_sync_at: NotSet,
                 created_at: NotSet,
+                name: Set(group.name),
             }
             .insert(txn)
             .await

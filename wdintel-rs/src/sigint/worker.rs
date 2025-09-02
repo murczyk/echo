@@ -215,6 +215,7 @@ pub async fn do_sync_state(
 ) -> Result<(), AppError> {
     // sync sync_state.groups
     for group in sync_state.groups.iter() {
+        let group_name = group.name.to_owned();
         let m_exising_signal_group = SignalGroup::find()
             .filter(signal_group::Column::MasterKey.eq(&group.master_key))
             .one(dbx)
@@ -222,18 +223,18 @@ pub async fn do_sync_state(
             .context(h!())?;
         match m_exising_signal_group {
             Some(existing) => {
-                if existing.name.as_ref() != Some(&group.name)
-                    && !&group.name.is_empty()
+                if existing.name.as_ref() != Some(&group_name)
+                    && !&group_name.is_empty()
                 {
                     info!(
                         "> worker::do_sync_state: updated signal_group {} - changed name from {} to {} ",
                         existing.master_key,
                         existing.name.clone().unwrap_or(String::from("<null>")),
-                        group.name.clone()
+                        group_name.clone()
                     );
                     let mut existing: signal_group::ActiveModel =
                         existing.clone().into();
-                    existing.name = Set(Some(group.name.clone()));
+                    existing.name = Set(Some(group_name.clone()));
                     existing.update(dbx).await.context(h!())?;
                 }
                 // ensure mapping exists for this datasource
@@ -257,6 +258,7 @@ pub async fn do_sync_state(
                         datasource_id: Set(datasource_id),
                         last_sync_at: NotSet,
                         created_at: NotSet,
+                        name: Set(group_name),
                     }
                     .insert(dbx)
                     .await
@@ -266,7 +268,7 @@ pub async fn do_sync_state(
             None => {
                 let group = signal_group::ActiveModel {
                     master_key: Set(group.master_key.clone()),
-                    name: Set(Some(group.name.clone())),
+                    name: Set(Some(group_name.clone())),
                     datasource_id: NotSet,
                     is_secret: Set(false),
                     created_at: NotSet,
@@ -282,6 +284,7 @@ pub async fn do_sync_state(
                     datasource_id: Set(datasource_id),
                     last_sync_at: NotSet,
                     created_at: NotSet,
+                    name: Set(group_name),
                 }
                 .insert(dbx)
                 .await
@@ -421,11 +424,20 @@ pub async fn process_incoming_message_restapi(
         return Ok(());
     };
 
+    let master_key = &group_info.group_id;
+    let group_id = crate::messenger::group::ensure_group_id(
+        dbx,
+        master_key.to_string(),
+        datasource_id,
+    )
+    .await
+    .context(h!())?;
+
     let message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
-        group_master_key: Set(Some(group_info.group_id.clone())),
+        group_master_key: Set(Some(master_key.to_string())),
         timestamp: Set(timestamp),
         sender: Set(Some(source_uuid.clone().to_string())),
         duplicate_of: Set(m_duplicate_id),
@@ -434,6 +446,7 @@ pub async fn process_incoming_message_restapi(
         deleted: NotSet,
         external_id: NotSet,
         message_uid: NotSet,
+        group_id: Set(Some(group_id)),
     }
     .insert(dbx)
     .await

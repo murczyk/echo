@@ -100,6 +100,15 @@ async fn receive_once(
             .await
             .context(h!())?;
         let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
+
+        let group_id = crate::messenger::group::ensure_group_id(
+            &txn,
+            wq.group_jid.clone(),
+            datasource.id,
+        )
+        .await
+        .context(h!())?;
+
         let message = signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(body.clone())),
@@ -113,12 +122,13 @@ async fn receive_once(
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
+            group_id: Set(Some(group_id)),
         }
-        .insert(dbx)
+        .insert(&txn)
         .await
         .context(h!())?;
 
-        let signal_message = id::update_message_with_uid(dbx, config, message)
+        let signal_message = id::update_message_with_uid(&txn, config, message)
             .await
             .context(h!())?;
 
@@ -225,6 +235,7 @@ pub async fn sync_groups(
                     datasource_id: Set(datasource.id),
                     last_sync_at: NotSet,
                     created_at: NotSet,
+                    name: Set(wg.name.clone()),
                 }
                 .insert(dbx)
                 .await

@@ -196,12 +196,21 @@ pub async fn rer_delta_kmz_import_go(
 
         // Normalize body
         let body = body.replace("\r\n", "\n");
+        let master_key = group_id.to_string();
+
+        let group_id = crate::messenger::group::ensure_group_id(
+            dbx,
+            master_key.to_string(),
+            datasource_id,
+        )
+        .await
+        .context(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(body.clone())),
             created_at: NotSet,
-            group_master_key: Set(Some(group_id.to_string())),
+            group_master_key: Set(Some(master_key)),
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
@@ -210,6 +219,7 @@ pub async fn rer_delta_kmz_import_go(
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
+            group_id: Set(Some(group_id)),
         }
         .insert(dbx)
         .await
