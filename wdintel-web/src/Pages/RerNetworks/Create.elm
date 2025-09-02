@@ -596,22 +596,27 @@ update shared msg model =
             in
             ( { model | formErrors = updatedErrors }, E.none )
 
-        NetworkCreated (Ok network) ->
-            ( { model | creatingNetwork = False, networkCreated = Just network }
-            , case model.networkCreated of
-                Just network_ ->
-                    E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+        NavigateToIdPage ->
+            case model.networkCreated of
+                Just network ->
+                    ( model
+                    , E.pushRoute { path = Route.Path.RerNetworks_Id_ { id = String.fromInt network.id }, hash = Nothing, query = Dict.empty }
+                    )
 
                 Nothing ->
-                    E.batch
-                        ([]
-                            ++ (FrequenciesTable.loadFreqsInit network.id
-                                    |> List.map (E.map Frequencies)
-                               )
-                            ++ (CallsignsTables.loadCatalogAndNetworkCallsigns network.id
-                                    |> List.map (E.map Callsigns)
-                               )
-                        )
+                    ( model, E.none )
+
+        NetworkCreated (Ok network) ->
+            ( { model | creatingNetwork = False, networkCreated = Just network }
+            , E.batch
+                ([]
+                    ++ (FrequenciesTable.loadFreqsInit network.id
+                            |> List.map (E.map Frequencies)
+                       )
+                    ++ (CallsignsTables.loadCatalogAndNetworkCallsigns network.id
+                            |> List.map (E.map Callsigns)
+                       )
+                )
             )
 
         NetworkCreated (Err error) ->
@@ -975,20 +980,20 @@ viewActionButtons model =
 
             else
                 ""
-
-        buttonLabel =
-            if model.networkCreated /= Nothing then
-                "Зберегти мережу"
-
-            else
-                "Продовжити"
     in
     div [ class "flex justify-end gap-[8px] mt-[16px]" ]
         [ Button.new { label = "Відмінити", onClick = CancelClicked } |> Button.withStyleSecondary |> Button.view
         , div [ Attr.title disabledTooltip ]
-            [ Button.new { label = buttonLabel, onClick = CreateClicked }
-                |> Button.withDisabled isSaveDisabled
-                |> Button.view
+            [ case model.networkCreated of
+                Just _ ->
+                    Button.new { label = "Зберегти", onClick = NavigateToIdPage }
+                        |> Button.withDisabled isSaveDisabled
+                        |> Button.view
+
+                Nothing ->
+                    Button.new { label = "Продовжити", onClick = CreateClicked }
+                        |> Button.withDisabled isSaveDisabled
+                        |> Button.view
             ]
         ]
 

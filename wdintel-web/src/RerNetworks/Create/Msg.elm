@@ -56,6 +56,7 @@ type Msg
     | Frequencies FrequenciesMsg
     | ModulationsReturnedByApi (Result ApiError (List B.ModulationRec))
     | Callsigns CallsignsMsg
+    | NavigateToIdPage
 
 
 type CallsignsMsg
