@@ -119,7 +119,7 @@ pub struct KnownCallsignRes {
     pub regiment: Option<String>,
     pub division: Option<String>,
     pub army: Option<String>,
-    pub source_name: String,
+    pub source_name: Option<String>,
     pub created_at: NaiveDateTime,
 }
 

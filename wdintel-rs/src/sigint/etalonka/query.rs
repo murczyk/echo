@@ -387,7 +387,7 @@ fn flatten_and_dedup(input: Vec<Vec<String>>) -> Vec<String> {
 
 pub async fn find_all_known_callsigns(
     db: &DatabaseConnection,
-) -> Result<Vec<KnownCallsignRes>, AppError> {
+) -> Result<BTreeMap<String, Vec<KnownCallsignRes>>, AppError> {
     let q = sigint_callsign::Entity::find()
         .join_as(
             JoinType::InnerJoin,
@@ -395,7 +395,7 @@ pub async fn find_all_known_callsigns(
             Alias::new("sigint_unit"),
         )
         .join_as(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             sigint_callsign::Relation::Source.def(),
             Alias::new("source"),
         )
@@ -421,13 +421,24 @@ pub async fn find_all_known_callsigns(
     //     q.build(DbBackend::Postgres).to_string()
     // );
 
-    let res = q
+    let results = q
         .into_model::<KnownCallsignRes>()
         .all(db)
         .await
         .context(h!())?;
 
-    Ok(res)
+    // Group results by callsign into a BTreeMap
+    let mut grouped_results: BTreeMap<String, Vec<KnownCallsignRes>> =
+        BTreeMap::new();
+
+    for result in results {
+        grouped_results
+            .entry(result.callsign.clone())
+            .or_default()
+            .push(result);
+    }
+
+    Ok(grouped_results)
 }
 
 #[derive(Debug, Clone)]
@@ -442,7 +453,7 @@ pub async fn load_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    known_callsigns: &Vec<KnownCallsignRes>,
+    known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
@@ -468,7 +479,7 @@ pub async fn load_callsigns(
 
             let short_known_callsigns =
                 crate::sigint::callsign::match_known_callsigns(
-                    known_callsigns,
+                    known_callsigns.get(&callsign),
                     &callsign,
                     row.unit_id,
                     &row.unit_name.clone(),
@@ -476,8 +487,7 @@ pub async fn load_callsigns(
 
             CallsignRes {
                 callsign: callsign.clone(),
-                known_callsigns: (!short_known_callsigns.is_empty())
-                    .then_some(short_known_callsigns),
+                known_callsigns: short_known_callsigns,
                 message_count: 0,
                 last_datetime: None,
                 freqs: None,
