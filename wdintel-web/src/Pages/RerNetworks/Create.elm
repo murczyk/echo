@@ -19,6 +19,7 @@ import Html.Styled as Styled
 import Http
 import Layouts
 import Le.Block.Select
+import Le.Block.Spinner
 import Le.Block.Toast
 import Le.Components exposing (fieldError, isInvalidCls)
 import Le.ErrorHandling
@@ -84,6 +85,17 @@ isFormValid req =
             == ""
             || not hasAor
         )
+
+
+-- Helper function to check if network has at least one frequency
+hasAtLeastOneFrequency : Model -> Bool
+hasAtLeastOneFrequency model =
+    case model.freqs of
+        RD.Success freqs ->
+            List.length freqs > 0
+
+        _ ->
+            False
 
 
 validateRequiredString : String -> String -> Dict String String -> Dict String String
@@ -965,6 +977,9 @@ viewActionButtons model =
         isSaveDisabled =
             model.creatingNetwork || not (isFormValid model.createNetworkState)
 
+        hasFrequencies =
+            hasAtLeastOneFrequency model
+
         disabledTooltip =
             if model.creatingNetwork then
                 "Збереження..."
@@ -978,6 +993,9 @@ viewActionButtons model =
             else if Maybe.withDefault [] model.createNetworkState.areaOfResponsibilityIds |> List.isEmpty then
                 "Оберіть смугу відповідальності"
 
+            else if not hasFrequencies then
+                "Додайте мінімум одну частоту до мережі"
+
             else
                 ""
     in
@@ -987,12 +1005,18 @@ viewActionButtons model =
             [ case model.networkCreated of
                 Just _ ->
                     Button.new { label = "Зберегти", onClick = NavigateToIdPage }
-                        |> Button.withDisabled isSaveDisabled
+                        |> Button.withDisabled (isSaveDisabled || not hasFrequencies)
                         |> Button.view
 
                 Nothing ->
                     Button.new { label = "Продовжити", onClick = CreateClicked }
                         |> Button.withDisabled isSaveDisabled
+                        |> Button.withIcon
+                            (if model.creatingNetwork then
+                                [ Le.Block.Spinner.loadingSpinner2Sm ]
+                            else
+                                []
+                            )
                         |> Button.view
             ]
         ]
