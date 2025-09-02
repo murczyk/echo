@@ -1928,11 +1928,14 @@ contentBlock shared model user =
                 ]
                 [ div [ class "col-span-2" ]
                     [ div [ class "flex flex-col" ]
-                        [ input
+                        [ textarea
                             [ class "form-input uppercase w-full"
                             , id "callsign-input"
                             , name "callsign"
                             , rows 1
+                            , style "resize" "none"
+                            , style "overflow" "hidden"
+                            , wrap "off"
                             , Attr.disabled (not hasEditorRole)
                             , placeholder "Позивний"
                             , onInput <|
