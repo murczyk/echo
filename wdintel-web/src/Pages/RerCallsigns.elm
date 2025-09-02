@@ -2442,6 +2442,7 @@ cellsToTriples cells =
 processTabDelimitedInput : String -> List AddState
 processTabDelimitedInput input =
     input
+        |> String.trimRight
         |> String.lines
         |> List.concatMap
             (\line ->
