@@ -597,13 +597,15 @@ pub async fn load_whitelist_from_file(
 }
 
 pub fn match_known_callsigns(
-    known_callsigns: &[KnownCallsignRes],
+    known_callsigns: Option<&Vec<KnownCallsignRes>>,
     callsign: &str,
     unit_id: Option<i64>,
     unit_name: &Option<String>,
-) -> Vec<KnownCallsignShortRes> {
+) -> Option<Vec<KnownCallsignShortRes>> {
+    let known_callsigns = known_callsigns?;
+
     // Collect all matching known_callsigns based on the same top level units
-    let matched = known_callsigns
+    let matched: Vec<KnownCallsignRes> = known_callsigns
         .iter()
         .filter(|kc| {
             kc.callsign == callsign
@@ -612,7 +614,7 @@ pub fn match_known_callsigns(
                     .is_some_and(|u| kc.unit_name.ends_with(u))
         })
         .cloned()
-        .collect::<Vec<KnownCallsignRes>>();
+        .collect();
 
     // If no match found, fallback to Callsign + UnitId matching
     let matched = if matched.is_empty() {
@@ -625,17 +627,23 @@ pub fn match_known_callsigns(
         matched
     };
 
-    matched
-        .into_iter()
-        .map(|kc| KnownCallsignShortRes {
-            id: kc.id,
-            callsign: kc.callsign,
-            position: kc.position,
-            comment: kc.comment,
-            unit_id: kc.unit_id,
-            unit_name: kc.unit_name,
-            source_name: kc.source_name,
-            created_at: kc.created_at.and_utc().timestamp_millis(),
-        })
-        .collect()
+    if matched.is_empty() {
+        return None;
+    }
+
+    Some(
+        matched
+            .into_iter()
+            .map(|kc| KnownCallsignShortRes {
+                id: kc.id,
+                callsign: kc.callsign,
+                position: kc.position,
+                comment: kc.comment,
+                unit_id: kc.unit_id,
+                unit_name: kc.unit_name,
+                source_name: kc.source_name.unwrap_or_default(),
+                created_at: kc.created_at.and_utc().timestamp_millis(),
+            })
+            .collect(),
+    )
 }

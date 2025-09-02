@@ -491,8 +491,8 @@ pub async fn bl_get_network_callsigns_list(
         &network_callsigns
             .iter()
             .filter(|nc| {
-                (!nc.developing && nc.sigint_callsign_id.is_none())
-                    || (nc.sc_developing.unwrap_or(false))
+                (nc.sigint_callsign_id.is_none() && !nc.developing)
+                    || (!nc.sc_developing.unwrap_or(false))
             })
             .map(|nc| nc.sigint_callsign.clone())
             .collect::<Vec<_>>(),
