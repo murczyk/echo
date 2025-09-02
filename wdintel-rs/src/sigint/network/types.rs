@@ -18,7 +18,7 @@ pub struct NetworkDetails {
     pub operation_period: Option<String>,
     pub updated_by: Option<String>,
     pub updated_at: NaiveDateTime,
-    pub active_from: NaiveDateTime,
+    pub active_from: Option<NaiveDateTime>,
     pub active_to: Option<NaiveDateTime>,
 }
 
@@ -40,7 +40,7 @@ pub struct Network {
     pub operation_period: Option<String>,
     pub last_updated_at: i64,
     pub last_updated_by: Option<String>,
-    pub active_from: i64,
+    pub active_from: Option<i64>,
     pub active_to: Option<i64>,
     pub post_ids: Vec<i64>,
     pub descriptions: Vec<NetworkDescription>,
@@ -59,7 +59,7 @@ pub struct UpdateFreqNetworksReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateNetworkReq {
-    pub freqs: Vec<AddNetworkFreq>,
+    pub freqs: Option<Vec<AddNetworkFreq>>,
     pub unit_ids: Option<Vec<i64>>,
     pub area_of_responsibility_ids: Option<Vec<i64>>,
     pub name: String,

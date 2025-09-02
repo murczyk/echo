@@ -59,7 +59,6 @@ pub use super::sigint_comment::Entity as SigintComment;
 pub use super::sigint_important::Entity as SigintImportant;
 pub use super::sigint_inbox_item::Entity as SigintInboxItem;
 pub use super::sigint_network::Entity as SigintNetwork;
-pub use super::sigint_network_activity_history::Entity as SigintNetworkActivityHistory;
 pub use super::sigint_network_aor::Entity as SigintNetworkAor;
 pub use super::sigint_network_callsign::Entity as SigintNetworkCallsign;
 pub use super::sigint_network_callsign_changelog::Entity as SigintNetworkCallsignChangelog;

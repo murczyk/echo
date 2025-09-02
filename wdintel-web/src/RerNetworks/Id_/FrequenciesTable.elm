@@ -1,6 +1,7 @@
 module RerNetworks.Id_.FrequenciesTable exposing
     ( createSidebar
     , deleteFreqConfirmationModal
+    , doNeedReloadCatalogCallsigns
     , editSidebar
     , freqActivityChartDetailed
     , loadFreqsInit
@@ -65,6 +66,22 @@ loadFreqsInit networkId =
     [ E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = networkId }
     , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId }
     ]
+
+
+doNeedReloadCatalogCallsigns : FrequenciesMsg -> Bool
+doNeedReloadCatalogCallsigns freqsMsg =
+    case freqsMsg of
+        FreqAddedToNetwork _ ->
+            True
+
+        DeleteFreqReturnedByApi _ (Ok _) ->
+            True
+
+        FreqUpdatedByApi _ ->
+            True
+
+        _ ->
+            False
 
 
 update : Shared.Model -> FrequenciesMsg -> Model -> ( Model, Effect FrequenciesMsg )
@@ -379,23 +396,27 @@ update shared msg model =
             case ( model.network, model.deleteFreqConfirmation ) of
                 ( Success network, Just ( freqId, _ ) ) ->
                     ( { model | deleteFreqLoading = True, deleteFreqConfirmation = Nothing }
-                    , E.removeFreqFromNetwork DeleteFreqReturnedByApi { id = Just freqId, networkId = Nothing, freq = Nothing }
+                    , E.removeFreqFromNetwork (DeleteFreqReturnedByApi freqId) { id = Just freqId, networkId = Nothing, freq = Nothing }
                     )
 
                 _ ->
                     ( model, E.none )
 
-        DeleteFreqReturnedByApi (Err e) ->
+        DeleteFreqReturnedByApi _ (Err e) ->
             ( { model | deleteFreqLoading = False }
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти" e
             )
 
-        DeleteFreqReturnedByApi (Ok network) ->
-            ( { model | deleteFreqLoading = False, network = Success network }
-            , E.batch
-                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id }
-                , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
-                ]
+        DeleteFreqReturnedByApi freqId (Ok network) ->
+            ( { model
+                | deleteFreqLoading = False
+                , network = Success network
+                , freqs =
+                    RD.withDefault [] model.freqs
+                        |> List.filter (\freq -> freq.networkFreqId /= freqId)
+                        |> Success
+              }
+            , E.none
             )
 
         OpenFreqCreateSidebar ->

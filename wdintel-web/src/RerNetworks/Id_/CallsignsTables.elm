@@ -2,10 +2,11 @@ module RerNetworks.Id_.CallsignsTables exposing
     ( createCallsignsSidebar
     , deleteCallsignModal
     , editCallsignsSidebar
-    , getCatalogAndNetworkCallsigns
     , getDevelopingCallsigns
     , getRegularCallsigns
     , initLoad
+    , loadCatalogAndNetworkCallsigns
+    , loadCatalogCallsigns
     , update
     , view
     )
@@ -52,7 +53,7 @@ import Page exposing (Page)
 import RerNetworks.Id_.FrequenciesTable as FreqsTable
 import RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), Model, ShowAllPopupFor(..))
 import RerNetworks.Id_.Msg as Msgs exposing (CallsignsMsg(..))
-import RerNetworks.Id_.Utils as IdUtils
+import RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -69,10 +70,14 @@ initLoad =
     E.sendCmd (Api.sigint_list_sources GotSources ())
 
 
-getCatalogAndNetworkCallsigns networkId =
+loadCatalogAndNetworkCallsigns networkId =
     [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId }
     , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing }
     ]
+
+
+loadCatalogCallsigns networkId =
+    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId }
 
 
 update : Shared.Model -> CallsignsMsg -> Model -> ( Model, Effect CallsignsMsg )
@@ -801,22 +806,30 @@ view model user shared =
                                             (model.developingCallsignDropdown == Just callsign.id)
                                             (ToggleDevelopingCallsignDropdown callsign.id)
                                             CloseDevelopingCallsignDropdown
-                                            [ DropdownBadge.InternalAction
+                                            ([ DropdownBadge.InternalAction
                                                 { icon = "bi-pencil"
                                                 , label = "Редагувати"
                                                 , action = EditCallsignClicked callsign.id
                                                 }
-                                            , DropdownBadge.ExternalLink
-                                                { icon = "bi-arrow-right"
-                                                , label = "Проаналізувати"
-                                                , url = IdUtils.createAnalysisUrl shared model callsign.callsign
-                                                }
-                                            , DropdownBadge.InternalAction
+                                             , DropdownBadge.InternalAction
                                                 { icon = "bi-trash"
                                                 , label = "Видалити"
                                                 , action = DeleteCallsignFromNetwork callsign.id
                                                 }
-                                            ]
+                                             ]
+                                                ++ (case model.network of
+                                                        Success network ->
+                                                            [ DropdownBadge.ExternalLink
+                                                                { icon = "bi-arrow-right"
+                                                                , label = "Проаналізувати"
+                                                                , url = IdUtils.createAnalysisUrl shared network callsign.callsign
+                                                                }
+                                                            ]
+
+                                                        _ ->
+                                                            []
+                                                   )
+                                            )
                                         )
                                 )
                                 developingCallsigns
@@ -908,17 +921,25 @@ viewCallsigns callsigns model user shared =
                                             (model.unknownCallsignDropdown == Just c)
                                             (ToggleUnknownCallsignDropdown c)
                                             CloseUnknownCallsignDropdown
-                                            [ DropdownBadge.InternalAction
+                                            ([ DropdownBadge.InternalAction
                                                 { icon = "bi-plus"
                                                 , label = "Додати"
                                                 , action = OpenAddFromUnknownSidebar c
                                                 }
-                                            , DropdownBadge.ExternalLink
-                                                { icon = "bi-arrow-right"
-                                                , label = "Проаналізувати"
-                                                , url = IdUtils.createAnalysisUrl shared model c
-                                                }
-                                            ]
+                                             ]
+                                                ++ (case model.network of
+                                                        Success network ->
+                                                            [ DropdownBadge.ExternalLink
+                                                                { icon = "bi-arrow-right"
+                                                                , label = "Проаналізувати"
+                                                                , url = IdUtils.createAnalysisUrl shared network c
+                                                                }
+                                                            ]
+
+                                                        _ ->
+                                                            []
+                                                   )
+                                            )
                                 in
                                 DropdownBadge.view
                                     (DropdownBadge.withAutoDirection DropdownBadge.Up config)
@@ -1063,13 +1084,18 @@ callsignsTableConfig shared model user =
                         , children =
                             [ div [ class "flex items-center flex-wrap" ]
                                 [ text <| String.toUpper row.callsign
-                                , a
-                                    [ href (IdUtils.createAnalysisUrl shared model row.callsign)
-                                    , target "_blank"
-                                    , title "Відкрити позивний в аналізі"
-                                    , class "ml-2"
-                                    ]
-                                    [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
+                                , case model.network of
+                                    Success network ->
+                                        a
+                                            [ href (IdUtils.createAnalysisUrl shared network row.callsign)
+                                            , target "_blank"
+                                            , title "Відкрити позивний в аналізі"
+                                            , class "ml-2"
+                                            ]
+                                            [ i [ class "bi bi-box-arrow-up-right text-action text-sm" ] [] ]
+
+                                    _ ->
+                                        text ""
                                 ]
                             ]
                         }

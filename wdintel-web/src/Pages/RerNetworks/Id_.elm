@@ -45,7 +45,7 @@ import RerNetworks.Id_.FrequenciesTable as FrequenciesTable
 import RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
 import RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
 import RerNetworks.Id_.NetworkInfo as NetworkInfo
-import RerNetworks.Id_.Utils as IdUtils
+import RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
 import Select
@@ -302,8 +302,16 @@ update shared msg model =
             let
                 ( m1, freqsEff ) =
                     FrequenciesTable.update shared freqsMsg model
+
+                loadCatalogCallsigns =
+                    case ( FrequenciesTable.doNeedReloadCatalogCallsigns freqsMsg, m1.network ) of
+                        ( True, Success network ) ->
+                            E.map Callsigns <| CallsignsTables.loadCatalogCallsigns network.id
+
+                        _ ->
+                            E.none
             in
-            ( m1, E.map Frequencies freqsEff )
+            ( m1, E.batch [ E.map Frequencies freqsEff, loadCatalogCallsigns ] )
 
         Callsigns callsMsg ->
             let
@@ -360,11 +368,16 @@ update shared msg model =
                 , editAorSelect = editAorSelect2
               }
             , E.batch
-                ([ E.getNetworkPoints MapPointsReturnedByApi
-                    { networkId = res.id
-                    , sinceDateInclusiveMs = res.activeFrom
-                    , tillDateNoninclusiveMs = res.activeTo
-                    }
+                ([ case res.activeFrom of
+                    Just activeFrom ->
+                        E.getNetworkPoints MapPointsReturnedByApi
+                            { networkId = res.id
+                            , sinceDateInclusiveMs = activeFrom
+                            , tillDateNoninclusiveMs = res.activeTo
+                            }
+
+                    Nothing ->
+                        E.none
                  , E.getSingleNetworkGroupsActivity GroupsActivityReturnedByApi { networkId = res.id, tillDateNoninclusiveMs = Nothing }
 
                  --TODO: do not load if loaded already
@@ -372,7 +385,7 @@ update shared msg model =
                  , E.getSignalsForNetwork SignalsForNetworkLoaded { networkId = res.id }
                  ]
                     ++ (FrequenciesTable.loadFreqsInit res.id |> List.map (E.map Frequencies))
-                    ++ (CallsignsTables.getCatalogAndNetworkCallsigns res.id |> List.map (E.map Callsigns))
+                    ++ (CallsignsTables.loadCatalogAndNetworkCallsigns res.id |> List.map (E.map Callsigns))
                 )
             )
 

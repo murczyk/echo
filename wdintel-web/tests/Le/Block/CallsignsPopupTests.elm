@@ -17,8 +17,8 @@ createUnit id army division regiment battalion company =
         -- Динамічно складаємо назву з заповнених полів
         name =
             [ company, battalion, regiment, division, army ]
-            |> List.filter (not << String.isEmpty)
-            |> String.join " "
+                |> List.filter (not << String.isEmpty)
+                |> String.join " "
     in
     { id = id
     , army = army
@@ -52,7 +52,7 @@ createNetwork id freqs unitIds =
     , operationPeriod = Nothing
     , lastUpdatedAt = 0
     , lastUpdatedBy = Nothing
-    , activeFrom = 0
+    , activeFrom = Nothing
     , activeTo = Nothing
     , postIds = []
     , descriptions = []
