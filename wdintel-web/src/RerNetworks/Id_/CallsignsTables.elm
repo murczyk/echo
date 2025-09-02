@@ -2,10 +2,11 @@ module RerNetworks.Id_.CallsignsTables exposing
     ( createCallsignsSidebar
     , deleteCallsignModal
     , editCallsignsSidebar
-    , getCatalogAndNetworkCallsigns
     , getDevelopingCallsigns
     , getRegularCallsigns
     , initLoad
+    , loadCatalogAndNetworkCallsigns
+    , loadCatalogCallsigns
     , update
     , view
     )
@@ -69,10 +70,14 @@ initLoad =
     E.sendCmd (Api.sigint_list_sources GotSources ())
 
 
-getCatalogAndNetworkCallsigns networkId =
+loadCatalogAndNetworkCallsigns networkId =
     [ E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId }
     , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing }
     ]
+
+
+loadCatalogCallsigns networkId =
+    E.getNetworkCallsigns CallsignsReturnedByApi { networkId = networkId }
 
 
 update : Shared.Model -> CallsignsMsg -> Model -> ( Model, Effect CallsignsMsg )

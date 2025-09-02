@@ -302,8 +302,16 @@ update shared msg model =
             let
                 ( m1, freqsEff ) =
                     FrequenciesTable.update shared freqsMsg model
+
+                loadCatalogCallsigns =
+                    case ( FrequenciesTable.doNeedReloadCatalogCallsigns freqsMsg, m1.network ) of
+                        ( True, Success network ) ->
+                            E.map Callsigns <| CallsignsTables.loadCatalogCallsigns network.id
+
+                        _ ->
+                            E.none
             in
-            ( m1, E.map Frequencies freqsEff )
+            ( m1, E.batch [ E.map Frequencies freqsEff, loadCatalogCallsigns ] )
 
         Callsigns callsMsg ->
             let
@@ -377,7 +385,7 @@ update shared msg model =
                  , E.getSignalsForNetwork SignalsForNetworkLoaded { networkId = res.id }
                  ]
                     ++ (FrequenciesTable.loadFreqsInit res.id |> List.map (E.map Frequencies))
-                    ++ (CallsignsTables.getCatalogAndNetworkCallsigns res.id |> List.map (E.map Callsigns))
+                    ++ (CallsignsTables.loadCatalogAndNetworkCallsigns res.id |> List.map (E.map Callsigns))
                 )
             )
 
