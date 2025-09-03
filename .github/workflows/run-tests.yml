@@ -103,3 +103,77 @@ jobs:
     steps:
       - name: Skip overall CI failure notification
         run: echo "Overall CI failure Discord notification disabled."
+
+  build-and-publish-debs:
+    if: github.repository == 'echoua/echo'
+    name: Build and publish deb packages (amd64)
+    runs-on: [self-hosted, Linux, X64]
+    env:
+      # Optional echo-ci SSH configuration. If these secrets are not set, the
+      # publish step is skipped and we only upload GitHub artifacts.
+      ECHO_CI_SSH_HOST: ${{ secrets.ECHO_CI_SSH_HOST }}
+      ECHO_CI_SSH_USER: ${{ secrets.ECHO_CI_SSH_USER }}
+      ECHO_CI_SSH_KEY: ${{ secrets.ECHO_CI_SSH_KEY }}
+      # Repo/dist/component names can be overridden via secrets; defaults below
+      ECHO_CI_REPO: ${{ secrets.ECHO_CI_REPO || 'echo' }}
+      ECHO_CI_DIST: ${{ secrets.ECHO_CI_DIST || 'jammy' }}
+      ECHO_CI_COMPONENT: ${{ secrets.ECHO_CI_COMPONENT || 'main' }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
+          clean: false
+
+      - name: Setup Git LFS and debug
+        run: |
+          echo "Checking Git LFS status..."
+          git lfs install
+          git lfs pull
+
+      - name: Add elm-land to PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in \
+            /home/ubuntu/.nvm/versions/node/*/bin \
+            /home/build/.nvm/versions/node/*/bin \
+            "$HOME/.nvm/versions/node"/*/bin \
+            "$HOME/.local/bin" \
+            /home/ubuntu/.local/bin; do
+            if [ -d "$d" ] && [ -x "$d/elm-land" ]; then
+              echo "Adding $d to PATH"
+              echo "$d" >> "$GITHUB_PATH"
+              break
+            fi
+          done
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build deb packages
+        run: bash deploy/ci/build_debs.sh
+
+      - name: Upload debs as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: echo-debs-${{ github.run_id }}-amd64
+          path: |
+            target/debian/*.deb
+          if-no-files-found: error
+
+      - name: Publish to echo-ci (aptly)
+        run: |
+          if [ -n "${{ env.ECHO_CI_SSH_HOST }}" ] && [ -n "${{ env.ECHO_CI_SSH_USER }}" ] && [ -n "${{ env.ECHO_CI_SSH_KEY }}" ]; then
+            bash deploy/ci/publish_echo_ci.sh
+          else
+            echo "Skipping publish: ECHO_CI_* secrets are not configured"
+          fi
+
+      - name: Remove target on failure
+        if: failure()
+        run: rm -rf target

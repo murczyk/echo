@@ -955,3 +955,74 @@ import-etalon-to-target:
     ssh -t {{ server }} 'wdintel-rs --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
     scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ target }}:/tmp/et_import_{{ dt1 }}.json
     ssh -t {{ target }} '{{ echo_bin }} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{ origin }}'
+## Version bump helpers (similar to echo-operator)
+# Bump version across crates by updating rc timestamp only (no minor/patch selection)
+bump-version:
+    #!/bin/bash
+    set -euo pipefail
+    ROOT="$(pwd)"
+    MAIN_TOML="$ROOT/Cargo.toml"  # workspace file
+
+    # Extract current [workspace.package] version
+    CUR=$(awk 'BEGIN{insec=0} /^\[workspace.package\]/{insec=1} /^\[/{if ($0 != "[workspace.package]") insec=0} insec && $0 ~ /^[[:space:]]*version[[:space:]]*=/{ match($0, /"([^"]+)"/, a); print a[1]; exit }' "$MAIN_TOML")
+    BASE=${CUR%-rc.*}
+    if [[ -z "${BASE:-}" ]]; then echo "Cannot determine base version from $MAIN_TOML" >&2; exit 1; fi
+    TS=$(date -u +%Y%m%d%H%M)
+    NEW_VER="${BASE}-rc.${TS}"
+    echo "✅ Bumping to $NEW_VER"
+
+    # Update workspace version in [workspace.package]
+    awk -v newver="$NEW_VER" '
+      BEGIN{insec=0; done=0}
+      /^\[workspace.package\]/{insec=1}
+      /^\[/{if ($0 != "[workspace.package]") insec=0}
+      insec && !done && $0 ~ /^[[:space:]]*version[[:space:]]*=/{
+        print "version = \"" newver "\""; done=1; next
+      }
+      {print}
+    ' "$MAIN_TOML" > "$MAIN_TOML.tmp" && mv "$MAIN_TOML.tmp" "$MAIN_TOML"
+
+    # Update standalone crates that are not in the workspace
+    PFILES=(
+      "$ROOT/docs/echo-docs/Cargo.toml"
+      "$ROOT/signal-cli-native/Cargo.toml"
+    )
+    for file in "${PFILES[@]}"; do
+      if [[ -f "$file" ]]; then
+        awk -v newver="$NEW_VER" '
+          BEGIN{inpkg=0; done=0}
+          /^\[package\]/{inpkg=1}
+          /^\[/{if ($0 != "[package]") inpkg=0}
+          inpkg && !done && $0 ~ /^[[:space:]]*version[[:space:]]*=/{
+            print "version = \"" newver "\""; done=1; next
+          }
+          {print}
+        ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+      fi
+    done
+
+    # Update lockfile
+    cargo check
+
+# Commit bumped versions (includes Cargo.lock)
+bump-version-commit:
+    #!/bin/bash
+    set -euo pipefail
+    just bump-version
+    MAIN_TOML="Cargo.toml"
+    new_ver=$(awk 'BEGIN{insec=0} /^\[workspace.package\]/{insec=1} /^\[/{if ($0 != "[workspace.package]") insec=0} insec && $0 ~ /^[[:space:]]*version[[:space:]]*=/{ match($0, /"([^"]+)"/, a); print a[1]; exit }' "$MAIN_TOML")
+    msg="bump: ${new_ver}"
+    git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml signal-cli-native/Cargo.toml 2>/dev/null || true
+    if git diff --cached --quiet; then
+        echo "No changes to commit."
+    else
+        git commit -m "$msg"
+        echo "Versions bumped and committed: $msg"
+    fi
+
+# Push bumped versions
+bump-version-push:
+    #!/bin/bash
+    set -euo pipefail
+    just bump-version-commit
+    git push
