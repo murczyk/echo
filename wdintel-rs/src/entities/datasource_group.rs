@@ -15,6 +15,8 @@ pub struct Model {
     pub datasource_id: i64,
     pub last_sync_at: DateTime,
     pub created_at: DateTime,
+    #[sea_orm(column_type = "Text")]
+    pub name: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -35,6 +37,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SignalGroup,
+    #[sea_orm(has_many = "super::signal_message::Entity")]
+    SignalMessage,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -46,6 +50,12 @@ impl Related<super::datasource::Entity> for Entity {
 impl Related<super::signal_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalGroup.def()
+    }
+}
+
+impl Related<super::signal_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessage.def()
     }
 }
 

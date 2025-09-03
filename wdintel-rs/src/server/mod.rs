@@ -6,6 +6,7 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
+use crate::messenger::group::oneoff::check_should_populate_signal_message_group_ids;
 use milgeo_rs::MilGeo;
 use opendal::services::S3;
 use opendal::Operator;
@@ -112,6 +113,13 @@ pub async fn main_server(
     {
         warn!("Failed to ensure import group exists: {e:?}");
     };
+
+    if let Err(e) = check_should_populate_signal_message_group_ids(&dbx4)
+        .await
+        .context(h!())
+    {
+        warn!("check_should_populate_signal_message_group_ids failed: {e:?}");
+    }
 
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())

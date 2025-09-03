@@ -17,6 +17,7 @@ pub struct Model {
     pub enabled: bool,
     pub created_at: DateTime,
     pub sigint_origin_id: Option<i64>,
+    pub mothership_id: Option<i32>,
     pub original_id: Option<i32>,
 }
 

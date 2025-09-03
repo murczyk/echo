@@ -48,7 +48,7 @@ pub struct SyncStateGroup {
 
 #[derive(Eq, Ord, PartialEq, PartialOrd, Debug, Clone)]
 pub struct SyncStateSender {
-    pub uuid: uuid::Uuid,
+    pub uuid: Uuid,
     pub name: Option<String>,
 }
 
@@ -65,7 +65,7 @@ pub async fn oneoff_reprocess_coords(
     ps: &OneoffReprocessCoordsPs,
 ) -> Result<(), AppError> {
     println!("> oneoff_reprocess_coords {ps:?}");
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let cutoff_ts = Utc::now().naive_utc()
         - chrono::TimeDelta::try_days(30).context(h!())?;
     let condition_1 = sigint_inbox_item::Column::Coords
@@ -86,16 +86,17 @@ pub async fn oneoff_reprocess_coords(
             Utc::now() - chrono::TimeDelta::try_days(days).context(h!())?;
         q = q.filter(sigint_inbox_item::Column::Datetime.gte(ts.naive_utc()));
     }
-    let count = q.clone().count(&dbx).await?;
-    let mut rows = q.stream(&dbx).await?;
+    let count = q.clone().count(&dbx).await.c(h!())?;
+    let mut rows = q.stream(&dbx).await.c(h!())?;
     let pb = ProgressBar::new(count);
     let mut found = 0;
-    while let Some(message) = rows.try_next().await? {
+    while let Some(message) = rows.try_next().await.c(h!())? {
         pb.inc(1);
         let item_id = message.id;
         let m_item = sigint_inbox_item::Entity::find_by_id(item_id)
             .one(&dbx)
-            .await?;
+            .await
+            .c(h!())?;
         if m_item.is_none() {
             continue;
         }
@@ -114,14 +115,17 @@ pub async fn oneoff_reprocess_coords(
         if !coords_vec.is_empty() {
             found += coords_vec.len();
         }
-        crate::location::peleng::delete_inbox_pelengs(item_id, &dbx).await?;
+        crate::location::peleng::delete_inbox_pelengs(item_id, &dbx)
+            .await
+            .c(h!())?;
         crate::location::peleng::insert_pelengs(
             coords_vec.clone(),
             item_id,
             ts,
             &dbx,
         )
-        .await?;
+        .await
+        .c(h!())?;
         let Some(coords) = pop_vector(&mut coords_vec) else {
             continue;
         };
@@ -129,7 +133,7 @@ pub async fn oneoff_reprocess_coords(
         inbox_item.coords = Set(Some(coords.text.clone()));
         inbox_item.lat = Set(Some(coords.lat));
         inbox_item.lng = Set(Some(coords.lng));
-        inbox_item.update(&dbx).await?;
+        inbox_item.update(&dbx).await.c(h!())?;
     }
     println!("> done! filled {found} new coords");
     Ok(())
@@ -138,39 +142,46 @@ pub async fn oneoff_reprocess_coords(
 pub async fn find_duplicate<'a, 'async_trait, C>(
     txn: &'a C,
     body: &str,
+    m_timestamp: Option<NaiveDateTime>,
 ) -> Result<Option<signal_message::Model>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     // find duplicate created N mins ago or later
-    let thirty_mins_ago = Utc::now() - chrono::Duration::minutes(30);
-    let mut m_duplicate = SignalMessage::find()
-        .filter(signal_message::Column::CreatedAt.gte(thirty_mins_ago))
+    let created_recently = signal_message::Column::CreatedAt
+        .gte(Utc::now() - chrono::Duration::minutes(30));
+
+    let time_filter = if let Some(timestamp) = m_timestamp {
+        signal_message::Column::Timestamp
+            .eq(timestamp)
+            .or(created_recently)
+    } else {
+        created_recently
+    };
+
+    let mut chars = body.chars();
+    chars.next_back();
+    let alt_body = chars.as_str().to_string();
+
+    let m_duplicate = SignalMessage::find()
+        .filter(time_filter)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::Body.eq(body))
+        .filter(
+            signal_message::Column::Body
+                .eq(body)
+                .or(signal_message::Column::Body.eq(alt_body)),
+        )
         .order_by_asc(signal_message::Column::CreatedAt)
         .one(txn)
-        .await?;
-    if m_duplicate.is_none() {
-        // remove last char, search
-        let mut chars = body.chars();
-        chars.next_back();
-        let body = chars.as_str().to_string();
-        m_duplicate = SignalMessage::find()
-            .filter(signal_message::Column::CreatedAt.gte(thirty_mins_ago))
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::Body.eq(body))
-            .order_by_asc(signal_message::Column::CreatedAt)
-            .one(txn)
-            .await?;
-    }
+        .await
+        .c(h!())?;
     Ok(m_duplicate)
 }
 
 pub async fn save_attachment_restapi(
     config: &crate::config::Config,
     dbx: &DatabaseConnection,
-    attachment: &crate::sigint::restapi::Attachment,
+    attachment: &restapi::Attachment,
     m_db_message_id: Option<i64>,
 ) -> Result<(), AppError> {
     if let Some(db_message_id) = m_db_message_id {
@@ -184,15 +195,14 @@ pub async fn save_attachment_restapi(
                 created_at: NotSet,
             })
             .exec(dbx)
-            .await?;
+            .await
+            .c(h!())?;
         }
     }
     Ok(())
 }
 
-fn display_message(
-    message: &crate::sigint::restapi::Message,
-) -> Result<String, AppError> {
+fn display_message(message: &restapi::Message) -> Result<String, AppError> {
     // message example in json: {"exception":null,"envelope":{"source":"+380969540887","sourceNumber":"+380969540887","sourceUuid":"d39ae116-5141-4dcb-a10c-328d3acdfcf4","sourceName":"пост Майк 140","sourceDevice":4,"timestamp":1701448256350,"dataMessage":{"timestamp":1701448256350,"message":"01.12, 18:28:53\n415.4150\nУКХ р/м НВ підрозділу 415.415 МГц\nНВ\nНВ\n\n— Сейчас надо наводиться... 268.","expiresInSeconds":0,"viewOnce":false,"attachments":null,"reaction":null,"quote":null,"groupInfo":{"groupId":"GbjoAAUhQKZ46SSA8UIl+ApktWIH/t4E1YgbxiH0zMk=","type":"DELIVER"}}},"account":"+380502711438"}
     if message.exception.is_some() {
         return Ok(serde_json::to_string(message).context(h!())?);
@@ -232,7 +242,7 @@ pub async fn oneoff_sigint_import_mouse(
     println!("> Starting oneoff_sigint_import_mouse");
 
     let config = crate::config::read_config(mode)?;
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let mut redis = crate::new_redis(&config).await.context(h!())?;
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(
@@ -326,7 +336,8 @@ pub async fn oneoff_sigint_import_mouse(
                         msg,
                         &config,
                     )
-                    .await?;
+                    .await
+                    .c(h!())?;
                 }
             };
         }
@@ -339,7 +350,7 @@ pub async fn oneoff_sigint_import_mouse(
 async fn xlsx_import_process_one(
     settlements: Arc<RwLock<crate::location::SettlementsData>>,
     ps: &crate::OneoffSigintImportMousePs,
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
     rq: &reqwest::Client,
     network: &str,
@@ -389,10 +400,20 @@ async fn xlsx_import_process_one(
         .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
     // Normalize body
     let body = body.replace("\r\n", "\n");
+
+    let group_id = crate::messenger::group::ensure_group_id(
+        dbx,
+        group_id.to_string(),
+        datasource_id,
+    )
+    .await
+    .context(h!())?;
+
     let message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
+        datasource_group_id: Set(Some(group_id)),
         group_master_key: Set(Some(group_id.to_string())),
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(sender_uuid.to_string())),
@@ -422,7 +443,9 @@ async fn xlsx_import_process_one(
     )
     .await;
 
-    self::worker::incoming_message_after_insert(dbx, db_message_id).await?;
+    worker::incoming_message_after_insert(dbx, db_message_id)
+        .await
+        .c(h!())?;
 
     Ok(())
 }
@@ -457,8 +480,8 @@ fn extract_network_name(s: &str) -> Result<Option<String>, AppError> {
 
 /// There's a [special case](https://github.com/users/k-bx/projects/2/views/1?pane=issue&itemId=46378472) where people post multiple messages in one.
 fn message_to_many(
-    message: crate::sigint::restapi::Message,
-) -> Result<Vec<crate::sigint::restapi::Message>, AppError> {
+    message: restapi::Message,
+) -> Result<Vec<restapi::Message>, AppError> {
     let Some(data_message) = message.envelope.data_message.as_ref() else {
         return Ok(vec![message.clone()]);
     };

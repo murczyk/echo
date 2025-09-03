@@ -366,6 +366,7 @@ enum Cmd {
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
+    OneoffPopulateSignalMessageGroupIds,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -676,6 +677,12 @@ async fn main() -> Result<(), AppError> {
         Cmd::OneoffGetNetworksActivityStats(ps) => {
             crate::sigint::network::oneoff::oneoff_network_activity_stat(
                 mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffPopulateSignalMessageGroupIds => {
+            messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
+                mode,
             )
             .await
         }

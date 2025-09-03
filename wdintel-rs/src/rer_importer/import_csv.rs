@@ -118,6 +118,15 @@ pub async fn oneoff_rer_csv_import_1(
 
         let timestamp = Utc::now().naive_utc();
 
+        let master_key = group_id.to_string();
+        let group_id = crate::messenger::group::ensure_group_id(
+            &dbx,
+            master_key.to_string(),
+            datasource_id,
+        )
+        .await
+        .context(h!())?;
+
         let message = signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(body.clone())),
@@ -131,6 +140,7 @@ pub async fn oneoff_rer_csv_import_1(
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
+            datasource_group_id: Set(Some(group_id)),
         }
         .insert(&dbx)
         .await
@@ -380,11 +390,20 @@ pub async fn rer_delta_csv_import_go(
         // Normalize body
         let body = body.replace("\r\n", "\n");
 
+        let master_key = group_id.to_string();
+        let group_id = crate::messenger::group::ensure_group_id(
+            dbx,
+            master_key.to_string(),
+            datasource_id,
+        )
+        .await
+        .context(h!())?;
+
         let message = signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(body.clone())),
             created_at: NotSet,
-            group_master_key: Set(Some(group_id.to_string())),
+            group_master_key: Set(Some(master_key)),
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
@@ -393,6 +412,7 @@ pub async fn rer_delta_csv_import_go(
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
+            datasource_group_id: Set(Some(group_id)),
         }
         .insert(dbx)
         .await
@@ -646,7 +666,7 @@ pub async fn ensure_import_group_exists(
             log::warn!("No signal_group found -- creating a default one!");
             let group = signal_group::ActiveModel {
                 master_key: Set(Uuid::new_v4().to_string()),
-                name: Set(Some(group_name)),
+                name: Set(Some(group_name.clone())),
                 ..Default::default()
             };
 
@@ -660,6 +680,7 @@ pub async fn ensure_import_group_exists(
                 datasource_id: Set(datasource_id),
                 last_sync_at: NotSet,
                 created_at: NotSet,
+                name: Set(group_name.clone()),
             }
             .insert(dbx)
             .await
@@ -736,6 +757,7 @@ pub async fn ensure_import_group_exists(
                 datasource_id: Set(datasource_id),
                 last_sync_at: NotSet,
                 created_at: NotSet,
+                name: Set(group_name),
             }
             .insert(dbx)
             .await

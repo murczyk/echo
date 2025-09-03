@@ -20,8 +20,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use log::*;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QuerySelect,
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
 use sea_query::{Alias, Expr, Query};
 use sqlx::FromRow;
