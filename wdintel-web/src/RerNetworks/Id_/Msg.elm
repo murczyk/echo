@@ -163,7 +163,7 @@ type DescriptionsMsg
     | DescriptionEditClickedByUser B.NetworkDescription
     | DescriptionEditSave B.NetworkDescription
     | EditDescriptionInputChanged String
-    | EditDescriptionFreqSelMsg (Select.Msg String)
+    | EditDescriptionFreqSelMsg (Select.Msg Int)
     | DescriptionDeleteClickedByUser B.NetworkDescription
     | DeleteDescriptionConfirmed B.NetworkDescription
     | DeleteDescriptionCanceled

@@ -50,6 +50,7 @@ import Select
 import Set exposing (Set)
 import Shared
 import Shared.Model exposing (isDarkMode)
+import Svg.Styled exposing (desc)
 import Time
 import Time.Extra
 import Url.Builder
@@ -144,7 +145,7 @@ update shared msg model =
                 freqItems =
                     case model.freqs of
                         Success freqs ->
-                            List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+                            List.map (\freq -> Select.basicMenuItem { item = freq.networkFreqId, label = freq.freq }) freqs
 
                         _ ->
                             []
@@ -155,7 +156,7 @@ update shared msg model =
                 , editDescriptionFreqSelect =
                     { state = model.editDescriptionFreqSelect.state
                     , items = freqItems
-                    , selected = Nothing
+                    , selected = description.networkFrequencyId
                     }
               }
             , E.none
@@ -168,23 +169,8 @@ update shared msg model =
                     model.editDescriptionInp
 
                 -- Get selected frequency if any
-                selectedFreq =
-                    model.editDescriptionFreqSelect.selected
-
-                -- Find the frequency ID if a frequency is selected
                 networkFreqId =
-                    case selectedFreq of
-                        Just freq ->
-                            case model.freqs of
-                                Success freqs ->
-                                    ListX.find (\f -> f.freq == freq) freqs
-                                        |> Maybe.map .networkFreqId
-
-                                _ ->
-                                    Nothing
-
-                        Nothing ->
-                            Nothing
+                    model.editDescriptionFreqSelect.selected
             in
             ( { model | editDescriptionSidebar = Nothing }
             , E.networkUpdateDescription (DescriptionEditUpdated description.id)
@@ -264,7 +250,7 @@ update shared msg model =
                 freqItems =
                     case model.freqs of
                         Success freqs ->
-                            List.map .freq freqs |> List.map (\freq -> Select.basicMenuItem { item = freq, label = freq })
+                            List.map (\freq -> Select.basicMenuItem { item = freq.networkFreqId, label = freq.freq }) freqs
 
                         _ ->
                             []
@@ -611,10 +597,15 @@ editDescriptionSidebarContent shared model user network description =
                     , let
                         selectedItem =
                             Maybe.map
-                                (\freq ->
+                                (\freqId ->
                                     Select.basicMenuItem
-                                        { item = freq
-                                        , label = freq
+                                        { item = freqId
+                                        , label =
+                                            RD.withDefault [] model.freqs
+                                                |> List.filter (\f -> f.networkFreqId == freqId)
+                                                |> List.head
+                                                |> Maybe.map .freq
+                                                |> Maybe.withDefault ""
                                         }
                                 )
                                 model.editDescriptionFreqSelect.selected
