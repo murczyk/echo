@@ -82,6 +82,13 @@ else
   SNAP_TO_PUBLISH="$SNAP_REPO"
 fi
 
+echo "Snapshot to publish: $SNAP_TO_PUBLISH"
+echo "Preview packages in snapshot (first 40 lines):"
+aptly snapshot show -with-packages "$SNAP_TO_PUBLISH" | sed -n '1,40p' || true
+
+# Save a marker with the last snapshot name for troubleshooting
+echo "$SNAP_TO_PUBLISH" > "$DEBS_DIR/$REPO.LAST_SNAPSHOT" || true
+
 # publish under prefix "$REPO" (e.g., /echo), switching to new (possibly merged) snapshot
 # Try switch first (robust if already published), then fallback to drop+publish snapshot.
 if ! aptly publish switch -skip-signing "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
@@ -89,6 +96,9 @@ if ! aptly publish switch -skip-signing "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
   aptly publish drop -force-drop "$DIST" "$REPO" || true
   aptly publish snapshot -skip-signing -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
 fi
+
+echo "Published prefix/path: /$REPO dists: $DIST"
+aptly publish show "$DIST" "$REPO" || true
 REMOTE
 
 echo "Published to echo-ci ($ECHO_CI_SSH_HOST)"
