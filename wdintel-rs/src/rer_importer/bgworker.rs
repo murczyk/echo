@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::location::utils;
+use crate::messenger::group::ensure_datasource_group_id;
 use crate::rer_importer::multimessage::*;
 use crate::types::*;
 use crate::utils::pop_vector;
@@ -232,24 +233,33 @@ where
     // to MPORT_DIRECTION_FINDING
     let group_name = config.signal_import_group_name.clone();
 
-    if let Some(signal_message) = signal_message::Entity::find_by_id(message_id)
-        .join_rev(
-            JoinType::InnerJoin,
-            signal_group::Entity::belongs_to(signal_message::Entity)
-                .from(signal_group::Column::MasterKey)
-                .to(signal_message::Column::GroupMasterKey)
-                .into(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::Name.eq(group_name))
-        .one(txn)
-        .await
-        .context(h!())?
+    if let Some((signal_message, group)) =
+        signal_message::Entity::find_by_id(message_id)
+            .find_with_related(datasource_group::Entity)
+            .join(
+                JoinType::InnerJoin,
+                datasource_group::Relation::SignalGroup.def(),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(signal_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::Name.eq(group_name))
+            .all(txn)
+            .await
+            .context(h!())?
+            .into_iter()
+            .next()
+            .map(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
+            .flatten()
     {
+        let datasource_group_id = ensure_datasource_group_id(
+            txn,
+            IMPORT_DIRECTION_FINDING_UUID.to_string(),
+            group.datasource_id,
+        )
+        .await
+        .context(h!())?;
         let mut signal_message = signal_message.into_active_model();
-        signal_message.group_master_key =
-            Set(Some(IMPORT_DIRECTION_FINDING_UUID.to_string()));
+        signal_message.datasource_group_id = Set(Some(datasource_group_id));
         signal_message.update(txn).await.context(h!())?;
     }
 

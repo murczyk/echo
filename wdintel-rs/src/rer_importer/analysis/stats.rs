@@ -87,18 +87,24 @@ fn build_groups_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(
-            Expr::col(signal_message::Column::GroupMasterKey),
+            Expr::col(datasource_group::Column::GroupMasterKey),
             "master_key",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::col(signal_message::Column::GroupMasterKey));
+        .group_by(Expr::col(datasource_group::Column::GroupMasterKey));
     let groups_res = filter_selected_senders(groups_res, &req.selected_senders)
         .context(h!())?;
     let groups_res =
@@ -217,11 +223,17 @@ fn build_senders_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(Expr::col(signal_message::Column::Sender), "uuid")
         // .column_as(SimpleExpr::Custom("(SELECT signal_profile.given_name FROM signal_profile WHERE signal_profile.uuid = signal_message.sender)".to_string()), "uuid")
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -335,12 +347,18 @@ fn build_posts_query(
         )
         .join(
             JoinType::LeftJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_post::Column::Name).if_null(""), "post")
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -509,13 +527,19 @@ fn build_freqs_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(
             Expr::col(sigint_inbox_item::Column::Freq).if_null(""),
             "freq",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -632,13 +656,19 @@ fn build_callsigns_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(
             Expr::cust("jsonb_array_elements_text(callsigns)"),
             "callsign",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::Id.is_null().or(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        ))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -745,6 +775,10 @@ fn build_tags_query(
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
@@ -754,7 +788,9 @@ fn build_tags_query(
             "tag_ids",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -855,6 +891,10 @@ fn build_units_query(
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
@@ -864,7 +904,9 @@ fn build_units_query(
             "unit",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -984,13 +1026,19 @@ fn build_locations_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(
             Expr::col(sigint_inbox_item::Column::LocationV2).if_null(""),
             "location",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -1197,11 +1245,15 @@ pub async fn fetch_counts(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(
-            signal_message::Column::GroupMasterKey.is_in(master_keys.clone()),
-        )
+        .filter(datasource_group::Column::Id.is_null().or(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        ))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
@@ -1236,9 +1288,15 @@ pub async fn fetch_counts(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(
+            datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
+        )
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));

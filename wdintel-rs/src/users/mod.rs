@@ -704,11 +704,12 @@ pub async fn user_sigint_groups(
     };
     let ts = crate::utils::dt_from_millis(*since_ts).context(h!())?;
     let res = signal_message::Entity::find()
+        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
         .select_only()
-        .column(signal_message::Column::GroupMasterKey)
+        .column(datasource_group::Column::GroupMasterKey)
         .filter(signal_message::Column::Timestamp.gt(ts))
-        .filter(signal_message::Column::GroupMasterKey.is_in(all_groups))
-        .group_by(signal_message::Column::GroupMasterKey)
+        .filter(datasource_group::Column::GroupMasterKey.is_in(all_groups))
+        .group_by(datasource_group::Column::GroupMasterKey)
         .into_tuple::<String>()
         .all(&env.dbx)
         .await

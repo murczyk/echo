@@ -122,9 +122,9 @@ async fn receive_once(
             crate::sigint::find_duplicate(&txn, &body, Some(wq.timestamp))
                 .await
                 .context(h!())?;
-        let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
+        let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
 
-        let group_id = crate::messenger::group::ensure_group_id(
+        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
             &txn,
             wq.group_jid.clone(),
             datasource.id,
@@ -136,16 +136,14 @@ async fn receive_once(
             id: NotSet,
             body: Set(Some(body.clone())),
             created_at: NotSet,
-            group_master_key: Set(Some(wq.group_jid.clone())),
             timestamp: Set(Some(wq.timestamp)),
             sender: Set(Some(wq.from_jid.clone())),
             duplicate_of: Set(m_duplicate_id),
             format: NotSet,
-            datasource_id: Set(Some(datasource.id)),
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
-            datasource_group_id: Set(Some(group_id)),
+            datasource_group_id: Set(Some(datasource_group_id)),
         }
         .insert(&txn)
         .await

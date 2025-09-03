@@ -1034,6 +1034,10 @@ pub async fn load_pelengs_map(
     let mut query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
@@ -1063,7 +1067,7 @@ pub async fn load_pelengs_map(
             ),
             "lng",
         )
-        .filter(signal_message::Column::GroupMasterKey.is_in(groups))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(groups))
         .filter(sigint_inbox_item::Column::Coords.is_not_null())
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))

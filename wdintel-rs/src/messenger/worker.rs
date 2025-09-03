@@ -458,8 +458,8 @@ pub async fn receive_once(
         crate::sigint::find_duplicate(txn, &body, Some(m.timestamp))
             .await
             .context(h!())?;
-    let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
-    let group_id = crate::messenger::group::ensure_group_id(
+    let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
+    let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
         txn,
         m.group_id.clone(),
         m.datasource_id,
@@ -469,7 +469,7 @@ pub async fn receive_once(
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
-        datasource_group_id: Set(Some(group_id)),
+        datasource_group_id: Set(Some(datasource_group_id)),
         created_at: NotSet,
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),

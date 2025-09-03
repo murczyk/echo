@@ -43,15 +43,6 @@ pub enum Relation {
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
     SigintInboxItem,
-    // patch-added SignalGroup relation (see `just gen-sea-orm`)
-    #[sea_orm(
-        belongs_to = "super::signal_group::Entity",
-        from = "Column::GroupMasterKey",
-        to = "super::signal_group::Column::MasterKey",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    SignalGroup,
 }
 
 impl Related<super::datasource_group::Entity> for Entity {

@@ -563,6 +563,10 @@ pub async fn get_inbox_messages_report_unit(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         // .join(
         //     JoinType::LeftJoin,
         //     signal_message::Relation::SigintComment.def(),
@@ -596,7 +600,7 @@ pub async fn get_inbox_messages_report_unit(
             .add(sigint_unit::Column::Deleted.eq(false))
             .add(sigint_unit::Column::Deleted.is_null())
         )
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 

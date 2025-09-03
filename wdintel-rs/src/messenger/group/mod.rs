@@ -169,7 +169,7 @@ where
     Ok(result)
 }
 
-pub async fn ensure_group_id<'a, 'async_trait, C>(
+pub async fn ensure_datasource_group_id<'a, 'async_trait, C>(
     db: &C,
     master_key: String,
     datasource_id: i64,

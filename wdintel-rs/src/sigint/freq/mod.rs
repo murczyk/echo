@@ -60,12 +60,16 @@ pub async fn freq_activity_daily(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
         )
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::Datasource.def(),
+            datasource_group::Relation::Datasource.def(),
         )
         .join_rev(
             JoinType::InnerJoin,
@@ -89,7 +93,7 @@ pub async fn freq_activity_daily(
                 .into(),
         )
         .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(Expr::cust("sigint_zone_datasource.group_master_key=signal_message.group_master_key"))
+        .filter(Expr::col(sigint_zone_datasource::Column::GroupMasterKey).equals(datasource_group::Column::GroupMasterKey))
         .filter(login::Column::Login.eq(login))
         .filter(sigint_inbox_item::Column::Freq.eq(freq))
         .filter(ts_filter)
@@ -134,6 +138,10 @@ pub async fn list_alt_unit_by_freqs(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let mut alt_units = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -144,7 +152,7 @@ pub async fn list_alt_unit_by_freqs(
         .column_as(sigint_inbox_item::Column::Unit, "unit")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
@@ -163,7 +171,7 @@ pub async fn list_alt_unit_by_freqs(
 
     if let Some(groups) = &req.filter_group_master_keys {
         alt_units = alt_units.filter(
-            signal_message::Column::GroupMasterKey.is_in(groups.clone()),
+            datasource_group::Column::GroupMasterKey.is_in(groups.clone()),
         )
     }
 
@@ -217,7 +225,7 @@ pub async fn list_points_by_freq(
         .column_as(signal_message::Column::Body, "body")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
@@ -246,6 +254,10 @@ pub async fn list_groups_by_freqs_per_day(
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
     let callsigns = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -253,7 +265,7 @@ pub async fn list_groups_by_freqs_per_day(
         )
         .join_as(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
             Alias::new("signal_group"),
         )
         .select_only()
@@ -274,7 +286,7 @@ pub async fn list_groups_by_freqs_per_day(
         ))
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
@@ -338,6 +350,10 @@ pub async fn list_callsigns_by_freqs(
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
     let callsigns = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -356,7 +372,7 @@ pub async fn list_callsigns_by_freqs(
         ))
         .group_by(sigint_inbox_item::Column::Freq)
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
@@ -435,6 +451,10 @@ pub async fn list_freqs(
             );
 
             let mut subquery = signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .join_as(
                     JoinType::InnerJoin,
                     signal_message::Relation::SigintInboxItem.def(),
@@ -522,6 +542,10 @@ pub async fn list_freqs(
         }
         None => {
             let mut freqs_per = signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .join_as(
                     JoinType::InnerJoin,
                     signal_message::Relation::SigintInboxItem.def(),
@@ -610,11 +634,15 @@ pub async fn list_freqs(
     let before_res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
@@ -745,6 +773,10 @@ pub async fn list_freqs_v2(
             );
 
             let mut subquery = signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .join_as(
                     JoinType::InnerJoin,
                     signal_message::Relation::SigintInboxItem.def(),
@@ -833,6 +865,10 @@ pub async fn list_freqs_v2(
         }
         None => {
             let mut freqs_per = signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .join_as(
                     JoinType::InnerJoin,
                     signal_message::Relation::SigintInboxItem.def(),
@@ -927,11 +963,15 @@ pub async fn list_freqs_v2(
     let before_res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1046,7 +1086,7 @@ where
     let mut q = q.clone();
 
     q = q.filter(
-        signal_message::Column::GroupMasterKey.is_in(
+        datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups_noimport(
                 &env.dbx,
                 user,
@@ -1062,7 +1102,7 @@ where
 
     if let Some(filter_group_master_keys) = filter_group_master_keys {
         q = q.filter(
-            signal_message::Column::GroupMasterKey
+            datasource_group::Column::GroupMasterKey
                 .is_in(filter_group_master_keys.clone()),
         );
     };
@@ -1141,11 +1181,15 @@ pub async fn latest_frequencies(
     let freqs_period = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1251,6 +1295,10 @@ pub async fn callsigns_for_filter(
     let mut callsigns_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .select_only()
@@ -1259,7 +1307,7 @@ pub async fn callsigns_for_filter(
             "callsign",
         )
         .distinct()
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     if let Some(freq) = &req.freq {
@@ -1346,7 +1394,7 @@ pub async fn freq_exists(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Freq.eq(req.freq.clone()))
         .limit(1)
@@ -1400,7 +1448,7 @@ pub async fn list_freqs_for_period(
         .select_only()
         .column(sigint_inbox_item::Column::Freq)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(sigint_inbox_item::Column::Freq.is_not_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .group_by(Expr::cust("1"))

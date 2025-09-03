@@ -282,28 +282,28 @@ pub async fn upsert_messages(
 
             let txn = db.begin().await.context(h!())?;
 
-            let group_id = if let Some(group_id) = new_message.group_id {
+            let datasource_group_id = if let Some(group_id) = new_message.datasource_group_id {
                 let (master_key, datasource_id) =
                     datasource_groups.get(&group_id).context(h!())?;
-                if datasource_id != *source_datasource_id {
+                if !source_datasource_id.eq(datasource_id) {
                     error!("bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping...");
                     continue;
                 }
-                let group_id = crate::messenger::group::ensure_group_id(
+                let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
                     &txn,
                     master_key.to_string(),
                     target_datasource_id,
                 )
                 .await
                 .context(h!())?;
-                Some(group_id)
+                Some(datasource_group_id)
             } else {
                 None
             };
 
             let mut rec = new_message.into_active_model();
             rec.id = NotSet;
-            rec.group_id = Set(group_id);
+            rec.datasource_group_id = Set(datasource_group_id);
             rec.duplicate_of = Set(duplicate_of);
             rec.external_id = Set(Some(source_message_id));
             let new_id = rec.insert(db).await.context(h!())?.id;

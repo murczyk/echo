@@ -139,7 +139,7 @@ async fn collect_datasource_data(
 
     let mut messages_q = sigint_inbox_item::Entity::find()
         .find_with_related(signal_message::Entity)
-        .filter(signal_message::Column::GroupId.is_in(group_ids));
+        .filter(signal_message::Column::DatasourceGroupId.is_in(group_ids));
 
     if let Some(since_ms) = params.since_epoch_ms {
         if let Some(datetime) =

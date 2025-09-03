@@ -119,7 +119,7 @@ pub async fn oneoff_rer_csv_import_1(
         let timestamp = Utc::now().naive_utc();
 
         let master_key = group_id.to_string();
-        let group_id = crate::messenger::group::ensure_group_id(
+        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
             &dbx,
             master_key.to_string(),
             datasource_id,
@@ -131,16 +131,14 @@ pub async fn oneoff_rer_csv_import_1(
             id: NotSet,
             body: Set(Some(body.clone())),
             created_at: NotSet,
-            group_master_key: Set(Some(group_id.to_string())),
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
             format: Set(Some(2)),
-            datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
-            datasource_group_id: Set(Some(group_id)),
+            datasource_group_id: Set(Some(datasource_group_id)),
         }
         .insert(&dbx)
         .await
@@ -391,7 +389,7 @@ pub async fn rer_delta_csv_import_go(
         let body = body.replace("\r\n", "\n");
 
         let master_key = group_id.to_string();
-        let group_id = crate::messenger::group::ensure_group_id(
+        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
             dbx,
             master_key.to_string(),
             datasource_id,
@@ -403,16 +401,14 @@ pub async fn rer_delta_csv_import_go(
             id: NotSet,
             body: Set(Some(body.clone())),
             created_at: NotSet,
-            group_master_key: Set(Some(master_key)),
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
             duplicate_of: NotSet,
             format: Set(Some(2)),
-            datasource_id: Set(Some(datasource_id)),
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
-            datasource_group_id: Set(Some(group_id)),
+            datasource_group_id: Set(Some(datasource_group_id)),
         }
         .insert(dbx)
         .await

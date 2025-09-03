@@ -59,13 +59,14 @@ async fn receive_once(
     let now = Utc::now();
     let echo_operator_queue = signal_message::Entity::find()
         .select_only()
+        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
         .column(signal_message::Column::Id)
         .join(
             JoinType::LeftJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .filter(sigint_inbox_item::Column::Id.is_null())
-        .filter(signal_message::Column::DatasourceId.eq(datasource.id))
+        .filter(datasource_group::Column::DatasourceId.eq(datasource.id))
         .filter(
             signal_message::Column::CreatedAt
                 .lte(now - chrono::Duration::seconds(3)),

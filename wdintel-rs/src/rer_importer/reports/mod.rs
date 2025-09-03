@@ -218,18 +218,24 @@ async fn fill_comp_freq(
     end: &NaiveDateTime,
 ) -> Result<(), AppError> {
     // iterate over all messages in a streaming fashion
-    let q = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(*start))
-        .filter(sigint_inbox_item::Column::Datetime.lt(*end))
-        .order_by_asc(signal_message::Column::Id);
-    let count = q.clone().count(dbx).await?;
+    let filter = Condition::all()
+        .add(signal_message::Column::Deleted.eq(false))
+        .add(sigint_inbox_item::Column::Datetime.gte(start))
+        .add(sigint_inbox_item::Column::Datetime.lt(end));
+
+    let count = signal_message::Entity::find()
+        .filter(filter.clone())
+        .clone()
+        .count(dbx)
+        .await?;
     let pb = ProgressBar::new(count);
-    let mut stream = q.clone().stream(dbx).await?;
+
+    let mut stream = signal_message::Entity::find()
+        .find_with_related(datasource_group::Entity)
+        .filter(filter)
+        .order_by_asc(signal_message::Column::Id)
+        .stream(dbx)
+        .await?;
     let datasource_zones =
         crate::sigint::zone::get_datasources_zones(dbx).await?;
     let mut per_freq_seen: BTreeMap<(i64, String), NaiveDateTime> =
@@ -238,9 +244,14 @@ async fn fill_comp_freq(
         (i64, String, String),
         NaiveDateTime,
     > = BTreeMap::new();
-    while let Some(msg) = stream.try_next().await? {
+    while let Some((message, group)) = stream
+        .try_next()
+        .await?
+        .map(|(m, m_g)| m_g.map(|g| (m, g)))
+        .flatten()
+    {
         pb.inc(1);
-        let Some(inbox) = sigint_inbox_item::Entity::find_by_id(msg.id)
+        let Some(inbox) = sigint_inbox_item::Entity::find_by_id(message.id)
             .one(dbx)
             .await?
         else {
@@ -249,10 +260,10 @@ async fn fill_comp_freq(
         let Some(freq) = inbox.freq else {
             continue;
         };
-        let Some(timestamp) = msg.timestamp else {
+        let Some(timestamp) = message.timestamp else {
             continue;
         };
-        let Some(datasource_id) = msg.datasource_id else {
+        let Some(datasource_id) = group.datasource_id else {
             continue;
         };
         for zone_id in

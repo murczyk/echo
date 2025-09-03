@@ -173,12 +173,16 @@ pub async fn report_docx_kind_mouse(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .filter(
             sigint_inbox_item::Column::Datetime.gte(date_from_dt.naive_utc()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
-        .filter(signal_message::Column::GroupMasterKey.is_in(&groups))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
         .all(&env.dbx)
         .await?;
     let important_ids: BTreeSet<i64> = importants
@@ -196,12 +200,16 @@ pub async fn report_docx_kind_mouse(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .filter(
             sigint_inbox_item::Column::Datetime.gte(date_from_dt.naive_utc()),
         )
         .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(&groups))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(&groups))
         .all(&env.dbx)
         .await?;
     let bookmark_ids: BTreeSet<i64> = bookmarks
@@ -626,6 +634,16 @@ pub async fn report_docx_kind_mouse(
             .all(&env.dbx)
             .await
             .context(h!())?;
+        let group_datasources_map = datasource_group::Entity::find()
+            .select_only()
+            .column(datasource_group::Column::Id)
+            .column(datasource_group::Column::DatasourceId)
+            .into_tuple::<(i64, i64)>()
+            .all(&env.dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
         for (message_id, message) in freq_msgs {
             let Some(freq) = message.freq.as_ref() else {
                 continue;
@@ -638,7 +656,10 @@ pub async fn report_docx_kind_mouse(
             let Some(msg) = message_map.get(&message_id).cloned() else {
                 continue;
             };
-            let Some(datasource_id) = msg.datasource_id else {
+            let Some(group_id) = msg.datasource_group_id else {
+                continue;
+            };
+            let Some(datasource_id) = group_datasources_map.get(&group_id) else {
                 continue;
             };
             let Some(inbox) = inbox_map.get(&message_id).cloned() else {

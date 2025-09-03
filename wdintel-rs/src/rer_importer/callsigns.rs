@@ -1146,12 +1146,16 @@ pub async fn callsigns_graph(
         freq: Option<String>,
         callsigns: Option<serde_json::Value>,
     }
-    let q = SignalMessage::find()
+    let q = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .join(

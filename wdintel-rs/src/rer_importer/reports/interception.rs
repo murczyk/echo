@@ -70,7 +70,11 @@ async fn get_inbox_messages_report(
             "comment",
         )
         .column(sigint_inbox_item::Column::Coords)
-        .column_as(sigint_important::Column::SignalMessageId,"important") 
+        .column_as(sigint_important::Column::SignalMessageId,"important")
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintNetworkFreq.def(),
@@ -95,7 +99,7 @@ async fn get_inbox_messages_report(
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 
