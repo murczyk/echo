@@ -502,9 +502,9 @@ descriptionEditCloseSidebar description network model user shared =
 confirmationCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html DescriptionsMsg
 confirmationCreateSidebarContent shared model user network =
     div [ class "flex flex-col h-full" ]
-        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+        [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити обґрунтування прив'язки" ]
-            , div [ class "space-y-4" ]
+            , div [ class "space-y-4 flex-1 flex flex-col" ]
                 [ div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
                     , let
@@ -530,10 +530,10 @@ confirmationCreateSidebarContent shared model user network =
                                 "виберіть частоту"
                                 defaultOptions
                     ]
-                , div []
+                , div [ class "flex-1 flex flex-col min-h-0" ]
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Обґрунтування прив'язки *" ]
                     , textarea
-                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        [ class "w-full p-3 border border-border rounded flex-1 resize-none min-h-0"
                         , placeholder "Введіть обґрунтування прив'язки"
                         , value model.addConfirmationInp
                         , onInput ConfirmationInputChangedByUser
@@ -558,13 +558,13 @@ confirmationCreateSidebarContent shared model user network =
 signsCreateSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> Html DescriptionsMsg
 signsCreateSidebarContent shared model user network =
     div [ class "flex flex-col h-full" ]
-        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+        [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Створити розвідувальні ознаки" ]
-            , div [ class "space-y-4" ]
-                [ div []
+            , div [ class "flex-1 flex flex-col min-h-0" ]
+                [ div [ class "flex-1 flex flex-col min-h-0" ]
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Розвідувальні ознаки *" ]
                     , textarea
-                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        [ class "w-full p-3 border border-border rounded flex-1 resize-none min-h-0"
                         , placeholder "Введіть розвідувальні ознаки"
                         , value model.addSignsInp
                         , onInput SignsInputChangedByUser
@@ -589,9 +589,9 @@ signsCreateSidebarContent shared model user network =
 editDescriptionSidebarContent : Shared.Model -> Model -> Auth.User -> B.Network -> B.NetworkDescription -> Html DescriptionsMsg
 editDescriptionSidebarContent shared model user network description =
     div [ class "flex flex-col h-full" ]
-        [ div [ class "flex-1 p-6 overflow-y-auto" ]
+        [ div [ class "flex-1 p-6 flex flex-col" ]
             [ h2 [ class "text-lg font-semibold mb-6" ] [ text "Редагувати опис" ]
-            , div [ class "space-y-4" ]
+            , div [ class "space-y-4 flex-1 flex flex-col" ]
                 [ div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Частота (необов'язково)" ]
                     , let
@@ -622,10 +622,10 @@ editDescriptionSidebarContent shared model user network description =
                                 "виберіть частоту"
                                 defaultOptions
                     ]
-                , div []
+                , div [ class "flex-1 flex flex-col min-h-0" ]
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Текст опису *" ]
                     , textarea
-                        [ class "w-full p-3 border border-border rounded min-h-[120px] resize-none"
+                        [ class "w-full p-3 border border-border rounded flex-1 resize-none min-h-0"
                         , placeholder "Введіть текст опису"
                         , value model.editDescriptionInp
                         , onInput EditDescriptionInputChanged
