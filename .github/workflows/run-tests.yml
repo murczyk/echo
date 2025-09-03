@@ -84,10 +84,10 @@ jobs:
           ./scripts/cache/save-python.sh || true
           ./scripts/cache/save-spacy.sh || true
 
-      # Skipped: we do not upload GitHub artifacts; we only publish to echo-ci (aptly)
-
+      # Publish directly from this job for speed. Do not gate on secrets;
+      # the script falls back to runner-configured SSH (like echo-install-utils/echo-gpu).
       - name: Publish to echo-ci (aptly)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ECHO_CI_SSH_HOST != '' && env.ECHO_CI_SSH_USER != '' && env.ECHO_CI_SSH_KEY != ''
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bash deploy/ci/publish_echo_ci.sh
 
       - name: Remove target on failure
