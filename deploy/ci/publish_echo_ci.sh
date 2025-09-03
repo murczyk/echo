@@ -64,6 +64,8 @@ fi
 
 # Import debs
 aptly repo add -force-replace=true "$REPO" "$DEBS_DIR"/*.deb
+# Clean uploaded debs to keep staging dir tidy and avoid re-adding next run
+rm -f "$DEBS_DIR"/*.deb || true
 
 # Create timestamped snapshot of this repo
 DT=$(date -u +%Y%m%d%H%M%S)
@@ -88,6 +90,8 @@ aptly snapshot show -with-packages "$SNAP_TO_PUBLISH" | sed -n '1,40p' || true
 
 # Save a marker with the last snapshot name for troubleshooting
 echo "$SNAP_TO_PUBLISH" > "$DEBS_DIR/$REPO.LAST_SNAPSHOT" || true
+# Also store a copy under home for convenience
+echo "$SNAP_TO_PUBLISH" > "$HOME/.aptly/${REPO}.LAST_SNAPSHOT" || true
 
 # publish under prefix "$REPO" (e.g., /echo), switching to new (possibly merged) snapshot
 # Try switch first (robust if already published), then fallback to drop+publish snapshot.
