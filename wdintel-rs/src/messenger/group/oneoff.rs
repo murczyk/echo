@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use crate::entities::{datasource_group, signal_group, signal_message};
 use crate::error::AppError;
 use crate::types::Mode;
@@ -11,6 +10,7 @@ use sea_orm::{
     EntityTrait, JoinType, NotSet, PaginatorTrait, QueryFilter, QuerySelect,
     RelationTrait, Set,
 };
+use std::collections::{HashMap, HashSet};
 pub async fn check_should_populate_signal_message_group_ids<
     'a,
     'async_trait,
@@ -205,9 +205,7 @@ async fn insert_missing_signal_groups(
             continue;
         }
         signal_group::ActiveModel {
-            master_key: Set(key.unwrap_or(
-                crate::config::UNKNOWN_GROUP_MASTER_KEY.to_string(),
-            )),
+            master_key: Set(key),
             deleted: Set(true),
             name: Set(None),
             datasource_id: Set(None),
