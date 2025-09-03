@@ -84,13 +84,7 @@ jobs:
           ./scripts/cache/save-python.sh || true
           ./scripts/cache/save-spacy.sh || true
 
-      - name: Upload debs as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: echo-debs-${{ github.run_id }}-amd64
-          path: |
-            target/debian/*.deb
-          if-no-files-found: error
+      # Skipped: we do not upload GitHub artifacts; we only publish to echo-ci (aptly)
 
       - name: Publish to echo-ci (aptly)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ECHO_CI_SSH_HOST != '' && env.ECHO_CI_SSH_USER != '' && env.ECHO_CI_SSH_KEY != ''
