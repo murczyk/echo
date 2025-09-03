@@ -28,7 +28,7 @@ where
         .await
         .context(h!())?;
     if pending_messages_count > 0 {
-        error ! ("Oneoff command 'oneoff_populate_signal_message_group_ids' should be executed! Pending signal messages: {pending_messages_count}");
+        error!("Oneoff command 'oneoff_populate_signal_message_group_ids' should be executed! Pending signal messages: {pending_messages_count}");
     }
     Ok(())
 }
@@ -104,7 +104,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
 async fn insert_missing_datasource_groups(
     dbx: &DatabaseConnection,
 ) -> Result<Vec<datasource_group::Model>, AppError> {
-    let mut source_datasource_groups = signal_message::Entity::find()
+    let source_datasource_groups = signal_message::Entity::find()
         .select_only()
         .column(signal_message::Column::GroupMasterKey)
         .column(signal_message::Column::DatasourceId)
@@ -120,13 +120,11 @@ async fn insert_missing_datasource_groups(
         .all(dbx)
         .await
         .context(h!())?;
-    existing_groups
+    let mut existing_groups_dictionary = existing_groups
         .clone()
         .into_iter()
         .map(|g| (g.group_master_key, g.datasource_id))
-        .for_each(|(g, id)| {
-            source_datasource_groups.remove(&(Some(g), id));
-        });
+        .collect::<HashSet<_>>();
     let group_names = signal_group::Entity::find()
         .select_only()
         .column(signal_group::Column::MasterKey)
@@ -141,6 +139,12 @@ async fn insert_missing_datasource_groups(
     for (group_master_key, datasource_id) in source_datasource_groups {
         let group_master_key = group_master_key
             .unwrap_or(config::UNKNOWN_GROUP_MASTER_KEY.to_string());
+        let group_key = (group_master_key.clone(), datasource_id);
+        if existing_groups_dictionary.contains(&group_key) {
+            continue;
+        } else {
+            existing_groups_dictionary.insert(group_key);
+        }
         let group_name = group_names
             .get(&group_master_key)
             .cloned()
@@ -164,6 +168,15 @@ async fn insert_missing_datasource_groups(
 async fn insert_missing_signal_groups(
     dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
+    let master_keys = signal_group::Entity::find()
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .into_tuple::<String>()
+        .all(dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
     let missing_master_key = signal_message::Entity::find()
         .join(
             JoinType::LeftJoin,
@@ -178,10 +191,12 @@ async fn insert_missing_signal_groups(
         .await
         .context(h!())?;
     for key in missing_master_key {
+        let key = key.unwrap_or(config::UNKNOWN_GROUP_MASTER_KEY.to_string());
+        if master_keys.contains(&key) {
+            continue;
+        }
         signal_group::ActiveModel {
-            master_key: Set(
-                key.unwrap_or(config::UNKNOWN_GROUP_MASTER_KEY.to_string())
-            ),
+            master_key: Set(key),
             deleted: Set(true),
             name: Set(None),
             datasource_id: Set(None),
