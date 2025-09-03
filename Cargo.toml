@@ -2,6 +2,7 @@
 members = [
     "wdintel-rs",
     "echo-migration", "echo-install",
+    "docs/echo-docs",
 ]
 resolver = "2"
 
