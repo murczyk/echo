@@ -1102,7 +1102,18 @@ callsignsTableConfig shared model user =
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
                 }
                 |> Table.withColumnWidth "13%"
-            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "6%"
+            , Table.veryCustomColumn
+                { name = "Посада"
+                , viewData = \row -> { attributes = [], children = [ text row.position ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "20%"
+            , Table.veryCustomColumn
+                { name = "Підрозділ"
+                , viewData = \row -> { attributes = [], children = [ text row.unitName ] }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "18%"
             , Table.veryCustomColumn
                 { name = "Останній раз в етері"
                 , viewData =
@@ -1120,18 +1131,7 @@ callsignsTableConfig shared model user =
                 , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
                 }
                 |> Table.withColumnWidth "8%"
-            , Table.veryCustomColumn
-                { name = "Посада"
-                , viewData = \row -> { attributes = [], children = [ text row.position ] }
-                , sorter = TableSorter.unsortable
-                }
-                |> Table.withColumnWidth "20%"
-            , Table.veryCustomColumn
-                { name = "Підрозділ"
-                , viewData = \row -> { attributes = [], children = [ text row.unitName ] }
-                , sorter = TableSorter.unsortable
-                }
-                |> Table.withColumnWidth "18%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Коментар"
                 , viewData =
@@ -1310,24 +1310,6 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.increasingOrDecreasingBy .callsign
                 }
                 |> Table.withColumnWidth "12%"
-            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "7%"
-            , Table.veryCustomColumn
-                { name = "Остання активність"
-                , viewData =
-                    \row ->
-                        case row.lastDatetime of
-                            Just lastDatetime ->
-                                { attributes = []
-                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
-                                }
-
-                            Nothing ->
-                                { attributes = []
-                                , children = [ text "-" ]
-                                }
-                , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
-                }
-                |> Table.withColumnWidth "8%"
             , Table.veryCustomColumn
                 { name = "Посада"
                 , viewData = \row -> { attributes = [], children = [ text (Maybe.withDefault "-" row.position) ] }
@@ -1356,6 +1338,24 @@ networkCallsignsTableConfig shared model user =
                 , sorter = TableSorter.unsortable
                 }
                 |> Table.withColumnWidth "16%"
+            , Table.veryCustomColumn
+                { name = "Остання активність"
+                , viewData =
+                    \row ->
+                        case row.lastDatetime of
+                            Just lastDatetime ->
+                                { attributes = []
+                                , children = [ text <| Le.Time.renderDateF6 shared.timeZone (Time.millisToPosix lastDatetime) ]
+                                }
+
+                            Nothing ->
+                                { attributes = []
+                                , children = [ text "-" ]
+                                }
+                , sorter = TableSorter.increasingOrDecreasingBy (\row -> Maybe.withDefault 0 row.lastDatetime)
+                }
+                |> Table.withColumnWidth "8%"
+            , Table.intColumn "К-сть" .messageCount |> Table.withColumnWidth "7%"
             , Table.veryCustomColumn
                 { name = "Коментар"
                 , viewData =
