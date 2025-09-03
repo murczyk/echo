@@ -30,12 +30,6 @@ cargo deb -p echo-install --no-build || true
 # Build deb packages for non-workspace crates and copy them to root target/debian
 mkdir -p target/debian
 
-# signal-cli-native
-if [ -f "signal-cli-native/Cargo.toml" ]; then
-  (cd signal-cli-native && cargo deb)
-  cp -v signal-cli-native/target/debian/*.deb target/debian/ || true
-fi
-
 # echo-docs
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
   (cd docs/echo-docs && cargo deb)

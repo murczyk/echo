@@ -499,7 +499,7 @@ _echo-generic-deploy-back:
     rsync --progress /tmp/wdintel-rs_0.1.0-1_amd64.deb {{ server }}:/tmp
     ssh {{ server }} 'cd /tmp && sudo dpkg -i wdintel-rs_0.1.0-1_amd64.deb'
     set +x
-    echo "\n❗ Not deploying signal-cli-native, explicitly run \"just deploy-signal-cli-native\" for that\n"
+    echo "\n❗ Not deploying signal-cli-native, read echo-im project README.md for that"
     set -x
     echo "Back-end is ready. Now open {{ server }}'s URL"
 
@@ -623,24 +623,6 @@ migrate-up:
 
 migrate-down:
     cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- down
-
-# # builds whatsapp worker on jvln and puts into current repo for an update
-# _jvln-build-whatsapp-worker:
-#     ssh jvln '(cd /fast/kon/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-#     ssh jvln '(cd /fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp && go build)'
-#     scp jvln:/fast/kon/workspace/echo/echo-whatsapp/whatsmeow/echo-whatsapp/echo-whatsapp deploy/echo-whatsapp/
-# # builds signal-cli-rest-api on jvln and puts into current repo for an update
-# _jvln-build-signal-cli-rest-api:
-#     BRANCH=main
-#     ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
-#     ssh jvln '(cd /fast/kon/workspace/signal-cli-rest-api/src && go build)'
-#     rsync --progress jvln:/fast/kon/workspace/signal-cli-rest-api/src/signal-cli-rest-api signal-cli-native/deploy/signal-cli/signal-cli-rest-api
-# # builds signal-cli-native on jvln and puts into current repo for an update
-# _jvln-build-signal-cli-native:
-#     BRANCH=master
-#     ssh jvln '(cd /fast/kon/workspace/signal-cli && git fetch origin && git clean -df && git checkout $BRANCH && git pull)'
-#     ssh jvln '(cd /fast/kon/workspace/signal-cli && GRAALVM_HOME=/fast/kon/Downloads/graalvm-jdk-21.0.2+13.1 ./gradlew --no-daemon nativeCompile)'
-#     rsync --progress jvln:/fast/kon/workspace/signal-cli/build/native/nativeCompile/signal-cli signal-cli-native/deploy/signal-cli/signal-cli-native
 
 # puts deploy/vector/vector-echo.yaml into /etc/vector/vector.yaml of a corresponding server
 deploy-vector-conf:
@@ -985,7 +967,6 @@ bump-version:
     # Update standalone crates that are not in the workspace
     PFILES=(
       "$ROOT/docs/echo-docs/Cargo.toml"
-      "$ROOT/signal-cli-native/Cargo.toml"
     )
     for file in "${PFILES[@]}"; do
       if [[ -f "$file" ]]; then
@@ -1012,7 +993,7 @@ bump-version-commit:
     MAIN_TOML="Cargo.toml"
     new_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
     msg="bump: ${new_ver}"
-    git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml signal-cli-native/Cargo.toml 2>/dev/null || true
+    git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml 2>/dev/null || true
     if git diff --cached --quiet; then
         echo "No changes to commit."
     else
