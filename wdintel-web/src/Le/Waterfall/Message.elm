@@ -868,34 +868,35 @@ rightColumn ( messageId, message ) ps model =
                             [ HtmlX.viewIf (MaybeX.isJust message.freq) <|
                                 div []
                                     [ freqAndLocBlock
-                                    , div [ class "mb-1" ]
-                                        [ div
-                                            [ class "flex justify-start"
-                                            , style "font-size" ".9rem"
-                                            , style "overflow-wrap" "break-word"
-                                            , style "word-break" "break-word"
-                                            , style "min-width" "0"
-                                            ]
-                                          <|
-                                            [ span [ class "me-1" ] [ text "Хто: " ]
-                                            , span [ class "text-uppercase fw-semibold me-2" ]
-                                                [ text <|
-                                                    (message.callsigns
-                                                        |> ListX.getAt 0
-                                                        |> def "НВ"
-                                                    )
+                                    , HtmlX.viewIf Le.Config.featureShowCallsignsMetadata <|
+                                        div [ class "mb-1" ]
+                                            [ div
+                                                [ class "flex justify-start"
+                                                , style "font-size" ".9rem"
+                                                , style "overflow-wrap" "break-word"
+                                                , style "word-break" "break-word"
+                                                , style "min-width" "0"
                                                 ]
-                                            , span [ class "me-1" ] [ text "Кому: " ]
-                                            , span [ class "text-uppercase fw-semibold me-2" ]
-                                                [ text <|
-                                                    (message.callsigns
-                                                        |> ListX.getAt 1
-                                                        |> def "НВ"
-                                                    )
+                                              <|
+                                                [ span [ class "me-1" ] [ text "Хто: " ]
+                                                , span [ class "text-uppercase fw-semibold me-2" ]
+                                                    [ text <|
+                                                        (message.callsigns
+                                                            |> ListX.getAt 0
+                                                            |> def "НВ"
+                                                        )
+                                                    ]
+                                                , span [ class "me-1" ] [ text "Кому: " ]
+                                                , span [ class "text-uppercase fw-semibold me-2" ]
+                                                    [ text <|
+                                                        (message.callsigns
+                                                            |> ListX.getAt 1
+                                                            |> def "НВ"
+                                                        )
+                                                    ]
                                                 ]
+                                                    ++ otherCallsignsBlock
                                             ]
-                                                ++ otherCallsignsBlock
-                                        ]
                                     ]
                             ]
                         ]
@@ -927,11 +928,15 @@ rightColumn ( messageId, message ) ps model =
                                         -- Створюємо message для HintStrategy
                                         messageForHints =
                                             { freq = message.freq
-                                            , networkIds = 
+                                            , networkIds =
                                                 if List.isEmpty ps.messageNetworkIds then
-                                                    Nothing  -- Немає мережі → MessageContext не показує каталог
+                                                    Nothing
+                                                    -- Немає мережі → MessageContext не показує каталог
+
                                                 else
-                                                    Just ps.messageNetworkIds  -- Є мережа → показуємо тільки мережеві підказки
+                                                    Just ps.messageNetworkIds
+
+                                            -- Є мережа → показуємо тільки мережеві підказки
                                             }
 
                                         hintResultsDict =
@@ -941,10 +946,10 @@ rightColumn ( messageId, message ) ps model =
                                                         let
                                                             -- Використовуємо нову HintStrategy з MessageContext
                                                             hintResult =
-                                                                Le.Callsign.HintStrategy.getCallsignHints 
-                                                                    Le.Callsign.HintStrategy.MessageContext 
-                                                                    messageForHints 
-                                                                    context 
+                                                                Le.Callsign.HintStrategy.getCallsignHints
+                                                                    Le.Callsign.HintStrategy.MessageContext
+                                                                    messageForHints
+                                                                    context
                                                                     callsign
                                                         in
                                                         Dict.insert callsign hintResult dict

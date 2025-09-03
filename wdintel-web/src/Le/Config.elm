@@ -1,4 +1,4 @@
-module Le.Config exposing (featureEnableTornado, waterfallLoadEarlierThresholdMs, waterfallMessageLimit, adjacentFreqsRangeOptions)
+module Le.Config exposing (adjacentFreqsRangeOptions, featureEnableTornado, featureShowCallsignsMetadata, waterfallLoadEarlierThresholdMs, waterfallMessageLimit)
 
 {-| Show tornado on visible messages
 -}
@@ -6,6 +6,11 @@ module Le.Config exposing (featureEnableTornado, waterfallLoadEarlierThresholdMs
 
 featureEnableTornado : Bool
 featureEnableTornado =
+    False
+
+
+featureShowCallsignsMetadata : Bool
+featureShowCallsignsMetadata =
     False
 
 
@@ -24,5 +29,7 @@ waterfallMessageLimit =
 adjacentFreqsRangeOptions : List Float
 adjacentFreqsRangeOptions =
     [ 0, 0.0005, 0.002, 0.005 ]
+
+
 
 -- Р/О
