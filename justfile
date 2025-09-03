@@ -963,8 +963,8 @@ bump-version:
     ROOT="$(pwd)"
     MAIN_TOML="$ROOT/Cargo.toml"  # workspace file
 
-    # Extract current [workspace.package] version
-    CUR=$(awk 'BEGIN{insec=0} /^\[workspace.package\]/{insec=1} /^\[/{if ($0 != "[workspace.package]") insec=0} insec && $0 ~ /^[[:space:]]*version[[:space:]]*=/{ match($0, /"([^"]+)"/, a); print a[1]; exit }' "$MAIN_TOML")
+    # Extract current [workspace.package] version (BSD/macOS compatible)
+    CUR=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
     BASE=${CUR%-rc.*}
     if [[ -z "${BASE:-}" ]]; then echo "Cannot determine base version from $MAIN_TOML" >&2; exit 1; fi
     TS=$(date -u +%Y%m%d%H%M)
@@ -1010,7 +1010,7 @@ bump-version-commit:
     set -euo pipefail
     just bump-version
     MAIN_TOML="Cargo.toml"
-    new_ver=$(awk 'BEGIN{insec=0} /^\[workspace.package\]/{insec=1} /^\[/{if ($0 != "[workspace.package]") insec=0} insec && $0 ~ /^[[:space:]]*version[[:space:]]*=/{ match($0, /"([^"]+)"/, a); print a[1]; exit }' "$MAIN_TOML")
+    new_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
     msg="bump: ${new_ver}"
     git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml signal-cli-native/Cargo.toml 2>/dev/null || true
     if git diff --cached --quiet; then
