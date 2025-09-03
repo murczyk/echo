@@ -9,7 +9,7 @@ use log::{debug, error, info};
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 
 pub async fn upsert_datasource(
@@ -219,13 +219,18 @@ pub async fn upsert_whatsapp_groups(
 pub async fn upsert_messages(
     db: &DatabaseConnection,
     messages: Vec<super::types::Message>,
+    datasource_groups: Vec<datasource_group::Model>,
     datasource_mapping: (i64, i64),
     settlements: Arc<RwLock<SettlementsData>>,
     config: Config,
     redis: ConnectionManager,
     rq: Client,
 ) -> anyhow::Result<()> {
-    let (_, target_datasource_id) = datasource_mapping;
+    let datasource_groups = datasource_groups
+        .into_iter()
+        .map(|g| (g.id, (g.group_master_key, g.datasource_id)))
+        .collect::<HashMap<_, _>>();
+    let (source_datasource_id, target_datasource_id) = datasource_mapping;
     let mut progress: f64 = 0.0;
     let mut processed = 0;
     let total_messages = messages.len() as f64;
@@ -239,8 +244,12 @@ pub async fn upsert_messages(
         let message_ids = messages.iter().map(|x| x.message.id).collect_vec();
         let existing_messages = signal_message::Entity::find()
             .filter(signal_message::Column::ExternalId.is_in(message_ids))
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
             .filter(
-                signal_message::Column::DatasourceId.eq(target_datasource_id),
+                datasource_group::Column::DatasourceId.eq(target_datasource_id),
             )
             .all(db)
             .await
@@ -271,16 +280,36 @@ pub async fn upsert_messages(
                 Some(id) => message_ids_map.get(&id).cloned(),
             };
 
+            let txn = db.begin().await.context(h!())?;
+
+            let group_id = if let Some(group_id) = new_message.group_id {
+                let (master_key, datasource_id) =
+                    datasource_groups.get(&group_id).context(h!())?;
+                if datasource_id != *source_datasource_id {
+                    error!("bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping...");
+                    continue;
+                }
+                let group_id = crate::messenger::group::ensure_group_id(
+                    &txn,
+                    master_key.to_string(),
+                    target_datasource_id,
+                )
+                .await
+                .context(h!())?;
+                Some(group_id)
+            } else {
+                None
+            };
+
             let mut rec = new_message.into_active_model();
             rec.id = NotSet;
-            rec.datasource_id = Set(Some(target_datasource_id));
+            rec.group_id = Set(group_id);
             rec.duplicate_of = Set(duplicate_of);
             rec.external_id = Set(Some(source_message_id));
             let new_id = rec.insert(db).await.context(h!())?.id;
             message_ids_map.insert(source_message_id, new_id);
             new_messages_counter += 1;
 
-            let txn = db.begin().await.context(h!())?;
             crate::rer_importer::bgworker::inbox_item_oneoff_nofail(
                 settlements.clone(),
                 &txn,

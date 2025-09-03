@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use crate::entities::{datasource_group, signal_group, signal_message};
 use crate::error::AppError;
 use crate::types::Mode;
@@ -10,8 +11,6 @@ use sea_orm::{
     EntityTrait, JoinType, NotSet, PaginatorTrait, QueryFilter, QuerySelect,
     RelationTrait, Set,
 };
-use std::collections::{HashMap, HashSet};
-
 pub async fn check_should_populate_signal_message_group_ids<
     'a,
     'async_trait,
@@ -43,9 +42,10 @@ pub async fn oneoff_populate_signal_message_group_ids(
         .context(h!())?;
     insert_missing_signal_groups(&dbx).await.context(h!())?;
     info!("insert_missing_signal_groups done");
-    let datasource_groups =
-        insert_missing_datasource_groups(&dbx).await.context(h!())?;
-    info!("insert_missing_datasource_groups done");
+    let datasource_groups = datasource_group::Entity::find()
+        .all(&dbx)
+        .await
+        .context(h!())?;
     let mut counter = 1;
     let count = datasource_groups.len();
     for datasource_group in datasource_groups {
@@ -53,16 +53,20 @@ pub async fn oneoff_populate_signal_message_group_ids(
             .group_master_key
             .eq(config::UNKNOWN_GROUP_MASTER_KEY)
         {
-            signal_message::Column::GroupMasterKey.is_null()
+            datasource_group::Column::GroupMasterKey.is_null()
         } else {
-            signal_message::Column::GroupMasterKey
+            datasource_group::Column::GroupMasterKey
                 .eq(datasource_group.group_master_key.clone())
         };
         loop {
             let messages_to_update = signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .filter(signal_message::Column::DatasourceGroupId.is_null())
                 .filter(
-                    signal_message::Column::DatasourceId
+                    datasource_group::Column::DatasourceId
                         .eq(datasource_group.datasource_id),
                 )
                 .filter(group_filter.clone())
@@ -106,10 +110,10 @@ async fn insert_missing_datasource_groups(
 ) -> Result<Vec<datasource_group::Model>, AppError> {
     let source_datasource_groups = signal_message::Entity::find()
         .select_only()
-        .column(signal_message::Column::GroupMasterKey)
-        .column(signal_message::Column::DatasourceId)
-        .group_by(signal_message::Column::GroupMasterKey)
-        .group_by(signal_message::Column::DatasourceId)
+        .column(datasource_group::Column::GroupMasterKey)
+        .column(datasource_group::Column::DatasourceId)
+        .group_by(datasource_group::Column::GroupMasterKey)
+        .group_by(datasource_group::Column::DatasourceId)
         .into_tuple::<(Option<String>, i64)>()
         .all(dbx)
         .await
@@ -165,6 +169,7 @@ async fn insert_missing_datasource_groups(
     }
     Ok(existing_groups)
 }
+
 async fn insert_missing_signal_groups(
     dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
@@ -179,13 +184,17 @@ async fn insert_missing_signal_groups(
         .collect::<HashSet<_>>();
     let missing_master_key = signal_message::Entity::find()
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
         )
         .filter(signal_group::Column::MasterKey.is_null())
         .select_only()
-        .column(signal_message::Column::GroupMasterKey)
-        .group_by(signal_message::Column::GroupMasterKey)
+        .column(datasource_group::Column::GroupMasterKey)
+        .group_by(datasource_group::Column::GroupMasterKey)
         .into_tuple::<Option<String>>()
         .all(dbx)
         .await
