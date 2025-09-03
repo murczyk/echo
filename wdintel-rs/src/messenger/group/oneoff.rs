@@ -205,7 +205,9 @@ async fn insert_missing_signal_groups(
             continue;
         }
         signal_group::ActiveModel {
-            master_key: Set(key),
+            master_key: Set(key.unwrap_or(
+                crate::config::UNKNOWN_GROUP_MASTER_KEY.to_string(),
+            )),
             deleted: Set(true),
             name: Set(None),
             datasource_id: Set(None),
