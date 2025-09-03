@@ -32,6 +32,16 @@ mkdir -p target/debian
 
 # echo-docs
 if [ -f "docs/echo-docs/Cargo.toml" ]; then
+  # Ensure Zola site is built so that docs/public/* exists for packaging
+  if [ ! -d "docs/public" ] || [ -z "$(ls -A docs/public 2>/dev/null || true)" ]; then
+    echo "> Building docs site (zola)"
+    if ! command -v zola >/dev/null 2>&1; then
+      echo "Zola not found, installing via cargo..."
+      cargo install zola --locked
+    fi
+    (cd docs && zola build)
+  fi
+
   (cd docs/echo-docs && cargo deb)
   cp -v docs/echo-docs/target/debian/*.deb target/debian/ || true
 fi
