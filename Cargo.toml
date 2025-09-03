@@ -7,11 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-<<<<<<< HEAD
 version = "0.1.1-rc.202509041303"
-=======
-version = "0.1.1-rc.202509031953"
->>>>>>> 1fcea96d (bump: 0.1.1-rc.202509031953: fixed backfilling missing datasource groups)
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"
