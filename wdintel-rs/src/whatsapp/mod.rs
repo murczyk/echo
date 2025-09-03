@@ -123,7 +123,7 @@ async fn receive_once(
             deleted: NotSet,
             external_id: NotSet,
             message_uid: NotSet,
-            group_id: Set(Some(group_id)),
+            datasource_group_id: Set(Some(group_id)),
         }
         .insert(&txn)
         .await

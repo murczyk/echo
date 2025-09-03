@@ -13,19 +13,19 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub body: Option<String>,
     pub created_at: DateTime,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub group_master_key: Option<String>,
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
     pub duplicate_of: Option<i64>,
     pub format: Option<i64>,
-    pub datasource_id: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
-    pub group_id: Option<i64>,
+    pub datasource_group_id: Option<i64>,
+    pub datasource_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub group_master_key: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -40,7 +40,7 @@ pub enum Relation {
     Datasource,
     #[sea_orm(
         belongs_to = "super::datasource_group::Entity",
-        from = "Column::GroupId",
+        from = "Column::DatasourceGroupId",
         to = "super::datasource_group::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"

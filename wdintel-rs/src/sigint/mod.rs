@@ -413,7 +413,7 @@ async fn xlsx_import_process_one(
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
-        group_id: Set(Some(group_id)),
+        datasource_group_id: Set(Some(group_id)),
         group_master_key: Set(Some(group_id.to_string())),
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(sender_uuid.to_string())),

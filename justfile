@@ -1,4 +1,4 @@
-dt1 := "2025-08-27-13-16-15"
+dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
 pgpwd := "fee_-_-_-FnoeKFBeebu87bf"
 log_sql := "false"
@@ -379,21 +379,21 @@ copy-db-to-target:
 
 copy-db-local:
     #!/bin/bash
-        set -euxo pipefail
-        if [[ "{{ server }}" == "" ]]; then
-             just _print-servers; exit 1;
-         fi
-         echo 'this command requires sudo access'
-         sudo ls
-         ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
-         ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
-         scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
-         ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
-         mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
-         (cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)
-         sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'
-         sudo -u postgres psql -c 'create database {{ pgdb }}'
-         sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+         just _print-servers; exit 1;
+    fi
+    echo 'this command requires sudo access'
+    sudo ls
+    ssh -t {{ server }} '(cd ~/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    ssh -t {{ server }} 'gzip -c ~/Downloads/wd-{{ dt1 }}.pgrestore > /tmp/wd-{{ dt1 }}.pgrestore.gz'
+    scp {{ server }}:/tmp/wd-{{ dt1 }}.pgrestore.gz ~/Downloads/
+    ssh -t {{ server }} '(rm ~/Downloads/wd-{{ dt1 }}.pgrestore && rm /tmp/wd-{{ dt1 }}.pgrestore.gz) | echo "ok"'
+    mv ~/Downloads/wd-{{ dt1 }}.pgrestore.gz /var/tmp/
+    (cd /var/tmp && gunzip wd-{{ dt1 }}.pgrestore.gz)
+    sudo -u postgres psql -c 'drop database {{ pgdb }} with (FORCE)'
+    sudo -u postgres psql -c 'create database {{ pgdb }}'
+    sudo -u postgres pg_restore -d {{ pgdb }} /var/tmp/wd-{{ dt1 }}.pgrestore && sudo rm /var/tmp/wd-{{ dt1 }}.pgrestore
 
 setup-b2:
     ssh {{ server }} 'sudo pip3 install -U b2'

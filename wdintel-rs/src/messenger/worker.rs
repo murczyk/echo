@@ -469,7 +469,7 @@ pub async fn receive_once(
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
-        group_id: Set(Some(group_id)),
+        datasource_group_id: Set(Some(group_id)),
         created_at: NotSet,
         group_master_key: Set(Some(m.group_id)),
         timestamp: Set(Some(m.timestamp)),

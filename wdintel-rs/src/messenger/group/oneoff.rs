@@ -23,7 +23,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let pending_messages_count = signal_message::Entity::find()
-        .filter(signal_message::Column::GroupId.is_null())
+        .filter(signal_message::Column::DatasourceGroupId.is_null())
         .count(db)
         .await
         .context(h!())?;
@@ -51,7 +51,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
     for datasource_group in datasource_groups {
         loop {
             let messages_to_update = signal_message::Entity::find()
-                .filter(signal_message::Column::GroupId.is_null())
+                .filter(signal_message::Column::DatasourceGroupId.is_null())
                 .filter(
                     signal_message::Column::DatasourceId
                         .eq(datasource_group.datasource_id),
@@ -80,7 +80,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
             signal_message::Entity::update_many()
                 .filter(signal_message::Column::Id.is_in(messages_to_update))
                 .col_expr(
-                    signal_message::Column::GroupId,
+                    signal_message::Column::DatasourceGroupId,
                     Expr::value(datasource_group.id),
                 )
                 .exec(&dbx)
