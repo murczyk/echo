@@ -13,13 +13,9 @@ if ! command -v cargo-deb >/dev/null 2>&1; then
 fi
 
 # Build frontend assets required by wdintel-rs package
-if command -v just >/dev/null 2>&1; then
-  just build-front
-else
-  echo "warn: 'just' not found; attempting npm build directly"
-  if [ -d "wdintel-web" ]; then
-    (cd wdintel-web && npm ci && npm run build)
-  fi
+if [ -d "wdintel-web" ]; then
+  echo "> Building frontend (wdintel-web)"
+  (cd wdintel-web && npm ci && npm run build)
 fi
 
 # Build release binaries first for faster cargo-deb (reuse artifacts)
@@ -49,4 +45,3 @@ fi
 # Also copy workspace-built debs (cargo-deb already places them under root target/debian)
 ls -lah target/debian || true
 echo "DEBs built under target/debian/"
-
