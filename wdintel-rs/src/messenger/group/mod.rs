@@ -180,8 +180,16 @@ where
     let (group_name, datasource_group_id) = signal_group::Entity::find()
         .left_join(datasource_group::Entity)
         .filter(signal_group::Column::MasterKey.eq(master_key.clone()))
-        .filter(datasource_group::Column::GroupMasterKey.eq(master_key.clone()))
-        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+        .filter(
+            datasource_group::Column::Id.is_null().or(
+                datasource_group::Column::GroupMasterKey
+                    .eq(master_key.clone())
+                    .and(
+                        datasource_group::Column::DatasourceId
+                            .eq(datasource_id),
+                    ),
+            ),
+        )
         .select_only()
         .column(signal_group::Column::Name)
         .column(datasource_group::Column::Id)
