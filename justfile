@@ -458,9 +458,18 @@ _jvln-deploy-back:
     rm /tmp/config-server.toml /tmp/config-bitwarden.toml || true
     echo "Back-end is ready. Now open https://wildducks.online"
 
-# _echo-generic-deploy
-
 _echo-generic-deploy:
+    #!/bin/bash
+    set -euxo pipefail
+    set +x | echo 'skipping set +x, probably ubuntu build'
+    if [[ "{{ server }}" == "" ]]; then
+        just _print-servers; exit 1;
+    fi
+    ssh {{ server }} 'sudo apt-get update'
+    ssh {{ server }} 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y echo-install wdintel-rs'
+
+# todo delete
+_echo-generic-deploy-old:
     #!/bin/bash
     set -euxo pipefail
     set +x | echo 'skipping set +x, probably ubuntu build'
