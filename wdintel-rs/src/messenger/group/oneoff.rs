@@ -37,7 +37,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
     mode: Mode,
 ) -> Result<(), AppError> {
     info!("oneoff_assign_message_ids started");
-    let config = crate::config::read_config(mode).context(h!())?;
+    let config = config::read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
@@ -110,7 +110,7 @@ async fn insert_missing_datasource_groups(
         .column(signal_message::Column::DatasourceId)
         .group_by(signal_message::Column::GroupMasterKey)
         .group_by(signal_message::Column::DatasourceId)
-        .into_tuple::<(String, i64)>()
+        .into_tuple::<(Option<String>, i64)>()
         .all(dbx)
         .await
         .context(h!())?
@@ -124,8 +124,8 @@ async fn insert_missing_datasource_groups(
         .clone()
         .into_iter()
         .map(|g| (g.group_master_key, g.datasource_id))
-        .for_each(|g| {
-            source_datasource_groups.remove(&g);
+        .for_each(|(g, id)| {
+            source_datasource_groups.remove(&(Some(g), id));
         });
     let group_names = signal_group::Entity::find()
         .select_only()
@@ -139,6 +139,8 @@ async fn insert_missing_datasource_groups(
         .collect::<HashMap<_, _>>();
 
     for (group_master_key, datasource_id) in source_datasource_groups {
+        let group_master_key = group_master_key
+            .unwrap_or(config::UNKNOWN_GROUP_MASTER_KEY.to_string());
         let group_name = group_names
             .get(&group_master_key)
             .cloned()
@@ -177,9 +179,9 @@ async fn insert_missing_signal_groups(
         .context(h!())?;
     for key in missing_master_key {
         signal_group::ActiveModel {
-            master_key: Set(key.unwrap_or(
-                crate::config::UNKNOWN_GROUP_MASTER_KEY.to_string(),
-            )),
+            master_key: Set(
+                key.unwrap_or(config::UNKNOWN_GROUP_MASTER_KEY.to_string())
+            ),
             deleted: Set(true),
             name: Set(None),
             datasource_id: Set(None),

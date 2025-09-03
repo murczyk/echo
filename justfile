@@ -23,6 +23,7 @@ echo_bin := "wdintel-rs"
 since_ts := "1645664400000"
 till_ts := "1961204400000"
 datasource_id := "1"
+message := ""
 
 default:
     @just --list
@@ -995,7 +996,7 @@ bump-version-commit:
     just bump-version
     MAIN_TOML="Cargo.toml"
     new_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
-    msg="bump: ${new_ver}"
+    msg="bump: ${new_ver}{{ message }}"
     git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml 2>/dev/null || true
     if git diff --cached --quiet; then
         echo "No changes to commit."
@@ -1008,5 +1009,5 @@ bump-version-commit:
 bump-version-push:
     #!/bin/bash
     set -euo pipefail
-    just bump-version-commit
+    just message={{ message }} bump-version-commit
     git push
