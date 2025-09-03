@@ -1898,6 +1898,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "echo-docs"
+version = "0.1.1-rc.202509031037"
+
+[[package]]
 name = "echo-im"
 version = "0.1.0-rc.202508291708"
 source = "git+ssh://git@github.com/echoua/echo-im.git?rev=765ddd7bb3cab0b51f5cc453fcf5ac3b4eead383#765ddd7bb3cab0b51f5cc453fcf5ac3b4eead383"
@@ -1945,7 +1949,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=765ddd7bb3cab0b51f5cc4
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202509031012"
+version = "0.1.1-rc.202509031037"
 dependencies = [
  "anyhow",
  "echo-install-utils 0.1.1-rc.202508180738",
@@ -6804,7 +6808,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202509031012"
+version = "0.1.1-rc.202509031037"
 dependencies = [
  "actix-files",
  "actix-identity",
