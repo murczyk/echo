@@ -191,8 +191,8 @@ type alias Model =
     , editDescriptionInp : String
     , editDescriptionFreqSelect :
         { state : Select.State
-        , items : List (Select.MenuItem String)
-        , selected : Maybe String
+        , items : List (Select.MenuItem Int)
+        , selected : Maybe Int
         }
 
     -- Delete confirmation dialog state
