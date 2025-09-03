@@ -83,11 +83,10 @@ else
 fi
 
 # publish under prefix "$REPO" (e.g., /echo), switching to new (possibly merged) snapshot
-if aptly publish show "$DIST" "${REPO}" >/dev/null 2>&1; then
-  # Note: `aptly publish switch` expects distribution as a positional arg
-  # and does not support a `-distribution` flag.
-  aptly publish switch -skip-signing -component="$COMP" "$DIST" "${REPO}" "$SNAP_TO_PUBLISH"
-else
+# Try switch first (robust if already published), then fallback to drop+publish snapshot.
+if ! aptly publish switch -skip-signing "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
+  echo "Publish switch failed, attempting drop+publish..."
+  aptly publish drop -force-drop "$DIST" "$REPO" || true
   aptly publish snapshot -skip-signing -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
 fi
 REMOTE

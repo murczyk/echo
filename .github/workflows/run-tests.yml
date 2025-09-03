@@ -90,6 +90,17 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bash deploy/ci/publish_echo_ci.sh
 
+      - name: Discord notification - CI failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL_CI: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
+        run: |
+          set -euo pipefail
+          # Send a Discord alert; do not break further if webhook is missing
+          ./scripts/notifications/discord-notify.sh \
+            ci_failure "" "CI Build Failed" \
+            "Build failed in workflow 'CI Build Test and Publish (amd64)'." || true
+
       - name: Remove target on failure
         if: failure()
         run: rm -rf target
