@@ -1,7 +1,7 @@
 use crate::entities::{datasource_group, signal_group, signal_message};
 use crate::error::AppError;
-use crate::h;
 use crate::types::Mode;
+use crate::{config, h};
 use anyhow::Context;
 use echo_migration::Expr;
 use log::{error, info};
@@ -49,6 +49,15 @@ pub async fn oneoff_populate_signal_message_group_ids(
     let mut counter = 1;
     let count = datasource_groups.len();
     for datasource_group in datasource_groups {
+        let group_filter = if datasource_group
+            .group_master_key
+            .eq(config::UNKNOWN_GROUP_MASTER_KEY)
+        {
+            signal_message::Column::GroupMasterKey.is_null()
+        } else {
+            signal_message::Column::GroupMasterKey
+                .eq(datasource_group.group_master_key.clone())
+        };
         loop {
             let messages_to_update = signal_message::Entity::find()
                 .filter(signal_message::Column::DatasourceGroupId.is_null())
@@ -56,10 +65,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
                     signal_message::Column::DatasourceId
                         .eq(datasource_group.datasource_id),
                 )
-                .filter(
-                    signal_message::Column::GroupMasterKey
-                        .eq(datasource_group.group_master_key.clone()),
-                )
+                .filter(group_filter.clone())
                 .select_only()
                 .column(signal_message::Column::Id)
                 .limit(20000)
@@ -165,13 +171,15 @@ async fn insert_missing_signal_groups(
         .select_only()
         .column(signal_message::Column::GroupMasterKey)
         .group_by(signal_message::Column::GroupMasterKey)
-        .into_tuple::<String>()
+        .into_tuple::<Option<String>>()
         .all(dbx)
         .await
         .context(h!())?;
     for key in missing_master_key {
         signal_group::ActiveModel {
-            master_key: Set(key),
+            master_key: Set(key.unwrap_or(
+                crate::config::UNKNOWN_GROUP_MASTER_KEY.to_string(),
+            )),
             deleted: Set(true),
             name: Set(None),
             datasource_id: Set(None),
