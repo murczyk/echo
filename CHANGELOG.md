@@ -8,6 +8,7 @@
 
 ## NEXT
 
+- [#1439](https://github.com/echoua/echo/issues/1439) ✅ Виправлено проблему з підтягуванням статистика по частоті в мережі. Вирішено проблему з прив'язкою мережі в аналізі
 - [#1428](https://github.com/echoua/echo/issues/1428) ✅ Виправлено помилку обрахунку інформації про активність для позивних мережі, покращено співставлення каталожних позивних та позивних мережі.
 - [#1394](https://github.com/echoua/echo/issues/1394) 👷 Додано datasource group id до повідомлень. треба прогнати oneoff_populate_signal_message_group_ids
 - [#1425](https://github.com/echoua/echo/issues/1425) ✅ Виправлено масову привязку позивних

@@ -342,7 +342,7 @@ pub async fn create_network(
             let freq_id = sigint_network_freq::ActiveModel {
                 id: NotSet,
                 network_id: Set(network.id),
-                freq: Set(frequency.freq),
+                freq: Set(frequency.freq.trim().to_string()),
                 created_at: NotSet,
                 active_from: Set(active_from),
                 active_to: Set(active_to),
@@ -1283,7 +1283,7 @@ pub async fn add_network_freq(
         let network_freq = sigint_network_freq::ActiveModel {
             id: NotSet,
             network_id: Set(req.network_id),
-            freq: Set(req.freq_rec.freq.clone()),
+            freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             kind: Set(SigintNetworkKind::try_from_value(&req.freq_rec.kind)?),
             modulation_id: Set(req.freq_rec.modulation_id),
