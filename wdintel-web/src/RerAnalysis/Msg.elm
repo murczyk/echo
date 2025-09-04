@@ -40,6 +40,7 @@ type Msg
     | ToggleOnlyBookmarked
     | ToggleOnlyImportant
     | ToggleOrWithCoords
+    | ToggleUnfoldAorsFilter
     | ToggleUnfoldGroupsFilter
     | ToggleUnfoldSendersFilter
     | ToggleUnfoldFreqsFilter
@@ -89,6 +90,7 @@ type Msg
     | SearchInputKeyDown Int
     | SearchReset
     | SelectTab MenuTab
+    | SelAorMsg (Select.Msg String)
     | SelGroupMsg (Select.Msg String)
     | SelSenderMsg (Select.Msg String)
     | SelFreqMsg (Select.Msg String)
@@ -116,6 +118,7 @@ type Msg
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
     | GotStatsCount (Result ApiError B.CountStatsRsp)
+    | GotStatsAors (Result ApiError B.AreaOfResponsibilityStatsRsp)
     | GotStatsFreqs (Result ApiError B.FreqStatsRsp)
     | GotStatsCallsigns (Result ApiError B.CallsignStatsRsp)
     | GotStatsLocations (Result ApiError B.LocationStatsRsp)

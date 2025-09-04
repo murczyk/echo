@@ -74,6 +74,7 @@ init route _ =
             , loadingInboxMessages = True
             , messages = []
             , profiles = Dict.empty
+            , aorsSelected = []
             , groupsSelected = []
             , sendersSelected = []
             , freqsSelected = []
@@ -96,6 +97,7 @@ init route _ =
             , orBookmarked = False
             , orImportant = False
             , orWithCoords = False
+            , unfoldAorsFilter = False
             , unfoldGroupsFilter = False
             , unfoldSendersFilter = False
             , unfoldFreqsFilter = False
@@ -126,6 +128,8 @@ init route _ =
             , searchInput = ""
             , nolimitShown = False
             , menuTab = TabFilters
+            , selAorState = Select.initState (Select.selectIdentifier "selAorState")
+            , selAorMenu = []
             , selGroupState = Select.initState (Select.selectIdentifier "selGroupState")
             , selGroupMenu = []
             , selSenderState = Select.initState (Select.selectIdentifier "selSenderState")
@@ -164,6 +168,7 @@ init route _ =
             , groupsMessageCountByDay = NotAsked
 
             --
+            , aors = NotAsked
             , groups = NotAsked
             , senders = NotAsked
             , freqs = NotAsked
@@ -233,6 +238,10 @@ getInboxReq model =
     , deniedFreqs = Nothing
     , selectedPosts = emptyToNothing model.postsSelected
     , deniedPosts = Nothing
+    , selectedAors = 
+        model.aorsSelected
+        |> List.filterMap String.toInt
+        |> emptyToNothing
     , selectedCallsigns = emptyToNothing model.callsignsSelected
     , selectedUnits = emptyToNothing model.unitsSelected
     , selectedLocations = emptyToNothing model.locationsSelected
@@ -272,6 +281,10 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
             , selectedCallsigns = emptyToNothing model.callsignsSelected
             , selectedPosts = emptyToNothing model.postsSelected
+            , selectedAors = 
+                model.aorsSelected
+                |> List.filterMap String.toInt
+                |> emptyToNothing
             , selectedUnits = emptyToNothing model.unitsSelected
             , selectedLocations = emptyToNothing model.locationsSelected
             , includePelengLocations = Just model.includePelengLocations
@@ -652,6 +665,9 @@ update user shared route msg model =
                         filterNameToListLength : FilterName -> Bool
                         filterNameToListLength name =
                             case name of
+                                AorsFilter ->
+                                    List.length model.aorsSelected > 0
+
                                 LocationsFilter ->
                                     List.length model.locationsSelected > 0
 
@@ -674,7 +690,7 @@ update user shared route msg model =
                                     List.length model.groupsSelected > 0
 
                         all =
-                            [ LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter ]
+                            [ AorsFilter, LocationsFilter, PostsFilter, UnitsFilter, FreqsFilter, CallsignsFilter, SendersFilter, GroupsFilter ]
 
                         preselectedFilters =
                             List.filter (\filterName -> filterNameToListLength filterName) all
@@ -977,6 +993,29 @@ update user shared route msg model =
             , E.none
             )
 
+        GotStatsAors (Err e) ->
+            ( model
+            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг" e
+            )
+
+        GotStatsAors (Ok rsp) ->
+            let
+                menuItems = 
+                    rsp.aors 
+                    |> List.map (\aor -> 
+                        Select.basicMenuItem 
+                            { item = String.fromInt aor.aorId
+                            , label = "AOR " ++ String.fromInt aor.aorId ++ " (" ++ String.fromInt aor.count ++ ")"
+                            }
+                        )
+            in
+            ( { model 
+                | aors = Success rsp.aors
+                , selAorMenu = menuItems  
+              }
+            , E.none
+            )
+
         GotStatsGroups (Err e) ->
             ( model
             , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e
@@ -1202,6 +1241,10 @@ update user shared route msg model =
                 , deniedFreqs = Nothing
                 , selectedPosts = emptyToNothing model.postsSelected
                 , deniedPosts = Nothing
+                , selectedAors = 
+                    model.aorsSelected
+                    |> List.filterMap String.toInt
+                    |> emptyToNothing
                 , selectedCallsigns = emptyToNothing model.callsignsSelected
                 , selectedUnits = emptyToNothing model.unitsSelected
                 , selectedLocations = emptyToNothing model.locationsSelected
@@ -1403,6 +1446,11 @@ update user shared route msg model =
                     }
             in
             loadCoreStatsAndPushUrl m2
+
+        ToggleUnfoldAorsFilter ->
+            ( { model | unfoldAorsFilter = not model.unfoldAorsFilter }
+            , E.none
+            )
 
         ToggleUnfoldGroupsFilter ->
             ( { model | unfoldGroupsFilter = not model.unfoldGroupsFilter }
@@ -2039,6 +2087,63 @@ update user shared route msg model =
             ( { model | menuTab = tab }
             , E.none
             )
+
+        SelAorMsg imsg ->
+            case ( model.from.datePosix, model.to.datePosix ) of
+                ( Just dtFromPosix, Just dtToPosix ) ->
+                    let
+                        ( mAction, imodel2, icmd ) =
+                            Select.update imsg model.selAorState
+
+                        ( updatedSelectedItems, state ) =
+                            Le.Block.Select.multiUpdMenuOpen mAction model.aorsSelected imodel2
+
+                        m2 =
+                            { model
+                                | aorsSelected = updatedSelectedItems
+                                , selAorState = state
+                            }
+
+                        filterInteraction =
+                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.aorsSelected m2.aors
+
+                        ( m3, eff3 ) =
+                            case filterInteraction of
+                                BeforeInteraction Outdated ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.aorsSelected, aors = Loading }
+                                    , E.getAors GotStatsAors (Query.analysisStatsParams dtFromPosix dtToPosix m2)
+                                    )
+                                BeforeInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Just model.aorsSelected }
+                                    , E.none
+                                    )
+
+                                AfterInteraction Outdated ->
+                                    let
+                                        ( m_, eff_ ) =
+                                            loadCoreStatsAndPushUrl m2
+
+                                        m1_ =
+                                            invalidateFiltersState AorsFilter m_
+                                    in
+                                    ( { m1_ | focusedFilterItemsBeforeChange = Nothing }, eff_ )
+
+                                AfterInteraction UpToDate ->
+                                    ( { m2 | focusedFilterItemsBeforeChange = Nothing }, E.none )
+
+                                _ ->
+                                    ( m2, E.none )
+
+                    in
+                    ( m3
+                    , E.batch <|
+                        [ E.sendCmd <| Cmd.map SelAorMsg icmd
+                        , eff3
+                        ]
+                    )
+
+                _ ->
+                    ( model, E.none )
 
         SelGroupMsg imsg ->
             case ( model.from.datePosix, model.to.datePosix ) of

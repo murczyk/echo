@@ -400,6 +400,7 @@ getBasicInboxParams model =
     , deniedFreqs = emptyToNothing (model.freqsDeniedSelect.selected ++ model.filterDeniedAdjacentFreqs)
     , selectedPosts = emptyToNothing model.postsSelect.selected
     , deniedPosts = emptyToNothing model.postsDeniedSelect.selected
+    , selectedAors = Nothing
     , selectedCallsigns = Nothing
     , selectedUnits = Nothing
     , selectedLocations = Nothing

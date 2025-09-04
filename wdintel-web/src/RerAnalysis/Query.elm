@@ -91,6 +91,10 @@ analysisStatsParams dtFromPosix dtToPosix model =
     , selectedUnits = emptyToNothing model.unitsSelected
     , selectedLocations = emptyToNothing model.locationsSelected
     , selectedPosts = emptyToNothing model.postsSelected
+    , selectedAors = 
+        model.aorsSelected
+        |> List.filterMap String.toInt
+        |> emptyToNothing
     , includePelengLocations = Just model.includePelengLocations
     , orWithExtendedForm = Just model.orWithExtendedForm
     , orBookmarked = Just model.orBookmarked
@@ -114,6 +118,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , selectedUnits = Nothing
     , selectedLocations = Nothing
     , selectedPosts = Nothing
+    , selectedAors = Nothing
     , includePelengLocations = Nothing
     , orWithExtendedForm = Nothing
     , orBookmarked = Nothing
