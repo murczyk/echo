@@ -40,6 +40,7 @@ pub async fn oneoff_populate_signal_message_group_ids(
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
+    insert_missing_datasource_groups(&dbx).await.context(h!())?;
     let datasource_groups = datasource_group::Entity::find()
         .all(&dbx)
         .await

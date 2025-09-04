@@ -366,7 +366,7 @@ pub async fn network_group_activity_bl(
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
-            Alias::new("signal_group"),
+            Alias::new("datasource_group"),
         )
         .join_as(
             JoinType::LeftJoin,

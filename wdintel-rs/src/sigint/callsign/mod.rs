@@ -237,9 +237,10 @@ pub async fn get_callsigns_with_units_from_inbox(
             cs.value as callsign,
             sii.unit_v2 as unit
         FROM signal_message sm
+        INNER JOIN datasource_group dg ON sm.datasource_group_id = dg.id
         INNER JOIN sigint_inbox_item sii ON sm.id = sii.id,
         LATERAL jsonb_array_elements_text(sii.callsigns) AS cs(value)
-        WHERE sm.group_master_key = ANY($1)
+        WHERE dg.group_master_key = ANY($1)
           AND sm.deleted = false
           AND sii.checked = true
           AND sii.unit_v2 IS NOT NULL

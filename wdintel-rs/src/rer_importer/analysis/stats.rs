@@ -298,6 +298,7 @@ pub async fn fetch_posts(
     }
     let post_res =
         build_posts_query(&req, &user, master_keys, dt_since, dt_till)?;
+    println!("test q: {}", post_res.build(DbBackend::Postgres));
     let post_res: Vec<PostsRes> = post_res
         .into_model::<PostsRes>()
         .all(&env.dbx)
@@ -354,7 +355,7 @@ fn build_posts_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
-        .column_as(Expr::col(sigint_post::Column::Name).if_null(""), "post")
+        .column_as(Expr::col((sigint_post::Entity, sigint_post::Column::Name)).if_null(""), "post")
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),
@@ -1158,8 +1159,12 @@ fn build_aors_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
         )
         .join(
             JoinType::LeftJoin,
@@ -1178,7 +1183,7 @@ fn build_aors_query(
             "aor_id",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(area_of_responsibility::Column::Deleted.eq(false))

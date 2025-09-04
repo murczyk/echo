@@ -93,7 +93,7 @@ pub async fn freq_activity_daily(
                 .into(),
         )
         .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(Expr::col(sigint_zone_datasource::Column::GroupMasterKey).equals(datasource_group::Column::GroupMasterKey))
+        .filter(Expr::col((sigint_zone_datasource::Entity, sigint_zone_datasource::Column::GroupMasterKey)).equals((datasource_group::Entity, datasource_group::Column::GroupMasterKey)))
         .filter(login::Column::Login.eq(login))
         .filter(sigint_inbox_item::Column::Freq.eq(freq))
         .filter(ts_filter)
@@ -1295,11 +1295,11 @@ pub async fn callsigns_for_filter(
     let mut callsigns_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
+            sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
+            signal_message::Relation::DatasourceGroup.def(),
         )
         .select_only()
         .column_as(

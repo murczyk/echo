@@ -471,7 +471,8 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                         sii.id, TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999') AS res
                     FROM sigint_inbox_item AS sii
                         INNER JOIN signal_message AS sm ON sm.id = sii.id
-                        INNER JOIN signal_group AS sg ON sg.master_key = sm.group_master_key
+                        INNER JOIN datasource_group dg ON sm.datasource_group_id = dg.id
+                        INNER JOIN signal_group AS sg ON sg.master_key = dg.group_master_key
                     WHERE
                         sii.lat IS NOT NULL
                         AND sii.lng IS NOT NULL

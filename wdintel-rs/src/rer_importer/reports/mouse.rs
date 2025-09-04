@@ -666,7 +666,7 @@ pub async fn report_docx_kind_mouse(
             let Some(inbox) = inbox_map.get(&message_id).cloned() else {
                 continue;
             };
-            let Some(datasource) = datasource_map.get(&datasource_id).cloned()
+            let Some(datasource) = datasource_map.get(datasource_id).cloned()
             else {
                 continue;
             };

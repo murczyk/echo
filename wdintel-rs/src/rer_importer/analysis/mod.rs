@@ -444,7 +444,9 @@ where
             q = q
                 .group_by(signal_message::Column::Id)
                 .group_by(sigint_post::Column::Name)
-                .group_by(sigint_inbox_item::Column::Id);
+                .group_by(sigint_inbox_item::Column::Id)
+                .group_by(datasource_group::Column::DatasourceId)
+                .group_by(datasource_group::Column::GroupMasterKey);
         }
         q = q.having(Expr::cust("count(sigint_comment.id) > 0"));
     }
@@ -481,10 +483,12 @@ where
     }
 
     #[derive(Iden)]
-    pub enum SignalMessage {
+    pub enum DatasourceGroup {
         Table,
         GroupMasterKey,
     }
+
+
 
     if let Some(aor_ids) = selected_aors {
         if !aor_ids.is_empty() {
@@ -557,8 +561,8 @@ where
                         SignalGroupAor::MasterKey,
                     ))
                     .eq(Expr::col((
-                        SignalMessage::Table,
-                        SignalMessage::GroupMasterKey,
+                        DatasourceGroup::Table,
+                        DatasourceGroup::GroupMasterKey,
                     ))),
                 )
                 .and_where(Expr::exists(inner_exists))

@@ -31,8 +31,15 @@ const DEFAULT_EMPTY_UNIT_NAME: &str = "в дорозвідці";
 pub enum SignalMessage {
     Table,
     Id,
-    GroupMasterKey,
+    GroupId,
     Deleted,
+}
+
+#[derive(Iden)]
+pub enum DatasourceGroup {
+    Table,
+    Id,
+    GroupMasterKey,
 }
 
 #[derive(Iden)]
@@ -146,6 +153,12 @@ pub async fn load_freqs(
     )
     .join(
         JoinType::InnerJoin,
+        DatasourceGroup::Table,
+        Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+            .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+    )
+    .join(
+        JoinType::InnerJoin,
         SigintNetworkFreq::Table,
         Expr::col((SigintNetworkFreq::Table, SigintNetworkFreq::Freq))
             .equals((SigintInboxItem::Table, SigintInboxItem::Freq)),
@@ -157,7 +170,7 @@ pub async fn load_freqs(
             .equals((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
     )
     .and_where(
-        Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
+        Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey))
             .is_in(groups),
     )
     .and_where(
@@ -623,6 +636,12 @@ pub fn build_callsigns_queries(
             Expr::col((SignalMessage::Table, SignalMessage::Id))
                 .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
         )
+        .join(
+            JoinType::InnerJoin,
+            DatasourceGroup::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+        )
 		        .join(
             JoinType::InnerJoin,
             Alias::new("network_freqs"),
@@ -634,7 +653,7 @@ pub fn build_callsigns_queries(
                         .lt(Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")))),
         )
     .and_where(
-        Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
+        Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey))
             .is_in(groups),
     )
     .and_where(

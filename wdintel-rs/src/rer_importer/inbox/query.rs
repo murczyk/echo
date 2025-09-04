@@ -37,8 +37,7 @@ pub(crate) async fn build_inbox_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         );
 
-    q = add_inbox_message_columns(q);
-    q = q
+    q = add_inbox_message_columns(q)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(sigint_groups));
 

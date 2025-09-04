@@ -729,11 +729,17 @@ pub async fn network_callsigns(
             Expr::col((SignalMessage::Table, SignalMessage::Id))
                 .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
         )
+        .join(
+            JoinType::InnerJoin,
+            DatasourceGroup::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+        )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
         .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
+            Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
                 .is_in(groups),
         )
         .to_owned();
@@ -930,6 +936,12 @@ pub async fn network_freqs_activity_one(
     )
     .join(
         JoinType::InnerJoin,
+        DatasourceGroup::Table,
+        Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+            .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+    )
+    .join(
+        JoinType::InnerJoin,
         Alias::new("network_freqs"),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
             .equals((Alias::new("network_freqs"), Alias::new("freq")))
@@ -943,7 +955,7 @@ pub async fn network_freqs_activity_one(
             ),
     )
     .and_where(Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false))
-    .and_where(Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey)).is_in(groups))
+    .and_where(Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey)).is_in(groups))
     .add_group_by([
         // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),

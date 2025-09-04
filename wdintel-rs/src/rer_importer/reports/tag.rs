@@ -171,8 +171,7 @@ pub async fn report_docx_kind_tag(
             .context(h!())?
             .into_iter()
             .next()
-            .map(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
-            .flatten()
+            .and_then(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
         else {
             continue;
         };
