@@ -248,8 +248,7 @@ where
             .context(h!())?
             .into_iter()
             .next()
-            .map(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
-            .flatten()
+            .and_then(|(m, gs)| gs.into_iter().next().map(|g| (m, g)))
     {
         let datasource_group_id = ensure_datasource_group_id(
             txn,

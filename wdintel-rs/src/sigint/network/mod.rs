@@ -998,7 +998,10 @@ pub async fn list_network_points(
         .context(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let mut query = signal_message::Entity::find()
-        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),

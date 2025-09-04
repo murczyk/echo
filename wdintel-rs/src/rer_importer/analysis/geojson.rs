@@ -47,7 +47,10 @@ pub async fn rer_analysis_download_geojson(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
-        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
         .column_as(signal_group::Column::Name, "group_name")

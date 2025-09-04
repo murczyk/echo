@@ -119,13 +119,14 @@ pub async fn oneoff_rer_csv_import_1(
         let timestamp = Utc::now().naive_utc();
 
         let master_key = group_id.to_string();
-        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
-            &dbx,
-            master_key.to_string(),
-            datasource_id,
-        )
-        .await
-        .context(h!())?;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &dbx,
+                master_key.to_string(),
+                datasource_id,
+            )
+            .await
+            .context(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,
@@ -389,13 +390,14 @@ pub async fn rer_delta_csv_import_go(
         let body = body.replace("\r\n", "\n");
 
         let master_key = group_id.to_string();
-        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
-            dbx,
-            master_key.to_string(),
-            datasource_id,
-        )
-        .await
-        .context(h!())?;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                dbx,
+                master_key.to_string(),
+                datasource_id,
+            )
+            .await
+            .context(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,

@@ -32,7 +32,14 @@ pub async fn rer_analysis_download_kmz(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")

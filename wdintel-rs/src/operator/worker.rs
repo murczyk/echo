@@ -59,7 +59,10 @@ async fn receive_once(
     let now = Utc::now();
     let echo_operator_queue = signal_message::Entity::find()
         .select_only()
-        .join(JoinType::InnerJoin, signal_message::Relation::DatasourceGroup.def())
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .column(signal_message::Column::Id)
         .join(
             JoinType::LeftJoin,

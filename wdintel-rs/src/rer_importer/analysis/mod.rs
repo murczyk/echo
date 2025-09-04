@@ -41,7 +41,7 @@ where
     if let Some(selected_groups) = selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             return Ok(q.filter(
-                signal_message::Column::GroupMasterKey.is_in(selected_groups),
+                datasource_group::Column::GroupMasterKey.is_in(selected_groups),
             ));
         }
     }
@@ -350,9 +350,10 @@ where
 {
     if let Some(selected_callsigns) = selected_callsigns.as_ref() {
         if !selected_callsigns.is_empty() {
-            return Ok(q.filter(sea_query::expr::SimpleExpr::Custom(
-                cond_json_contains_oneof("callsigns", selected_callsigns),
-            )));
+            return Ok(q.filter(SimpleExpr::Custom(cond_json_contains_oneof(
+                "callsigns",
+                selected_callsigns,
+            ))));
         }
     }
     Ok(q)
@@ -378,12 +379,12 @@ where
         if !selected_tags.is_empty() {
             match filter_tags_option.unwrap_or(TagFilterOption::OneOfTags) {
                 TagFilterOption::OneOfTags => {
-                    m_inner_expr = Some(sea_query::expr::SimpleExpr::Custom(
+                    m_inner_expr = Some(SimpleExpr::Custom(
                         cond_json_contains_oneof_i64("tags", selected_tags),
                     ));
                 }
                 TagFilterOption::AllTags => {
-                    m_inner_expr = Some(sea_query::expr::SimpleExpr::Custom(
+                    m_inner_expr = Some(SimpleExpr::Custom(
                         cond_json_contains_all_i64("tags", selected_tags),
                     ));
                 }
@@ -584,7 +585,7 @@ where
                     sigint_inbox_item::Relation::SigintSearch.def(),
                 )
                 .filter(
-                    sea_query::Expr::col((
+                    Expr::col((
                         sigint_search::Entity,
                         sigint_search::Column::SearchTsv,
                     ))
@@ -595,13 +596,12 @@ where
                 );
         }
         for ilike in search_parts.ilike {
-            q2 = q2.filter(
-                sea_query::Expr::col(signal_message::Column::Body).ilike(ilike),
-            );
+            q2 =
+                q2.filter(Expr::col(signal_message::Column::Body).ilike(ilike));
         }
         for not_ilike in search_parts.not_ilike {
             q2 = q2.filter(
-                sea_query::Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
+                Expr::cust("jsonb_extract_path_text(sigint_inbox_item.body_noheader, 'body')")
                     .not_ilike(not_ilike),
             );
         }
@@ -638,7 +638,7 @@ pub async fn summary_table_freq(
 }
 
 pub async fn summary_table_freq_1(
-    user: &actix_identity::Identity,
+    user: &Identity,
     env: &Env,
     req: &AnalysisStatsReq,
 ) -> Result<SummaryTableFreq, AppError> {
@@ -659,17 +659,18 @@ pub async fn summary_table_freq_1(
         locations: Vec<String>,
     }
 
-    let master_keys = crate::users::get_identity_sigint_groups_noimport(
-        &env.dbx,
-        user,
-        &env.config,
-    )
-    .await?;
+    let master_keys =
+        get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
+            .await?;
 
     let rows_res = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
         )
         .join(
             JoinType::LeftJoin,
@@ -693,7 +694,7 @@ pub async fn summary_table_freq_1(
             "locations",
         )
         .column_as(Expr::col(signal_message::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
@@ -1102,7 +1103,11 @@ async fn correlated_freqs(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .select_only()
@@ -1135,14 +1140,12 @@ async fn correlated_freqs(
                 JoinType::InnerJoin,
                 signal_message::Relation::SigintInboxItem.def(),
             )
-            .filter(
-                signal_message::Column::GroupMasterKey.is_in(
-                    crate::users::get_identity_sigint_groups(&env.dbx, &login)
-                        .await?,
-                ),
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
             )
             .filter(
-                signal_message::Column::GroupMasterKey.is_in(
+                datasource_group::Column::GroupMasterKey.is_in(
                     crate::users::get_identity_sigint_groups(&env.dbx, &login)
                         .await?,
                 ),
@@ -1213,13 +1216,17 @@ pub async fn edit_freq_unit_name(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(Expr::cust("signal_message.id"), "id")
         // .column_as(Expr::col(signal_message::Column::Id), "id")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1522,7 +1529,7 @@ pub async fn bi_new_callsigns(
     env: &Env,
     req: &AnalysisStatsReq,
 ) -> Result<NewCallsignsRes, AppError> {
-    crate::users::has_role(&env.dbx, user_id, "Rer").await?;
+    has_role(&env.dbx, user_id, "Rer").await?;
 
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
@@ -1540,15 +1547,20 @@ pub async fn bi_new_callsigns(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, user_id).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .is_in(get_identity_sigint_groups(&env.dbx, user_id).await?),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
@@ -1604,15 +1616,20 @@ pub async fn bi_new_callsigns(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, user_id).await?,
-        ))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .is_in(get_identity_sigint_groups(&env.dbx, user_id).await?),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));

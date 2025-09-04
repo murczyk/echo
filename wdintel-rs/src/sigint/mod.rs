@@ -405,13 +405,14 @@ async fn xlsx_import_process_one(
     // Normalize body
     let body = body.replace("\r\n", "\n");
 
-    let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
-        dbx,
-        group_id.to_string(),
-        datasource_id,
-    )
-    .await
-    .context(h!())?;
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            dbx,
+            group_id.to_string(),
+            datasource_id,
+        )
+        .await
+        .context(h!())?;
 
     let message = signal_message::ActiveModel {
         id: NotSet,

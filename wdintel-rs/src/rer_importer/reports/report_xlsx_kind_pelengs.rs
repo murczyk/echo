@@ -44,11 +44,12 @@ pub async fn get_inbox_messages_report(
 
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
+        .inner_join(datasource_group::Entity)
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
-        .column(signal_message::Column::DatasourceId)
+        .column(datasource_group::Column::DatasourceId)
         .column(signal_message::Column::Timestamp)
-        .column(signal_message::Column::GroupMasterKey)
+        .column(datasource_group::Column::GroupMasterKey)
         .column(signal_message::Column::Sender)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
@@ -102,7 +103,7 @@ pub async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));
 

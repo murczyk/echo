@@ -82,7 +82,9 @@ async fn monitoring(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
                 )
-                .filter(datasource_group::Column::DatasourceId.eq(datasource.id))
+                .filter(
+                    datasource_group::Column::DatasourceId.eq(datasource.id),
+                )
                 .filter(signal_message::Column::CreatedAt.gt(week_ago))
                 .filter(signal_message::Column::Deleted.eq(false))
                 .order_by_desc(signal_message::Column::CreatedAt)

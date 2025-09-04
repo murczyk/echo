@@ -95,12 +95,20 @@ async fn messages_by_id(
         crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
     let mut messages = SignalMessage::find()
         .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
             JoinType::LeftJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            datasource_group::Relation::SignalGroup.def(),
         )
         .join(
             JoinType::LeftJoin,
@@ -109,7 +117,7 @@ async fn messages_by_id(
     messages = add_inbox_message_columns(messages);
     messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(sigint_groups))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(sigint_groups))
         .filter(signal_message::Column::Id.is_in(req.message_ids.clone()));
 
     let messages = messages
@@ -187,9 +195,14 @@ async fn inbox_group_stats(
         crate::users::get_identity_sigint_groups(&env.dbx, &login).await?;
     let one_hour_ago = Utc::now() - Duration::hours(1);
     let signal_message_timestamps = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(sigint_groups.clone()),
+            datasource_group::Column::GroupMasterKey
+                .is_in(sigint_groups.clone()),
         )
         .filter(
             signal_message::Column::Timestamp
@@ -197,7 +210,7 @@ async fn inbox_group_stats(
         )
         .order_by_asc(signal_message::Column::Timestamp)
         .select_only()
-        .column(signal_message::Column::GroupMasterKey)
+        .column(datasource_group::Column::GroupMasterKey)
         .column(signal_message::Column::Timestamp)
         .into_model::<MessageTimestampPerGroupStat>()
         .all(&env.dbx)

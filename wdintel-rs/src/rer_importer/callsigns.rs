@@ -1074,10 +1074,14 @@ pub async fn callsigns_graph(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(Expr::cust("distinct callsigns"), "callsigns")
         .column_as(Expr::col(signal_message::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .filter(signal_message::Column::Deleted.eq(false))

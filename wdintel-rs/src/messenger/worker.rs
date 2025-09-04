@@ -459,13 +459,14 @@ pub async fn receive_once(
             .await
             .context(h!())?;
     let m_duplicate_id = m_duplicate.map(|(message, _)| message.id);
-    let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
-        txn,
-        m.group_id.clone(),
-        m.datasource_id,
-    )
-    .await
-    .context(h!())?;
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            txn,
+            m.group_id.clone(),
+            m.datasource_id,
+        )
+        .await
+        .context(h!())?;
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),

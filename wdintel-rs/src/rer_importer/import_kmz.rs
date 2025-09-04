@@ -198,13 +198,14 @@ pub async fn rer_delta_kmz_import_go(
         let body = body.replace("\r\n", "\n");
         let master_key = group_id.to_string();
 
-        let datasource_group_id = crate::messenger::group::ensure_datasource_group_id(
-            dbx,
-            master_key.to_string(),
-            datasource_id,
-        )
-        .await
-        .context(h!())?;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                dbx,
+                master_key.to_string(),
+                datasource_id,
+            )
+            .await
+            .context(h!())?;
 
         let message = signal_message::ActiveModel {
             id: NotSet,

@@ -71,8 +71,12 @@ pub async fn report_docx_kind_tag(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups(&txn, &login)
                     .await
                     .context(h!())?,
@@ -159,15 +163,17 @@ pub async fn report_docx_kind_tag(
         }
         let message_id = *message_id;
         let mut ps = vec![];
-        let Some(msg) = signal_message::Entity::find_by_id(message_id)
+        let Some((msg, group)) = signal_message::Entity::find_by_id(message_id)
+            .find_with_related(datasource_group::Entity)
             .filter(signal_message::Column::Deleted.eq(false))
-            .one(&txn)
+            .all(&txn)
             .await
             .context(h!())?
+            .into_iter()
+            .next()
+            .map(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
+            .flatten()
         else {
-            continue;
-        };
-        let Some(datasource_id) = msg.datasource_id else {
             continue;
         };
         let Some(inbox) = sigint_inbox_item::Entity::find_by_id(message_id)
@@ -177,8 +183,7 @@ pub async fn report_docx_kind_tag(
         else {
             continue;
         };
-        let Some(datasource) = datasource_map.get(&datasource_id) else {
-            //
+        let Some(datasource) = datasource_map.get(&group.datasource_id) else {
             continue;
         };
         let m_comment = sigint_comment::Entity::find()

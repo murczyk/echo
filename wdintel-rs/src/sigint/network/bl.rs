@@ -875,11 +875,11 @@ pub async fn bl_get_network_active_freqs_count(
         .join(
             JoinType::InnerJoin,
             datasource_group::Entity,
-            SeaExpr::col((signal_message::Entity, signal_message::Column::DatasourceGroupId))
-                .equals((
-                    datasource_group::Entity,
-                    datasource_group::Column::Id,
-                )),
+            SeaExpr::col((
+                signal_message::Entity,
+                signal_message::Column::DatasourceGroupId,
+            ))
+            .equals((datasource_group::Entity, datasource_group::Column::Id)),
         )
         .join(
             JoinType::InnerJoin,
@@ -963,11 +963,11 @@ pub async fn bl_get_network_active_callsigns_count(
         .join(
             JoinType::InnerJoin,
             datasource_group::Entity,
-            SeaExpr::col((signal_message::Entity, signal_message::Column::DatasourceGroupId))
-                .equals((
-                    datasource_group::Entity,
-                    datasource_group::Column::Id,
-                )),
+            SeaExpr::col((
+                signal_message::Entity,
+                signal_message::Column::DatasourceGroupId,
+            ))
+            .equals((datasource_group::Entity, datasource_group::Column::Id)),
         )
         .join(
             JoinType::InnerJoin,
