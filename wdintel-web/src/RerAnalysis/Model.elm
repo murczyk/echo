@@ -101,7 +101,6 @@ type alias Model =
     , filterUnits : String
     , now : Maybe Time.Posix
     , tags : List ( Int, B.Tag )
-
     , showReportConstructor : Bool
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
@@ -124,6 +123,7 @@ type alias Model =
 
     -- stats
     , aors : RemoteData ApiError (List B.AnalysisStatsAor)
+    , aorNames : List B.AreaOfResponsibilityEntry
     , posts : RemoteData ApiError (List B.AnalysisStatsPost)
     , locations : RemoteData ApiError (List B.AnalysisStatsLocation)
     , statsTags : RemoteData ApiError (List B.AnalysisStatsTag)

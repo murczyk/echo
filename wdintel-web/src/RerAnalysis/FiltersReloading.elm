@@ -84,7 +84,6 @@ invalidateFiltersState filterTriggeredChange model =
                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
-
             }
 
         CallsignsFilter ->
@@ -96,7 +95,6 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
-
             }
 
         LocationsFilter ->
@@ -108,7 +106,6 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
-
             }
 
         PostsFilter ->
@@ -120,7 +117,6 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
-
             }
 
         UnitsFilter ->
@@ -132,7 +128,6 @@ invalidateFiltersState filterTriggeredChange model =
                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                 , groups = NeedsReload (RD.withDefault [] model.groups)
                 , aors = NeedsReload (RD.withDefault [] model.aors)
-
             }
 
 

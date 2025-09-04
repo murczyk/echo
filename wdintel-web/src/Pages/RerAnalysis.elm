@@ -169,6 +169,7 @@ init route _ =
 
             --
             , aors = NotAsked
+            , aorNames = []
             , groups = NotAsked
             , senders = NotAsked
             , freqs = NotAsked
@@ -238,10 +239,10 @@ getInboxReq model =
     , deniedFreqs = Nothing
     , selectedPosts = emptyToNothing model.postsSelected
     , deniedPosts = Nothing
-    , selectedAors = 
+    , selectedAors =
         model.aorsSelected
-        |> List.filterMap String.toInt
-        |> emptyToNothing
+            |> List.filterMap String.toInt
+            |> emptyToNothing
     , selectedCallsigns = emptyToNothing model.callsignsSelected
     , selectedUnits = emptyToNothing model.unitsSelected
     , selectedLocations = emptyToNothing model.locationsSelected
@@ -281,10 +282,10 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
             , selectedCallsigns = emptyToNothing model.callsignsSelected
             , selectedPosts = emptyToNothing model.postsSelected
-            , selectedAors = 
+            , selectedAors =
                 model.aorsSelected
-                |> List.filterMap String.toInt
-                |> emptyToNothing
+                    |> List.filterMap String.toInt
+                    |> emptyToNothing
             , selectedUnits = emptyToNothing model.unitsSelected
             , selectedLocations = emptyToNothing model.locationsSelected
             , includePelengLocations = Just model.includePelengLocations
@@ -317,12 +318,14 @@ loadSumTableOnly model =
                 sumTable =
                     if loadingSumTable then
                         Loading
+
                     else
                         NotAsked
             in
             ( { model | sumTable = sumTable }
             , if loadingSumTable then
                 E.getFreqsSummaryTable GotSumTable analysisPs
+
               else
                 E.none
             )
@@ -355,14 +358,17 @@ loadCoreStats model =
                 sumTable =
                     if loadingSumTable then
                         Loading
+
                     else if model.unfoldSumTable then
                         model.sumTable
+
                     else
                         NotAsked
 
                 counts =
                     if loadingCounts then
                         Loading
+
                     else
                         model.counts
 
@@ -731,6 +737,7 @@ update user shared route msg model =
                                 , freqs = NeedsReload (RD.withDefault [] model.freqs)
                                 , groups = NeedsReload (RD.withDefault [] model.groups)
                                 , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                                , aors = NeedsReload (RD.withDefault [] model.aors)
                             }
                         )
 
@@ -1000,18 +1007,26 @@ update user shared route msg model =
 
         GotStatsAors (Ok rsp) ->
             let
-                menuItems = 
-                    rsp.aors 
-                    |> List.map (\aor -> 
-                        Select.basicMenuItem 
-                            { item = String.fromInt aor.aorId
-                            , label = "AOR " ++ String.fromInt aor.aorId ++ " (" ++ String.fromInt aor.count ++ ")"
-                            }
-                        )
+                findAorName aorId =
+                    rsp.aorNames
+                        |> ListX.find (\entry -> entry.id == aorId)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault ("AOR " ++ String.fromInt aorId)
+
+                menuItems =
+                    rsp.aors
+                        |> List.map
+                            (\aor ->
+                                Select.basicMenuItem
+                                    { item = String.fromInt aor.aorId
+                                    , label = findAorName aor.aorId ++ " (" ++ String.fromInt aor.count ++ ")"
+                                    }
+                            )
             in
-            ( { model 
+            ( { model
                 | aors = Success rsp.aors
-                , selAorMenu = menuItems  
+                , selAorMenu = menuItems
+                , aorNames = rsp.aorNames
               }
             , E.none
             )
@@ -1067,6 +1082,7 @@ update user shared route msg model =
                         , posts = NeedsReload (RD.withDefault [] model.posts)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
 
         SelectOneFreq freqS ->
@@ -1083,6 +1099,7 @@ update user shared route msg model =
                         , posts = NeedsReload (RD.withDefault [] model.posts)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
 
         ToggleTagSelection tagId ->
@@ -1102,6 +1119,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1118,6 +1136,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1241,10 +1260,10 @@ update user shared route msg model =
                 , deniedFreqs = Nothing
                 , selectedPosts = emptyToNothing model.postsSelected
                 , deniedPosts = Nothing
-                , selectedAors = 
+                , selectedAors =
                     model.aorsSelected
-                    |> List.filterMap String.toInt
-                    |> emptyToNothing
+                        |> List.filterMap String.toInt
+                        |> emptyToNothing
                 , selectedCallsigns = emptyToNothing model.callsignsSelected
                 , selectedUnits = emptyToNothing model.unitsSelected
                 , selectedLocations = emptyToNothing model.locationsSelected
@@ -1374,6 +1393,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors  = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1411,6 +1431,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1427,6 +1448,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1443,6 +1465,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -1503,18 +1526,26 @@ update user shared route msg model =
             let
                 unfoldSumTable2 =
                     not model.unfoldSumTable
-                needsToLoad = 
+
+                needsToLoad =
                     case model.sumTable of
-                        NotAsked -> True
-                        NeedsReload _ -> True
-                        _ -> False
-                (m2, eff2) = 
+                        NotAsked ->
+                            True
+
+                        NeedsReload _ ->
+                            True
+
+                        _ ->
+                            False
+
+                ( m2, eff2 ) =
                     if needsToLoad then
                         loadSumTableOnly { model | unfoldSumTable = unfoldSumTable2 }
+
                     else
-                        ({ model | unfoldSumTable = unfoldSumTable2 }, E.none)
+                        ( { model | unfoldSumTable = unfoldSumTable2 }, E.none )
             in
-            (m2, eff2)
+            ( m2, eff2 )
 
         ToggleUnfoldGraphs ->
             case ( model.from.datePosix, model.to.datePosix ) of
@@ -2105,7 +2136,7 @@ update user shared route msg model =
                             }
 
                         filterInteraction =
-                            FiltersReloading.handleFilterState m2.focusedFilterItemsBeforeChange mAction m2.aorsSelected m2.aors
+                            FiltersReloading.handleFilterState model.focusedFilterItemsBeforeChange mAction updatedSelectedItems model.aors
 
                         ( m3, eff3 ) =
                             case filterInteraction of
@@ -2113,6 +2144,7 @@ update user shared route msg model =
                                     ( { m2 | focusedFilterItemsBeforeChange = Just model.aorsSelected, aors = Loading }
                                     , E.getAors GotStatsAors (Query.analysisStatsParams dtFromPosix dtToPosix m2)
                                     )
+
                                 BeforeInteraction UpToDate ->
                                     ( { m2 | focusedFilterItemsBeforeChange = Just model.aorsSelected }
                                     , E.none
@@ -2133,7 +2165,6 @@ update user shared route msg model =
 
                                 _ ->
                                     ( m2, E.none )
-
                     in
                     ( m3
                     , E.batch <|
