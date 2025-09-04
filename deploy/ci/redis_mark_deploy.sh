@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # Determine version from root Cargo.toml ([workspace.package].version)
-VERSION=$(tq -f Cargo.toml workspace.package.version)
+VERSION=$(tq -r -f Cargo.toml workspace.package.version)
 
 if [[ -z "${VERSION:-}" ]]; then
   echo "Failed to detect version from Cargo.toml" >&2

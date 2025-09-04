@@ -238,7 +238,7 @@ deploy:
      just _print-servers; exit 1;
     fi
     # Determine version from root Cargo.toml ([workspace.package].version)
-    VERSION=$(tq -f Cargo.toml workspace.package.version)
+    VERSION=$(tq -r -f Cargo.toml workspace.package.version)
 
     if [[ -z "$VERSION" ]]; then
       echo "Failed to detect version from Cargo.toml" >&2
@@ -247,6 +247,9 @@ deploy:
 
     STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
     FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
+    # Backward-compat: also check for keys where version was stored with quotes
+    STARTED_KEY_Q="echo-ci:deploy:echo:started:\"$VERSION\""
+    FINISHED_KEY_Q="echo-ci:deploy:echo:finished:\"$VERSION\""
 
     # Use SSH to the builder host (passed as param) and query redis on localhost there
     if [[ "{{ builder }}" == "" ]]; then
@@ -264,11 +267,13 @@ deploy:
       -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
       'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
 
-    echo "Waiting up to 60s for CI key: $STARTED_KEY"
+    echo "Waiting up to 60s for CI key: $STARTED_KEY (or $STARTED_KEY_Q)"
     ok=0
     for i in $(seq 1 12); do
       exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$STARTED_KEY")
       if [[ "$exists" == "1" ]]; then ok=1; break; fi
+      exists_q=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$STARTED_KEY_Q")
+      if [[ "$exists_q" == "1" ]]; then ok=1; break; fi
       sleep 5
     done
     if [[ $ok -ne 1 ]]; then
@@ -276,10 +281,12 @@ deploy:
       exit 1
     fi
 
-    echo "CI started detected. Waiting for finish key: $FINISHED_KEY"
+    echo "CI started detected. Waiting for finish key: $FINISHED_KEY (or $FINISHED_KEY_Q)"
     while true; do
       exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$FINISHED_KEY")
       if [[ "$exists" == "1" ]]; then break; fi
+      exists_q=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$FINISHED_KEY_Q")
+      if [[ "$exists_q" == "1" ]]; then break; fi
       sleep 5
     done
 
