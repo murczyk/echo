@@ -312,7 +312,7 @@ deploy:
 
     echo "CI finished detected. Proceeding with remote apt install."
     # Quiet update/install (stdout suppressed for update; install in -qq)
-    ssh {{ server }} 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs'
+    ssh {{ server }} 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs echo-docs'
     # Success notification
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
