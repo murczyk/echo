@@ -26,6 +26,7 @@ fi
 
 KEY="echo-ci:deploy:${ECHO_CI_REPO}:${ACTION}:${VERSION}"
 
-echo "Setting Redis key locally: $KEY=1 (EX 86400)"
-redis-cli SETEX "$KEY" 86400 1 >/dev/null
+TTL=$((30*24*60*60)) # 30 days
+echo "Setting Redis key locally: $KEY=1 (EX ${TTL}s)"
+redis-cli SETEX "$KEY" "$TTL" 1 >/dev/null
 echo "Set $KEY"
