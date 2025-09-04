@@ -252,11 +252,10 @@ deploy:
     STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
     FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
 
-    # Use SSH to the builder host (passed as param) and query redis on localhost there
-    if [[ "{{ builder }}" == "" ]]; then
-      echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
-    fi
-    CI_SSH_TARGET="{{ builder }}"
+    # Use SSH to the builder host and query redis on localhost there
+    # Fixed builder host; can override by setting env BUILDER
+    BUILDER="${BUILDER:-echo-gpu}"
+    CI_SSH_TARGET="$BUILDER"
     if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$CI_SSH_TARGET" true 2>/dev/null; then
       echo "Cannot SSH to $CI_SSH_TARGET; required to check Redis keys" >&2
       exit 1
