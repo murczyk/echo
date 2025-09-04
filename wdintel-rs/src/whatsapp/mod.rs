@@ -53,6 +53,9 @@ async fn receive_thread(
         ))
         .build()?;
     let mut last_groups_sync_t = std::time::SystemTime::now();
+    if let Err(e) = sync_groups(dbx, datasource).await.context(h!()) {
+        error!("failed to sync whatsapp groups: {e:?}");
+    }
 
     loop {
         let groups_are_stale = last_groups_sync_t
@@ -60,13 +63,24 @@ async fn receive_thread(
             .map(|ts| ts.as_secs() > 60)
             .unwrap_or(true);
         if groups_are_stale {
-            sync_groups(dbx, datasource).await.context(h!())?;
-            last_groups_sync_t = std::time::SystemTime::now();
+            if let Err(e) = sync_groups(dbx, datasource).await.context(h!()) {
+                error!("failed to sync whatsapp groups: {e:?}");
+            } else {
+                last_groups_sync_t = std::time::SystemTime::now();
+            }
         }
-
-        receive_once(settlements.clone(), config, dbx, &rq, redis, datasource)
-            .await
-            .context(h!())?;
+        if let Err(e) = receive_once(
+            settlements.clone(),
+            config,
+            dbx,
+            &rq,
+            redis,
+            datasource,
+        )
+        .await
+        {
+            error!("failed to sync whatsapp messages: {e:?}");
+        }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
