@@ -270,6 +270,9 @@ deploy:
       -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
       'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
 
+    # Helpful link to CI runs
+    echo "CI: https://github.com/echoua/echo/actions"
+
     echo "Waiting up to 60s for CI key: $STARTED_KEY ..."
     ok=0
     # Temporarily disable xtrace inside the polling loop to keep output tidy
