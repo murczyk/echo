@@ -74,6 +74,10 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: bash deploy/run_backend_tests.sh
 
+      - name: Mark deploy started in redis (echo-ci)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: bash deploy/ci/redis_mark_deploy.sh started
+
       - name: Build deb packages
         run: bash deploy/ci/build_debs.sh
 
@@ -89,6 +93,10 @@ jobs:
       - name: Publish to echo-ci (aptly)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bash deploy/ci/publish_echo_ci.sh
+
+      - name: Mark deploy finished in redis (echo-ci)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: bash deploy/ci/redis_mark_deploy.sh finished
 
       - name: Discord notification - CI failure
         if: failure()

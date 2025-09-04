@@ -25,6 +25,10 @@ till_ts := "1961204400000"
 datasource_id := "1"
 message := ""
 
+# echo-ci ssh defaults for new deploy flow
+echo_ci_ssh_user := "echo"
+echo_ci_ssh_host := "echo-ci.eagle-atria.ts.net"
+
 default:
     @just --list
 
@@ -237,15 +241,67 @@ deploy:
     if [[ "{{ server }}" == "" ]]; then
      just _print-servers; exit 1;
     fi
+    # Determine version from root Cargo.toml ([workspace.package].version)
+    VERSION=$(tq -f Cargo.toml workspace.package.version)
+
+    if [[ -z "$VERSION" ]]; then
+      echo "Failed to detect version from Cargo.toml" >&2
+      exit 1
+    fi
+
+    STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
+    FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
+
+    # Use SSH to echo-ci and query redis on localhost
+    CI_SSH_TARGET="{{ echo_ci_ssh_user }}@{{ echo_ci_ssh_host }}"
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$CI_SSH_TARGET" true 2>/dev/null; then
+      echo "Cannot SSH to $CI_SSH_TARGET; required to check Redis keys" >&2
+      exit 1
+    fi
+
     # Notify Discord at the start of deployment including local hostname
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
-      -d "{\"content\":\"deploying {{ server }} from $(hostname)\"}" \
+      -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
+      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
+
+    echo "Waiting up to 60s for CI key: $STARTED_KEY"
+    ok=0
+    for i in $(seq 1 12); do
+      exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$STARTED_KEY")
+      if [[ "$exists" == "1" ]]; then ok=1; break; fi
+      sleep 5
+    done
+    if [[ $ok -ne 1 ]]; then
+      echo "CI did not start publishing for version $VERSION within 60s (key $STARTED_KEY missing)" >&2
+      exit 1
+    fi
+
+    echo "CI started detected. Waiting for finish key: $FINISHED_KEY"
+    while true; do
+      exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$FINISHED_KEY")
+      if [[ "$exists" == "1" ]]; then break; fi
+      sleep 5
+    done
+
+    echo "CI finished detected. Proceeding with remote apt install."
+    ssh {{ server }} 'sudo apt -q update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install echo-install wdintel-rs'
+
+deploy-old:
+    #!/bin/bash
+    set -euxo pipefail
+    if [[ "{{ server }}" == "" ]]; then
+     just _print-servers; exit 1;
+    fi
+    # Notify Discord at the start of legacy deployment including local hostname
+    curl -sS -X POST \
+      -H 'Content-Type: application/json' \
+      -d "{\"content\":\"legacy deploy-old {{ server }} from $(hostname)\"}" \
       'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
     if [[ "{{ server }}" == "jvln" ]]; then
         just _jvln-deploy;
     else
-        just builder={{ builder }} server={{ server }} _echo-generic-deploy;
+        just builder={{ builder }} server={{ server }} _echo-generic-deploy-old;
     fi
 
 collect-ip-loop:
