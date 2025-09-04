@@ -273,11 +273,12 @@ deploy:
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
 
-    echo "Waiting up to 60s for CI key: $STARTED_KEY ..."
+    echo "Waiting up to 15m for CI key: $STARTED_KEY ..."
     ok=0
     # Temporarily disable xtrace inside the polling loop to keep output tidy
     trace_was_on=0; case $- in *x*) trace_was_on=1;; esac; [[ $trace_was_on -eq 1 ]] && set +x
-    for i in $(seq 1 12); do
+    # 15 minutes total, polling every 5s -> 180 iterations
+    for i in $(seq 1 180); do
       exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$STARTED_KEY")
       if [[ "$exists" == "1" ]]; then ok=1; break; fi
       # keep quiet while polling
@@ -291,17 +292,23 @@ deploy:
       exit 1
     fi
 
-    echo "CI started detected. Waiting for finish key: $FINISHED_KEY ..."
+    echo "CI started detected. Waiting up to 10m for finish key: $FINISHED_KEY ..."
     trace_was_on=0; case $- in *x*) trace_was_on=1;; esac; [[ $trace_was_on -eq 1 ]] && set +x
-    while true; do
+    done_ok=0
+    # 10 minutes total, polling every 5s -> 120 iterations
+    for i in $(seq 1 120); do
       exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$FINISHED_KEY")
-      if [[ "$exists" == "1" ]]; then break; fi
+      if [[ "$exists" == "1" ]]; then done_ok=1; break; fi
       # keep quiet while polling
       sleep 5
       echo -n "."
     done
     [[ $trace_was_on -eq 1 ]] && set -x
     echo
+    if [[ $done_ok -ne 1 ]]; then
+      echo "CI did not finish publishing for version $VERSION within 10m (key $FINISHED_KEY missing)" >&2
+      exit 1
+    fi
 
     echo "CI finished detected. Proceeding with remote apt install."
     # Quiet update/install (stdout suppressed for update; install in -qq)
