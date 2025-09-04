@@ -55,14 +55,18 @@ async fn receive_thread(
     let mut last_groups_sync_t = std::time::SystemTime::now();
 
     loop {
-        receive_once(settlements.clone(), config, dbx, &rq, redis, datasource)
-            .await
-            .context(h!())?;
-
-        if last_groups_sync_t.elapsed().unwrap().as_secs() > 60 {
+        let groups_are_stale = last_groups_sync_t
+            .elapsed()
+            .map(|ts| ts.as_secs() > 60)
+            .unwrap_or(true);
+        if groups_are_stale {
             sync_groups(dbx, datasource).await.context(h!())?;
             last_groups_sync_t = std::time::SystemTime::now();
         }
+
+        receive_once(settlements.clone(), config, dbx, &rq, redis, datasource)
+            .await
+            .context(h!())?;
 
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
