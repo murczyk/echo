@@ -78,6 +78,8 @@ pub async fn rer_analysis_download_geojson(
         &user.id()?,
         false,
     )?;
+    let items =
+        filter_selected_aors(items, &req.selected_aors).context(h!())?;
     let items = filter_search(items, &req.search)?;
     let items = filter_selected_locations(
         items,

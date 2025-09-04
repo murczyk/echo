@@ -37,14 +37,15 @@ pub async fn aor_list(
             } else {
                 Order::Desc
             },
-        )
+        );
+    let res = aors
         .all(&env.dbx)
         .await
         .c(h!())?
         .into_iter()
         .map(render_aor)
         .collect::<Vec<AreaOfResponsibility>>();
-    Ok(Json(aors))
+    Ok(Json(res))
 }
 
 #[post("/api/sigint/aor/create")]

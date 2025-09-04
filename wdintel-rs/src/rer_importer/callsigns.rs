@@ -1037,6 +1037,7 @@ pub async fn callsigns_graph(
         include_peleng_locations: req.include_peleng_locations,
         units_exact_match_only: req.units_exact_match_only,
         filter_tags_option: req.filter_tags_option,
+        selected_aors: req.selected_aors.clone(),
     };
 
     let summary_table: SummaryTableFreq =

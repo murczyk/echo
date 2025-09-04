@@ -133,6 +133,8 @@ fn build_groups_query(
         false,
     )
     .context(h!())?;
+    let groups_res =
+        filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
     Ok(groups_res)
 }
 
@@ -260,6 +262,8 @@ fn build_senders_query(
     )
     .context(h!())?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
+    let senders_res =
+        filter_selected_aors(senders_res, &req.selected_aors).context(h!())?;
     Ok(senders_res)
 }
 
@@ -377,6 +381,8 @@ fn build_posts_query(
     )
     .context(h!())?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
+    let post_res =
+        filter_selected_aors(post_res, &req.selected_aors).context(h!())?;
     Ok(post_res)
 }
 
@@ -548,6 +554,8 @@ fn build_freqs_query(
     )
     .context(h!())?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
+    let freqs_res =
+        filter_selected_aors(freqs_res, &req.selected_aors).context(h!())?;
     Ok(freqs_res)
 }
 
@@ -655,6 +663,8 @@ fn build_callsigns_query(
         include_peleng_locations,
     )?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
+    let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
+        .context(h!())?;
     Ok(callsigns_res)
 }
 
@@ -765,6 +775,8 @@ fn build_tags_query(
         include_peleng_locations,
     )?;
     let tags_res = filter_search(tags_res, &req.search)?;
+    let tags_res =
+        filter_selected_aors(tags_res, &req.selected_aors).context(h!())?;
     Ok(tags_res)
 }
 
@@ -888,6 +900,8 @@ fn build_units_query(
     )
     .context(h!())?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
+    let units_res =
+        filter_selected_aors(units_res, &req.selected_aors).context(h!())?;
     Ok(units_res)
 }
 
@@ -1017,7 +1031,143 @@ fn build_locations_query(
     .context(h!())?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
+    let locations_res = filter_selected_aors(locations_res, &req.selected_aors)
+        .context(h!())
+        .context(h!())?;
     Ok(locations_res)
+}
+
+pub async fn fetch_aors(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsAor>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let instant = std::time::Instant::now();
+
+    #[derive(FromQueryResult)]
+    struct AorsRes {
+        aor_id: i64,
+        count: i64,
+    }
+    let aors_res =
+        build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
+    // println!(
+    //     "> aors_res: {}",
+    //     aors_res.build(DbBackend::Postgres).to_string()
+    // );
+    let aors_res: Vec<AorsRes> = aors_res
+        .into_model::<AorsRes>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    let mut aors = vec![];
+    for x in aors_res {
+        aors.push(AnalysisStatsAor {
+            count: x.count,
+            aor_id: x.aor_id,
+        });
+    }
+    debug!("aors op took: {:?}", instant.elapsed());
+    Ok(aors)
+}
+
+pub async fn count_aors(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    let aors_res =
+        build_aors_query(&req, &user, dt_since, dt_till, master_keys)?;
+    let count = aors_res.count(&env.dbx).await.context(h!())?;
+    Ok(count as i64)
+}
+
+fn build_aors_query(
+    req: &&Json<AnalysisStatsReq>,
+    user: &&Identity,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+    let aors_res = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .select_only()
+        .column_as(
+            Expr::col((
+                area_of_responsibility::Entity,
+                area_of_responsibility::Column::Id,
+            )),
+            "aor_id",
+        )
+        .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
+        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .filter(area_of_responsibility::Column::IsTopLevel.eq(true))
+        .group_by(Expr::cust("1"));
+    let aors_res =
+        filter_selected_groups(aors_res, &req.selected_groups).context(h!())?;
+    let aors_res = filter_selected_senders(aors_res, &req.selected_senders)
+        .context(h!())?;
+    let aors_res =
+        filter_selected_freqs(aors_res, &req.selected_freqs).context(h!())?;
+    let aors_res =
+        filter_selected_posts(aors_res, &req.selected_posts).context(h!())?;
+    let aors_res = filter_selected_locations(
+        aors_res,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    let aors_res = filter_selected_callsigns(aors_res, &req.selected_callsigns)
+        .context(h!())?;
+    let aors_res = filter_selected_tags(
+        aors_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &user.id().context(h!())?,
+        false,
+    )
+    .context(h!())?;
+    let aors_res = filter_search(aors_res, &req.search).context(h!())?;
+    let aors_res =
+        filter_selected_aors(aors_res, &req.selected_aors).context(h!())?;
+    Ok(aors_res)
 }
 
 pub async fn fetch_counts(
@@ -1134,6 +1284,10 @@ pub async fn fetch_counts(
     .context(h!())?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
+    let selected_count_res =
+        filter_selected_aors(selected_count_res, &req.selected_aors)
+            .context(h!())
+            .context(h!())?;
     // println!(
     //     "> selected count res sql: {}",
     //     selected_count_res.build(DbBackend::Postgres).to_string()

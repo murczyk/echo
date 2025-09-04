@@ -57,6 +57,7 @@ pub async fn report_docx_kind_babak(
         include_peleng_locations: req.req.include_peleng_locations,
         units_exact_match_only: req.req.units_exact_match_only,
         filter_tags_option: req.req.filter_tags_option,
+        selected_aors: req.req.selected_aors.clone(),
     };
     let new_callsigns_res = bi_new_callsigns(user_id, env, &new_callsing_req)
         .await
@@ -635,6 +636,7 @@ pub async fn get_inbox_messages_report_unit(
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
+    let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let mut q = filter_selected_tags(
         q,
         &req.selected_tags,

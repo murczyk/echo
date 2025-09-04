@@ -26,6 +26,7 @@ type alias Model =
     , callsigns : RemoteData ApiError (List B.AnalysisStatsCallsign)
     , counts : RemoteData ApiError B.CountStatsRsp
     , profiles : Dict String (Maybe B.SignalProfileRsp)
+    , aorsSelected : List String
     , groupsSelected : List String
     , sendersSelected : List String
     , freqsSelected : List String
@@ -48,6 +49,7 @@ type alias Model =
     , orBookmarked : Bool
     , orImportant : Bool
     , orWithCoords : Bool
+    , unfoldAorsFilter : Bool
     , unfoldGroupsFilter : Bool
     , unfoldSendersFilter : Bool
     , unfoldFreqsFilter : Bool
@@ -80,6 +82,8 @@ type alias Model =
     , searchInput : String
     , nolimitShown : Bool
     , menuTab : MenuTab
+    , selAorState : Select.State
+    , selAorMenu : List (Select.MenuItem String)
     , selGroupState : Select.State
     , selGroupMenu : List (Select.MenuItem String)
     , selSenderState : Select.State
@@ -97,7 +101,6 @@ type alias Model =
     , filterUnits : String
     , now : Maybe Time.Posix
     , tags : List ( Int, B.Tag )
-
     , showReportConstructor : Bool
     , reportTemplate : ReportTemplate
     , reportTagsOnlyThisUnit : Bool
@@ -119,6 +122,8 @@ type alias Model =
     , groupsMessageCountByDay : RemoteData ApiError B.FreqDailyActivityCount
 
     -- stats
+    , aors : RemoteData ApiError (List B.AnalysisStatsAor)
+    , aorNames : List B.AreaOfResponsibilityEntry
     , posts : RemoteData ApiError (List B.AnalysisStatsPost)
     , locations : RemoteData ApiError (List B.AnalysisStatsLocation)
     , statsTags : RemoteData ApiError (List B.AnalysisStatsTag)
@@ -164,7 +169,8 @@ type ReportTemplate
 
 
 type FilterName
-    = LocationsFilter
+    = AorsFilter
+    | LocationsFilter
     | PostsFilter
     | UnitsFilter
     | CallsignsFilter

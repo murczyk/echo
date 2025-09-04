@@ -715,7 +715,7 @@ filtersAndMainContent user model shared route =
                 [ class "self-stretch overflow-auto text-sm w-[260px] min-w-[260px]"
                 , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
                 ]
-                [ RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) model ]
+                [ RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) user model ]
             , div
                 [ class "border-l border-border self-stretch flex-grow mt-4"
                 , id "messages-div"

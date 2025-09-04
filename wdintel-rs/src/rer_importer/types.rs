@@ -192,6 +192,7 @@ pub struct InboxMessagesReq {
     pub highlight_searchres: Option<bool>,
     pub highlight_signals: Option<bool>,
     pub selected_tags: Option<Vec<i64>>,
+    pub selected_aors: Option<Vec<i64>>,
     pub sort_by: Option<InboxMessagesSortBy>,
     /// report type "tags" specific param:
     pub report_tags_only_this_unit: Option<bool>,
@@ -463,6 +464,7 @@ pub struct AnalysisStatsReq {
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    pub selected_aors: Option<Vec<i64>>,
     pub or_with_extended_form: Option<bool>,
     pub or_bookmarked: Option<bool>,
     pub or_important: Option<bool>,
@@ -494,6 +496,7 @@ pub struct CallsignsGraphReq {
     pub nolimit: Option<bool>,
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
+    pub selected_aors: Option<Vec<i64>>,
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
@@ -636,6 +639,30 @@ pub struct TagStatsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AreaOfResponsibilityEntry {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisStatsAor {
+    pub aor_id: i64,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AreaOfResponsibilityStatsRsp {
+    pub aors: Vec<AnalysisStatsAor>,
+    pub aor_names: Vec<AreaOfResponsibilityEntry>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CountStatsRsp {
     pub count_overall: i64,
     pub count_selected: i64,
@@ -647,6 +674,7 @@ pub struct CountStatsRsp {
     pub units_count: i64,
     pub locations_count: i64,
     pub tags_count: i64,
+    pub aors_count: i64,
 }
 
 #[derive(
