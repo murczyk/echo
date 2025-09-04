@@ -283,7 +283,7 @@ leftColumn isDark user model =
                     , toggleMsg = ToggleUnfoldAorsFilter
                     , label = "смуги"
                     , mCountLabel = List.length model.aorsSelected |> zeroToNothing |> mmap String.fromInt
-                    , overallLabel = RD.withDefault2 [] model.aors |> List.length |> String.fromInt
+                    , overallLabel = getOverallOptionsCount (\r -> r.aorsCount) model.aors
                     , withGreenCircle = False
                     }
                     tabFiltersAors

@@ -1393,7 +1393,7 @@ update user shared route msg model =
                         , freqs = NeedsReload (RD.withDefault [] model.freqs)
                         , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
                         , groups = NeedsReload (RD.withDefault [] model.groups)
-                        , aors  = NeedsReload (RD.withDefault [] model.aors)
+                        , aors = NeedsReload (RD.withDefault [] model.aors)
                     }
             in
             loadCoreStatsAndPushUrl m2
@@ -2098,7 +2098,17 @@ update user shared route msg model =
             )
 
         SearchDo ->
-            loadCoreStatsAndPushUrl model
+            loadCoreStatsAndPushUrl
+                { model
+                    | locations = NeedsReload (RD.withDefault [] model.locations)
+                    , senders = NeedsReload (RD.withDefault [] model.senders)
+                    , units = NeedsReload (RD.withDefault [] model.units)
+                    , freqs = NeedsReload (RD.withDefault [] model.freqs)
+                    , posts = NeedsReload (RD.withDefault [] model.posts)
+                    , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                    , groups = NeedsReload (RD.withDefault [] model.groups)
+                    , aors = NeedsReload (RD.withDefault [] model.aors)
+                }
 
         SearchInputKeyDown key ->
             if key == 13 then
@@ -2112,7 +2122,17 @@ update user shared route msg model =
                 m2 =
                     { model | searchInput = "" }
             in
-            loadCoreStatsAndPushUrl m2
+            loadCoreStatsAndPushUrl
+                { m2
+                    | locations = NeedsReload (RD.withDefault [] model.locations)
+                    , senders = NeedsReload (RD.withDefault [] model.senders)
+                    , units = NeedsReload (RD.withDefault [] model.units)
+                    , freqs = NeedsReload (RD.withDefault [] model.freqs)
+                    , posts = NeedsReload (RD.withDefault [] model.posts)
+                    , callsigns = NeedsReload (RD.withDefault [] model.callsigns)
+                    , groups = NeedsReload (RD.withDefault [] model.groups)
+                    , aors = NeedsReload (RD.withDefault [] model.aors)
+                }
 
         SelectTab tab ->
             ( { model | menuTab = tab }
