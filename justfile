@@ -262,7 +262,6 @@ deploy:
       exit 1
     fi
 
-    # Local banner
     printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "{{ server }}"
 
     # Notify Discord at the start of deployment including local hostname
@@ -302,7 +301,13 @@ deploy:
     echo
 
     echo "CI finished detected. Proceeding with remote apt install."
-    ssh {{ server }} 'sudo apt -q update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install echo-install wdintel-rs'
+    # Quiet update/install (stdout suppressed for update; install in -qq)
+    ssh {{ server }} 'sudo apt-get -qq update > /dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get -y -qq install echo-install wdintel-rs'
+    # Success notification
+    curl -sS -X POST \
+      -H 'Content-Type: application/json' \
+      -d "{\"content\":\"✅ Deployed {{ server }} (version $VERSION) via apt-get\"}" \
+      'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
 
 deploy-old:
     #!/bin/bash
