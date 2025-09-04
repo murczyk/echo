@@ -110,6 +110,10 @@ async fn receive_once(
         if wq.group_jid.is_empty() {
             continue;
         }
+        if wq.group_jid.ends_with("@s.whatsapp.net") {
+            //is direct message, skipping
+            continue;
+        }
         let txn = dbx.begin().await.context(h!())?;
         let body = wq.body.clone();
         // Normalize body
