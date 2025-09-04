@@ -23,25 +23,9 @@ if [[ -z "${VERSION:-}" ]]; then
 fi
 
 : "${ECHO_CI_REPO:=echo}"
-: "${ECHO_CI_SSH_HOST:=echo-ci.eagle-atria.ts.net}"
-: "${ECHO_CI_SSH_USER:=echo}"
 
 KEY="echo-ci:deploy:${ECHO_CI_REPO}:${ACTION}:${VERSION}"
 
-# Prepare SSH if key is provided (same as publish script)
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-ssh-keyscan -H "$ECHO_CI_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-SSH_IDENTITY_ARGS=()
-if [[ -n "${ECHO_CI_SSH_KEY:-}" ]]; then
-  echo "$ECHO_CI_SSH_KEY" > ~/.ssh/echo_ci
-  chmod 600 ~/.ssh/echo_ci
-  SSH_IDENTITY_ARGS=(-i ~/.ssh/echo_ci)
-fi
-
-echo "Setting Redis key on $ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST: $KEY=1 (EX 86400)"
-ssh "${SSH_IDENTITY_ARGS[@]}" "$ECHO_CI_SSH_USER@$ECHO_CI_SSH_HOST" \
-  redis-cli SETEX "$KEY" 86400 1 >/dev/null
+echo "Setting Redis key locally: $KEY=1 (EX 86400)"
+redis-cli SETEX "$KEY" 86400 1 >/dev/null
 echo "Set $KEY"
-

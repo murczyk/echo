@@ -25,10 +25,6 @@ till_ts := "1961204400000"
 datasource_id := "1"
 message := ""
 
-# echo-ci ssh defaults for new deploy flow
-echo_ci_ssh_user := "echo"
-echo_ci_ssh_host := "echo-ci.eagle-atria.ts.net"
-
 default:
     @just --list
 
@@ -252,8 +248,11 @@ deploy:
     STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
     FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
 
-    # Use SSH to echo-ci and query redis on localhost
-    CI_SSH_TARGET="{{ echo_ci_ssh_user }}@{{ echo_ci_ssh_host }}"
+    # Use SSH to the builder host (passed as param) and query redis on localhost there
+    if [[ "{{ builder }}" == "" ]]; then
+      echo "❌ Builder parameter not recognized. Value: {{ builder }}"; exit 1;
+    fi
+    CI_SSH_TARGET="{{ builder }}"
     if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$CI_SSH_TARGET" true 2>/dev/null; then
       echo "Cannot SSH to $CI_SSH_TARGET; required to check Redis keys" >&2
       exit 1
