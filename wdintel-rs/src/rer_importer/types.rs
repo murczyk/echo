@@ -193,6 +193,7 @@ pub struct InboxMessagesReq {
     pub highlight_signals: Option<bool>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
+    pub selected_networks: Option<Vec<i64>>,
     pub sort_by: Option<InboxMessagesSortBy>,
     /// report type "tags" specific param:
     pub report_tags_only_this_unit: Option<bool>,
@@ -471,6 +472,7 @@ pub struct AnalysisStatsReq {
     pub or_with_coords: Option<bool>,
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
+    pub selected_networks: Option<Vec<i64>>,
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
@@ -497,6 +499,7 @@ pub struct CallsignsGraphReq {
     pub search: Option<String>,
     pub selected_tags: Option<Vec<i64>>,
     pub selected_aors: Option<Vec<i64>>,
+    pub selected_networks: Option<Vec<i64>>,
     pub include_peleng_locations: Option<bool>,
     pub units_exact_match_only: Option<bool>,
     pub filter_tags_option: Option<TagFilterOption>,
@@ -575,6 +578,14 @@ pub struct AnalysisStatsLocation {
 )]
 pub struct AnalysisStatsTag {
     pub tag_id: i64,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisStatsNetwork {
+    pub network_id: i64,
     pub count: i64,
 }
 
@@ -663,6 +674,22 @@ pub struct AreaOfResponsibilityStatsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct NetworkStatsRsp {
+    pub networks: Vec<AnalysisStatsNetwork>,
+    pub network_names: Vec<NetworkEntry>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkEntry {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CountStatsRsp {
     pub count_overall: i64,
     pub count_selected: i64,
@@ -675,6 +702,7 @@ pub struct CountStatsRsp {
     pub locations_count: i64,
     pub tags_count: i64,
     pub aors_count: i64,
+    pub networks_count: i64,
 }
 
 #[derive(

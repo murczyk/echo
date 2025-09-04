@@ -22,7 +22,7 @@ use futures_util::TryStreamExt;
 use itertools::Itertools;
 use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::{prelude::Expr, *};
+use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
 use tempfile::TempDir;
 
@@ -576,6 +576,140 @@ where
     Ok(q)
 }
 
+pub fn filter_selected_networks<Q>(
+    mut q: Q,
+    selected_networks: &Option<Vec<i64>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QueryTrait,
+{
+    if let Some(ids) = selected_networks.as_ref().filter(|v| !v.is_empty()) {
+        let ga = Alias::new("ga"); // signal_group_aor
+        let gaor = Alias::new("gaor"); // area_of_responsibility for the group
+        let nf = Alias::new("nf"); // sigint_network_freq
+        let n = Alias::new("n"); // sigint_network
+        let na = Alias::new("na"); // sigint_network_aor
+        let naor = Alias::new("naor"); // area_of_responsibility for the network
+
+        // Build the correlated EXISTS subquery:
+        //
+        // EXISTS (
+        //   SELECT 1
+        //   FROM signal_group_aor ga
+        //   JOIN area_of_responsibility gaor ON gaor.id = ga.aor_id
+        //   JOIN sigint_network_freq nf      ON nf.freq = ii.freq             -- correlate to outer sigint_inbox_item ii
+        //   JOIN sigint_network n            ON n.id = nf.network_id
+        //   JOIN sigint_network_aor na       ON na.network_id = n.id
+        //   JOIN area_of_responsibility naor ON naor.id = na.aor_id
+        //   WHERE ga.master_key = m.group_master_key                           -- correlate to outer message
+        //     AND gaor.left_bound  <= naor.left_bound
+        //     AND gaor.right_bound >= naor.right_bound
+        //     AND n.id = ANY($selected_networks)
+        // )
+        let sub = Query::select()
+            .expr(Expr::value(1))
+            .from_as(signal_group_aor::Entity, ga.clone())
+            .join_as(
+                JoinType::InnerJoin,
+                area_of_responsibility::Entity,
+                gaor.clone(),
+                Condition::all().add(
+                    Expr::col((
+                        gaor.clone(),
+                        area_of_responsibility::Column::Id,
+                    ))
+                    .equals((ga.clone(), signal_group_aor::Column::AorId)),
+                ),
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                sigint_network_freq::Entity,
+                nf.clone(),
+                // nf.freq = ii.freq  (correlates to outer SELECT)
+                Condition::all().add(
+                    Expr::col((nf.clone(), sigint_network_freq::Column::Freq))
+                        .equals((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Freq,
+                        )),
+                ),
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                sigint_network::Entity,
+                n.clone(),
+                Condition::all().add(
+                    Expr::col((n.clone(), sigint_network::Column::Id)).equals(
+                        (nf.clone(), sigint_network_freq::Column::NetworkId),
+                    ),
+                ),
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                sigint_network_aor::Entity,
+                na.clone(),
+                Condition::all().add(
+                    Expr::col((
+                        na.clone(),
+                        sigint_network_aor::Column::NetworkId,
+                    ))
+                    .equals((n.clone(), sigint_network::Column::Id)),
+                ),
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                area_of_responsibility::Entity,
+                naor.clone(),
+                Condition::all().add(
+                    Expr::col((
+                        naor.clone(),
+                        area_of_responsibility::Column::Id,
+                    ))
+                    .equals((na.clone(), sigint_network_aor::Column::AorId)),
+                ),
+            )
+            // correlate group to outer message
+            .and_where(
+                Expr::col((ga.clone(), signal_group_aor::Column::MasterKey))
+                    .equals((
+                        signal_message::Entity,
+                        signal_message::Column::GroupMasterKey,
+                    )),
+            )
+            // AOR containment
+            .and_where(
+                Expr::col((
+                    gaor.clone(),
+                    area_of_responsibility::Column::LeftBound,
+                ))
+                .lte(Expr::col((
+                    naor.clone(),
+                    area_of_responsibility::Column::LeftBound,
+                ))),
+            )
+            .and_where(
+                Expr::col((
+                    gaor.clone(),
+                    area_of_responsibility::Column::RightBound,
+                ))
+                .gte(Expr::col((
+                    naor.clone(),
+                    area_of_responsibility::Column::RightBound,
+                ))),
+            )
+            // n.id IN (selected ids)
+            .and_where(
+                Expr::col((n.clone(), sigint_network::Column::Id))
+                    .is_in(ids.clone()),
+            )
+            .to_owned();
+
+        q = q.filter(Expr::exists(sub));
+    }
+
+    Ok(q)
+}
+
 pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
@@ -734,6 +868,8 @@ pub async fn summary_table_freq_1(
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
+    let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
+        .context(h!())?;
     let rows_res = filter_search(rows_res, &req.search)?;
     // println!(
     //     "> summary table rows_res sql: {}",
@@ -1259,6 +1395,8 @@ pub async fn edit_freq_unit_name(
         &req.filter_tags_option,
         &user.id()?,
     )?;
+    let rows_res = filter_selected_networks(rows_res, &reqan.selected_networks)
+        .context(h!())?;
     let rows_res = filter_search(rows_res, &req.search)?;
     // println!(
     //     "> freq edit query: {}",
@@ -1595,6 +1733,8 @@ pub async fn bi_new_callsigns(
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
+    let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
+        .context(h!())?;
     let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
 
     let mut callsigns_in_period = BTreeSet::new();
@@ -1661,6 +1801,8 @@ pub async fn bi_new_callsigns(
         &req.filter_tags_option,
         user_id,
     )?;
+    let rows_res = filter_selected_networks(rows_res, &req.selected_networks)
+        .context(h!())?;
     let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
 
     let mut callsign_last_seen: BTreeMap<String, NaiveDateTime> =
@@ -2016,6 +2158,96 @@ async fn fetch_locations(
     Ok(locations)
 }
 
+/// Отримання доступних значень для фільтра мереж зі статистикою.
+///
+/// # API URL
+/// - POST: /api/rer/analysis/stats/networks
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<AnalysisStatsReq>`] - де [`AnalysisStatsReq`] Тіло запиту, що містить параметри для фільтрації для доступних смуг відповідальності
+///
+/// # Повертає
+///
+/// [`Json<Vec<AreaOfResponsibilityStatsRsp>>`], де [`AreaOfResponsibilityStatsRsp`] - це структура, що представляє доступні смуги та статистику повідомлень по ним
+///
+#[post("/api/rer/analysis/stats/networks")]
+async fn network_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<NetworkStatsRsp>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let networks = stats::fetch_networks(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    let network_names = collect_network_names(&networks, &env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(NetworkStatsRsp {
+        networks,
+        network_names,
+    }))
+}
+
+async fn collect_network_names(
+    networks: &[AnalysisStatsNetwork],
+    txn: &DatabaseConnection,
+) -> Result<Vec<NetworkEntry>, AppError> {
+    let network_ids: Vec<i64> = networks
+        .iter()
+        .map(|x| x.network_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let query = sigint_network::Entity::find()
+        .select_only()
+        .column(sigint_network::Column::Id)
+        .column(sigint_network::Column::Name)
+        .column_as(Expr::cust("STRING_AGG(sigint_unit.name, ', ')"), "units")
+        .join(
+            JoinType::LeftJoin,
+            sigint_network::Relation::SigintNetworkUnit.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Id.is_in(network_ids))
+        .group_by(sigint_network::Column::Id)
+        .group_by(sigint_network::Column::Name);
+
+    #[derive(Debug, FromQueryResult)]
+    pub struct NetworkResult {
+        pub id: i64,
+        pub name: String,
+        pub units: Option<String>,
+    }
+
+    let networks: Vec<NetworkResult> = query
+        .into_model::<NetworkResult>()
+        .all(txn)
+        .await
+        .context(h!())?;
+
+    Ok(networks
+        .into_iter()
+        .map(|n| NetworkEntry {
+            id: n.id,
+            name: format!("{} {}", n.name, n.units.unwrap_or_default()),
+        })
+        .collect())
+}
+
 #[post("/api/rer/analysis/stats/count")]
 async fn count_stats(
     user: Identity,
@@ -2067,6 +2299,10 @@ async fn count_stats(
     let aors_count = stats::count_aors(&req, &user, &env, master_keys.clone())
         .await
         .context(h!())?;
+    let networks_count =
+        stats::count_networks(&req, &user, &env, master_keys.clone())
+            .await
+            .context(h!())?;
     let (count_overall, count_selected) =
         stats::fetch_counts(&req, &user, &env, master_keys.clone())
             .await
@@ -2084,6 +2320,7 @@ async fn count_stats(
         locations_count,
         tags_count,
         aors_count,
+        networks_count,
     }))
 }
 
@@ -2257,6 +2494,37 @@ async fn aor_stats_count(
         .await
         .context(h!())?;
     Ok(Json(aors_count))
+}
+/// Отримання загальної кількості повідомлень по фільтру мереж.
+///
+/// # API URL
+/// - POST: /api/analysis/stats/networks/count
+///
+/// # Параметри
+///
+/// * `user`: [`actix_identity::Identity`] - Ідентифікатор користувача, що виконує запит. Використовується для перевірки дозволів.
+/// * `env`: [`actix_web::web::Data<Env>`] - де [`Env`] Середовище програми, що містить конфігурацію та підключення до бази даних.
+/// * `req`: [`Json<AnalysisStatsReq>`] - де [`AnalysisStatsReq`] Тіло запиту, що містить параметри для фільтрації для доступних смуг відповідальності
+///
+/// # Повертає
+///
+/// [`Json<Vec<i64>>`],  загальна кількість повідомлень по значенням фільтру мереж
+#[post("/api/rer/analysis/stats/networks/count")]
+async fn aor_networks_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<i64>, AppError> {
+    let login = user.id()?;
+    crate::users::has_role(&env.dbx, &login, "Rer").await?;
+    let master_keys =
+        crate::users::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .context(h!())?;
+    let networks_count = stats::count_networks(&req, &user, &env, master_keys)
+        .await
+        .context(h!())?;
+    Ok(Json(networks_count))
 }
 
 /// Deprecated.

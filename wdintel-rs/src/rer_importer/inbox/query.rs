@@ -83,6 +83,8 @@ pub(crate) async fn build_inbox_query(
         login,
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
+    let q =
+        filter_selected_networks(q, &req.selected_networks).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let mut q = filter_selected_locations(

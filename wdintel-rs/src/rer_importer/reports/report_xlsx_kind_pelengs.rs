@@ -146,6 +146,8 @@ pub async fn get_inbox_messages_report(
         include_peleng_locations,
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
+    let q =
+        filter_selected_networks(q, &req.selected_networks).context(h!())?;
 
     trace!(
         "[get_inbox_messages_report] query: {}",

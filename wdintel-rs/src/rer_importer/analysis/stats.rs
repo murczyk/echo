@@ -126,6 +126,9 @@ fn build_groups_query(
     let groups_res =
         filter_selected_callsigns(groups_res, &req.selected_callsigns)
             .context(h!())?;
+    let groups_res =
+        filter_selected_networks(groups_res, &req.selected_networks)
+            .context(h!())?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res = filter_selected_tags(
         groups_res,
@@ -271,6 +274,9 @@ fn build_senders_query(
         &user.id().context(h!())?,
     )
     .context(h!())?;
+    let senders_res =
+        filter_selected_networks(senders_res, &req.selected_networks)
+            .context(h!())?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
     let senders_res =
         filter_selected_aors(senders_res, &req.selected_aors).context(h!())?;
@@ -400,6 +406,8 @@ fn build_posts_query(
         &user.id().context(h!())?,
     )
     .context(h!())?;
+    let post_res = filter_selected_networks(post_res, &req.selected_networks)
+        .context(h!())?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
     let post_res =
         filter_selected_aors(post_res, &req.selected_aors).context(h!())?;
@@ -578,6 +586,8 @@ fn build_freqs_query(
         &user.id().context(h!())?,
     )
     .context(h!())?;
+    let freqs_res = filter_selected_networks(freqs_res, &req.selected_networks)
+        .context(h!())?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
         filter_selected_aors(freqs_res, &req.selected_aors).context(h!())?;
@@ -693,6 +703,9 @@ fn build_callsigns_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let callsigns_res =
+        filter_selected_networks(callsigns_res, &req.selected_networks)
+            .context(h!())?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
     let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
         .context(h!())?;
@@ -811,6 +824,8 @@ fn build_tags_query(
         &req.selected_locations,
         include_peleng_locations,
     )?;
+    let tags_res = filter_selected_networks(tags_res, &req.selected_networks)
+        .context(h!())?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
         filter_selected_aors(tags_res, &req.selected_aors).context(h!())?;
@@ -941,6 +956,8 @@ fn build_units_query(
         &user.id().context(h!())?,
     )
     .context(h!())?;
+    let units_res = filter_selected_networks(units_res, &req.selected_networks)
+        .context(h!())?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
     let units_res =
         filter_selected_aors(units_res, &req.selected_aors).context(h!())?;
@@ -1076,6 +1093,9 @@ fn build_locations_query(
         &user.id().context(h!())?,
     )
     .context(h!())?;
+    let locations_res =
+        filter_selected_networks(locations_res, &req.selected_networks)
+            .context(h!())?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
     let locations_res = filter_selected_aors(locations_res, &req.selected_aors)
@@ -1220,6 +1240,136 @@ fn build_aors_query(
     Ok(aors_res)
 }
 
+pub async fn fetch_networks(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    let instant = std::time::Instant::now();
+
+    #[derive(FromQueryResult)]
+    struct NetworksRes {
+        network_id: Option<i64>,
+        count: i64,
+    }
+    let networks_res =
+        build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
+    // println!(
+    //     "> networks_res: {}",
+    //     networks_res.build(DbBackend::Postgres).to_string()
+    // );
+    let networks_res = networks_res
+        .into_model::<NetworksRes>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    let mut networks = vec![];
+    for x in networks_res {
+        let Some(network_id) = x.network_id else {
+            continue;
+        };
+        networks.push(AnalysisStatsNetwork {
+            network_id,
+            count: x.count,
+        });
+    }
+    debug!("networks op took: {:?}", instant.elapsed());
+    Ok(networks)
+}
+
+pub async fn count_networks(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+
+    let networks_res =
+        build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
+    let count = networks_res.count(&env.dbx).await.context(h!())?;
+    Ok(count as i64)
+}
+
+fn build_networks_query(
+    req: &&Json<AnalysisStatsReq>,
+    user: &Identity,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+    let networks_res = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .select_only()
+        .column_as(
+            Expr::col(signal_message::Column::GroupMasterKey),
+            "master_key",
+        )
+        .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
+        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        // .filter(signal_message::Column::DuplicateOf.is_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
+        .group_by(Expr::col(signal_message::Column::GroupMasterKey));
+    let networks_res =
+        filter_selected_senders(networks_res, &req.selected_senders)
+            .context(h!())?;
+    let networks_res = filter_selected_freqs(networks_res, &req.selected_freqs)
+        .context(h!())?;
+    let networks_res = filter_selected_posts(networks_res, &req.selected_posts)
+        .context(h!())?;
+    let networks_res = filter_selected_units(
+        networks_res,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )
+    .context(h!())?;
+    let networks_res = filter_selected_locations(
+        networks_res,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    let networks_res =
+        filter_selected_callsigns(networks_res, &req.selected_callsigns)
+            .context(h!())?;
+    let networks_res =
+        filter_selected_networks(networks_res, &req.selected_networks)
+            .context(h!())?;
+    let networks_res =
+        filter_search(networks_res, &req.search).context(h!())?;
+    let networks_res = filter_selected_tags(
+        networks_res,
+        &req.selected_tags,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        user.id()?.as_str(),
+        false,
+    )
+    .context(h!())?;
+    Ok(networks_res)
+}
+
 pub async fn fetch_counts(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -1341,6 +1491,9 @@ pub async fn fetch_counts(
         &user.id().context(h!())?,
     )
     .context(h!())?;
+    let selected_count_res =
+        filter_selected_networks(selected_count_res, &req.selected_networks)
+            .context(h!())?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
     let selected_count_res =

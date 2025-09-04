@@ -479,7 +479,7 @@ pub async fn get_inbox_messages(
         );
     }
 
-    trace!(
+    debug!(
         ">get_inbox_messages inbox items query sql: {}",
         q.build(DbBackend::Postgres)
     );
