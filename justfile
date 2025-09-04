@@ -233,7 +233,11 @@ check-git-hooks:
 
 deploy:
     #!/bin/bash
-    set -euxo pipefail
+    set -euo pipefail
+    # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
+    if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
+      set -x
+    fi
     if [[ "{{ server }}" == "" ]]; then
      just _print-servers; exit 1;
     fi
@@ -247,9 +251,6 @@ deploy:
 
     STARTED_KEY="echo-ci:deploy:echo:started:$VERSION"
     FINISHED_KEY="echo-ci:deploy:echo:finished:$VERSION"
-    # Backward-compat: also check for keys where version was stored with quotes
-    STARTED_KEY_Q="echo-ci:deploy:echo:started:\"$VERSION\""
-    FINISHED_KEY_Q="echo-ci:deploy:echo:finished:\"$VERSION\""
 
     # Use SSH to the builder host (passed as param) and query redis on localhost there
     if [[ "{{ builder }}" == "" ]]; then
@@ -261,34 +262,44 @@ deploy:
       exit 1
     fi
 
+    # Local banner
+    printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "{{ server }}"
+
     # Notify Discord at the start of deployment including local hostname
     curl -sS -X POST \
       -H 'Content-Type: application/json' \
       -d "{\"content\":\"deploying {{ server }} (version $VERSION); waiting for CI from $(hostname)\"}" \
       'https://discord.com/api/webhooks/1406993055956865125/7i5kRgYYJNqlROHRij2eZ3bLWmHQa1X3zpgmZ2Q7--jhO3GjXUq4sJ0Xm6yYPy1lf20B' || true
 
-    echo "Waiting up to 60s for CI key: $STARTED_KEY (or $STARTED_KEY_Q)"
+    echo "Waiting up to 60s for CI key: $STARTED_KEY ..."
     ok=0
+    # Temporarily disable xtrace inside the polling loop to keep output tidy
+    trace_was_on=0; case $- in *x*) trace_was_on=1;; esac; [[ $trace_was_on -eq 1 ]] && set +x
     for i in $(seq 1 12); do
       exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$STARTED_KEY")
       if [[ "$exists" == "1" ]]; then ok=1; break; fi
-      exists_q=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$STARTED_KEY_Q")
-      if [[ "$exists_q" == "1" ]]; then ok=1; break; fi
+      # keep quiet while polling
       sleep 5
+      echo -n "."
     done
+    [[ $trace_was_on -eq 1 ]] && set -x
+    echo
     if [[ $ok -ne 1 ]]; then
       echo "CI did not start publishing for version $VERSION within 60s (key $STARTED_KEY missing)" >&2
       exit 1
     fi
 
-    echo "CI started detected. Waiting for finish key: $FINISHED_KEY (or $FINISHED_KEY_Q)"
+    echo "CI started detected. Waiting for finish key: $FINISHED_KEY ..."
+    trace_was_on=0; case $- in *x*) trace_was_on=1;; esac; [[ $trace_was_on -eq 1 ]] && set +x
     while true; do
       exists=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$FINISHED_KEY")
       if [[ "$exists" == "1" ]]; then break; fi
-      exists_q=$(ssh "$CI_SSH_TARGET" redis-cli EXISTS "$FINISHED_KEY_Q")
-      if [[ "$exists_q" == "1" ]]; then break; fi
+      # keep quiet while polling
       sleep 5
+      echo -n "."
     done
+    [[ $trace_was_on -eq 1 ]] && set -x
+    echo
 
     echo "CI finished detected. Proceeding with remote apt install."
     ssh {{ server }} 'sudo apt -q update && sudo DEBIAN_FRONTEND=noninteractive apt-get -y install echo-install wdintel-rs'
