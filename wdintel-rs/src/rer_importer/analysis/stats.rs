@@ -355,7 +355,11 @@ fn build_posts_query(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
-        .column_as(Expr::col((sigint_post::Entity, sigint_post::Column::Name)).if_null(""), "post")
+        .column_as(
+            Expr::col((sigint_post::Entity, sigint_post::Column::Name))
+                .if_null(""),
+            "post",
+        )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
         .filter(
             datasource_group::Column::GroupMasterKey.is_in(master_keys.clone()),

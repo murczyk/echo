@@ -488,8 +488,6 @@ where
         GroupMasterKey,
     }
 
-
-
     if let Some(aor_ids) = selected_aors {
         if !aor_ids.is_empty() {
             let aor_linked = Alias::new("aor_linked");

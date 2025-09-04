@@ -739,8 +739,11 @@ pub async fn network_callsigns(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
         .and_where(
-            Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
-                .is_in(groups),
+            Expr::col((
+                DatasourceGroup::Table,
+                DatasourceGroup::GroupMasterKey,
+            ))
+            .is_in(groups),
         )
         .to_owned();
     if let Some(cut) = cutoff_since {
