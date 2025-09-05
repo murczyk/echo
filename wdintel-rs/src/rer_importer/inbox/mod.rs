@@ -474,7 +474,7 @@ pub async fn get_inbox_messages(
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let mut q = build_inbox_query(login, logins, env, req).await?;
     if req.since_id_noninclusive.is_none()
-        && req.before_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
     {
         // TODO FIXME filter by 1 days
         q = q.filter(
