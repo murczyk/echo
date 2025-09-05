@@ -958,7 +958,7 @@ pub async fn network_freqs_activity_one(
             ),
     )
     .and_where(Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false))
-    .and_where(Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey)).is_in(groups))
+    .and_where(Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey)).is_in(groups))
     .add_group_by([
         // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),

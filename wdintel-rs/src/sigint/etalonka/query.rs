@@ -170,7 +170,7 @@ pub async fn load_freqs(
             .equals((SigintNetworkFreq::Table, SigintNetworkFreq::NetworkId)),
     )
     .and_where(
-        Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey))
+        Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
             .is_in(groups),
     )
     .and_where(
@@ -653,7 +653,7 @@ pub fn build_callsigns_queries(
                         .lt(Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")))),
         )
     .and_where(
-        Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey))
+        Expr::col((DatasourceGroup::Table, DatasourceGroup::GroupMasterKey))
             .is_in(groups),
     )
     .and_where(
