@@ -107,11 +107,10 @@ async fn receive_once(
         .await
         .context(h!())?;
     for wq in whatsapp_queue {
-        if wq.group_jid.is_empty() {
-            continue;
-        }
-        if wq.group_jid.ends_with("@s.whatsapp.net") {
-            //is direct message, skipping
+        if wq.group_jid.is_empty() || wq.group_jid.ends_with("@s.whatsapp.net")
+        {
+            info!("deleting whatsapp queue entry: {wq:?}");
+            wq.delete(dbx).await.context(h!())?;
             continue;
         }
         let txn = dbx.begin().await.context(h!())?;
