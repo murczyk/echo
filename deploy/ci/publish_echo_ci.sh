@@ -95,10 +95,10 @@ echo "$SNAP_TO_PUBLISH" > "$HOME/.aptly/${REPO}.LAST_SNAPSHOT" || true
 
 # publish under prefix "$REPO" (e.g., /echo), switching to new (possibly merged) snapshot
 # Try switch first (robust if already published), then fallback to drop+publish snapshot.
-if ! aptly publish switch -skip-signing "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
+if ! aptly publish switch -skip-signing -acquire-by-hash "$DIST" "$REPO" "$SNAP_TO_PUBLISH"; then
   echo "Publish switch failed, attempting drop+publish..."
   aptly publish drop -force-drop "$DIST" "$REPO" || true
-  aptly publish snapshot -skip-signing -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
+  aptly publish snapshot -skip-signing -acquire-by-hash -component="$COMP" -distribution="$DIST" "$SNAP_TO_PUBLISH" "$REPO"
 fi
 
 echo "Published prefix/path: /$REPO dists: $DIST"
