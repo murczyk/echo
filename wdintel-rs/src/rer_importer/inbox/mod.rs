@@ -104,10 +104,6 @@ async fn messages_by_id(
         )
         .join(
             JoinType::LeftJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
             datasource_group::Relation::SignalGroup.def(),
         )
         .join(
