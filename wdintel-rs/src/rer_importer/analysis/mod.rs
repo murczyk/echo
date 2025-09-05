@@ -715,8 +715,8 @@ where
             .and_where(
                 Expr::col((ga.clone(), signal_group_aor::Column::MasterKey))
                     .equals((
-                        signal_message::Entity,
-                        signal_message::Column::GroupMasterKey,
+                        datasource_group::Entity,
+                        datasource_group::Column::GroupMasterKey,
                     )),
             )
             .and_where(

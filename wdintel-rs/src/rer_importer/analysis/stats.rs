@@ -1314,20 +1314,24 @@ fn build_networks_query(
         )
         .join(
             JoinType::LeftJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
         .column_as(
-            Expr::col(signal_message::Column::GroupMasterKey),
+            Expr::col(datasource_group::Column::GroupMasterKey),
             "master_key",
         )
         .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::col(signal_message::Column::GroupMasterKey));
+        .group_by(Expr::col(datasource_group::Column::GroupMasterKey));
     let networks_res =
         filter_selected_senders(networks_res, &req.selected_senders)
             .context(h!())?;
