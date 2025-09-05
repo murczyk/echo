@@ -54,10 +54,10 @@ import RerAnalysis.Query as Query
 import Select
 import Set exposing (Set)
 import Shared
-import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
 import TimeZone
+import Shared.Model exposing (isDarkMode)
 
 
 type Msg
@@ -1191,7 +1191,7 @@ update shared user msg model =
             in
             ( m3
             , E.batch
-                [ E.sendCmd <| Api.user_sigint_groups GotGroupKeys { sinceDateInclusiveMs = Nothing }
+                [ E.sendCmd <| Api.user_sigint_groups GotGroupKeys { sinceDateInclusiveMs = Just (Le.Time.xDaysAgo 2 now_ |> Time.posixToMillis) }
                 , E.getPosts GotPosts (Query.analysisStatsDefaultParams (Le.Time.xDaysAgo 14 now_) now_)
                 , cmd3
                 ]
