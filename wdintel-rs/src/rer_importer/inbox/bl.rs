@@ -427,9 +427,22 @@ fn match_network_ids_for_messages(
             if let Some(net_bounds) = network_bounds_map.get(network_id) {
                 for (gl, gr) in group_bounds {
                     for (nl, nr) in net_bounds {
-                        if (gl >= nl && gl <= nr)
-                            || (gr >= nl && gr <= nr)
-                            || (gl <= nl && gr >= nr)
+                        
+                        // 1. Group starts inside network
+                        // Network: |----[nl=======nr]-------|
+                        // Group:   |----------[gl=====gr]---|
+
+                        // 2. Group ends inside network
+                        // Network: |------[nl========nr]----|
+                        // Group:   |--[gl======gr]----------|
+
+                        // 3. Group covers network
+                        // Network: |-------[nl==nr]---------|
+                        // Group:   |---[gl===========gr]----|
+
+                        if (gl >= nl && gl <= nr)                   // group left inside network
+                            || (gr >= nl && gr <= nr)               // group right inside network
+                            || (gl <= nl && gr >= nr)               // group fully covers network
                         {
                             matched.insert(*network_id);
                             break;

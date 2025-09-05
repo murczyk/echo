@@ -602,10 +602,53 @@ where
         //   JOIN sigint_network_aor na       ON na.network_id = n.id
         //   JOIN area_of_responsibility naor ON naor.id = na.aor_id
         //   WHERE ga.master_key = m.group_master_key                           -- correlate to outer message
+        //     AND (
+        //          (gaor.left_bound >= naor.left_bound AND gaor.left_bound <= naor.right_bound)
+        //          OR (gaor.right_bound >= naor.left_bound AND gaor.right_bound <= naor.right_bound)
+        //          OR (gaor.left_bound <= naor.left_bound AND gaor.right_bound >= naor.right_bound)
+        //         )
         //     AND gaor.left_bound  <= naor.left_bound
         //     AND gaor.right_bound >= naor.right_bound
         //     AND n.id = ANY($selected_networks)
         // )
+        let condition = Condition::any()
+            // (gaor.left_bound >= naor.left_bound AND gaor.left_bound <= naor.right_bound)
+            .add(
+                Condition::all()
+                    .add(
+                        Expr::col((gaor.clone(), "left_bound"))
+                            .gte(Expr::col((naor.clone(), "left_bound"))),
+                    )
+                    .add(
+                        Expr::col((gaor.clone(), "left_bound"))
+                            .lte(Expr::col((naor.clone(), "right_bound"))),
+                    ),
+            )
+            // (gaor.right_bound >= naor.left_bound AND gaor.right_bound <= naor.right_bound)
+            .add(
+                Condition::all()
+                    .add(
+                        Expr::col((gaor.clone(), "right_bound"))
+                            .gte(Expr::col((naor.clone(), "left_bound"))),
+                    )
+                    .add(
+                        Expr::col((gaor.clone(), "right_bound"))
+                            .lte(Expr::col((naor.clone(), "right_bound"))),
+                    ),
+            )
+            // (gaor.left_bound <= naor.left_bound AND gaor.right_bound >= naor.right_bound)
+            .add(
+                Condition::all()
+                    .add(
+                        Expr::col((gaor.clone(), "left_bound"))
+                            .lte(Expr::col((naor.clone(), "left_bound"))),
+                    )
+                    .add(
+                        Expr::col((gaor.clone(), "right_bound"))
+                            .gte(Expr::col((naor.clone(), "right_bound"))),
+                    ),
+            );
+
         let sub = Query::select()
             .expr(Expr::value(1))
             .from_as(signal_group_aor::Entity, ga.clone())
@@ -676,32 +719,11 @@ where
                         signal_message::Column::GroupMasterKey,
                     )),
             )
-            // AOR containment
-            .and_where(
-                Expr::col((
-                    gaor.clone(),
-                    area_of_responsibility::Column::LeftBound,
-                ))
-                .lte(Expr::col((
-                    naor.clone(),
-                    area_of_responsibility::Column::LeftBound,
-                ))),
-            )
-            .and_where(
-                Expr::col((
-                    gaor.clone(),
-                    area_of_responsibility::Column::RightBound,
-                ))
-                .gte(Expr::col((
-                    naor.clone(),
-                    area_of_responsibility::Column::RightBound,
-                ))),
-            )
-            // n.id IN (selected ids)
             .and_where(
                 Expr::col((n.clone(), sigint_network::Column::Id))
                     .is_in(ids.clone()),
             )
+            .and_where(condition.into())
             .to_owned();
 
         q = q.filter(Expr::exists(sub));
