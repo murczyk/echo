@@ -44,5 +44,18 @@ sea-orm-migration = { version = "1.1.14", features = [
 ] }
 syn = "2.0.106"
 
+[patch.crates-io]
+# Use forked sqlx with pool connection refused fix, backported to 0.8.6.
+# Upstream PR: https://github.com/launchbadge/sqlx/pull/3929
+# Original line for reference in [workspace.dependencies]:
+#   sqlx = { version = "0.8.6", features = [
+#       "runtime-tokio-rustls",
+#       "macros",
+#       "postgres",
+#       "chrono",
+#       "json",
+#   ] }
+sqlx = { git = "https://github.com/alkeryn/sqlx.git", rev = "4b21f0954c1d402583e8da455182867f803952da" }
+
 [profile.release]
 debug-assertions = false
