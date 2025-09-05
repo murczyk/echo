@@ -476,10 +476,10 @@ pub async fn get_inbox_messages(
     if req.since_id_noninclusive.is_none()
         && req.before_id_noninclusive.is_none()
     {
-        // TODO FIXME filter by 7 days
+        // TODO FIXME filter by 1 days
         q = q.filter(
             signal_message::Column::Timestamp
-                .gte(Utc::now().naive_utc() - Duration::days(7)),
+                .gte(Utc::now().naive_utc() - Duration::days(1)),
         );
     }
 
