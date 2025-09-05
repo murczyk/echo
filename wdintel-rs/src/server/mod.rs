@@ -6,7 +6,6 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::{App, HttpServer};
 
-use crate::messenger::group::oneoff::check_should_populate_signal_message_group_ids;
 use milgeo_rs::MilGeo;
 use opendal::services::S3;
 use opendal::Operator;
@@ -114,13 +113,6 @@ pub async fn main_server(
         warn!("Failed to ensure import group exists: {e:?}");
     };
 
-    if let Err(e) = check_should_populate_signal_message_group_ids(&dbx4)
-        .await
-        .context(h!())
-    {
-        warn!("check_should_populate_signal_message_group_ids failed: {e:?}");
-    }
-
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
             .await
@@ -167,17 +159,7 @@ pub async fn main_server(
                 .await;
             });
         }
-        if config.server_id.is_some() {
-            // fill in missing message UIDs
-            tokio::spawn(async move {
-                if let Err(e) =
-                    crate::messenger::id::oneoff_assign_message_ids(mode, false)
-                        .await
-                {
-                    error!("oneoff_assign_message_ids failed: {e:?}");
-                }
-            });
-        }
+
         // AoR assignments consistency check worker (runs every 5 minutes)
         tokio::spawn(async move {
             crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10)

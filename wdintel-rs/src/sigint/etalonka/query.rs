@@ -31,7 +31,7 @@ const DEFAULT_EMPTY_UNIT_NAME: &str = "в дорозвідці";
 pub enum SignalMessage {
     Table,
     Id,
-    GroupId,
+    DatasourceGroupId,
     Deleted,
 }
 
@@ -154,7 +154,7 @@ pub async fn load_freqs(
     .join(
         JoinType::InnerJoin,
         DatasourceGroup::Table,
-        Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+        Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
             .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
     )
     .join(
@@ -639,7 +639,7 @@ pub fn build_callsigns_queries(
         .join(
             JoinType::InnerJoin,
             DatasourceGroup::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+            Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
 		        .join(

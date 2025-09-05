@@ -4,33 +4,9 @@ use crate::types::Mode;
 use crate::{config, h};
 use anyhow::Context;
 use echo_migration::Expr;
-use log::{error, info};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, JoinType, NotSet, PaginatorTrait, QueryFilter, QuerySelect,
-    RelationTrait, Set,
-};
+use log::*;
+use sea_orm::*;
 use std::collections::{HashMap, HashSet};
-pub async fn check_should_populate_signal_message_group_ids<
-    'a,
-    'async_trait,
-    C,
->(
-    db: &C,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let pending_messages_count = signal_message::Entity::find()
-        .filter(signal_message::Column::DatasourceGroupId.is_null())
-        .count(db)
-        .await
-        .context(h!())?;
-    if pending_messages_count > 0 {
-        error!("Oneoff command 'oneoff_populate_signal_message_group_ids' should be executed! Pending signal messages: {pending_messages_count}");
-    }
-    Ok(())
-}
 
 pub async fn oneoff_populate_signal_message_group_ids(
     mode: Mode,
@@ -101,6 +77,23 @@ pub async fn oneoff_populate_signal_message_group_ids(
     check_should_populate_signal_message_group_ids(&dbx)
         .await
         .context(h!())?;
+    Ok(())
+}
+
+async fn check_should_populate_signal_message_group_ids<'a, 'async_trait, C>(
+    db: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let pending_messages_count = signal_message::Entity::find()
+        .filter(signal_message::Column::DatasourceGroupId.is_null())
+        .count(db)
+        .await
+        .context(h!())?;
+    if pending_messages_count > 0 {
+        error!("Oneoff command 'oneoff_populate_signal_message_group_ids' should be executed! Pending signal messages: {pending_messages_count}");
+    }
     Ok(())
 }
 

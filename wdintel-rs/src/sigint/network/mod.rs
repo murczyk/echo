@@ -732,7 +732,7 @@ pub async fn network_callsigns(
         .join(
             JoinType::InnerJoin,
             DatasourceGroup::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+            Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
                 .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
         )
         .and_where(
@@ -940,7 +940,7 @@ pub async fn network_freqs_activity_one(
     .join(
         JoinType::InnerJoin,
         DatasourceGroup::Table,
-        Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+        Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
             .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
     )
     .join(
