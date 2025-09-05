@@ -143,7 +143,7 @@ pub async fn find_duplicate<'a, 'async_trait, C>(
     txn: &'a C,
     body: &str,
     m_timestamp: Option<NaiveDateTime>,
-) -> Result<Option<signal_message::Model>, AppError>
+) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -163,7 +163,8 @@ where
     chars.next_back();
     let alt_body = chars.as_str().to_string();
 
-    let m_duplicate = SignalMessage::find()
+    let m_duplicate = signal_message::Entity::find()
+        .find_with_related(datasource_group::Entity)
         .filter(time_filter)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
@@ -172,9 +173,12 @@ where
                 .or(signal_message::Column::Body.eq(alt_body)),
         )
         .order_by_asc(signal_message::Column::CreatedAt)
-        .one(txn)
+        .all(txn)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .flat_map(|(m, groups)| groups.into_iter().next().map(|g| (m, g)))
+        .next();
     Ok(m_duplicate)
 }
 
@@ -401,25 +405,24 @@ async fn xlsx_import_process_one(
     // Normalize body
     let body = body.replace("\r\n", "\n");
 
-    let group_id = crate::messenger::group::ensure_group_id(
-        dbx,
-        group_id.to_string(),
-        datasource_id,
-    )
-    .await
-    .context(h!())?;
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            dbx,
+            group_id.to_string(),
+            datasource_id,
+        )
+        .await
+        .context(h!())?;
 
     let message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
-        datasource_group_id: Set(Some(group_id)),
-        group_master_key: Set(Some(group_id.to_string())),
+        datasource_group_id: Set(Some(datasource_group_id)),
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(sender_uuid.to_string())),
         duplicate_of: NotSet,
         format: Set(Some(2)),
-        datasource_id: Set(Some(datasource_id)),
         deleted: NotSet,
         external_id: NotSet,
         message_uid: NotSet,

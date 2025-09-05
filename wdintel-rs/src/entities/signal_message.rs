@@ -23,21 +23,10 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
     pub datasource_group_id: Option<i64>,
-    pub datasource_id: Option<i64>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub group_master_key: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::datasource::Entity",
-        from = "Column::DatasourceId",
-        to = "super::datasource::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    Datasource,
     #[sea_orm(
         belongs_to = "super::datasource_group::Entity",
         from = "Column::DatasourceGroupId",
@@ -54,21 +43,6 @@ pub enum Relation {
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
     SigintInboxItem,
-    // patch-added SignalGroup relation (see `just gen-sea-orm`)
-    #[sea_orm(
-        belongs_to = "super::signal_group::Entity",
-        from = "Column::GroupMasterKey",
-        to = "super::signal_group::Column::MasterKey",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    SignalGroup,
-}
-
-impl Related<super::datasource::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Datasource.def()
-    }
 }
 
 impl Related<super::datasource_group::Entity> for Entity {

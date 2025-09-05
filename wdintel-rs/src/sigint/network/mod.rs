@@ -729,12 +729,21 @@ pub async fn network_callsigns(
             Expr::col((SignalMessage::Table, SignalMessage::Id))
                 .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
         )
+        .join(
+            JoinType::InnerJoin,
+            DatasourceGroup::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+        )
         .and_where(
             Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
         )
         .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey))
-                .is_in(groups),
+            Expr::col((
+                DatasourceGroup::Table,
+                DatasourceGroup::GroupMasterKey,
+            ))
+            .is_in(groups),
         )
         .to_owned();
     if let Some(cut) = cutoff_since {
@@ -930,6 +939,12 @@ pub async fn network_freqs_activity_one(
     )
     .join(
         JoinType::InnerJoin,
+        DatasourceGroup::Table,
+        Expr::col((SignalMessage::Table, SignalMessage::GroupId))
+            .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
+    )
+    .join(
+        JoinType::InnerJoin,
         Alias::new("network_freqs"),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
             .equals((Alias::new("network_freqs"), Alias::new("freq")))
@@ -943,7 +958,7 @@ pub async fn network_freqs_activity_one(
             ),
     )
     .and_where(Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false))
-    .and_where(Expr::col((SignalMessage::Table, SignalMessage::GroupMasterKey)).is_in(groups))
+    .and_where(Expr::col((SignalMessage::Table, DatasourceGroup::GroupMasterKey)).is_in(groups))
     .add_group_by([
         // Expr::col((Alias::new("network_freqs"), Alias::new("network_id"))).into(),
         Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
@@ -998,6 +1013,10 @@ pub async fn list_network_points(
         .context(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let mut query = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -1020,7 +1039,7 @@ pub async fn list_network_points(
         .column_as(sigint_peleng::Column::Lng, "lng")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,

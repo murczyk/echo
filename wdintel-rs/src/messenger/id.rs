@@ -181,11 +181,10 @@ pub async fn oneoff_assign_message_ids(
             let err_msg = format!(
                 "collision #{actual_collisions_num} occurred: \n{m1:?}\n{m2:?}"
             );
-            let same_group = m1.group_master_key.eq(&m2.group_master_key);
+            let same_group = m1.datasource_group_id.eq(&m2.datasource_group_id);
             let same_body = m1.body.eq(&m2.body);
             let same_sender = m1.sender.eq(&m2.sender);
-            let same_datasource = m1.datasource_id.eq(&m2.datasource_id);
-            if same_group && same_sender && same_body && same_datasource {
+            if same_group && same_sender && same_body {
                 if dry_run {
                     warn!("duplicated messages occurred: id{x}, id{y}");
                 }

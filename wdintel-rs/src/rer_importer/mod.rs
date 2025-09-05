@@ -145,63 +145,63 @@ async fn list_messages(
     .await
     .context(h!())?;
 
-    Ok(Json(
-        signal_message::Entity::find()
-            .columns([
-                signal_message::Column::Id,
-                signal_message::Column::Body,
-                signal_message::Column::Timestamp,
-            ])
-            .columns([
-                sigint_inbox_item::Column::Lat,
-                sigint_inbox_item::Column::Lng,
-                sigint_inbox_item::Column::Freq,
-            ])
-            .expr_as(
-                Func::cust(crate::utils::orm::Concat)
-                    .arg(Expr::col(sigint_inbox_item::Column::Lat))
-                    .arg(Expr::val(", "))
-                    .arg(Expr::col(sigint_inbox_item::Column::Lng)),
-                "coordinates",
+    let result = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            datasource_group::Relation::SignalGroup.def(),
+        )
+        .columns([
+            signal_message::Column::Id,
+            signal_message::Column::Body,
+            signal_message::Column::Timestamp,
+        ])
+        .columns([
+            sigint_inbox_item::Column::Lat,
+            sigint_inbox_item::Column::Lng,
+            sigint_inbox_item::Column::Freq,
+        ])
+        .expr_as(
+            Func::cust(crate::utils::orm::Concat)
+                .arg(Expr::col(sigint_inbox_item::Column::Lat))
+                .arg(Expr::val(", "))
+                .arg(Expr::col(sigint_inbox_item::Column::Lng)),
+            "coordinates",
+        )
+        .to_owned()
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::SigintZoneDatasource.def(),
+        )
+        .filter(datasource_group::Column::GroupMasterKey.is_in(groups))
+        .filter(sigint_inbox_item::Column::Lat.is_not_null())
+        .filter(sigint_inbox_item::Column::Lng.is_not_null())
+        .filter(sigint_inbox_item::Column::Lat.ne(0.0))
+        .filter(sigint_inbox_item::Column::Lng.ne(0.0))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .apply_if(req.freq.as_ref(), |q, freq| {
+            q.filter(sigint_inbox_item::Column::Freq.eq(freq))
+        })
+        .apply_if(req.from, |q, from| {
+            q.filter(
+                signal_message::Column::Timestamp
+                    .gte::<chrono::NaiveDateTime>(from),
             )
-            .to_owned()
-            .join_rev(
-                JoinType::LeftJoin,
-                signal_group::Entity::belongs_to(signal_message::Entity)
-                    .from(signal_group::Column::MasterKey)
-                    .to(signal_message::Column::GroupMasterKey)
-                    .into(),
+        })
+        .apply_if(req.to, |q, to| {
+            q.filter(
+                signal_message::Column::Timestamp
+                    .lte::<chrono::NaiveDateTime>(to),
             )
-            .join(
-                JoinType::InnerJoin,
-                signal_group::Relation::SigintZoneDatasource.def(),
-            )
-            .filter(signal_message::Column::GroupMasterKey.is_in(groups))
-            .filter(sigint_inbox_item::Column::Lat.is_not_null())
-            .filter(sigint_inbox_item::Column::Lng.is_not_null())
-            .filter(sigint_inbox_item::Column::Lat.ne(0.0))
-            .filter(sigint_inbox_item::Column::Lng.ne(0.0))
-            .filter(signal_message::Column::Deleted.eq(false))
-            .apply_if(req.freq.as_ref(), |q, freq| {
-                q.filter(sigint_inbox_item::Column::Freq.eq(freq))
-            })
-            .apply_if(req.from, |q, from| {
-                q.filter(
-                    signal_message::Column::Timestamp
-                        .gte::<chrono::NaiveDateTime>(from),
-                )
-            })
-            .apply_if(req.to, |q, to| {
-                q.filter(
-                    signal_message::Column::Timestamp
-                        .lte::<chrono::NaiveDateTime>(to),
-                )
-            })
-            .into_model::<MessageRsp>()
-            .all(&env.dbx)
-            .await
-            .context(h!())?,
-    ))
+        })
+        .into_model::<MessageRsp>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    Ok(Json(result))
 }
 
 #[get("/api/sigint/callsigns-alchemy.json")]
@@ -471,7 +471,8 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                         sii.id, TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999') AS res
                     FROM sigint_inbox_item AS sii
                         INNER JOIN signal_message AS sm ON sm.id = sii.id
-                        INNER JOIN signal_group AS sg ON sg.master_key = sm.group_master_key
+                        INNER JOIN datasource_group dg ON sm.datasource_group_id = dg.id
+                        INNER JOIN signal_group AS sg ON sg.master_key = dg.group_master_key
                     WHERE
                         sii.lat IS NOT NULL
                         AND sii.lng IS NOT NULL
@@ -625,10 +626,14 @@ pub async fn latest_senders(
         .await
         .context(h!())?;
     let sender_uuids: Vec<String> = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
         .column_as(signal_message::Column::Sender, "sender")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(master_keys))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
         .filter(
             signal_message::Column::CreatedAt
                 .gt(now - chrono::Duration::days(2)),
@@ -762,15 +767,19 @@ where
     let signal_message_counts = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join_as(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
             Alias::new("signal_group"),
         )
         .select_only()
-        .column(signal_message::Column::GroupMasterKey)
+        .column(datasource_group::Column::GroupMasterKey)
         .column_as(Expr::cust("count(*)"), "count")
         .group_by(Expr::cust("group_master_key"))
         .filter(signal_group::Column::Deleted.eq(false))

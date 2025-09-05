@@ -11,7 +11,6 @@ use sea_orm::{
     RelationTrait, Set,
 };
 use std::collections::{HashMap, HashSet};
-
 pub async fn check_should_populate_signal_message_group_ids<
     'a,
     'async_trait,
@@ -41,11 +40,11 @@ pub async fn oneoff_populate_signal_message_group_ids(
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
         .context(h!())?;
-    insert_missing_signal_groups(&dbx).await.context(h!())?;
-    info!("insert_missing_signal_groups done");
-    let datasource_groups =
-        insert_missing_datasource_groups(&dbx).await.context(h!())?;
-    info!("insert_missing_datasource_groups done");
+    insert_missing_datasource_groups(&dbx).await.context(h!())?;
+    let datasource_groups = datasource_group::Entity::find()
+        .all(&dbx)
+        .await
+        .context(h!())?;
     let mut counter = 1;
     let count = datasource_groups.len();
     for datasource_group in datasource_groups {
@@ -53,16 +52,20 @@ pub async fn oneoff_populate_signal_message_group_ids(
             .group_master_key
             .eq(config::UNKNOWN_GROUP_MASTER_KEY)
         {
-            signal_message::Column::GroupMasterKey.is_null()
+            datasource_group::Column::GroupMasterKey.is_null()
         } else {
-            signal_message::Column::GroupMasterKey
+            datasource_group::Column::GroupMasterKey
                 .eq(datasource_group.group_master_key.clone())
         };
         loop {
             let messages_to_update = signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::DatasourceGroup.def(),
+                )
                 .filter(signal_message::Column::DatasourceGroupId.is_null())
                 .filter(
-                    signal_message::Column::DatasourceId
+                    datasource_group::Column::DatasourceId
                         .eq(datasource_group.datasource_id),
                 )
                 .filter(group_filter.clone())
@@ -105,11 +108,15 @@ async fn insert_missing_datasource_groups(
     dbx: &DatabaseConnection,
 ) -> Result<Vec<datasource_group::Model>, AppError> {
     let source_datasource_groups = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .select_only()
-        .column(signal_message::Column::GroupMasterKey)
-        .column(signal_message::Column::DatasourceId)
-        .group_by(signal_message::Column::GroupMasterKey)
-        .group_by(signal_message::Column::DatasourceId)
+        .column(datasource_group::Column::GroupMasterKey)
+        .column(datasource_group::Column::DatasourceId)
+        .group_by(datasource_group::Column::GroupMasterKey)
+        .group_by(datasource_group::Column::DatasourceId)
         .into_tuple::<(Option<String>, i64)>()
         .all(dbx)
         .await
@@ -164,49 +171,4 @@ async fn insert_missing_datasource_groups(
         existing_groups.push(new_group);
     }
     Ok(existing_groups)
-}
-async fn insert_missing_signal_groups(
-    dbx: &DatabaseConnection,
-) -> Result<(), AppError> {
-    let master_keys = signal_group::Entity::find()
-        .select_only()
-        .column(signal_group::Column::MasterKey)
-        .into_tuple::<String>()
-        .all(dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .collect::<HashSet<_>>();
-    let missing_master_key = signal_message::Entity::find()
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
-        )
-        .filter(signal_group::Column::MasterKey.is_null())
-        .select_only()
-        .column(signal_message::Column::GroupMasterKey)
-        .group_by(signal_message::Column::GroupMasterKey)
-        .into_tuple::<Option<String>>()
-        .all(dbx)
-        .await
-        .context(h!())?;
-    for key in missing_master_key {
-        let key = key.unwrap_or(config::UNKNOWN_GROUP_MASTER_KEY.to_string());
-        if master_keys.contains(&key) {
-            continue;
-        }
-        signal_group::ActiveModel {
-            master_key: Set(key),
-            deleted: Set(true),
-            name: Set(None),
-            datasource_id: Set(None),
-            created_at: NotSet,
-            ignore_operativny: NotSet,
-            is_secret: NotSet,
-        }
-        .insert(dbx)
-        .await
-        .context(h!())?;
-    }
-    Ok(())
 }

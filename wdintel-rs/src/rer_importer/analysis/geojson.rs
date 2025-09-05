@@ -32,17 +32,25 @@ pub async fn rer_analysis_download_geojson(
     let items = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
         )
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
         .column_as(signal_group::Column::Name, "group_name")
@@ -50,7 +58,7 @@ pub async fn rer_analysis_download_geojson(
         .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))

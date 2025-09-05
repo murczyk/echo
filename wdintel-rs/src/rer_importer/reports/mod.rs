@@ -115,7 +115,9 @@ pub async fn report_docx(
 ) -> Result<HttpResponse, AppError> {
     info!("> Start RER report generation...");
 
-    crate::users::has_role(&env.dbx, &user.id()?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &user.id()?, "Rer")
+        .await
+        .c(h!())?;
     cleanup_old_reports_nofail(&env.dbx, &env.config).await;
     let mut req = req.into_inner().clone();
     req.req.nolimit = Some(true);
@@ -129,21 +131,29 @@ pub async fn report_docx(
     let outpath = outfolder.join(&filename);
     let user_login = user.id().context(h!())?;
     if req.kind == "tags" {
-        self::tag::report_docx_kind_tag(user, &env, &req, &outpath).await?;
+        self::tag::report_docx_kind_tag(user, &env, &req, &outpath)
+            .await
+            .c(h!())?;
     } else if req.kind == "interception" {
         self::interception::report_xlsx_kind_interception(
             user, &env, &req, &outpath,
         )
-        .await?;
+        .await
+        .c(h!())?;
     } else if req.kind == "babak" {
-        self::babak::report_docx_kind_babak(user, &env, &req, &outpath).await?;
+        self::babak::report_docx_kind_babak(user, &env, &req, &outpath)
+            .await
+            .c(h!())?;
     } else if req.kind == "mouse" {
-        self::mouse::report_docx_kind_mouse(user, &env, &req, &outpath).await?;
+        self::mouse::report_docx_kind_mouse(user, &env, &req, &outpath)
+            .await
+            .c(h!())?;
     } else if req.kind == "pelengs" {
         self::report_xlsx_kind_pelengs::report_xlsx_kind_pelengs1(
             user, &env, &req, &outpath,
         )
-        .await?;
+        .await
+        .c(h!())?;
     } else if req.kind == "senders" {
         self::senders::report_xlsx_kind_senders(
             ReportAggregation::ByProfile,
@@ -152,7 +162,8 @@ pub async fn report_docx(
             &req.req,
             &outpath,
         )
-        .await?;
+        .await
+        .c(h!())?;
     } else if req.kind == "posts" {
         self::senders::report_xlsx_kind_senders(
             ReportAggregation::ByPost,
@@ -161,27 +172,34 @@ pub async fn report_docx(
             &req.req,
             &outpath,
         )
-        .await?;
+        .await
+        .c(h!())?;
     } else if req.kind == "naushnom" {
         self::naushnom::report_docx_kind_naushnom(user, &env, &req, &outpath)
-            .await?;
+            .await
+            .c(h!())?;
     } else if req.kind == "reo" {
         crate::users::has_any_role(
             &env.dbx,
             &user.id()?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
-        .await?;
-        self::revo::report_docx_kind_revo(user, &env, &req, &outpath).await?;
+        .await
+        .c(h!())?;
+        self::revo::report_docx_kind_revo(user, &env, &req, &outpath)
+            .await
+            .c(h!())?;
     } else if req.kind == "digest" {
         crate::users::has_any_role(
             &env.dbx,
             &user.id()?,
             vec!["UnitsEditor", "CallsignsEditor", "Admin"],
         )
-        .await?;
+        .await
+        .c(h!())?;
         self::digest::report_docx_kind_digest(user, &env, &req, &outpath)
-            .await?;
+            .await
+            .c(h!())?;
     } else {
         return Err(format!("Unknown report kind {}", req.kind).into());
     }
@@ -207,56 +225,70 @@ pub async fn oneoff_fill_comp_freq(
         NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")?;
     let end_dt: NaiveDateTime =
         NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S")?;
-    let dbx = crate::new_pg_pool_from_mode(mode).await?;
-    fill_comp_freq(&dbx, &start_dt, &end_dt).await?;
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    fill_comp_freq(&dbx, start_dt, end_dt).await.c(h!())?;
     Ok(())
 }
 
 async fn fill_comp_freq(
-    dbx: &sea_orm::DatabaseConnection,
-    start: &NaiveDateTime,
-    end: &NaiveDateTime,
+    dbx: &DatabaseConnection,
+    start: NaiveDateTime,
+    end: NaiveDateTime,
 ) -> Result<(), AppError> {
     // iterate over all messages in a streaming fashion
-    let q = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(*start))
-        .filter(sigint_inbox_item::Column::Datetime.lt(*end))
-        .order_by_asc(signal_message::Column::Id);
-    let count = q.clone().count(dbx).await?;
+    let filter = Condition::all()
+        .add(signal_message::Column::Deleted.eq(false))
+        .add(sigint_inbox_item::Column::Datetime.gte(start))
+        .add(sigint_inbox_item::Column::Datetime.lt(end));
+
+    let count = signal_message::Entity::find()
+        .filter(filter.clone())
+        .clone()
+        .count(dbx)
+        .await
+        .c(h!())?;
     let pb = ProgressBar::new(count);
-    let mut stream = q.clone().stream(dbx).await?;
-    let datasource_zones =
-        crate::sigint::zone::get_datasources_zones(dbx).await?;
+
+    let mut stream = signal_message::Entity::find()
+        .find_with_related(datasource_group::Entity)
+        .filter(filter)
+        .order_by_asc(signal_message::Column::Id)
+        .stream(dbx)
+        .await
+        .c(h!())?;
+    let datasource_zones = crate::sigint::zone::get_datasources_zones(dbx)
+        .await
+        .c(h!())?;
     let mut per_freq_seen: BTreeMap<(i64, String), NaiveDateTime> =
         BTreeMap::new();
     let mut per_freq_callsign_seen: BTreeMap<
         (i64, String, String),
         NaiveDateTime,
     > = BTreeMap::new();
-    while let Some(msg) = stream.try_next().await? {
+    while let Some((message, group)) = stream
+        .try_next()
+        .await
+        .c(h!())?
+        .and_then(|(m, m_g)| m_g.map(|g| (m, g)))
+    {
         pb.inc(1);
-        let Some(inbox) = sigint_inbox_item::Entity::find_by_id(msg.id)
+        let Some(inbox) = sigint_inbox_item::Entity::find_by_id(message.id)
             .one(dbx)
-            .await?
+            .await
+            .c(h!())?
         else {
             continue;
         };
         let Some(freq) = inbox.freq else {
             continue;
         };
-        let Some(timestamp) = msg.timestamp else {
+        let Some(timestamp) = message.timestamp else {
             continue;
         };
-        let Some(datasource_id) = msg.datasource_id else {
-            continue;
-        };
-        for zone_id in
-            datasource_zones.get(&datasource_id).into_iter().flatten()
+        for zone_id in datasource_zones
+            .get(&group.datasource_id)
+            .into_iter()
+            .flatten()
         {
             let key = (*zone_id, freq.clone());
             match per_freq_seen.get(&key) {
@@ -302,24 +334,26 @@ async fn fill_comp_freq(
                 updated_at: NotSet,
             }
             .insert(dbx)
-            .await?;
+            .await
+            .c(h!())?;
             Ok::<(), AppError>(())
         };
         let existing = comp_freq::Entity::find()
             .filter(comp_freq::Column::ZoneId.eq(zone_id))
             .filter(comp_freq::Column::Freq.eq(freq.clone()))
             .one(dbx)
-            .await?;
+            .await
+            .c(h!())?;
         match existing {
-            None => do_insert().await?,
+            None => do_insert().await.c(h!())?,
             Some(existing) => match existing.first_seen {
-                None => do_insert().await?,
+                None => do_insert().await.c(h!())?,
                 Some(existing_first_seen) => {
                     if existing_first_seen > first_seen {
                         let mut existing: comp_freq::ActiveModel =
                             existing.into();
                         existing.first_seen = Set(Some(first_seen));
-                        existing.update(dbx).await?;
+                        existing.update(dbx).await.c(h!())?;
                     }
                 }
             },
@@ -339,7 +373,8 @@ async fn fill_comp_freq(
                 updated_at: NotSet,
             }
             .insert(dbx)
-            .await?;
+            .await
+            .c(h!())?;
             Ok::<(), AppError>(())
         };
         let existing = comp_freq_callsign::Entity::find()
@@ -347,17 +382,18 @@ async fn fill_comp_freq(
             .filter(comp_freq_callsign::Column::Freq.eq(freq.clone()))
             .filter(comp_freq_callsign::Column::Callsign.eq(callsign.clone()))
             .one(dbx)
-            .await?;
+            .await
+            .c(h!())?;
         match existing {
-            None => do_insert().await?,
+            None => do_insert().await.c(h!())?,
             Some(existing) => match existing.first_seen {
-                None => do_insert().await?,
+                None => do_insert().await.c(h!())?,
                 Some(existing_first_seen) => {
                     if existing_first_seen > first_seen {
                         let mut existing: comp_freq_callsign::ActiveModel =
                             existing.into();
                         existing.first_seen = Set(Some(first_seen));
-                        existing.update(dbx).await?;
+                        existing.update(dbx).await.c(h!())?;
                     }
                 }
             },
@@ -368,7 +404,7 @@ async fn fill_comp_freq(
 }
 
 /// Never-failing task that fills the comp_freq table every minute with fresh data.
-pub async fn fill_comp_freq_worker(dbx: &sea_orm::DatabaseConnection) {
+pub async fn fill_comp_freq_worker(dbx: &DatabaseConnection) {
     loop {
         match fill_comp_freq_worker_1(dbx).await {
             Ok(_) => {}
@@ -386,19 +422,22 @@ pub struct FillCompFreqWorkerState {
 }
 
 pub async fn fill_comp_freq_worker_1(
-    dbx: &sea_orm::DatabaseConnection,
+    dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
     let mut state: FillCompFreqWorkerState =
         crate::kv::get_kv(dbx, "fill_comp_freq_worker_state")
-            .await?
+            .await
+            .c(h!())?
             .unwrap_or(FillCompFreqWorkerState {
                 processed_until: Utc::now().naive_utc()
                     - chrono::Duration::hours(24),
             });
     let start = state.processed_until;
     let end = Utc::now().naive_utc();
-    fill_comp_freq(dbx, &start, &end).await?;
+    fill_comp_freq(dbx, start, end).await.c(h!())?;
     state.processed_until = end;
-    crate::kv::put_kv(dbx, "fill_comp_freq_worker_state", state).await?;
+    crate::kv::put_kv(dbx, "fill_comp_freq_worker_state", state)
+        .await
+        .c(h!())?;
     Ok(())
 }

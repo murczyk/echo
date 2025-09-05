@@ -26,17 +26,20 @@ pub(crate) async fn build_inbox_query(
         )
         .join(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            datasource_group::Relation::SignalGroup.def(),
         )
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         );
 
-    q = add_inbox_message_columns(q);
-    q = q
+    q = add_inbox_message_columns(q)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::GroupMasterKey.is_in(sigint_groups));
+        .filter(datasource_group::Column::GroupMasterKey.is_in(sigint_groups));
 
     if req.ignore_imported_coords.unwrap_or(false) {
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
@@ -352,9 +355,9 @@ where
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::Timestamp, "timestamp")
-        .column_as(signal_message::Column::GroupMasterKey, "group_master_key")
+        .column_as(datasource_group::Column::GroupMasterKey, "group_master_key")
         .column_as(signal_message::Column::Sender, "sender")
-        .column_as(signal_message::Column::DatasourceId, "datasource_id")
+        .column_as(datasource_group::Column::DatasourceId, "datasource_id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
         .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")

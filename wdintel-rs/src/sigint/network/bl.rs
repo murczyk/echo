@@ -364,8 +364,13 @@ pub async fn network_group_activity_bl(
             Alias::new("sigint_network_freq"),
         )
         .join_as(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+            Alias::new("datasource_group"),
+        )
+        .join_as(
             JoinType::LeftJoin,
-            signal_message::Relation::SignalGroup.def(),
+            datasource_group::Relation::SignalGroup.def(),
             Alias::new("signal_group"),
         )
         .select_only()
@@ -383,7 +388,7 @@ pub async fn network_group_activity_bl(
         ))
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(
-            signal_message::Column::GroupMasterKey.is_in(
+            datasource_group::Column::GroupMasterKey.is_in(
                 crate::users::get_identity_sigint_groups_noimport(
                     &env.dbx,
                     &user,
@@ -869,6 +874,15 @@ pub async fn bl_get_network_active_freqs_count(
         .from(signal_message::Entity)
         .join(
             JoinType::InnerJoin,
+            datasource_group::Entity,
+            SeaExpr::col((
+                signal_message::Entity,
+                signal_message::Column::DatasourceGroupId,
+            ))
+            .equals((datasource_group::Entity, datasource_group::Column::Id)),
+        )
+        .join(
+            JoinType::InnerJoin,
             sigint_inbox_item::Entity,
             SeaExpr::col((signal_message::Entity, signal_message::Column::Id))
                 .equals((
@@ -946,6 +960,15 @@ pub async fn bl_get_network_active_callsigns_count(
             Alias::new("callsign"),
         )
         .from(signal_message::Entity)
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Entity,
+            SeaExpr::col((
+                signal_message::Entity,
+                signal_message::Column::DatasourceGroupId,
+            ))
+            .equals((datasource_group::Entity, datasource_group::Column::Id)),
+        )
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Entity,
@@ -1082,7 +1105,7 @@ pub fn build_signal_message_conditions(
 ) -> Condition {
     Condition::all()
         .add(signal_message::Column::Deleted.eq(false))
-        .add(signal_message::Column::GroupMasterKey.is_in(groups))
+        .add(datasource_group::Column::GroupMasterKey.is_in(groups))
         .add(
             SeaExpr::col((
                 sigint_inbox_item::Entity,

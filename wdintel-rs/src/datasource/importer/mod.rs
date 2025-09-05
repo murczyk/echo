@@ -129,9 +129,17 @@ async fn collect_datasource_data(
         .await
         .context(h!())?;
 
+    let datasource_groups = datasource_group::Entity::find()
+        .filter(datasource_group::Column::DatasourceId.eq(params.datasource_id))
+        .all(&db)
+        .await
+        .context(h!())?;
+
+    let group_ids = datasource_groups.iter().map(|g| g.id).collect::<Vec<_>>();
+
     let mut messages_q = sigint_inbox_item::Entity::find()
         .find_with_related(signal_message::Entity)
-        .filter(signal_message::Column::DatasourceId.eq(params.datasource_id));
+        .filter(signal_message::Column::DatasourceGroupId.is_in(group_ids));
 
     if let Some(since_ms) = params.since_epoch_ms {
         if let Some(datetime) =
@@ -175,6 +183,7 @@ async fn collect_datasource_data(
         profiles,
         signal_groups,
         whatsapp_groups,
+        datasource_groups,
         messages,
     };
 
@@ -208,7 +217,7 @@ async fn import_data(
     let (_, target_datasource_id) = datasource_id_mapping;
     bl::upsert_signal_groups(
         &db,
-        imported_data.signal_groups,
+        imported_data.signal_groups.clone(),
         target_datasource_id,
     )
     .await
@@ -224,6 +233,7 @@ async fn import_data(
     bl::upsert_messages(
         &db,
         imported_data.messages,
+        imported_data.datasource_groups,
         datasource_id_mapping,
         settlements,
         config,

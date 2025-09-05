@@ -58,17 +58,21 @@ pub async fn datasource_group_list(
     {
         let now = Utc::now();
         let mut select = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
             .select_only()
-            .column(signal_message::Column::GroupMasterKey)
+            .column(datasource_group::Column::GroupMasterKey)
             .filter(
                 signal_message::Column::CreatedAt
                     .gte(now - chrono::Duration::days(7)),
             )
-            .filter(signal_message::Column::DatasourceId.eq(datasource_id))
+            .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
             .filter(signal_message::Column::Deleted.eq(false));
         if !is_admin {
             select = select.filter(
-                signal_message::Column::GroupMasterKey.is_in(
+                datasource_group::Column::GroupMasterKey.is_in(
                     crate::users::get_identity_sigint_groups(
                         &env.dbx,
                         &user.id()?,

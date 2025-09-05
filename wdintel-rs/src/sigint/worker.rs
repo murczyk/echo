@@ -408,16 +408,17 @@ pub async fn process_incoming_message_restapi(
     let body = body.replace("\r\n", "\n");
     let m_duplicate =
         find_duplicate(dbx, &body, timestamp).await.context(h!())?;
-    let m_duplicate_id = m_duplicate.as_ref().map(|x| x.id);
+    let m_duplicate_id =
     // skip if this is same-group duplicate
-    if let Some(ref duplicate) = m_duplicate {
-        if let Some(ref dup_group_master_key) = duplicate.group_master_key {
-            if dup_group_master_key == &group_info.group_id {
-                info!("> skipping same-group duplicate");
-                return Ok(());
-            }
+    if let Some((duplicate, group)) = m_duplicate {
+        if group.group_master_key == group_info.group_id {
+            info!("> skipping same-group duplicate");
+            return Ok(());
         }
-    }
+        Some(duplicate.id)
+    } else {
+        None
+    };
     let Some(source_uuid) = message.envelope.source_uuid.clone() else {
         return Ok(());
     };
@@ -426,28 +427,27 @@ pub async fn process_incoming_message_restapi(
     };
 
     let master_key = &group_info.group_id;
-    let group_id = crate::messenger::group::ensure_group_id(
-        dbx,
-        master_key.to_string(),
-        datasource_id,
-    )
-    .await
-    .context(h!())?;
+    let datasource_group_id =
+        crate::messenger::group::ensure_datasource_group_id(
+            dbx,
+            master_key.to_string(),
+            datasource_id,
+        )
+        .await
+        .context(h!())?;
 
     let message = signal_message::ActiveModel {
         id: NotSet,
         body: Set(Some(body.clone())),
         created_at: NotSet,
-        group_master_key: Set(Some(master_key.to_string())),
         timestamp: Set(timestamp),
         sender: Set(Some(source_uuid.clone().to_string())),
         duplicate_of: Set(m_duplicate_id),
         format: Set(Some(2)),
-        datasource_id: Set(Some(datasource_id)),
         deleted: NotSet,
         external_id: NotSet,
         message_uid: NotSet,
-        datasource_group_id: Set(Some(group_id)),
+        datasource_group_id: Set(Some(datasource_group_id)),
     }
     .insert(dbx)
     .await
