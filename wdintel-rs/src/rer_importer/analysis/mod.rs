@@ -440,15 +440,15 @@ where
                 signal_message::Relation::SigintComment.def(),
             )
             .filter(sigint_comment::Column::Comment.eq("").not());
-        if group_by {
-            q = q
-                .group_by(signal_message::Column::Id)
-                .group_by(sigint_post::Column::Name)
-                .group_by(sigint_inbox_item::Column::Id)
-                .group_by(datasource_group::Column::DatasourceId)
-                .group_by(datasource_group::Column::GroupMasterKey);
-        }
         q = q.having(Expr::cust("count(sigint_comment.id) > 0"));
+    }
+    if group_by {
+        q = q
+            .group_by(signal_message::Column::Id)
+            .group_by(sigint_post::Column::Name)
+            .group_by(sigint_inbox_item::Column::Id)
+            .group_by(datasource_group::Column::DatasourceId)
+            .group_by(datasource_group::Column::GroupMasterKey);
     }
     if let Some(ref inner_expr) = m_inner_expr {
         q = q.filter(inner_expr.clone());

@@ -146,9 +146,11 @@ pub async fn get_inbox_messages_report(
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
 
-    // dbg!(&q.build(DbBackend::Postgres).to_string());
-
-    info!("[get_inbox_messages_report] {}: query build", Utc::now());
+    trace!(
+        "[get_inbox_messages_report] query: {}",
+        &q.build(DbBackend::Postgres)
+    );
+    info!("[get_inbox_messages_report] {}", Utc::now());
 
     let messages: Vec<Message> =
         q.into_model::<Message>().all(&env.dbx).await?;
