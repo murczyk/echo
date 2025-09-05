@@ -390,7 +390,7 @@ copy-db:
         just _jvln-copy-db; \
     elif [[ "{{ server }}" == "echo-kherson" ]]; then \
         just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-donetsk" ]]; then \
+    elif [[ "{{ server }}" == "echo-donetsk2" ]]; then \
         just server={{ server }} _copy-db; \
     elif [[ "{{ server }}" == "echo-soledar" ]]; then \
         just server={{ server }} _copy-db; \
