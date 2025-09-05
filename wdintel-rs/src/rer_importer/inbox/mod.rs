@@ -472,7 +472,16 @@ pub async fn get_inbox_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let q = build_inbox_query(login, logins, env, req).await?;
+    let mut q = build_inbox_query(login, logins, env, req).await?;
+    if req.since_id_noninclusive.is_none()
+        && req.before_id_noninclusive.is_none()
+    {
+        // TODO FIXME filter by 7 days
+        q = q.filter(
+            signal_message::Column::Timestamp
+                .gte(Utc::now().naive_utc() - Duration::days(7)),
+        );
+    }
 
     trace!(
         ">get_inbox_messages inbox items query sql: {}",
