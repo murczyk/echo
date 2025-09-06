@@ -1,7 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-CACHE_DIR="/tmp/cache/python"
+CACHE_ROOT="${ECHO_CI_CACHE_DIR:-$HOME/.cache/echo-ci}"
+CACHE_DIR="$CACHE_ROOT/python"
 PROJECT_DIR="wdintel-rs/wdintel-py"
 REQUIREMENTS="$PROJECT_DIR/requirements.txt"
 VENV_DIR="$PROJECT_DIR/.venv"
@@ -14,15 +15,16 @@ if [ ! -d "$VENV_DIR" ]; then
     exit 0
 fi
 
-# Create cache directory
 mkdir -p "$CACHE_DIR"
 
-# Save .venv and requirements.txt
-echo "📦 Copying .venv to cache..."
-cp -r "$VENV_DIR" "$CACHE_DIR/"
+# Reset destination to avoid stale venv contents
+rm -rf "$CACHE_DIR/.venv" 2>/dev/null || true
 
-echo "📄 Copying requirements.txt to cache..."
-cp "$REQUIREMENTS" "$CACHE_DIR/"
+echo "📦 Syncing .venv to cache..."
+rsync -a --delete "$VENV_DIR/" "$CACHE_DIR/.venv/"
+
+echo "📄 Saving requirements.txt to cache..."
+cp -f "$REQUIREMENTS" "$CACHE_DIR/requirements.txt"
 
 echo "✅ Python cache saved successfully"
 echo "📊 Cache size: $(du -sh "$CACHE_DIR" | cut -f1)"

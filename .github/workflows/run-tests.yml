@@ -11,8 +11,12 @@ jobs:
   build-test-and-publish:
     if: github.repository == 'echoua/echo'
     name: Build, test, and publish deb packages (amd64)
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: [self-hosted, Linux, X64]
     env:
+      GIT_TERMINAL_PROMPT: 0
       # Optional echo-ci SSH configuration. If these secrets are not set, the
       # publish step is skipped and we only upload GitHub artifacts.
       ECHO_CI_SSH_HOST: ${{ secrets.ECHO_CI_SSH_HOST }}
@@ -48,32 +52,7 @@ jobs:
           ./scripts/cache/restore-python.sh || true
           ./scripts/cache/restore-spacy.sh || true
 
-      - name: Add elm-land to PATH (glob-safe)
-        shell: "bash --noprofile --norc {0}"
-        run: |
-          set -euo pipefail
-          add_if_found() {
-            local d="$1"
-            if [ -d "$d" ] && [ -x "$d/elm-land" ]; then
-              echo "Adding $d to PATH"
-              echo "$d" >> "$GITHUB_PATH"
-              return 0
-            fi
-            return 1
-          }
-          # Check a few common locations directly
-          add_if_found "$HOME/.local/bin" && exit 0
-          add_if_found /home/ubuntu/.local/bin && exit 0
-          # Avoid expansive globs: probe via find with limits
-          for base in "$HOME/.nvm/versions/node" /home/ubuntu/.nvm/versions/node /home/build/.nvm/versions/node; do
-            if [ -d "$base" ]; then
-              # Find up to 5 candidate bin dirs, then stop at first with elm-land
-              while IFS= read -r d; do
-                add_if_found "$d" && exit 0
-              done < <(find "$base" -maxdepth 2 -type d -name bin -print 2>/dev/null | head -n 5)
-            fi
-          done
-          echo "elm-land not found; continuing without modifying PATH"
+      # Removed elm-land PATH manipulation to avoid PATH bloat
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -99,13 +78,15 @@ jobs:
         shell: 'bash --noprofile --norc {0}'
         run: bash deploy/ci/build_debs.sh
 
-      - name: Save caches (npm/python/spacy)
-        if: always()
-        shell: 'bash --noprofile --norc {0}'
-        run: |
-          ./scripts/cache/save-npm.sh || true
-          ./scripts/cache/save-python.sh || true
-          ./scripts/cache/save-spacy.sh || true
+      # Temporarily disable cache saving to reduce risk of hangs
+      #- name: Save caches (npm/python/spacy)
+      #  if: ${{ !cancelled() }}
+      #  timeout-minutes: 2
+      #  shell: 'bash --noprofile --norc {0}'
+      #  run: |
+      #    ./scripts/cache/save-npm.sh || true
+      #    ./scripts/cache/save-python.sh || true
+      #    ./scripts/cache/save-spacy.sh || true
 
       # Publish directly from this job for speed. Do not gate on secrets;
       # the script falls back to runner-configured SSH (like echo-install-utils/echo-gpu).

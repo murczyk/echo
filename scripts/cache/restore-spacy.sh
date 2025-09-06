@@ -1,7 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-CACHE_DIR="/tmp/cache/spacy"
+CACHE_ROOT="${ECHO_CI_CACHE_DIR:-$HOME/.cache/echo-ci}"
+CACHE_DIR="$CACHE_ROOT/spacy"
 SPACY_CACHE="$HOME/.cache/spacy"
 
 echo "🔍 Checking for Spacy cache..."
@@ -13,7 +14,7 @@ mkdir -p "$CACHE_DIR"
 if [ -d "$CACHE_DIR" ] && [ "$(ls -A $CACHE_DIR 2>/dev/null)" ]; then
     echo "✅ Restoring Spacy models from local cache"
     mkdir -p "$SPACY_CACHE"
-    cp -r "$CACHE_DIR"/* "$SPACY_CACHE/" 2>/dev/null || true
+    rsync -a --delete "$CACHE_DIR/" "$SPACY_CACHE/"
     echo "📦 Cache restored successfully"
     exit 0
 else

@@ -1,7 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-CACHE_DIR="/tmp/cache/spacy"
+CACHE_ROOT="${ECHO_CI_CACHE_DIR:-$HOME/.cache/echo-ci}"
+CACHE_DIR="$CACHE_ROOT/spacy"
 SPACY_CACHE="$HOME/.cache/spacy"
 
 echo "💾 Saving Spacy cache..."
@@ -18,12 +19,11 @@ if [ ! "$(ls -A $SPACY_CACHE 2>/dev/null)" ]; then
     exit 0
 fi
 
-# Create cache directory
 mkdir -p "$CACHE_DIR"
 
-# Save Spacy cache
-echo "📦 Copying Spacy models to cache..."
-cp -r "$SPACY_CACHE"/* "$CACHE_DIR/" 2>/dev/null || true
+# Save Spacy cache using rsync
+echo "📦 Syncing Spacy models to cache..."
+rsync -a --delete "$SPACY_CACHE/" "$CACHE_DIR/"
 
 echo "✅ Spacy cache saved successfully"
 echo "📊 Cache size: $(du -sh "$CACHE_DIR" | cut -f1)"

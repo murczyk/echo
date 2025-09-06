@@ -1,7 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-CACHE_DIR="/tmp/cache/npm"
+CACHE_ROOT="${ECHO_CI_CACHE_DIR:-$HOME/.cache/echo-ci}"
+CACHE_DIR="$CACHE_ROOT/npm"
 PROJECT_DIR="wdintel-web"
 PACKAGE_LOCK="$PROJECT_DIR/package-lock.json"
 NODE_MODULES="$PROJECT_DIR/node_modules"
@@ -15,7 +16,8 @@ mkdir -p "$CACHE_DIR"
 if [ -d "$CACHE_DIR/node_modules" ] && [ -f "$CACHE_DIR/package-lock.json" ]; then
     if cmp -s "$PACKAGE_LOCK" "$CACHE_DIR/package-lock.json"; then
         echo "✅ Restoring npm dependencies from local cache"
-        cp -r "$CACHE_DIR/node_modules" "$PROJECT_DIR/"
+        rm -rf "$PROJECT_DIR/node_modules" 2>/dev/null || true
+        rsync -a --delete "$CACHE_DIR/node_modules/" "$PROJECT_DIR/node_modules/"
         echo "📦 Cache restored successfully"
         exit 0
     else
