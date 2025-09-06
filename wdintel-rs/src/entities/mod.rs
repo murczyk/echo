@@ -47,6 +47,7 @@ pub mod modulation;
 pub mod network_callsign;
 pub mod nominatimres;
 pub mod organism;
+pub mod organism_aor;
 pub mod organism_group;
 pub mod rer_gdoc_callsign;
 pub mod restream;
