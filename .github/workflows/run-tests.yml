@@ -29,6 +29,17 @@ jobs:
           lfs: false
           clean: false
 
+      - name: Diagnose environment size
+        run: |
+          set -euo pipefail
+          echo "Top 30 largest environment variables (length:value)"
+          env | awk '{ print length, $0 }' | sort -nr | head -n 30 || true
+          echo "---"
+          echo "Total env size (bytes):"
+          env | awk '{ s+=length($0)+1 } END { print s }' || true
+          echo "PATH length: ${#PATH}"
+          echo "PATH entries: $(echo "$PATH" | tr ':' '\n' | wc -l | tr -d ' ')"
+
       - name: Fetch required Git LFS dump only
         run: |
           set -euo pipefail
@@ -47,22 +58,32 @@ jobs:
           ./scripts/cache/restore-python.sh || true
           ./scripts/cache/restore-spacy.sh || true
 
-      - name: Add elm-land to PATH
+      - name: Add elm-land to PATH (glob-safe)
         shell: bash
         run: |
           set -euo pipefail
-          for d in \
-            /home/ubuntu/.nvm/versions/node/*/bin \
-            /home/build/.nvm/versions/node/*/bin \
-            "$HOME/.nvm/versions/node"/*/bin \
-            "$HOME/.local/bin" \
-            /home/ubuntu/.local/bin; do
+          add_if_found() {
+            local d="$1"
             if [ -d "$d" ] && [ -x "$d/elm-land" ]; then
               echo "Adding $d to PATH"
               echo "$d" >> "$GITHUB_PATH"
-              break
+              return 0
+            fi
+            return 1
+          }
+          # Check a few common locations directly
+          add_if_found "$HOME/.local/bin" && exit 0
+          add_if_found /home/ubuntu/.local/bin && exit 0
+          # Avoid expansive globs: probe via find with limits
+          for base in "$HOME/.nvm/versions/node" /home/ubuntu/.nvm/versions/node /home/build/.nvm/versions/node; do
+            if [ -d "$base" ]; then
+              # Find up to 5 candidate bin dirs, then stop at first with elm-land
+              while IFS= read -r d; do
+                add_if_found "$d" && exit 0
+              done < <(find "$base" -maxdepth 2 -type d -name bin -print 2>/dev/null | head -n 5)
             fi
           done
+          echo "elm-land not found; continuing without modifying PATH"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
