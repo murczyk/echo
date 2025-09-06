@@ -29,18 +29,8 @@ jobs:
           lfs: false
           clean: false
 
-      - name: Diagnose environment size
-        run: |
-          set -euo pipefail
-          echo "Top 30 largest environment variables (length:value)"
-          env | awk '{ print length, $0 }' | sort -nr | head -n 30 || true
-          echo "---"
-          echo "Total env size (bytes):"
-          env | awk '{ s+=length($0)+1 } END { print s }' || true
-          echo "PATH length: ${#PATH}"
-          echo "PATH entries: $(echo "$PATH" | tr ':' '\n' | wc -l | tr -d ' ')"
-
       - name: Fetch required Git LFS dump only
+        shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
           echo "Setting up Git LFS and fetching only the DB dump..."
@@ -53,13 +43,14 @@ jobs:
           file deploy/wd_test-2025-08-17-07-43.pgrestore || true
 
       - name: Restore caches (npm/python/spacy)
+        shell: "bash --noprofile --norc {0}"
         run: |
           ./scripts/cache/restore-npm.sh || true
           ./scripts/cache/restore-python.sh || true
           ./scripts/cache/restore-spacy.sh || true
 
       - name: Add elm-land to PATH (glob-safe)
-        shell: bash
+        shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
           add_if_found() {
@@ -91,9 +82,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Run combined FE/BE tests (single build)
+        shell: "bash --noprofile --norc {0}"
         env:
           GITHUB_ACTIONS: true
           GITHUB_REF_NAME: ${{ github.ref_name }}
@@ -101,13 +93,16 @@ jobs:
 
       - name: Mark deploy started in redis (echo-ci)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/redis_mark_deploy.sh started
 
       - name: Build deb packages
+        shell: 'bash --noprofile --norc {0}'
         run: bash deploy/ci/build_debs.sh
 
       - name: Save caches (npm/python/spacy)
         if: always()
+        shell: 'bash --noprofile --norc {0}'
         run: |
           ./scripts/cache/save-npm.sh || true
           ./scripts/cache/save-python.sh || true
@@ -117,16 +112,19 @@ jobs:
       # the script falls back to runner-configured SSH (like echo-install-utils/echo-gpu).
       - name: Publish to echo-ci (aptly)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: 'bash --noprofile --norc {0}'
         run: bash deploy/ci/publish_echo_ci.sh
 
       - name: Mark deploy finished in redis (echo-ci)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: 'bash --noprofile --norc {0}'
         run: bash deploy/ci/redis_mark_deploy.sh finished
 
       - name: Discord notification - CI failure
         if: failure()
         env:
           DISCORD_WEBHOOK_URL_CI: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
+        shell: 'bash --noprofile --norc {0}'
         run: |
           set -euo pipefail
           # Send a Discord alert; do not break further if webhook is missing
@@ -136,4 +134,5 @@ jobs:
 
       - name: Remove target on failure
         if: failure()
+        shell: 'bash --noprofile --norc {0}'
         run: rm -rf target
