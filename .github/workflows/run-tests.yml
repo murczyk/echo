@@ -29,24 +29,61 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: false
+          # Ensure LFS files are fetched as real binaries
+          lfs: true
           clean: false
 
-      - name: Setup and verify LFS dump
-        timeout-minutes: 3
+      - name: Ensure git-lfs installed and checkout LFS objects
+        timeout-minutes: 5
         shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
-          echo "Setting up Git LFS..."
+          echo "Checking for git-lfs..."
+          if ! command -v git >/dev/null 2>&1; then
+            echo "git is required" >&2
+            exit 1
+          fi
+          if ! command -v git-lfs >/dev/null 2>&1 && ! command -v git\ lfs >/dev/null 2>&1; then
+            echo "git-lfs not found, attempting to install..."
+            if command -v apt-get >/dev/null 2>&1; then
+              if command -v sudo >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y git-lfs; else apt-get update && apt-get install -y git-lfs; fi
+            elif command -v dnf >/dev/null 2>&1; then
+              if command -v sudo >/dev/null 2>&1; then sudo dnf install -y git-lfs; else dnf install -y git-lfs; fi
+            elif command -v yum >/dev/null 2>&1; then
+              if command -v sudo >/dev/null 2>&1; then sudo yum install -y git-lfs; else yum install -y git-lfs; fi
+            elif command -v apk >/dev/null 2>&1; then
+              if command -v sudo >/dev/null 2>&1; then sudo apk add --no-cache git-lfs; else apk add --no-cache git-lfs; fi
+            elif command -v pacman >/dev/null 2>&1; then
+              if command -v sudo >/dev/null 2>&1; then sudo pacman -Sy --noconfirm git-lfs; else pacman -Sy --noconfirm git-lfs; fi
+            else
+              echo "No supported package manager found to install git-lfs. Please install it on the runner." >&2
+              exit 1
+            fi
+          fi
+
+          echo "Initializing Git LFS and ensuring binaries are present..."
           git lfs install
+          # Fetch all LFS objects needed for current checkout and replace pointers
+          git lfs fetch --all
+          git lfs checkout
 
-          echo "Pulling required LFS file..."
-          git lfs pull --include="deploy/wd_test-2025-08-17-07-43.pgrestore"
-
-          echo "Verifying LFS file exists and is downloaded..."
-          test -f deploy/wd_test-2025-08-17-07-43.pgrestore
-          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
-          file deploy/wd_test-2025-08-17-07-43.pgrestore || true
+      - name: Verify key LFS binaries/materialized files
+        timeout-minutes: 2
+        shell: "bash --noprofile --norc {0}"
+        run: |
+          set -euo pipefail
+          for path in \
+            deploy/wd_test-2025-08-17-07-43.pgrestore \
+            deploy/echo-whatsapp/echo-whatsapp \
+            deploy/signal-cli/signal-cli-native \
+            deploy/signal-cli/signal-cli-rest-api; do
+            if [ -f "$path" ]; then
+              echo "Found: $path"
+              file "$path" || true
+            else
+              echo "WARNING: Missing expected LFS file: $path" >&2
+            fi
+          done
 
       - name: Restore caches (npm/python/spacy)
         shell: "bash --noprofile --norc {0}"
