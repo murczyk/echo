@@ -29,17 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Fetch only the required LFS file via sparse checkout.
-          lfs: true
+          lfs: false
           clean: false
-          sparse-checkout: |
-            deploy/wd_test-2025-08-17-07-43.pgrestore
-          sparse-checkout-cone: false
 
-      - name: Verify required LFS dump presence
+      - name: Setup and verify LFS dump
+        timeout-minutes: 3
         shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
+          echo "Setting up Git LFS..."
+          git lfs install
+
+          echo "Pulling required LFS file..."
+          git lfs pull --include="deploy/wd_test-2025-08-17-07-43.pgrestore"
+
           echo "Verifying LFS file exists and is downloaded..."
           test -f deploy/wd_test-2025-08-17-07-43.pgrestore
           ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
@@ -75,7 +78,7 @@ jobs:
         run: bash deploy/ci/redis_mark_deploy.sh started
 
       - name: Build deb packages
-        shell: 'bash --noprofile --norc {0}'
+        shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/build_debs.sh
 
       # Temporarily disable cache saving to reduce risk of hangs
@@ -92,19 +95,19 @@ jobs:
       # the script falls back to runner-configured SSH (like echo-install-utils/echo-gpu).
       - name: Publish to echo-ci (aptly)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: 'bash --noprofile --norc {0}'
+        shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/publish_echo_ci.sh
 
       - name: Mark deploy finished in redis (echo-ci)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: 'bash --noprofile --norc {0}'
+        shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/redis_mark_deploy.sh finished
 
       - name: Discord notification - CI failure
         if: failure()
         env:
           DISCORD_WEBHOOK_URL_CI: ${{ secrets.DISCORD_WEBHOOK_URL_CI }}
-        shell: 'bash --noprofile --norc {0}'
+        shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
           # Send a Discord alert; do not break further if webhook is missing
@@ -114,5 +117,5 @@ jobs:
 
       - name: Remove target on failure
         if: failure()
-        shell: 'bash --noprofile --norc {0}'
+        shell: "bash --noprofile --norc {0}"
         run: rm -rf target
