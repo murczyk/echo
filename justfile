@@ -24,6 +24,7 @@ since_ts := "1645664400000"
 till_ts := "1961204400000"
 datasource_id := "1"
 message := ""
+unit := ""
 
 default:
     @just --list
@@ -1035,6 +1036,21 @@ import-etalon-to-target:
     ssh -t {{ server }} 'wdintel-rs --mode=live oneoff-export-etalon-data --destination-path /tmp/et_export_{{ dt1 }}.json'
     scp {{ server }}:/tmp/et_export_{{ dt1 }}.json {{ target }}:/tmp/et_import_{{ dt1 }}.json
     ssh -t {{ target }} '{{ echo_bin }} --mode=live oneoff-import-etalon-data --path /tmp/et_import_{{ dt1 }}.json --origin {{ origin }}'
+
+# import from `server` to `target` unit data (units, callsigns, signals)
+import-unit-to-target:
+    #!/bin/bash
+    set -euxo pipefail
+    . deploy/utils.sh
+
+    if [ -z "$origin" ]; then
+        echo "`origin` is not set; see prod db for sigint_origin.name"
+        exit 1
+    fi
+    ssh -t {{ server }} 'wdintel-rs --mode=live export-unit --name {{ unit }} --dest-path /tmp/unit_export_{{ dt1 }}.json'
+    ask_yes_no
+    scp {{ server }}:/tmp/unit_export_{{ dt1 }}.json {{ target }}:/tmp/unit_import_{{ dt1 }}.json
+    ssh -t {{ target }} '{{ echo_bin }} --mode=live import-unit --src-path /tmp/unit_import_{{ dt1 }}.json --origin {{ origin }} --upsert false'
 
 ## Version bump helpers (similar to echo-operator)
 

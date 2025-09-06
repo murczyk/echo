@@ -92,3 +92,25 @@ bw_get_note() {
     bw sync 1>&2
 	bw list items --pretty $NAME | jq -r '[.[] | select(.name=="'$NAME'")][0].notes'
 }
+
+ask_yes_no() {
+  read -p "Do you want to continue? (y/n) " -n 1 -r
+
+  # Add a newline for better formatting
+  echo
+
+  # Loop until the user provides a valid answer
+  while [[ ! $REPLY =~ ^[YyNn]$ ]]; do
+    read -p "Invalid input. Please enter 'y' or 'n'. " -n 1 -r
+    echo
+  done
+
+  # Check the user's response
+  if [[ $REPLY =~ ^[Nn]$ ]]; then
+    echo "Operation aborted. Exiting."
+    exit 1
+  fi
+
+  echo "Continuing..."
+  # Your commands to continue the script go here
+}

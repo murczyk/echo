@@ -209,6 +209,8 @@ pub struct OneoffBatchUskToWgsPs {
 #[derive(clap::Parser, Debug, Clone)]
 pub struct ExportUnitPs {
     #[arg(long, value_enum)]
+    pub name: Option<String>,
+    #[arg(long, value_enum)]
     pub company: Option<String>,
     #[arg(long, value_enum)]
     pub division: Option<String>,
@@ -218,13 +220,20 @@ pub struct ExportUnitPs {
     pub regiment: Option<String>,
     #[arg(long, value_enum)]
     pub battalion: Option<String>,
+    #[arg(long, value_enum)]
+    pub dest_path: Option<String>,
 }
 
 /// Export callsigns from JSON
 #[derive(clap::Parser, Debug, Clone)]
 pub struct ImportUnitPs {
     #[arg(long, value_enum)]
+    pub src_path: Option<String>,
+    #[arg(long, value_enum)]
     pub upsert: bool,
+    /// name column in sigint_origin table
+    #[arg(long, value_enum)]
+    pub origin: String,
 }
 
 /// Export callsigns from JSON
@@ -246,7 +255,7 @@ pub struct OneoffMergeNetworksPs {
 pub struct OneoffImportEtalonDataPs {
     #[arg(long, value_enum)]
     pub path: String,
-    #[arg(long, value_enum)]
+    /// name column in sigint_origin table
     #[arg(long, value_enum)]
     pub origin: String,
     #[arg(long, action)]
