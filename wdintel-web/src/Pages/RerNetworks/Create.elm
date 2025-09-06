@@ -111,7 +111,7 @@ page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
 page user shared route =
     Page.new
         { init = init route shared
-        , update = update shared
+        , update = update shared route
         , subscriptions = subscriptions
         , view = view user shared
         }
@@ -140,13 +140,6 @@ init route shared () =
         -- Parse frequency from query parameters
         freqFromQuery =
             Dict.get "freq" route.query
-
-        -- Determine if sidebar should be open and pre-filled
-        shouldOpenSidebar =
-            freqFromQuery /= Nothing
-
-        freqToUse =
-            Maybe.withDefault "" freqFromQuery
     in
     ( { formErrors = Dict.empty
       , createNetworkState =
@@ -198,9 +191,9 @@ init route shared () =
       , creatingNetwork = False
 
       -- Frequency creation sidebar
-      , freqCreateSidebar = shouldOpenSidebar
+      , freqCreateSidebar = False
       , freqCreateState =
-            { freq = freqToUse
+            { freq = ""
             , kind = NetworksUtils.networkKindToString NetworksUtils.VHF
             , modulationId = Nothing
             , description = Nothing
@@ -345,8 +338,8 @@ type alias Msg =
     RerNetworks.Create.Msg.Msg
 
 
-update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
-update shared msg model =
+update : Shared.Model -> Route () -> Msg -> Model -> ( Model, Effect Msg )
+update shared route msg model =
     case msg of
         Frequencies freqsMsg ->
             let
@@ -631,9 +624,35 @@ update shared msg model =
                     ( model, E.none )
 
         NetworkCreated (Ok network) ->
-            ( { model | creatingNetwork = False, networkCreated = Just network }
+            let
+                -- Check if there's a freq parameter in URL
+                freqFromQuery = Dict.get "freq" route.query
+                
+                -- Update model based on URL parameter
+                (updatedModel, urlEffect) = 
+                    case freqFromQuery of
+                        Just freq ->
+                            let
+                                currentFreqState = model.freqCreateState
+                                updatedFreqState = { currentFreqState | freq = freq }
+                            in
+                            ( { model 
+                                | creatingNetwork = False
+                                , networkCreated = Just network
+                                , freqCreateSidebar = True
+                                , freqCreateState = updatedFreqState
+                              }
+                            , E.pushRoute { path = Route.Path.RerNetworks_Create, hash = Nothing, query = Dict.empty }
+                            )
+                        
+                        Nothing ->
+                            ( { model | creatingNetwork = False, networkCreated = Just network }
+                            , E.none
+                            )
+            in
+            ( updatedModel
             , E.batch
-                ([]
+                ([ urlEffect ]
                     ++ (FrequenciesTable.loadFreqsInit network.id
                             |> List.map (E.map Frequencies)
                        )
