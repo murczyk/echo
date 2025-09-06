@@ -809,56 +809,52 @@ where
         .sigint_zone_id
         .context(h!())
         .context(format!("Zone must be set for user: {login}"))?;
+    let organism_id: i64 = login_obj
+        .organism_id
+        .context(h!())
+        .context(format!("Organism must be set for user: {login}"))?;
 
-    let mut organism_groups_obj = vec![];
-    if let Some(organism_id) = login_obj.organism_id {
-        let organism_groups: OrganismGroups =
-            load_organism_group_ids(txn, organism_id)
-                .await
-                .context(h!())?;
-        organism_groups_obj =
-            crate::sigint::zone::filter_out_ineligible_secret_chats(
-                signal_group::Entity::find()
-                    .filter(signal_group::Column::Deleted.eq(false))
-                    .filter(
-                        signal_group::Column::MasterKey
-                            .is_in(organism_groups.available_keys),
-                    )
-                    .filter(
-                        Expr::col((
-                            signal_group::Entity,
-                            signal_group::Column::MasterKey,
-                        ))
-                        .equals((
-                            sigint_zone_datasource::Entity,
-                            sigint_zone_datasource::Column::GroupMasterKey,
-                        )),
-                    )
-                    .join(
-                        JoinType::InnerJoin,
-                        signal_group::Relation::DatasourceGroup.def(),
-                    )
-                    .join(
-                        JoinType::InnerJoin,
-                        datasource_group::Relation::Datasource.def(),
-                    )
-                    .join(
-                        JoinType::InnerJoin,
-                        datasource::Relation::SigintZoneDatasource.def(),
-                    )
-                    .filter(
-                        sigint_zone_datasource::Column::SigintZoneId
-                            .eq(zone_id),
-                    ),
-                login,
-            )
-            .all(txn)
+    let organism_groups: OrganismGroups =
+        load_organism_group_ids(txn, organism_id)
             .await
-            .context(h!())?
-            .into_iter()
-            .map(|og| og.master_key)
-            .collect();
-    }
+            .context(h!())?;
+    let group_query = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(
+            signal_group::Column::MasterKey
+                .is_in(organism_groups.available_keys),
+        )
+        .filter(
+            Expr::col((signal_group::Entity, signal_group::Column::MasterKey))
+                .equals((
+                    sigint_zone_datasource::Entity,
+                    sigint_zone_datasource::Column::GroupMasterKey,
+                )),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::Datasource.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource::Relation::SigintZoneDatasource.def(),
+        )
+        .filter(sigint_zone_datasource::Column::SigintZoneId.eq(zone_id));
+    let organism_groups_obj =
+        crate::sigint::zone::filter_out_ineligible_secret_chats(
+            group_query,
+            login,
+        )
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|og| og.master_key)
+        .collect();
 
     Ok(organism_groups_obj)
 }

@@ -122,54 +122,17 @@ pub async fn update_organism(
 ) -> Result<Json<Organism>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    let parent_id = match req.parent_id {
-        None => None,
-        Some(parent_id) => {
-            let has_organism = organism::Entity::find_by_id(parent_id)
-                .filter(organism::Column::DeletedPermanently.eq(false))
-                .count(&env.dbx)
-                .await
-                .context(h!())?
-                == 1;
-            if has_organism {
-                Some(parent_id)
-            } else {
-                None
-            }
-        }
-    };
-
-    let organism_obj = organism::Entity::find()
-        .filter(organism::Column::DeletedPermanently.eq(false))
-        .filter(organism::Column::Id.eq(req.id))
-        .one(&env.dbx)
-        .await?
-        .ok_or(AppError::NotFound)?;
-
-    let mut organism: organism::ActiveModel = organism_obj.into();
-
-    if let Some(name) = req.name.clone() {
-        organism.name = Set(name);
-    }
-    organism.parent_id = Set(parent_id);
-    if let Some(roles) = req.roles.clone() {
-        organism.roles = Set(serde_json::to_value(roles).context(h!())?);
-    }
-    if let Some(group_auto_link) = req.group_auto_link {
-        organism.group_auto_link = Set(Some(group_auto_link));
-    }
-    organism.enabled = Set(req.enabled);
-
-    let organism = organism.update(&env.dbx).await?;
+    let organism = bl::update_organism(&env.dbx, &req).await.context(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
         parent_id: organism.parent_id,
         name: organism.name,
         created_at: organism.created_at.and_utc().timestamp_millis(),
-        roles: serde_json::from_value(organism.roles).unwrap_or(vec![]),
+        roles: serde_json::from_value(organism.roles).unwrap_or_default(),
         group_auto_link: req.group_auto_link.unwrap_or(false),
         enabled: req.enabled,
+        aor_ids: req.aor_ids.clone().unwrap_or_default(),
     }))
 }
 
@@ -253,44 +216,17 @@ pub async fn create_organism(
 ) -> Result<Json<Organism>, AppError> {
     crate::users::has_role(&env.dbx, &user.id()?, "Admin").await?;
 
-    let parent_id = match req.parent_id {
-        None => None,
-        Some(parent_id) => {
-            let has_organism = organism::Entity::find_by_id(parent_id)
-                .filter(organism::Column::DeletedPermanently.eq(false))
-                .count(&env.dbx)
-                .await
-                .context(h!())?
-                == 1;
-            if has_organism {
-                Some(parent_id)
-            } else {
-                None
-            }
-        }
-    };
-
-    let organism = organism::ActiveModel {
-        id: NotSet,
-        name: Set(req.name.clone()),
-        roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
-        group_auto_link: Set(Some(req.group_auto_link.unwrap_or(false))),
-        created_at: NotSet,
-        enabled: NotSet,
-        parent_id: Set(parent_id),
-        deleted_permanently: NotSet,
-    }
-    .insert(&env.dbx)
-    .await?;
+    let organism = bl::create_organism(&env.dbx, &req).await.context(h!())?;
 
     Ok(Json(Organism {
         id: organism.id,
         parent_id: organism.parent_id,
         name: organism.name,
         created_at: organism.created_at.and_utc().timestamp_millis(),
-        roles: serde_json::from_value(organism.roles).unwrap_or(vec![]),
+        roles: serde_json::from_value(organism.roles).unwrap_or_default(),
         group_auto_link: req.group_auto_link.unwrap_or(false),
         enabled: organism.enabled,
+        aor_ids: req.aor_ids.clone().unwrap_or_default(),
     }))
 }
 
@@ -320,6 +256,7 @@ pub async fn list_organisms(
     };
 
     let organisms = organism::Entity::find()
+        .find_with_related(organism_aor::Entity)
         .filter(organism::Column::DeletedPermanently.eq(false))
         .order_by(sort_by, order)
         .all(&env.dbx)
@@ -327,14 +264,16 @@ pub async fn list_organisms(
         .context(h!())?;
 
     let mut list = vec![];
-    for o in organisms {
+    for (o, aors) in organisms {
+        let aor_ids = aors.into_iter().map(|a| a.aor_id).collect::<Vec<_>>();
         let org = Organism {
+            aor_ids,
             id: o.id,
             parent_id: o.parent_id,
             name: o.name,
             enabled: o.enabled,
             created_at: o.created_at.and_utc().timestamp_millis(),
-            roles: serde_json::from_value(o.roles).unwrap_or(vec![]),
+            roles: serde_json::from_value(o.roles).unwrap_or_default(),
             group_auto_link: o.group_auto_link.unwrap_or(false),
         };
         list.push(org);

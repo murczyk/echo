@@ -1,7 +1,10 @@
 use crate::entities::*;
 use crate::error::AppError;
-use crate::organism::types::OrganismGroups;
+use crate::organism::types::{
+    CreateOrganismReq, OrganismGroups, UpdateOrganismReq,
+};
 use crate::types::*;
+use actix_web::web::Json;
 use sea_orm::*;
 
 pub async fn load_organism_group_ids<'a, 'async_trait, C>(
@@ -18,6 +21,28 @@ where
     let mut organism_ids: Vec<i64> =
         parents.into_iter().map(|x| x.id).collect();
     organism_ids.push(organism_id);
+    let aor_groups = signal_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            area_of_responsibility::Relation::OrganismAor.def(),
+        )
+        .filter(organism_aor::Column::OrganismId.eq(organism_id))
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .into_tuple::<String>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
     let mut group_ids = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .join(
@@ -31,6 +56,12 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    if !aor_groups.is_empty() {
+        group_ids = group_ids
+            .into_iter()
+            .filter(|g| aor_groups.contains(g))
+            .collect_vec();
+    }
     let organism_groups = organism_group::Entity::find()
         .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
         .all(txn)
@@ -140,6 +171,154 @@ fn find_parent_chain(
         find_parent_chain(organisms, parent_id, fuel - 1).context(h!())?;
     parents_chain.push(parent_id);
     Ok(parents_chain)
+}
+
+pub async fn create_organism(
+    dbx: &DatabaseConnection,
+    req: &Json<CreateOrganismReq>,
+) -> Result<organism::Model, AppError> {
+    let txn = dbx.begin().await.context(h!())?;
+    let parent_id = match req.parent_id {
+        None => None,
+        Some(parent_id) => {
+            let has_organism = organism::Entity::find_by_id(parent_id)
+                .filter(organism::Column::DeletedPermanently.eq(false))
+                .count(&txn)
+                .await
+                .context(h!())?
+                == 1;
+            if has_organism {
+                Some(parent_id)
+            } else {
+                None
+            }
+        }
+    };
+
+    let organism = organism::ActiveModel {
+        id: NotSet,
+        name: Set(req.name.clone()),
+        roles: Set(serde_json::to_value(req.roles.clone()).context(h!())?),
+        group_auto_link: Set(Some(req.group_auto_link.unwrap_or(false))),
+        created_at: NotSet,
+        enabled: NotSet,
+        parent_id: Set(parent_id),
+        deleted_permanently: NotSet,
+    }
+    .insert(&txn)
+    .await?;
+
+    upsert_organism_aors(&txn, req.aor_ids.clone(), organism.id)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+    Ok(organism)
+}
+
+pub async fn update_organism(
+    dbx: &DatabaseConnection,
+    req: &UpdateOrganismReq,
+) -> Result<organism::Model, AppError> {
+    let txn = dbx.begin().await.context(h!())?;
+
+    let parent_id = match req.parent_id {
+        None => None,
+        Some(parent_id) => {
+            let has_organism = organism::Entity::find_by_id(parent_id)
+                .filter(organism::Column::DeletedPermanently.eq(false))
+                .count(&txn)
+                .await
+                .context(h!())?
+                == 1;
+            if has_organism {
+                Some(parent_id)
+            } else {
+                None
+            }
+        }
+    };
+
+    let organism_obj = organism::Entity::find()
+        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(organism::Column::Id.eq(req.id))
+        .one(&txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+
+    let mut organism: organism::ActiveModel = organism_obj.into();
+
+    if let Some(name) = req.name.clone() {
+        organism.name = Set(name);
+    }
+    organism.parent_id = Set(parent_id);
+    if let Some(roles) = req.roles.clone() {
+        organism.roles = Set(serde_json::to_value(roles).context(h!())?);
+    }
+    if let Some(group_auto_link) = req.group_auto_link {
+        organism.group_auto_link = Set(Some(group_auto_link));
+    }
+    organism.enabled = Set(req.enabled);
+
+    let organism = organism.update(&txn).await.context(h!())?;
+
+    upsert_organism_aors(&txn, req.aor_ids.clone(), req.id)
+        .await
+        .context(h!())?;
+
+    txn.commit().await.context(h!())?;
+    Ok(organism)
+}
+
+async fn upsert_organism_aors(
+    txn: &DatabaseTransaction,
+    m_aor_ids: Option<Vec<i64>>,
+    organism_id: i64,
+) -> Result<(), AppError> {
+    match m_aor_ids {
+        None => {
+            organism_aor::Entity::delete_many()
+                .filter(organism_aor::Column::OrganismId.eq(organism_id))
+                .exec(txn)
+                .await
+                .context(h!())?;
+        }
+        Some(aor_ids) => {
+            organism_aor::Entity::delete_many()
+                .filter(organism_aor::Column::OrganismId.eq(organism_id))
+                .filter(organism_aor::Column::AorId.is_not_in(aor_ids.clone()))
+                .exec(txn)
+                .await
+                .context(h!())?;
+            let existing_ids = organism_aor::Entity::find()
+                .filter(organism_aor::Column::OrganismId.eq(organism_id))
+                .filter(organism_aor::Column::AorId.is_in(aor_ids.clone()))
+                .select_only()
+                .column(organism_aor::Column::AorId)
+                .into_tuple::<i64>()
+                .all(txn)
+                .await
+                .context(h!())?
+                .into_iter()
+                .collect::<HashSet<_>>();
+            for id in aor_ids {
+                if existing_ids.contains(&id) {
+                    continue;
+                }
+                organism_aor::ActiveModel {
+                    id: NotSet,
+                    organism_id: Set(organism_id),
+                    aor_id: Set(id),
+                    created_at: NotSet,
+                }
+                .insert(txn)
+                .await
+                .context(h!())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

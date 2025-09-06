@@ -33,6 +33,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     SelfRef,
+    #[sea_orm(has_many = "super::organism_aor::Entity")]
+    OrganismAor,
     #[sea_orm(has_many = "super::organism_group::Entity")]
     OrganismGroup,
 }
@@ -40,6 +42,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::organism_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrganismAor.def()
     }
 }
 

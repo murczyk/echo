@@ -12,6 +12,7 @@ pub struct Organism {
     pub group_auto_link: bool,
     pub roles: Vec<String>,
     pub enabled: bool,
+    pub aor_ids: Vec<i64>,
 }
 
 #[derive(
@@ -39,6 +40,7 @@ pub struct CreateOrganismReq {
     pub parent_id: Option<i64>,
     pub roles: Vec<String>,
     pub group_auto_link: Option<bool>,
+    pub aor_ids: Option<Vec<i64>>,
 }
 
 #[derive(
@@ -51,6 +53,7 @@ pub struct UpdateOrganismReq {
     pub roles: Option<Vec<String>>,
     pub group_auto_link: Option<bool>,
     pub enabled: bool,
+    pub aor_ids: Option<Vec<i64>>,
 }
 
 #[derive(
