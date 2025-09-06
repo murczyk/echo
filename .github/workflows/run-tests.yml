@@ -23,23 +23,22 @@ jobs:
       ECHO_CI_DIST: ${{ secrets.ECHO_CI_DIST || 'jammy' }}
       ECHO_CI_COMPONENT: ${{ secrets.ECHO_CI_COMPONENT || 'main' }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
-          # Avoid pulling all Git LFS files. We'll fetch only what's needed.
-          lfs: false
+          # Fetch only the required LFS file via sparse checkout.
+          lfs: true
           clean: false
+          sparse-checkout: |
+            deploy/wd_test-2025-08-17-07-43.pgrestore
+          sparse-checkout-cone: false
 
-      - name: Fetch required Git LFS dump only
+      - name: Verify required LFS dump presence
         shell: "bash --noprofile --norc {0}"
         run: |
           set -euo pipefail
-          echo "Setting up Git LFS and fetching only the DB dump..."
-          git lfs install
-          # Fetch only the required dump to avoid timeouts downloading all LFS assets
-          git lfs fetch --include="deploy/wd_test-2025-08-17-07-43.pgrestore" --exclude=""
-          git lfs checkout -- deploy/wd_test-2025-08-17-07-43.pgrestore
-          echo "Verifying fetched LFS file: deploy/wd_test-2025-08-17-07-43.pgrestore"
-          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore || true
+          echo "Verifying LFS file exists and is downloaded..."
+          test -f deploy/wd_test-2025-08-17-07-43.pgrestore
+          ls -la deploy/wd_test-2025-08-17-07-43.pgrestore
           file deploy/wd_test-2025-08-17-07-43.pgrestore || true
 
       - name: Restore caches (npm/python/spacy)
