@@ -25,6 +25,7 @@ import Le.Utils exposing (..)
 import List.Extra as ListX
 import Maybe
 import Page exposing (Page)
+import Le.RemoteData as RD
 import Route exposing (Route)
 import Select
 import Set
@@ -35,7 +36,6 @@ import Time
 import TimeZone
 import Validate
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -122,11 +122,17 @@ type alias Model =
         , items : List (Select.MenuItem Int)
         , selectedItem : Maybe Int
         }
+    , inpAors :
+        { selectState : Select.State
+        , items : List (Select.MenuItem Int)
+        , selectedItems : List Int
+        }
     , fieldsErrors : List FieldError
     , groups : List B.SignalGroupFull
     , organismGroups : List B.OrganismGroup
     , editOrganism : Maybe ( Int, OrganismEdit )
     , groupsValidation : Maybe (List String)
+    , aorList : RD.RemoteData ApiError (List B.AreaOfResponsibility)
     }
 
 
@@ -148,6 +154,11 @@ type alias OrganismEdit =
         { selectState : Select.State
         , items : List (Select.MenuItem Int)
         , selectedItem : Maybe Int
+        }
+    , inpAors :
+        { selectState : Select.State
+        , items : List (Select.MenuItem Int)
+        , selectedItems : List Int
         }
     , fieldsErrors : List FieldError
     , groupsValidation : Maybe (List String)
@@ -189,12 +200,18 @@ init _ =
             , items = []
             , selectedItem = Nothing
             }
+      , inpAors =
+            { selectState = Select.initState (Select.selectIdentifier "sel-aor-add")
+            , items = []
+            , selectedItems = []
+            }
       , fieldsErrors = []
       , timeZone = Nothing
       , groups = []
       , organismGroups = []
       , editOrganism = Nothing
       , groupsValidation = Nothing
+      , aorList = RD.NotAsked
       , tableState = Table.initialSort "Назва"
       }
     , E.sendCmd <|
@@ -202,6 +219,7 @@ init _ =
             [ Api.list_organisms GotOrganisms { sortBy = Nothing }
             , Api.organism_all_groups GotAllGroups
             , Api.organism_group_list GotOrganismGroups
+            , Api.aor_list GotAorList { sortBy = Nothing }
             , Task.attempt GotTimeZone Le.Time.getZone
             ]
     )
@@ -216,6 +234,8 @@ type Msg
     | EditGroupSelMsg (Select.Msg String)
     | AddParentSelMsg (Select.Msg Int)
     | EditParentSelMsg (Select.Msg Int)
+    | AddAorSelMsg (Select.Msg Int)
+    | EditAorSelMsg (Select.Msg Int)
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
     | ToggleAutoAddGroups
@@ -228,6 +248,7 @@ type Msg
     | SetEditName String
     | GotAllGroups (Result ApiError (List B.SignalGroupFull))
     | GotOrganismGroups (Result ApiError (List B.OrganismGroup))
+    | GotAorList (Result ApiError (List B.AreaOfResponsibility))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
     | EditOrganismSave
@@ -535,6 +556,7 @@ update msg model =
                             , parentId = model.inpParentOrganism.selectedItem
                             , groupAutoLink = Just model.autoAddGroups
                             , roles = model.inpRole.selectedItems
+                            , aorIds = emptyToNothing model.inpAors.selectedItems
                             }
                     )
 
@@ -555,11 +577,18 @@ update msg model =
                 inpParentOrganism2 =
                     { inpParentOrganism | items = [] }
 
+                inpAors =
+                    model.inpAors
+
+                inpAors2 =
+                    { inpAors | selectedItems = [] }
+
                 m2 =
                     { model
                         | inpName = ""
                         , inpRole = inpRole2
                         , inpParentOrganism = inpParentOrganism2
+                        , inpAors = inpAors2
                         , autoAddGroups = False
                         , organisms = organism :: model.organisms
                         , fieldsErrors = []
@@ -716,6 +745,13 @@ update msg model =
                                         , items = model.organisms |> List.filter (\x -> x.id /= o.id) |> List.map (\x -> Select.basicMenuItem { item = x.id, label = x.name })
                                         , selectedItem = o.parentId
                                         }
+                                  , inpAors =
+                                        { selectState = Select.initState (Select.selectIdentifier "sel-aor-edit")
+                                        , items = case RD.toMaybe model.aorList of
+                                                    Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                                    Nothing -> []
+                                        , selectedItems = o.aorIds
+                                        }
                                   , fieldsErrors = []
                                   , groupsValidation = Nothing
                                   }
@@ -770,6 +806,47 @@ update msg model =
 
         GotOrganismGroups (Ok res) ->
             ( { model | organismGroups = res }, E.none )
+
+        GotAorList (Ok aors) ->
+            let
+                aorMenuItems = aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                inpAors = model.inpAors
+                inpAors2 = { inpAors | items = aorMenuItems }
+            in
+            ( { model | aorList = RD.Success aors, inpAors = inpAors2 }, E.none )
+
+        GotAorList (Err e) ->
+            ( { model | aorList = RD.Failure e }, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" e )
+
+        AddAorSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) = Select.update selMsg model.inpAors.selectState
+
+                inpAors = model.inpAors
+                inpAors2 = { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+            in
+            ( { model | inpAors = inpAors2 }
+            , E.batch [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
+            )
+
+        EditAorSelMsg selMsg ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        ( mAction, iState, iCmd ) = Select.update selMsg editOrganism.inpAors.selectState
+
+                        inpAors = editOrganism.inpAors
+                        inpAors2 = { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+
+                        editOrganism2 = { editOrganism | inpAors = inpAors2 }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
+                    , E.batch [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd ]
+                    )
+
+                Nothing ->
+                    ( model, E.none )
 
         EditOrganismSave ->
             case model.editOrganism of
@@ -841,6 +918,7 @@ update msg model =
                                         , groupAutoLink = Just editOrganism.autoAddGroups
                                         , id = id
                                         , enabled = editOrganism.enabled
+                                        , aorIds = Just editOrganism.inpAors.selectedItems
                                         }
                                         :: (if List.length added > 0 then
                                                 List.map (\x -> Api.add_group_to_organism (AddGroupToOrganismDone id x True) { organismId = id, groupName = x }) added
@@ -951,8 +1029,8 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> Table.Config B.Organism Msg
-organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId =
+organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.Organism Msg
+organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1076,7 +1154,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                 |> String.join ", "
                         )
                 }
-                |> Table.withColumnWidth "25%"
+                |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
                 { name = "Ролі"
                 , viewData =
@@ -1098,7 +1176,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         }
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
                 }
-                |> Table.withColumnWidth "14%"
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
                 { name = "Автододавання груп"
                 , viewData =
@@ -1157,6 +1235,37 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         )
                 }
                 |> Table.withColumnWidth "6%"
+            , Table.veryCustomColumn
+                { name = "Смуги"
+                , viewData =
+                    \o ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (o.aorIds
+                                    |> List.filterMap (\aorId ->
+                                        case RD.toMaybe aorList of
+                                            Just aors -> ListX.find (\aor -> aor.id == aorId) aors
+                                            Nothing -> Nothing
+                                    )
+                                    |> List.map (\aor ->
+                                        span [ class "badge badge--blue-light", title aor.name ]
+                                            [ text aor.name ]
+                                    )
+                                )
+                            ]
+                        }
+                , sorter = Table.increasingOrDecreasingBy (\o ->
+                    case RD.toMaybe aorList of
+                        Just aors ->
+                            o.aorIds
+                                |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
+                                |> List.map .name
+                                |> String.join ", "
+                        Nothing -> ""
+                    )
+                }
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
                 { name = "Створено"
                 , viewData =
@@ -1287,6 +1396,29 @@ editOrganismSidebarContent isDark model organismId editState =
                                     editState.inpRole.selectState
                                     editState.inpRole.items
                                     "роль"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditAorSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (editState.inpAors.selectedItems |> List.map (\id ->
+                                        case RD.toMaybe model.aorList of
+                                            Just aors ->
+                                                ListX.find (\aor -> aor.id == id) aors
+                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                    |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+                                            Nothing -> Select.basicMenuItem { item = id, label = "Loading..." }
+                                    ))
+                                    editState.inpAors.selectState
+                                    (case RD.toMaybe model.aorList of
+                                        Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                        Nothing -> []
+                                    )
+                                    "смуги"
                                     (Le.Block.Select.defaultOptions isDark)
                         ]
                     ]
@@ -1460,6 +1592,32 @@ mainBlock isDark model =
                             ]
                         ]
                     ]
+                , div [ class "flex-1" ]
+                    [ div
+                        [ class "flex justify-between items-center text-sm"
+                        ]
+                        [ div [ class "flex-grow w-full" ]
+                            [ Html.map AddAorSelMsg <|
+                                Styled.toUnstyled <|
+                                    Le.Block.Select.renderSelect
+                                        (m.inpAors.selectedItems |> List.map (\id ->
+                                            case RD.toMaybe m.aorList of
+                                                Just aors ->
+                                                    ListX.find (\aor -> aor.id == id) aors
+                                                        |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                        |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+                                                Nothing -> Select.basicMenuItem { item = id, label = "Loading..." }
+                                        ))
+                                        m.inpAors.selectState
+                                        (case RD.toMaybe m.aorList of
+                                            Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                            Nothing -> []
+                                        )
+                                        "смуги"
+                                        (Le.Block.Select.defaultOptions isDark)
+                            ]
+                        ]
+                    ]
                 , div [ class "flex items-center justify-center flex-1" ]
                     [ Checkbox.new { isChecked = m.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
                         |> Checkbox.withContent [ text "Автододавання груп" ]
@@ -1481,7 +1639,7 @@ mainBlock isDark model =
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism))
+                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList)
                 model.tableState
                 model.organisms
             ]
