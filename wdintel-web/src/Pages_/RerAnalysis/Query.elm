@@ -103,6 +103,10 @@ analysisStatsParams dtFromPosix dtToPosix model =
     , orWithCoords = Just model.orWithCoords
     , search = Just model.searchInput
     , selectedTags = emptyToNothing model.tagsSelected
+    , selectedNetworks = 
+        model.networksSelected
+            |> List.filterMap String.toInt
+            |> emptyToNothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Just model.unitsExactMatchOnly
     }
@@ -127,6 +131,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , orWithCoords = Nothing
     , search = Nothing
     , selectedTags = Nothing
+    , selectedNetworks = Nothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Nothing
     }

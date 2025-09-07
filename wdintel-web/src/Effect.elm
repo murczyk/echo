@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , CallsignsByNetwork, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkCallsignsList, getNetworkFreqsActivity, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
+    , CallsignsByNetwork, addFreqToNetwork, addMultipleCallsignsToNetwork, createNetwork, createNetworkCallsign, deleteMessage, deleteNetwork, deleteNetworkCallsign, deleteSavedAnalysisFilter, downloadFile, downloadGeojson, downloadKmz, editFreqUnitName, focusHtmlElement, getAnalysisSavedFilters, getAors, getBookmarks, getCallsigns, getCallsignsGraph, getCallsignsInfo, getCallsignsInfoShared, getCorrelatedFreqs, getCurrentTime, getDocxReportForDownload, getElementById, getFreqActivityDaily, getFreqs, getFreqsSummaryTable, getFreqsSummaryTableXlsx, getGroups, getGroupsActivityStats, getImportantMessagesIds, getInboxGroupsActivityStats, getInboxMessages, getLocations, getMessagesByIds, getMessagesComments, getMessagesMapPoints, getModulations, getNetworkCallsigns, getNetworkCallsignsList, getNetworkFreqsActivity, getNetworkPoints, getNetworkReportBatch, getNetworksCallsigns, getNetworksGroupsActivity, getNetworksInfoByFreqs, getNetworksInfoByIds, getNetworksList, getNetworksReport, getNewCallsigns, getPosts, getSenders, getNetworks, getSignalsForNetwork, getSingleNetwork, getSingleNetworkFreqs, getSingleNetworkGroupsActivity, getStatsCount, getTags, getTags2, getTimeZone, getUnitStatsForNetworks, getUnits, getUnits2, getUnitsById, getUserInfo, getViewportById, initNetjsonGraph, keepAlive, loadPostsFromShared, logout, mergeNetworks, networkAddDescription, networkDeleteDescription, networkUpdateDescription, postCreate, postDelete, postUpdate, removeFreqFromNetwork, renameSavedAnalysisFilter, saveAnalysisFilter, scrollToElement, sendToastMsg, setThemeMode, showError, showErrorWithDetails, toggleDarkMode, triggerResize, updateNetwork, updateNetworkCallsign, updateNetworkFreq, updateNetworkPosts, updateNetworkUnits
     )
 
 {-|
@@ -75,6 +75,7 @@ type Effect msg
     | GetCallsigns (Result ApiError B.CallsignStatsRsp -> msg) B.AnalysisStatsReq
     | GetFreqs (Result ApiError B.FreqStatsRsp -> msg) B.AnalysisStatsReq
     | GetSenders (Result ApiError B.SenderStatsRsp -> msg) B.AnalysisStatsReq
+    | GetNetworks (Result ApiError B.NetworkStatsRsp -> msg) B.AnalysisStatsReq
     | GetGroups (Result ApiError B.GroupStatsRsp -> msg) B.AnalysisStatsReq
     | GetAors (Result ApiError B.AreaOfResponsibilityStatsRsp -> msg) B.AnalysisStatsReq
     | FocusHtmlElement { elemId : String }
@@ -350,6 +351,10 @@ getFreqs toMsg payload =
 
 getSenders toMsg payload =
     GetSenders toMsg payload
+
+
+getNetworks toMsg payload =
+    GetNetworks toMsg payload
 
 
 getGroups toMsg payload =
@@ -691,6 +696,9 @@ map fn effect =
         GetSenders toMsg payload ->
             GetSenders (fn << toMsg) payload
 
+        GetNetworks toMsg payload ->
+            GetNetworks (fn << toMsg) payload
+
         GetGroups toMsg payload ->
             GetGroups (fn << toMsg) payload
 
@@ -1015,6 +1023,13 @@ toCmd options effect =
                 { url = "/api/rer/analysis/stats/senders"
                 , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
                 , expect = leExpectJson toMsg B.senderStatsRspDecoder
+                }
+
+        GetNetworks toMsg payload ->
+            Http.post
+                { url = "/api/rer/analysis/stats/networks"
+                , body = Http.jsonBody (B.analysisStatsReqEncoder payload)
+                , expect = leExpectJson toMsg B.networkStatsRspDecoder
                 }
 
         GetGroups toMsg payload ->

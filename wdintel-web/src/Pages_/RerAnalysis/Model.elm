@@ -57,6 +57,7 @@ type alias Model =
     , unfoldUnitsFilter : Bool
     , unfoldLocationsFilter : Bool
     , unfoldTagsFilter : Bool
+    , unfoldNetworksFilter : Bool
     , unfoldSumTable : Bool
     , unfoldCallsignGraph : Bool
     , unfoldGraphs : Bool
@@ -99,6 +100,8 @@ type alias Model =
     , selPostMenu : List (Select.MenuItem String)
     , selUnitState : Select.State
     , selUnitMenu : List (Select.MenuItem String)
+    , selNetworkState : Select.State
+    , selNetworkMenu : List (Select.MenuItem String)
     , filterUnits : String
     , now : Maybe Time.Posix
     , tags : List ( Int, B.Tag )
@@ -131,6 +134,9 @@ type alias Model =
     , units : RemoteData ApiError (List B.AnalysisStatsUnit)
     , senders : RemoteData ApiError (List B.AnalysisStatsSender)
     , groups : RemoteData ApiError (List B.AnalysisStatsGroup)
+    , networksStats : RemoteData ApiError (List B.AnalysisStatsNetwork)
+    , networkNames : List B.NetworkEntry
+    , networksSelected : List String
     , focusedFilterItemsBeforeChange : Maybe (List String)
     , mapPoints : RemoteData ApiError (List B.FreqDetailedPoint)
     , mapNetworkUnits : List B.NetworkUnit
@@ -179,6 +185,7 @@ type FilterName
     | FreqsFilter
     | GroupsFilter
     | SendersFilter
+    | NetworksFilter
 
 
 type GroupsActivityPeriod
