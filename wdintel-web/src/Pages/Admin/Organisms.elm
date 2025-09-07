@@ -19,6 +19,7 @@ import Layouts
 import Le.Block.Select
 import Le.Components exposing (..)
 import Le.ErrorHandling
+import Le.RemoteData as RD
 import Le.Time
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
@@ -35,7 +36,6 @@ import Time
 import TimeZone
 import Validate
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -64,6 +64,18 @@ groupName group =
 
     else
         group.name
+
+
+filterOrganismsByName : String -> List B.Organism -> List B.Organism
+filterOrganismsByName filter organisms =
+    if String.isEmpty filter then
+        organisms
+    else
+        let
+            filterLower = String.toLower filter
+        in
+        organisms
+            |> List.filter (\organism -> String.contains filterLower (String.toLower organism.name))
 
 
 getOrganismGroups : Int -> List B.OrganismGroup -> List String
@@ -100,13 +112,18 @@ getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
                     |> List.filter (\group -> List.member group.masterKey parentGroups)
 
 
+type SidebarType
+    = CreateSidebar
+    | EditSidebar
+
+
 type alias Model =
     { formErrors : Dict String String
     , timeZone : Maybe Time.Zone
     , organisms : List B.Organism
     , tableState : Table.State
+    , nameFilter : String
     , inpName : String
-    , autoAddGroups : Bool
     , inpRole :
         { selectState : Select.State
         , items : List (Select.MenuItem String)
@@ -122,11 +139,18 @@ type alias Model =
         , items : List (Select.MenuItem Int)
         , selectedItem : Maybe Int
         }
+    , inpAors :
+        { selectState : Select.State
+        , items : List (Select.MenuItem Int)
+        , selectedItems : List Int
+        }
     , fieldsErrors : List FieldError
     , groups : List B.SignalGroupFull
     , organismGroups : List B.OrganismGroup
     , editOrganism : Maybe ( Int, OrganismEdit )
     , groupsValidation : Maybe (List String)
+    , aorList : RD.RemoteData ApiError (List B.AreaOfResponsibility)
+    , sidebarType : Maybe SidebarType
     }
 
 
@@ -148,6 +172,11 @@ type alias OrganismEdit =
         { selectState : Select.State
         , items : List (Select.MenuItem Int)
         , selectedItem : Maybe Int
+        }
+    , inpAors :
+        { selectState : Select.State
+        , items : List (Select.MenuItem Int)
+        , selectedItems : List Int
         }
     , fieldsErrors : List FieldError
     , groupsValidation : Maybe (List String)
@@ -172,8 +201,8 @@ init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
       , organisms = []
+      , nameFilter = ""
       , inpName = ""
-      , autoAddGroups = False
       , inpGroups =
             { selectState = Select.initState (Select.selectIdentifier "sel-group-add")
             , items = []
@@ -189,19 +218,27 @@ init _ =
             , items = []
             , selectedItem = Nothing
             }
+      , inpAors =
+            { selectState = Select.initState (Select.selectIdentifier "sel-aor-add")
+            , items = []
+            , selectedItems = []
+            }
       , fieldsErrors = []
       , timeZone = Nothing
       , groups = []
       , organismGroups = []
       , editOrganism = Nothing
       , groupsValidation = Nothing
+      , aorList = RD.NotAsked
       , tableState = Table.initialSort "Назва"
+      , sidebarType = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
             [ Api.list_organisms GotOrganisms { sortBy = Nothing }
             , Api.organism_all_groups GotAllGroups
             , Api.organism_group_list GotOrganismGroups
+            , Api.aor_list GotAorList { sortBy = Nothing }
             , Task.attempt GotTimeZone Le.Time.getZone
             ]
     )
@@ -209,6 +246,7 @@ init _ =
 
 type Msg
     = SetTableState Table.State
+    | SetNameFilter String
     | GotOrganisms (Result ApiError (List B.Organism))
     | AddRoleSelMsg (Select.Msg String)
     | EditRoleSelMsg (Select.Msg String)
@@ -216,18 +254,21 @@ type Msg
     | EditGroupSelMsg (Select.Msg String)
     | AddParentSelMsg (Select.Msg Int)
     | EditParentSelMsg (Select.Msg Int)
+    | AddAorSelMsg (Select.Msg Int)
+    | EditAorSelMsg (Select.Msg Int)
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
-    | ToggleAutoAddGroups
-    | ToggleEditAutoAddGroups
     | ToggleEditEnabled
     | EditOrganism Int
     | CloseEditSidebar
+    | OpenCreateSidebar
+    | CloseCreateSidebar
     | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetName String
     | SetEditName String
     | GotAllGroups (Result ApiError (List B.SignalGroupFull))
     | GotOrganismGroups (Result ApiError (List B.OrganismGroup))
+    | GotAorList (Result ApiError (List B.AreaOfResponsibility))
     | AddGroupToOrganismDone Int String Bool (Result ApiError ())
     | RemoveGroupFromOrganismDone Int String (Result ApiError ())
     | EditOrganismSave
@@ -240,6 +281,9 @@ update msg model =
     case msg of
         SetTableState newTableState ->
             ( { model | tableState = newTableState }, E.none )
+
+        SetNameFilter filter ->
+            ( { model | nameFilter = filter }, E.none )
 
         GotOrganisms (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження організмів" e )
@@ -533,8 +577,9 @@ update msg model =
                         Api.create_organism AddOrganismDone
                             { name = model.inpName
                             , parentId = model.inpParentOrganism.selectedItem
-                            , groupAutoLink = Just model.autoAddGroups
+                            , groupAutoLink = Just False
                             , roles = model.inpRole.selectedItems
+                            , aorIds = emptyToNothing model.inpAors.selectedItems
                             }
                     )
 
@@ -555,15 +600,29 @@ update msg model =
                 inpParentOrganism2 =
                     { inpParentOrganism | items = [] }
 
+                inpAors =
+                    model.inpAors
+
+                inpAors2 =
+                    { inpAors | selectedItems = [] }
+
+                inpGroups =
+                    model.inpGroups
+
+                inpGroups2 =
+                    { inpGroups | selectedItems = [] }
+
                 m2 =
                     { model
                         | inpName = ""
                         , inpRole = inpRole2
                         , inpParentOrganism = inpParentOrganism2
-                        , autoAddGroups = False
+                        , inpAors = inpAors2
+                        , inpGroups = inpGroups2
                         , organisms = organism :: model.organisms
                         , fieldsErrors = []
                         , groupsValidation = Nothing
+                        , sidebarType = Nothing
                     }
             in
             let
@@ -663,21 +722,6 @@ update msg model =
         RemoveGroupFromOrganismDone _ _ (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
 
-        ToggleAutoAddGroups ->
-            ( { model | autoAddGroups = not model.autoAddGroups }, E.none )
-
-        ToggleEditAutoAddGroups ->
-            case model.editOrganism of
-                Just ( id, editOrganism ) ->
-                    let
-                        editOrganism2 =
-                            { editOrganism | autoAddGroups = not editOrganism.autoAddGroups }
-                    in
-                    ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
-
-                Nothing ->
-                    ( model, E.none )
-
         ToggleEditEnabled ->
             case model.editOrganism of
                 Just ( id, editOrganism ) ->
@@ -716,13 +760,24 @@ update msg model =
                                         , items = model.organisms |> List.filter (\x -> x.id /= o.id) |> List.map (\x -> Select.basicMenuItem { item = x.id, label = x.name })
                                         , selectedItem = o.parentId
                                         }
+                                  , inpAors =
+                                        { selectState = Select.initState (Select.selectIdentifier "sel-aor-edit")
+                                        , items =
+                                            case RD.toMaybe model.aorList of
+                                                Just aors ->
+                                                    aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                                Nothing ->
+                                                    []
+                                        , selectedItems = o.aorIds
+                                        }
                                   , fieldsErrors = []
                                   , groupsValidation = Nothing
                                   }
                                 )
                             )
             in
-            ( { model | editOrganism = organism }, E.none )
+            ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
 
         GotTimeZone (Ok ( _, zone )) ->
             ( { model | timeZone = Just zone }
@@ -770,6 +825,60 @@ update msg model =
 
         GotOrganismGroups (Ok res) ->
             ( { model | organismGroups = res }, E.none )
+
+        GotAorList (Ok aors) ->
+            let
+                aorMenuItems =
+                    aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                inpAors =
+                    model.inpAors
+
+                inpAors2 =
+                    { inpAors | items = aorMenuItems }
+            in
+            ( { model | aorList = RD.Success aors, inpAors = inpAors2 }, E.none )
+
+        GotAorList (Err e) ->
+            ( { model | aorList = RD.Failure e }, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" e )
+
+        AddAorSelMsg selMsg ->
+            let
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.inpAors.selectState
+
+                inpAors =
+                    model.inpAors
+
+                inpAors2 =
+                    { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+            in
+            ( { model | inpAors = inpAors2 }
+            , E.batch [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
+            )
+
+        EditAorSelMsg selMsg ->
+            case model.editOrganism of
+                Just ( id, editOrganism ) ->
+                    let
+                        ( mAction, iState, iCmd ) =
+                            Select.update selMsg editOrganism.inpAors.selectState
+
+                        inpAors =
+                            editOrganism.inpAors
+
+                        inpAors2 =
+                            { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+
+                        editOrganism2 =
+                            { editOrganism | inpAors = inpAors2 }
+                    in
+                    ( { model | editOrganism = Just ( id, editOrganism2 ) }
+                    , E.batch [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd ]
+                    )
+
+                Nothing ->
+                    ( model, E.none )
 
         EditOrganismSave ->
             case model.editOrganism of
@@ -841,6 +950,7 @@ update msg model =
                                         , groupAutoLink = Just editOrganism.autoAddGroups
                                         , id = id
                                         , enabled = editOrganism.enabled
+                                        , aorIds = Just editOrganism.inpAors.selectedItems
                                         }
                                         :: (if List.length added > 0 then
                                                 List.map (\x -> Api.add_group_to_organism (AddGroupToOrganismDone id x True) { organismId = id, groupName = x }) added
@@ -868,13 +978,19 @@ update msg model =
                     ( model, E.none )
 
         EditOrganismCancel ->
-            ( { model | editOrganism = Nothing }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing }, E.none )
 
         CloseEditSidebar ->
-            ( { model | editOrganism = Nothing }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing }, E.none )
+
+        OpenCreateSidebar ->
+            ( { model | sidebarType = Just CreateSidebar }, E.none )
+
+        CloseCreateSidebar ->
+            ( { model | sidebarType = Nothing }, E.none )
 
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled }) }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
 
         EditOrganismDone (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
@@ -951,8 +1067,8 @@ subscriptions model =
 -- TABLE CONFIGURATION
 
 
-organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> Table.Config B.Organism Msg
-organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId =
+organismsTableConfig : List B.SignalGroupFull -> List B.OrganismGroup -> List B.Organism -> Maybe Time.Zone -> Maybe Int -> RD.RemoteData ApiError (List B.AreaOfResponsibility) -> Table.Config B.Organism Msg
+organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganismId aorList =
     let
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1076,7 +1192,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                 |> String.join ", "
                         )
                 }
-                |> Table.withColumnWidth "25%"
+                |> Table.withColumnWidth "19%"
             , Table.veryCustomColumn
                 { name = "Ролі"
                 , viewData =
@@ -1098,7 +1214,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         }
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.join ", " o.roles)
                 }
-                |> Table.withColumnWidth "14%"
+                |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
                 { name = "Автододавання груп"
                 , viewData =
@@ -1127,7 +1243,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                 "0"
                         )
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Активна"
                 , viewData =
@@ -1157,6 +1273,46 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         )
                 }
                 |> Table.withColumnWidth "6%"
+            , Table.veryCustomColumn
+                { name = "Смуги"
+                , viewData =
+                    \o ->
+                        { attributes = []
+                        , children =
+                            [ div [ class "flex flex-wrap gap-1" ]
+                                (o.aorIds
+                                    |> List.filterMap
+                                        (\aorId ->
+                                            case RD.toMaybe aorList of
+                                                Just aors ->
+                                                    ListX.find (\aor -> aor.id == aorId) aors
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                                    |> List.map
+                                        (\aor ->
+                                            span [ class "badge badge--blue-light", title aor.name ]
+                                                [ text aor.name ]
+                                        )
+                                )
+                            ]
+                        }
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            case RD.toMaybe aorList of
+                                Just aors ->
+                                    o.aorIds
+                                        |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
+                                        |> List.map .name
+                                        |> String.join ", "
+
+                                Nothing ->
+                                    ""
+                        )
+                }
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Створено"
                 , viewData =
@@ -1188,6 +1344,143 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
             ]
         , customizations = customizations
         }
+
+
+addOrganismSidebarContent : Bool -> Model -> List (Html Msg)
+addOrganismSidebarContent isDark model =
+    let
+        -- Отримуємо ID вибраного батьківського організму
+        selectedParentId =
+            model.inpParentOrganism.selectedItem
+
+        -- Визначаємо доступні групи з урахуванням батька
+        availableGroups =
+            getAvailableGroupsForOrganism selectedParentId model.organismGroups model.groups
+
+        groupsSelectedItems =
+            model.inpGroups.selectedItems
+                |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) availableGroups)
+                |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
+    in
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити організм" ]
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Назва організму"
+                        , value model.inpName
+                        , onInput SetName
+                        ]
+                        []
+                    , viewFormErrors Name model.fieldsErrors
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Батьківський організм" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddParentSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    (case model.inpParentOrganism.selectedItem of
+                                        Just id ->
+                                            ListX.find (\o -> o.id == id) model.organisms
+                                                |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
+
+                                        Nothing ->
+                                            Nothing
+                                    )
+                                    model.inpParentOrganism.selectState
+                                    model.inpParentOrganism.items
+                                    "батьківський організм"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddGroupSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    groupsSelectedItems
+                                    model.inpGroups.selectState
+                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                    "групи"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    , case model.groupsValidation of
+                        Just groups ->
+                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                    , strong [] [ text (String.join ", " groups) ]
+                                    ]
+                                ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddRoleSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (model.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                    model.inpRole.selectState
+                                    model.inpRole.items
+                                    "роль"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги відповідальності" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddAorSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (model.inpAors.selectedItems
+                                        |> List.map
+                                            (\id ->
+                                                case RD.toMaybe model.aorList of
+                                                    Just aors ->
+                                                        ListX.find (\aor -> aor.id == id) aors
+                                                            |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                            |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+
+                                                    Nothing ->
+                                                        Select.basicMenuItem { item = id, label = "Loading..." }
+                                            )
+                                    )
+                                    model.inpAors.selectState
+                                    (case RD.toMaybe model.aorList of
+                                        Just aors ->
+                                            aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                        Nothing ->
+                                            []
+                                    )
+                                    "смуги"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Створити", onClick = AddOrganism }
+                    |> Button.view
+                ]
+            ]
+        ]
+    ]
 
 
 editOrganismSidebarContent : Bool -> Model -> Int -> OrganismEdit -> List (Html Msg)
@@ -1290,13 +1583,39 @@ editOrganismSidebarContent isDark model organismId editState =
                                     (Le.Block.Select.defaultOptions isDark)
                         ]
                     ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги" ]
+                    , div [ class "w-full" ]
+                        [ Html.map EditAorSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (editState.inpAors.selectedItems
+                                        |> List.map
+                                            (\id ->
+                                                case RD.toMaybe model.aorList of
+                                                    Just aors ->
+                                                        ListX.find (\aor -> aor.id == id) aors
+                                                            |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                            |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+
+                                                    Nothing ->
+                                                        Select.basicMenuItem { item = id, label = "Loading..." }
+                                            )
+                                    )
+                                    editState.inpAors.selectState
+                                    (case RD.toMaybe model.aorList of
+                                        Just aors ->
+                                            aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                        Nothing ->
+                                            []
+                                    )
+                                    "смуги"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
                 , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
-                        [ Checkbox.new { isChecked = editState.autoAddGroups, onToggle = \_ -> ToggleEditAutoAddGroups }
-                            |> Checkbox.withContent [ text "Автододавання груп" ]
-                            |> Checkbox.view
-                        ]
-                    , div [ class "flex items-center" ]
                         [ Checkbox.new { isChecked = editState.enabled, onToggle = \_ -> ToggleEditEnabled }
                             |> Checkbox.withContent [ text "Активна" ]
                             |> Checkbox.view
@@ -1337,26 +1656,40 @@ body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
     let
         sidebarOpen =
-            case model.editOrganism of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
+            model.sidebarType /= Nothing
 
         sidebarContent =
-            case model.editOrganism of
-                Just ( organismId, editState ) ->
-                    editOrganismSidebarContent (isDarkMode shared.themeMode) model organismId editState
+            case model.sidebarType of
+                Just CreateSidebar ->
+                    addOrganismSidebarContent (isDarkMode shared.themeMode) model
+
+                Just EditSidebar ->
+                    case model.editOrganism of
+                        Just ( organismId, editState ) ->
+                            editOrganismSidebarContent (isDarkMode shared.themeMode) model organismId editState
+
+                        Nothing ->
+                            []
 
                 Nothing ->
                     []
     in
     [ div
         [ classList [ ( "overflow-hidden", sidebarOpen ) ]
-        , class "w-5/6 mx-auto"
+        , class "w-5/6 mx-auto my-4"
         ]
-        [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
+        [ Sidebar.view sidebarOpen
+            (case model.sidebarType of
+                Just CreateSidebar ->
+                    CloseCreateSidebar
+
+                Just EditSidebar ->
+                    CloseEditSidebar
+
+                Nothing ->
+                    CloseCreateSidebar
+            )
+            sidebarContent
         , div [] (mainBlock dark model)
         ]
     ]
@@ -1364,126 +1697,27 @@ body dark shared user model =
 
 mainBlock : Bool -> Model -> List (Html Msg)
 mainBlock isDark model =
-    let
-        addOrganismPanel : Model -> Html Msg
-        addOrganismPanel m =
-            let
-                -- Отримуємо ID вибраного батьківського організму
-                selectedParentId =
-                    m.inpParentOrganism.selectedItem
-
-                -- Визначаємо доступні групи з урахуванням батька
-                availableGroups =
-                    getAvailableGroupsForOrganism selectedParentId m.organismGroups m.groups
-
-                groupsSelectedItems =
-                    m.inpGroups.selectedItems
-                        |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) availableGroups)
-                        |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
-            in
-            div
-                [ class "flex items-center gap-4"
-                ]
-                [ div [ class "flex-1" ]
-                    [ input
-                        [ class "form-input w-full"
-                        , type_ "text"
-                        , placeholder "Назва"
-                        , value m.inpName
-                        , onInput <| SetName
-                        ]
-                        []
-                    , viewFormErrors Name m.fieldsErrors
-                    ]
-                , div [ class "flex-1" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddParentSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        (case m.inpParentOrganism.selectedItem of
-                                            Just id ->
-                                                ListX.find (\o -> o.id == id) model.organisms
-                                                    |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
-
-                                            Nothing ->
-                                                Nothing
-                                        )
-                                        m.inpParentOrganism.selectState
-                                        m.inpParentOrganism.items
-                                        "батьківський організм"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , div [ class "flex-1 relative" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddGroupSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        groupsSelectedItems
-                                        m.inpGroups.selectState
-                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                        "групи"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    , viewFormErrors Roles m.fieldsErrors
-                    , case m.groupsValidation of
-                        Just groups ->
-                            div [ class "absolute bottom-full -left-1/2 -right-1/2 z-40 mt-16 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800 text-xs shadow-lg" ]
-                                [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                , strong [] [ text (String.join ", " groups) ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , div [ class "flex-1" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddRoleSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        (m.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                        m.inpRole.selectState
-                                        m.inpRole.items
-                                        "роль"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , div [ class "flex items-center justify-center flex-1" ]
-                    [ Checkbox.new { isChecked = m.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
-                        |> Checkbox.withContent [ text "Автододавання груп" ]
-                        |> Checkbox.view
-                    ]
-                , div [ class "flex justify-center" ]
-                    [ Button.new { label = "Додати", onClick = AddOrganism }
-                        |> Button.view
-                    ]
-                ]
-    in
     [ div []
-        [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Організми" ]
-        , div
-            [ class "border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)]"
-            ]
-            [ addOrganismPanel
-                model
+        [ div [ class "flex justify-between items-center mb-6" ]
+            [ div [ class "flex items-center gap-4" ]
+                [ h1 [ class "text-2xl font-bold text-foreground" ] [ text "Організми" ]
+                , input
+                    [ class "px-3 py-2 border border-border rounded-md bg-background text-foreground w-64"
+                    , type_ "text"
+                    , placeholder "Фільтр по назві..."
+                    , value model.nameFilter
+                    , onInput SetNameFilter
+                    ]
+                    []
+                ]
+            , Button.new { label = "Створити організм", onClick = OpenCreateSidebar }
+                |> Button.view
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
-                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism))
+                (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList)
                 model.tableState
-                model.organisms
+                (filterOrganismsByName model.nameFilter model.organisms)
             ]
         ]
     ]
