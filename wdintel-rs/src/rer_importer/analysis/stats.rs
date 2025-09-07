@@ -1240,6 +1240,12 @@ fn build_aors_query(
     Ok(aors_res)
 }
 
+#[derive(FromQueryResult)]
+struct NetworksRes {
+    network_id: Option<i64>,
+    msg_count: i64,
+}
+
 pub async fn fetch_networks(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -1252,22 +1258,17 @@ pub async fn fetch_networks(
 
     let instant = std::time::Instant::now();
 
-    #[derive(FromQueryResult)]
-    struct NetworksRes {
-        network_id: Option<i64>,
-        count: i64,
-    }
-    let networks_res =
+    let networks_query =
         build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
-    // println!(
-    //     "> networks_res: {}",
-    //     networks_res.build(DbBackend::Postgres).to_string()
-    // );
-    let networks_res = networks_res
-        .into_model::<NetworksRes>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
+
+    let stmt = Statement::from_string(
+        DbBackend::Postgres,
+        networks_query.to_string(PostgresQueryBuilder),
+    );
+
+    let networks_res: Vec<NetworksRes> =
+        NetworksRes::find_by_statement(stmt).all(&env.dbx).await?;
+
     let mut networks = vec![];
     for x in networks_res {
         let Some(network_id) = x.network_id else {
@@ -1275,7 +1276,7 @@ pub async fn fetch_networks(
         };
         networks.push(AnalysisStatsNetwork {
             network_id,
-            count: x.count,
+            count: x.msg_count,
         });
     }
     debug!("networks op took: {:?}", instant.elapsed());
@@ -1292,10 +1293,20 @@ pub async fn count_networks(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    let networks_res =
+    let networks_query =
         build_networks_query(&req, user, dt_since, dt_till, master_keys)?;
-    let count = networks_res.count(&env.dbx).await.context(h!())?;
-    Ok(count as i64)
+
+    let stmt = Statement::from_string(
+        DbBackend::Postgres,
+        networks_query.to_string(PostgresQueryBuilder),
+    );
+
+    let networks_res: Vec<NetworksRes> =
+        NetworksRes::find_by_statement(stmt).all(&env.dbx).await?;
+
+    let res = networks_res.len() as i64;
+
+    Ok(res)
 }
 
 fn build_networks_query(
@@ -1304,63 +1315,108 @@ fn build_networks_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
-) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+) -> Result<WithQuery, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let networks_res = sigint_inbox_item::Entity::find()
+
+    // Aliases for CTEs
+    let messages_cte_alias = Alias::new("messages_cte");
+    let networks_cte_alias = Alias::new("networks_cte");
+    let groups_cte_alias = Alias::new("groups_cte");
+
+    // 1) messages_cte
+    let messages_q = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "sii_id")
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Datetime)
+        .column_as(signal_message::Column::MessageUid, "message_uid")
+        .column_as(datasource_group::Column::GroupMasterKey, "group_master_key")
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .join(
             JoinType::LeftJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::col(datasource_group::Column::GroupMasterKey),
-            "master_key",
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
         )
-        .column_as(Expr::col(sigint_inbox_item::Entity).count(), "count")
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(datasource_group::Column::GroupMasterKey.is_in(master_keys))
-        // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::col(datasource_group::Column::GroupMasterKey));
-    let networks_res =
-        filter_selected_senders(networks_res, &req.selected_senders)
-            .context(h!())?;
-    let networks_res = filter_selected_freqs(networks_res, &req.selected_freqs)
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+
+    // 2) networks_cte
+    let networks_q = sigint_network_freq::Entity::find()
+        .select_only()
+        .column_as(sigint_network::Column::Id, "network_id")
+        .column(sigint_network_freq::Column::Freq)
+        .column(sigint_network_freq::Column::ActiveFrom)
+        .column(sigint_network_freq::Column::ActiveTo)
+        .column_as(area_of_responsibility::Column::LeftBound, "n_left")
+        .column_as(area_of_responsibility::Column::RightBound, "n_right")
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_freq::Relation::SigintNetwork.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkAor.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false));
+
+    // 3) groups_cte
+    let groups_q = signal_group::Entity::find()
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .column_as(area_of_responsibility::Column::LeftBound, "g_left")
+        .column_as(area_of_responsibility::Column::RightBound, "g_right")
+        .join(
+            JoinType::InnerJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(signal_group::Column::Deleted.eq(false));
+
+    // add more custom filters to the messages CTE
+    let messages_q = filter_selected_senders(messages_q, &req.selected_senders)
         .context(h!())?;
-    let networks_res = filter_selected_posts(networks_res, &req.selected_posts)
-        .context(h!())?;
-    let networks_res = filter_selected_units(
-        networks_res,
+    let messages_q =
+        filter_selected_freqs(messages_q, &req.selected_freqs).context(h!())?;
+    let messages_q =
+        filter_selected_posts(messages_q, &req.selected_posts).context(h!())?;
+    let messages_q = filter_selected_units(
+        messages_q,
         &req.selected_units,
         &req.units_exact_match_only,
     )
     .context(h!())?;
-    let networks_res = filter_selected_locations(
-        networks_res,
+    let messages_q = filter_selected_locations(
+        messages_q,
         &req.selected_locations,
         include_peleng_locations,
     )
     .context(h!())?;
-    let networks_res =
-        filter_selected_callsigns(networks_res, &req.selected_callsigns)
+    let messages_q =
+        filter_selected_callsigns(messages_q, &req.selected_callsigns)
             .context(h!())?;
-    let networks_res =
-        filter_selected_networks(networks_res, &req.selected_networks)
+    let messages_q =
+        filter_selected_networks(messages_q, &req.selected_networks)
             .context(h!())?;
-    let networks_res =
-        filter_search(networks_res, &req.search).context(h!())?;
-    let networks_res = filter_selected_tags(
-        networks_res,
+    let messages_q = filter_search(messages_q, &req.search).context(h!())?;
+    let messages_q = filter_selected_tags(
+        messages_q,
         &req.selected_tags,
         &req.or_bookmarked,
         &req.or_important,
@@ -1371,7 +1427,84 @@ fn build_networks_query(
         false,
     )
     .context(h!())?;
-    Ok(networks_res)
+
+    let messages_cte = CommonTableExpression::new()
+        .query(messages_q.into_query().to_owned())
+        .table_name(messages_cte_alias.clone())
+        .to_owned();
+
+    let networks_cte = CommonTableExpression::new()
+        .query(networks_q.into_query().to_owned())
+        .table_name(networks_cte_alias.clone())
+        .to_owned();
+
+    let groups_cte = CommonTableExpression::new()
+        .query(groups_q.into_query().to_owned())
+        .table_name(groups_cte_alias.clone())
+        .to_owned();
+
+    // Main SELECT
+    let m = Alias::new("m");
+    let n = Alias::new("n");
+    let g = Alias::new("g");
+
+    let mut main_q = Query::select();
+    main_q
+        .expr_as(Expr::col((n.clone(), Alias::new("network_id"))), Alias::new("network_id"))
+        .expr_as(Expr::cust("count(1)"), Alias::new("msg_count"))
+        .from_as(messages_cte_alias.clone(), m.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            networks_cte_alias.clone(),
+            n.clone(),
+            Condition::all()
+                .add(Expr::col((m.clone(), Alias::new("freq"))).equals((n.clone(), Alias::new("freq"))))
+                .add(Expr::col((n.clone(), Alias::new("freq"))).is_not_null())
+                .add(Expr::col((m.clone(), Alias::new("datetime"))).gte(Expr::col((n.clone(), Alias::new("active_from")))))
+                .add(
+                    Expr::col((m.clone(), Alias::new("datetime")))
+                        .lte(Expr::cust("COALESCE(n.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
+                    ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            groups_cte_alias.clone(),
+            g.clone(),
+            Condition::all()
+                .add(Expr::col((m.clone(), Alias::new("group_master_key"))).equals((g.clone(), Alias::new("master_key"))))
+                .add(
+                    Condition::any()
+                        .add(
+                            Condition::all()
+                                .add(Expr::col((g.clone(), Alias::new("g_left"))).gte(Expr::col((n.clone(), Alias::new("n_left")))))
+                                .add(Expr::col((g.clone(), Alias::new("g_left"))).lte(Expr::col((n.clone(), Alias::new("n_right")))))
+                        )
+                        .add(
+                            Condition::all()
+                                .add(Expr::col((g.clone(), Alias::new("g_right"))).gte(Expr::col((n.clone(), Alias::new("n_left")))))
+                                .add(Expr::col((g.clone(), Alias::new("g_right"))).lte(Expr::col((n.clone(), Alias::new("n_right")))))
+                        )
+                        .add(
+                            Condition::all()
+                                .add(Expr::col((g.clone(), Alias::new("g_left"))).lte(Expr::col((n.clone(), Alias::new("n_left")))))
+                                .add(Expr::col((g.clone(), Alias::new("g_right"))).gte(Expr::col((n.clone(), Alias::new("n_right")))))
+                        )
+                ),
+        )
+        .group_by_col((n.clone(), Alias::new("network_id")));
+
+    // Build WITH (using Select)
+    let query = Query::with()
+        .cte(messages_cte)
+        .clone()
+        .cte(networks_cte)
+        .clone()
+        .cte(groups_cte)
+        .clone()
+        .query(main_q)
+        .to_owned();
+
+    Ok(query)
 }
 
 pub async fn fetch_counts(

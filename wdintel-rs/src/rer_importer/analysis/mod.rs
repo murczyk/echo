@@ -2532,7 +2532,7 @@ async fn aor_stats_count(
 ///
 /// [`Json<Vec<i64>>`],  загальна кількість повідомлень по значенням фільтру мереж
 #[post("/api/rer/analysis/stats/networks/count")]
-async fn aor_networks_count(
+async fn network_stats_count(
     user: Identity,
     env: actix_web::web::Data<Env>,
     req: Json<AnalysisStatsReq>,
