@@ -1047,7 +1047,7 @@ import-unit-to-target:
         echo "`origin` is not set; see prod db for sigint_origin.name"
         exit 1
     fi
-    ssh -t {{ server }} 'wdintel-rs --mode=live export-unit --name {{ unit }} --dest-path /tmp/unit_export_{{ dt1 }}.json'
+    ssh -t {{ server }} 'wdintel-rs --mode=live export-unit --name "{{ unit }}" --dest-path /tmp/unit_export_{{ dt1 }}.json'
     ask_yes_no
     scp {{ server }}:/tmp/unit_export_{{ dt1 }}.json {{ target }}:/tmp/unit_import_{{ dt1 }}.json
     ssh -t {{ target }} '{{ echo_bin }} --mode=live import-unit --src-path /tmp/unit_import_{{ dt1 }}.json --origin {{ origin }}'
@@ -1121,5 +1121,5 @@ bump-version-commit:
 bump-version-push:
     #!/bin/bash
     set -euo pipefail
-    just message={{ message }} bump-version-commit
+    just message="{{ message }}" bump-version-commit
     git push
