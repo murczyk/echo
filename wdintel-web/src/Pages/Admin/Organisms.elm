@@ -100,6 +100,11 @@ getAvailableGroupsForOrganism maybeParentId organismGroups allGroups =
                     |> List.filter (\group -> List.member group.masterKey parentGroups)
 
 
+type SidebarType
+    = CreateSidebar
+    | EditSidebar
+
+
 type alias Model =
     { formErrors : Dict String String
     , timeZone : Maybe Time.Zone
@@ -133,6 +138,7 @@ type alias Model =
     , editOrganism : Maybe ( Int, OrganismEdit )
     , groupsValidation : Maybe (List String)
     , aorList : RD.RemoteData ApiError (List B.AreaOfResponsibility)
+    , sidebarType : Maybe SidebarType
     }
 
 
@@ -213,6 +219,7 @@ init _ =
       , groupsValidation = Nothing
       , aorList = RD.NotAsked
       , tableState = Table.initialSort "Назва"
+      , sidebarType = Nothing
       }
     , E.sendCmd <|
         Cmd.batch
@@ -243,6 +250,8 @@ type Msg
     | ToggleEditEnabled
     | EditOrganism Int
     | CloseEditSidebar
+    | OpenCreateSidebar
+    | CloseCreateSidebar
     | GotTimeZone (Result TimeZone.Error ( String, Time.Zone ))
     | SetName String
     | SetEditName String
@@ -758,7 +767,7 @@ update msg model =
                                 )
                             )
             in
-            ( { model | editOrganism = organism }, E.none )
+            ( { model | editOrganism = organism, sidebarType = Just EditSidebar }, E.none )
 
         GotTimeZone (Ok ( _, zone )) ->
             ( { model | timeZone = Just zone }
@@ -946,13 +955,19 @@ update msg model =
                     ( model, E.none )
 
         EditOrganismCancel ->
-            ( { model | editOrganism = Nothing }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing }, E.none )
 
         CloseEditSidebar ->
-            ( { model | editOrganism = Nothing }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing }, E.none )
+
+        OpenCreateSidebar ->
+            ( { model | sidebarType = Just CreateSidebar }, E.none )
+
+        CloseCreateSidebar ->
+            ( { model | sidebarType = Nothing }, E.none )
 
         EditOrganismDone (Ok o) ->
-            ( { model | editOrganism = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
+            ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
 
         EditOrganismDone (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
@@ -1299,6 +1314,41 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
         }
 
 
+addOrganismSidebarContent : Bool -> Model -> List (Html Msg)
+addOrganismSidebarContent isDark model =
+    [ div [ class "flex flex-col h-full" ]
+        [ div [ class "p-6 border-b border-border" ]
+            [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити організм" ]
+            ]
+        , div [ class "flex-1 overflow-y-auto p-6" ]
+            [ div [ class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Назва" ]
+                    , input
+                        [ class "w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                        , type_ "text"
+                        , placeholder "Назва організму"
+                        , value model.inpName
+                        , onInput SetName
+                        ]
+                        []
+                    , viewFormErrors Name model.fieldsErrors
+                    ]
+                ]
+            ]
+        , div [ class "p-6 border-t border-border bg-muted/30" ]
+            [ div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseCreateSidebar }
+                    |> Button.withStyleSecondary
+                    |> Button.view
+                , Button.new { label = "Створити", onClick = AddOrganism }
+                    |> Button.view
+                ]
+            ]
+        ]
+    ]
+
+
 editOrganismSidebarContent : Bool -> Model -> Int -> OrganismEdit -> List (Html Msg)
 editOrganismSidebarContent isDark model organismId editState =
     let
@@ -1469,17 +1519,20 @@ body : Bool -> Shared.Model -> B.User -> Model -> List (Html Msg)
 body dark shared user model =
     let
         sidebarOpen =
-            case model.editOrganism of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
+            model.sidebarType /= Nothing
 
         sidebarContent =
-            case model.editOrganism of
-                Just ( organismId, editState ) ->
-                    editOrganismSidebarContent (isDarkMode shared.themeMode) model organismId editState
+            case model.sidebarType of
+                Just CreateSidebar ->
+                    addOrganismSidebarContent (isDarkMode shared.themeMode) model
+
+                Just EditSidebar ->
+                    case model.editOrganism of
+                        Just ( organismId, editState ) ->
+                            editOrganismSidebarContent (isDarkMode shared.themeMode) model organismId editState
+
+                        Nothing ->
+                            []
 
                 Nothing ->
                     []
@@ -1488,7 +1541,18 @@ body dark shared user model =
         [ classList [ ( "overflow-hidden", sidebarOpen ) ]
         , class "w-5/6 mx-auto"
         ]
-        [ Sidebar.view sidebarOpen CloseEditSidebar sidebarContent
+        [ Sidebar.view sidebarOpen 
+            (case model.sidebarType of
+                Just CreateSidebar ->
+                    CloseCreateSidebar
+
+                Just EditSidebar ->
+                    CloseEditSidebar
+
+                Nothing ->
+                    CloseCreateSidebar
+            ) 
+            sidebarContent
         , div [] (mainBlock dark model)
         ]
     ]
@@ -1496,146 +1560,11 @@ body dark shared user model =
 
 mainBlock : Bool -> Model -> List (Html Msg)
 mainBlock isDark model =
-    let
-        addOrganismPanel : Model -> Html Msg
-        addOrganismPanel m =
-            let
-                -- Отримуємо ID вибраного батьківського організму
-                selectedParentId =
-                    m.inpParentOrganism.selectedItem
-
-                -- Визначаємо доступні групи з урахуванням батька
-                availableGroups =
-                    getAvailableGroupsForOrganism selectedParentId m.organismGroups m.groups
-
-                groupsSelectedItems =
-                    m.inpGroups.selectedItems
-                        |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) availableGroups)
-                        |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
-            in
-            div
-                [ class "flex items-center gap-4"
-                ]
-                [ div [ class "flex-1" ]
-                    [ input
-                        [ class "form-input w-full"
-                        , type_ "text"
-                        , placeholder "Назва"
-                        , value m.inpName
-                        , onInput <| SetName
-                        ]
-                        []
-                    , viewFormErrors Name m.fieldsErrors
-                    ]
-                , div [ class "flex-1" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddParentSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
-                                        (case m.inpParentOrganism.selectedItem of
-                                            Just id ->
-                                                ListX.find (\o -> o.id == id) model.organisms
-                                                    |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
-
-                                            Nothing ->
-                                                Nothing
-                                        )
-                                        m.inpParentOrganism.selectState
-                                        m.inpParentOrganism.items
-                                        "батьківський організм"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , div [ class "flex-1 relative" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddGroupSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        groupsSelectedItems
-                                        m.inpGroups.selectState
-                                        (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
-                                        "групи"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    , viewFormErrors Roles m.fieldsErrors
-                    , case m.groupsValidation of
-                        Just groups ->
-                            div [ class "absolute bottom-full -left-1/2 -right-1/2 z-40 mt-16 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800 text-xs shadow-lg" ]
-                                [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
-                                , strong [] [ text (String.join ", " groups) ]
-                                ]
-
-                        Nothing ->
-                            text ""
-                    ]
-                , div [ class "flex-1" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddRoleSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        (m.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
-                                        m.inpRole.selectState
-                                        m.inpRole.items
-                                        "роль"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , div [ class "flex-1" ]
-                    [ div
-                        [ class "flex justify-between items-center text-sm"
-                        ]
-                        [ div [ class "flex-grow w-full" ]
-                            [ Html.map AddAorSelMsg <|
-                                Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
-                                        (m.inpAors.selectedItems |> List.map (\id ->
-                                            case RD.toMaybe m.aorList of
-                                                Just aors ->
-                                                    ListX.find (\aor -> aor.id == id) aors
-                                                        |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
-                                                        |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
-                                                Nothing -> Select.basicMenuItem { item = id, label = "Loading..." }
-                                        ))
-                                        m.inpAors.selectState
-                                        (case RD.toMaybe m.aorList of
-                                            Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
-                                            Nothing -> []
-                                        )
-                                        "смуги"
-                                        (Le.Block.Select.defaultOptions isDark)
-                            ]
-                        ]
-                    ]
-                , div [ class "flex items-center justify-center flex-1" ]
-                    [ Checkbox.new { isChecked = m.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
-                        |> Checkbox.withContent [ text "Автододавання груп" ]
-                        |> Checkbox.view
-                    ]
-                , div [ class "flex justify-center" ]
-                    [ Button.new { label = "Додати", onClick = AddOrganism }
-                        |> Button.view
-                    ]
-                ]
-    in
     [ div []
-        [ h1 [ class "py-4 text-2xl font-bold text-foreground" ] [ text "Організми" ]
-        , div
-            [ class "border border-border rounded-lg mb-4 p-4 bg-[var(--bs-tertiary-bg)]"
-            ]
-            [ addOrganismPanel
-                model
+        [ div [ class "flex justify-between items-center mb-6" ]
+            [ h1 [ class "text-2xl font-bold text-foreground" ] [ text "Організми" ]
+            , Button.new { label = "Створити організм", onClick = OpenCreateSidebar }
+                |> Button.view
             ]
         , div [ class "table-responsive-modern" ]
             [ Table.view
@@ -1645,3 +1574,5 @@ mainBlock isDark model =
             ]
         ]
     ]
+
+
