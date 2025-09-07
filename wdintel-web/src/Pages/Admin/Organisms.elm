@@ -592,16 +592,24 @@ update msg model =
                 inpAors2 =
                     { inpAors | selectedItems = [] }
 
+                inpGroups =
+                    model.inpGroups
+
+                inpGroups2 =
+                    { inpGroups | selectedItems = [] }
+
                 m2 =
                     { model
                         | inpName = ""
                         , inpRole = inpRole2
                         , inpParentOrganism = inpParentOrganism2
                         , inpAors = inpAors2
+                        , inpGroups = inpGroups2
                         , autoAddGroups = False
                         , organisms = organism :: model.organisms
                         , fieldsErrors = []
                         , groupsValidation = Nothing
+                        , sidebarType = Nothing
                     }
             in
             let
@@ -1316,6 +1324,20 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
 
 addOrganismSidebarContent : Bool -> Model -> List (Html Msg)
 addOrganismSidebarContent isDark model =
+    let
+        -- Отримуємо ID вибраного батьківського організму
+        selectedParentId =
+            model.inpParentOrganism.selectedItem
+
+        -- Визначаємо доступні групи з урахуванням батька
+        availableGroups =
+            getAvailableGroupsForOrganism selectedParentId model.organismGroups model.groups
+
+        groupsSelectedItems =
+            model.inpGroups.selectedItems
+                |> List.filterMap (\x -> ListX.find (\y -> y.masterKey == x) availableGroups)
+                |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name })
+    in
     [ div [ class "flex flex-col h-full" ]
         [ div [ class "p-6 border-b border-border" ]
             [ h2 [ class "text-lg font-semibold mb-1" ] [ text "Створити організм" ]
@@ -1333,6 +1355,91 @@ addOrganismSidebarContent isDark model =
                         ]
                         []
                     , viewFormErrors Name model.fieldsErrors
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Батьківський організм" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddParentSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelectSingle
+                                    (case model.inpParentOrganism.selectedItem of
+                                        Just id ->
+                                            ListX.find (\o -> o.id == id) model.organisms
+                                                |> Maybe.map (\o -> Select.basicMenuItem { item = id, label = o.name })
+
+                                        Nothing ->
+                                            Nothing
+                                    )
+                                    model.inpParentOrganism.selectState
+                                    model.inpParentOrganism.items
+                                    "батьківський організм"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Групи" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddGroupSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    groupsSelectedItems
+                                    model.inpGroups.selectState
+                                    (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
+                                    "групи"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    , case model.groupsValidation of
+                        Just groups ->
+                            div [ class "mt-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800" ]
+                                [ p [ class "text-sm text-yellow-800 dark:text-yellow-200" ]
+                                    [ text "⚠️ Попередження: при виборі цього батьківського організму буде втрачено доступ до груп: "
+                                    , strong [] [ text (String.join ", " groups) ]
+                                    ]
+                                ]
+
+                        Nothing ->
+                            text ""
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Ролі" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddRoleSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (model.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
+                                    model.inpRole.selectState
+                                    model.inpRole.items
+                                    "роль"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "space-y-2" ]
+                    [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуги відповідальності" ]
+                    , div [ class "w-full" ]
+                        [ Html.map AddAorSelMsg <|
+                            Styled.toUnstyled <|
+                                Le.Block.Select.renderSelect
+                                    (model.inpAors.selectedItems |> List.map (\id ->
+                                        case RD.toMaybe model.aorList of
+                                            Just aors ->
+                                                ListX.find (\aor -> aor.id == id) aors
+                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                    |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+                                            Nothing -> Select.basicMenuItem { item = id, label = "Loading..." }
+                                    ))
+                                    model.inpAors.selectState
+                                    (case RD.toMaybe model.aorList of
+                                        Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                                        Nothing -> []
+                                    )
+                                    "смуги"
+                                    (Le.Block.Select.defaultOptions isDark)
+                        ]
+                    ]
+                , div [ class "flex items-center" ]
+                    [ Checkbox.new { isChecked = model.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
+                        |> Checkbox.withContent [ text "Автододавання груп" ]
+                        |> Checkbox.view
                     ]
                 ]
             ]
