@@ -19,13 +19,13 @@ import Layouts
 import Le.Block.Select
 import Le.Components exposing (..)
 import Le.ErrorHandling
+import Le.RemoteData as RD
 import Le.Time
 import Le.Types exposing (..)
 import Le.Utils exposing (..)
 import List.Extra as ListX
 import Maybe
 import Page exposing (Page)
-import Le.RemoteData as RD
 import Route exposing (Route)
 import Select
 import Set
@@ -111,7 +111,6 @@ type alias Model =
     , organisms : List B.Organism
     , tableState : Table.State
     , inpName : String
-    , autoAddGroups : Bool
     , inpRole :
         { selectState : Select.State
         , items : List (Select.MenuItem String)
@@ -190,7 +189,6 @@ init _ =
     ( { formErrors = Dict.empty
       , organisms = []
       , inpName = ""
-      , autoAddGroups = False
       , inpGroups =
             { selectState = Select.initState (Select.selectIdentifier "sel-group-add")
             , items = []
@@ -245,7 +243,6 @@ type Msg
     | EditAorSelMsg (Select.Msg Int)
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
-    | ToggleAutoAddGroups
     | ToggleEditAutoAddGroups
     | ToggleEditEnabled
     | EditOrganism Int
@@ -563,7 +560,7 @@ update msg model =
                         Api.create_organism AddOrganismDone
                             { name = model.inpName
                             , parentId = model.inpParentOrganism.selectedItem
-                            , groupAutoLink = Just model.autoAddGroups
+                            , groupAutoLink = Just False
                             , roles = model.inpRole.selectedItems
                             , aorIds = emptyToNothing model.inpAors.selectedItems
                             }
@@ -605,7 +602,6 @@ update msg model =
                         , inpParentOrganism = inpParentOrganism2
                         , inpAors = inpAors2
                         , inpGroups = inpGroups2
-                        , autoAddGroups = False
                         , organisms = organism :: model.organisms
                         , fieldsErrors = []
                         , groupsValidation = Nothing
@@ -709,9 +705,6 @@ update msg model =
         RemoveGroupFromOrganismDone _ _ (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
 
-        ToggleAutoAddGroups ->
-            ( { model | autoAddGroups = not model.autoAddGroups }, E.none )
-
         ToggleEditAutoAddGroups ->
             case model.editOrganism of
                 Just ( id, editOrganism ) ->
@@ -764,9 +757,13 @@ update msg model =
                                         }
                                   , inpAors =
                                         { selectState = Select.initState (Select.selectIdentifier "sel-aor-edit")
-                                        , items = case RD.toMaybe model.aorList of
-                                                    Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
-                                                    Nothing -> []
+                                        , items =
+                                            case RD.toMaybe model.aorList of
+                                                Just aors ->
+                                                    aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                                Nothing ->
+                                                    []
                                         , selectedItems = o.aorIds
                                         }
                                   , fieldsErrors = []
@@ -826,10 +823,14 @@ update msg model =
 
         GotAorList (Ok aors) ->
             let
-                aorMenuItems = aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+                aorMenuItems =
+                    aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
 
-                inpAors = model.inpAors
-                inpAors2 = { inpAors | items = aorMenuItems }
+                inpAors =
+                    model.inpAors
+
+                inpAors2 =
+                    { inpAors | items = aorMenuItems }
             in
             ( { model | aorList = RD.Success aors, inpAors = inpAors2 }, E.none )
 
@@ -838,10 +839,14 @@ update msg model =
 
         AddAorSelMsg selMsg ->
             let
-                ( mAction, iState, iCmd ) = Select.update selMsg model.inpAors.selectState
+                ( mAction, iState, iCmd ) =
+                    Select.update selMsg model.inpAors.selectState
 
-                inpAors = model.inpAors
-                inpAors2 = { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+                inpAors =
+                    model.inpAors
+
+                inpAors2 =
+                    { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
             in
             ( { model | inpAors = inpAors2 }
             , E.batch [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
@@ -851,12 +856,17 @@ update msg model =
             case model.editOrganism of
                 Just ( id, editOrganism ) ->
                     let
-                        ( mAction, iState, iCmd ) = Select.update selMsg editOrganism.inpAors.selectState
+                        ( mAction, iState, iCmd ) =
+                            Select.update selMsg editOrganism.inpAors.selectState
 
-                        inpAors = editOrganism.inpAors
-                        inpAors2 = { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+                        inpAors =
+                            editOrganism.inpAors
 
-                        editOrganism2 = { editOrganism | inpAors = inpAors2 }
+                        inpAors2 =
+                            { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+
+                        editOrganism2 =
+                            { editOrganism | inpAors = inpAors2 }
                     in
                     ( { model | editOrganism = Just ( id, editOrganism2 ) }
                     , E.batch [ E.sendCmd <| Cmd.map EditAorSelMsg iCmd ]
@@ -1266,27 +1276,36 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                         , children =
                             [ div [ class "flex flex-wrap gap-1" ]
                                 (o.aorIds
-                                    |> List.filterMap (\aorId ->
-                                        case RD.toMaybe aorList of
-                                            Just aors -> ListX.find (\aor -> aor.id == aorId) aors
-                                            Nothing -> Nothing
-                                    )
-                                    |> List.map (\aor ->
-                                        span [ class "badge badge--blue-light", title aor.name ]
-                                            [ text aor.name ]
-                                    )
+                                    |> List.filterMap
+                                        (\aorId ->
+                                            case RD.toMaybe aorList of
+                                                Just aors ->
+                                                    ListX.find (\aor -> aor.id == aorId) aors
+
+                                                Nothing ->
+                                                    Nothing
+                                        )
+                                    |> List.map
+                                        (\aor ->
+                                            span [ class "badge badge--blue-light", title aor.name ]
+                                                [ text aor.name ]
+                                        )
                                 )
                             ]
                         }
-                , sorter = Table.increasingOrDecreasingBy (\o ->
-                    case RD.toMaybe aorList of
-                        Just aors ->
-                            o.aorIds
-                                |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
-                                |> List.map .name
-                                |> String.join ", "
-                        Nothing -> ""
-                    )
+                , sorter =
+                    Table.increasingOrDecreasingBy
+                        (\o ->
+                            case RD.toMaybe aorList of
+                                Just aors ->
+                                    o.aorIds
+                                        |> List.filterMap (\aorId -> ListX.find (\aor -> aor.id == aorId) aors)
+                                        |> List.map .name
+                                        |> String.join ", "
+
+                                Nothing ->
+                                    ""
+                        )
                 }
                 |> Table.withColumnWidth "10%"
             , Table.veryCustomColumn
@@ -1419,27 +1438,30 @@ addOrganismSidebarContent isDark model =
                         [ Html.map AddAorSelMsg <|
                             Styled.toUnstyled <|
                                 Le.Block.Select.renderSelect
-                                    (model.inpAors.selectedItems |> List.map (\id ->
-                                        case RD.toMaybe model.aorList of
-                                            Just aors ->
-                                                ListX.find (\aor -> aor.id == id) aors
-                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
-                                                    |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
-                                            Nothing -> Select.basicMenuItem { item = id, label = "Loading..." }
-                                    ))
+                                    (model.inpAors.selectedItems
+                                        |> List.map
+                                            (\id ->
+                                                case RD.toMaybe model.aorList of
+                                                    Just aors ->
+                                                        ListX.find (\aor -> aor.id == id) aors
+                                                            |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                            |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+
+                                                    Nothing ->
+                                                        Select.basicMenuItem { item = id, label = "Loading..." }
+                                            )
+                                    )
                                     model.inpAors.selectState
                                     (case RD.toMaybe model.aorList of
-                                        Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
-                                        Nothing -> []
+                                        Just aors ->
+                                            aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                        Nothing ->
+                                            []
                                     )
                                     "смуги"
                                     (Le.Block.Select.defaultOptions isDark)
                         ]
-                    ]
-                , div [ class "flex items-center" ]
-                    [ Checkbox.new { isChecked = model.autoAddGroups, onToggle = \_ -> ToggleAutoAddGroups }
-                        |> Checkbox.withContent [ text "Автододавання груп" ]
-                        |> Checkbox.view
                     ]
                 ]
             ]
@@ -1562,18 +1584,26 @@ editOrganismSidebarContent isDark model organismId editState =
                         [ Html.map EditAorSelMsg <|
                             Styled.toUnstyled <|
                                 Le.Block.Select.renderSelect
-                                    (editState.inpAors.selectedItems |> List.map (\id ->
-                                        case RD.toMaybe model.aorList of
-                                            Just aors ->
-                                                ListX.find (\aor -> aor.id == id) aors
-                                                    |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
-                                                    |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
-                                            Nothing -> Select.basicMenuItem { item = id, label = "Loading..." }
-                                    ))
+                                    (editState.inpAors.selectedItems
+                                        |> List.map
+                                            (\id ->
+                                                case RD.toMaybe model.aorList of
+                                                    Just aors ->
+                                                        ListX.find (\aor -> aor.id == id) aors
+                                                            |> Maybe.map (\aor -> Select.basicMenuItem { item = id, label = aor.name })
+                                                            |> Maybe.withDefault (Select.basicMenuItem { item = id, label = "Unknown" })
+
+                                                    Nothing ->
+                                                        Select.basicMenuItem { item = id, label = "Loading..." }
+                                            )
+                                    )
                                     editState.inpAors.selectState
                                     (case RD.toMaybe model.aorList of
-                                        Just aors -> aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
-                                        Nothing -> []
+                                        Just aors ->
+                                            aors |> List.map (\aor -> Select.basicMenuItem { item = aor.id, label = aor.name })
+
+                                        Nothing ->
+                                            []
                                     )
                                     "смуги"
                                     (Le.Block.Select.defaultOptions isDark)
@@ -1648,7 +1678,7 @@ body dark shared user model =
         [ classList [ ( "overflow-hidden", sidebarOpen ) ]
         , class "w-5/6 mx-auto"
         ]
-        [ Sidebar.view sidebarOpen 
+        [ Sidebar.view sidebarOpen
             (case model.sidebarType of
                 Just CreateSidebar ->
                     CloseCreateSidebar
@@ -1658,7 +1688,7 @@ body dark shared user model =
 
                 Nothing ->
                     CloseCreateSidebar
-            ) 
+            )
             sidebarContent
         , div [] (mainBlock dark model)
         ]
@@ -1681,5 +1711,3 @@ mainBlock isDark model =
             ]
         ]
     ]
-
-
