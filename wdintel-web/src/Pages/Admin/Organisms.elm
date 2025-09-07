@@ -66,6 +66,18 @@ groupName group =
         group.name
 
 
+filterOrganismsByName : String -> List B.Organism -> List B.Organism
+filterOrganismsByName filter organisms =
+    if String.isEmpty filter then
+        organisms
+    else
+        let
+            filterLower = String.toLower filter
+        in
+        organisms
+            |> List.filter (\organism -> String.contains filterLower (String.toLower organism.name))
+
+
 getOrganismGroups : Int -> List B.OrganismGroup -> List String
 getOrganismGroups organismId organismGroups =
     organismGroups
@@ -110,6 +122,7 @@ type alias Model =
     , timeZone : Maybe Time.Zone
     , organisms : List B.Organism
     , tableState : Table.State
+    , nameFilter : String
     , inpName : String
     , inpRole :
         { selectState : Select.State
@@ -188,6 +201,7 @@ init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
       , organisms = []
+      , nameFilter = ""
       , inpName = ""
       , inpGroups =
             { selectState = Select.initState (Select.selectIdentifier "sel-group-add")
@@ -232,6 +246,7 @@ init _ =
 
 type Msg
     = SetTableState Table.State
+    | SetNameFilter String
     | GotOrganisms (Result ApiError (List B.Organism))
     | AddRoleSelMsg (Select.Msg String)
     | EditRoleSelMsg (Select.Msg String)
@@ -266,6 +281,9 @@ update msg model =
     case msg of
         SetTableState newTableState ->
             ( { model | tableState = newTableState }, E.none )
+
+        SetNameFilter filter ->
+            ( { model | nameFilter = filter }, E.none )
 
         GotOrganisms (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження організмів" e )
@@ -1225,7 +1243,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                 "0"
                         )
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "6%"
             , Table.veryCustomColumn
                 { name = "Активна"
                 , viewData =
@@ -1294,7 +1312,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                                     ""
                         )
                 }
-                |> Table.withColumnWidth "10%"
+                |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
                 { name = "Створено"
                 , viewData =
@@ -1681,7 +1699,17 @@ mainBlock : Bool -> Model -> List (Html Msg)
 mainBlock isDark model =
     [ div []
         [ div [ class "flex justify-between items-center mb-6" ]
-            [ h1 [ class "text-2xl font-bold text-foreground" ] [ text "Організми" ]
+            [ div [ class "flex items-center gap-4" ]
+                [ h1 [ class "text-2xl font-bold text-foreground" ] [ text "Організми" ]
+                , input
+                    [ class "px-3 py-2 border border-border rounded-md bg-background text-foreground w-64"
+                    , type_ "text"
+                    , placeholder "Фільтр по назві..."
+                    , value model.nameFilter
+                    , onInput SetNameFilter
+                    ]
+                    []
+                ]
             , Button.new { label = "Створити організм", onClick = OpenCreateSidebar }
                 |> Button.view
             ]
@@ -1689,7 +1717,7 @@ mainBlock isDark model =
             [ Table.view
                 (organismsTableConfig model.groups model.organismGroups model.organisms model.timeZone (Maybe.map Tuple.first model.editOrganism) model.aorList)
                 model.tableState
-                model.organisms
+                (filterOrganismsByName model.nameFilter model.organisms)
             ]
         ]
     ]
