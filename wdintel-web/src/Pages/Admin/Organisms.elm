@@ -243,7 +243,6 @@ type Msg
     | EditAorSelMsg (Select.Msg Int)
     | AddOrganism
     | AddOrganismDone (Result ApiError B.Organism)
-    | ToggleEditAutoAddGroups
     | ToggleEditEnabled
     | EditOrganism Int
     | CloseEditSidebar
@@ -704,18 +703,6 @@ update msg model =
 
         RemoveGroupFromOrganismDone _ _ (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
-
-        ToggleEditAutoAddGroups ->
-            case model.editOrganism of
-                Just ( id, editOrganism ) ->
-                    let
-                        editOrganism2 =
-                            { editOrganism | autoAddGroups = not editOrganism.autoAddGroups }
-                    in
-                    ( { model | editOrganism = Just ( id, editOrganism2 ) }, E.none )
-
-                Nothing ->
-                    ( model, E.none )
 
         ToggleEditEnabled ->
             case model.editOrganism of
@@ -1611,11 +1598,6 @@ editOrganismSidebarContent isDark model organismId editState =
                     ]
                 , div [ class "grid grid-cols-2 gap-4" ]
                     [ div [ class "flex items-center" ]
-                        [ Checkbox.new { isChecked = editState.autoAddGroups, onToggle = \_ -> ToggleEditAutoAddGroups }
-                            |> Checkbox.withContent [ text "Автододавання груп" ]
-                            |> Checkbox.view
-                        ]
-                    , div [ class "flex items-center" ]
                         [ Checkbox.new { isChecked = editState.enabled, onToggle = \_ -> ToggleEditEnabled }
                             |> Checkbox.withContent [ text "Активна" ]
                             |> Checkbox.view
@@ -1676,7 +1658,7 @@ body dark shared user model =
     in
     [ div
         [ classList [ ( "overflow-hidden", sidebarOpen ) ]
-        , class "w-5/6 mx-auto"
+        , class "w-5/6 mx-auto my-4"
         ]
         [ Sidebar.view sidebarOpen
             (case model.sidebarType of
