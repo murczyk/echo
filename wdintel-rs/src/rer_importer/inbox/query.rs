@@ -81,7 +81,6 @@ pub(crate) async fn build_inbox_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         login,
-        true,
     )?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let include_peleng_locations =

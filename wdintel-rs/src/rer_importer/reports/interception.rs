@@ -154,7 +154,6 @@ async fn get_inbox_messages_report(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &login,
-        true,
     )?;
     let q = filter_selected_locations(
         q,

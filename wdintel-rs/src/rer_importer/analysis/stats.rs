@@ -136,7 +136,6 @@ fn build_groups_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user.id()?.as_str(),
-        false,
     )
     .context(h!())?;
     let groups_res =
@@ -270,7 +269,6 @@ fn build_senders_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
@@ -400,7 +398,6 @@ fn build_posts_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
@@ -579,7 +576,6 @@ fn build_freqs_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
@@ -943,7 +939,6 @@ fn build_units_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
@@ -1079,7 +1074,6 @@ fn build_locations_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let locations_res =
@@ -1218,7 +1212,6 @@ fn build_aors_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let aors_res = filter_search(aors_res, &req.search).context(h!())?;
@@ -1346,7 +1339,6 @@ pub async fn fetch_counts(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id().context(h!())?,
-        false,
     )
     .context(h!())?;
     let selected_count_res =
