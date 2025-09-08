@@ -728,7 +728,7 @@ view isDark user model =
                         |> Maybe.map .name
                         |> Maybe.withDefault ("Network " ++ networkId)
 
-                items =
+                selected =
                     List.map
                         (\networkId ->
                             Select.basicMenuItem
@@ -741,12 +741,12 @@ view isDark user model =
             div [ class "py-1 px-2" ]
                 [ Html.map SelNetworkMsg
                     (Html.Styled.toUnstyled <|
-                        Le.Block.Select.renderSelectVirtual
-                            items
+                        Le.Block.Select.renderSelect
+                            selected
                             model.selNetworkState
                             model.selNetworkMenu
                             "всі"
-                            { loading = RD.isLoading model.networksStats, disabled = False, isDark = isDark }
+                            { loading = RD.isLoading model.networksStats, clearable = True, disabled = False, isDark = isDark }
                     )
                 ]
     in

@@ -1066,15 +1066,18 @@ update user shared route msg model =
                 , selNetworkMenu =
                     List.map
                         (\network ->
-                            Select.customMenuItem
-                                { item = String.fromInt network.networkId
-                                , label =
+                            let
+                                networkName =
                                     rsp.networkNames
                                         |> List.filter (\name -> name.id == network.networkId)
                                         |> List.head
                                         |> Maybe.map .name
                                         |> Maybe.withDefault ("Network " ++ String.fromInt network.networkId)
-                                , view = Html.Styled.fromUnstyled (menuItemWithCount (String.fromInt network.networkId) network.count)
+                            in
+                            Select.customMenuItem
+                                { item = String.fromInt network.networkId
+                                , label = networkName
+                                , view = Html.Styled.fromUnstyled (menuItemWithCount networkName network.count)
                                 }
                         )
                         rsp.networks
