@@ -2,9 +2,12 @@ module Le.Waterfall.Message exposing (ClipboardObject(..), InternalMsg, Model, M
 
 import Api
 import Bindings as B
+import Browser.Dom
 import Components.Watermark as Watermark
 import Dict exposing (Dict)
+import Le.Block.Popup as Popup
 import Effect as E exposing (Effect)
+import Task
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -35,7 +38,8 @@ type alias Model =
 
     --TODO: create custom type, it is related to isDuplocatesUnfolded directly
     , isUnfolded : Bool
-    , edited : Maybe Le.RerMessage.Edited
+    , edited : Maybe { original : B.InboxMessage, current : B.InboxMessage }
+    , isEditPopupOpen : Bool
     }
 
 
@@ -45,6 +49,7 @@ init x =
     , isDuplicate = False
     , isUnfolded = False
     , edited = Nothing
+    , isEditPopupOpen = False
     }
 
 
@@ -239,6 +244,9 @@ computeDateTimeRenderParts message ps =
 type InternalMsg
     = NoOp
     | Edit
+    | EditPopupOpen
+    | EditPopupClose
+    | FocusTextarea (Result Browser.Dom.Error ())
     | ToggleTag Int Int
     | ExtendedFormChanged String
     | EditCancel
@@ -301,13 +309,36 @@ update vps msg model =
 
         Edit ->
             let
-                edited =
-                    vps.message |> Tuple.second |> (\x -> { original = x })
+                currentMessage = Tuple.second vps.message
+                edited = { original = currentMessage, current = currentMessage }
+                textareaId = "edit-comment-textarea-" ++ String.fromInt (Tuple.first vps.message)
+                focusCmd = Task.attempt FocusTextarea (Browser.Dom.focus textareaId)
             in
-            ( { model | edited = Just edited }
+            ( { model | edited = Just edited, isEditPopupOpen = True }
+            , E.sendCmd focusCmd
+            , vps.message
+            )
+
+        EditPopupOpen ->
+            let
+                currentMessage = Tuple.second vps.message
+                edited = { original = currentMessage, current = currentMessage }
+                textareaId = "edit-comment-textarea-" ++ String.fromInt (Tuple.first vps.message)
+                focusCmd = Task.attempt FocusTextarea (Browser.Dom.focus textareaId)
+            in
+            ( { model | edited = Just edited, isEditPopupOpen = True }
+            , E.sendCmd focusCmd
+            , vps.message
+            )
+
+        EditPopupClose ->
+            ( { model | isEditPopupOpen = False }
             , E.none
             , vps.message
             )
+
+        FocusTextarea _ ->
+            ( model, E.none, vps.message )
 
         UnfoldDuplicate ->
             ( { model | isUnfolded = True }
@@ -334,16 +365,26 @@ update vps msg model =
         ExtendedFormChanged str ->
             let
                 edited =
-                    Just { original = Tuple.second vps.message }
+                    case model.edited of
+                        Just existing ->
+                            let
+                                current = existing.current
+                                updatedCurrent = { current | extendedForm = Just str }
+                            in
+                            Just { existing | current = updatedCurrent }
+                        
+                        Nothing ->
+                            let
+                                currentMessage = Tuple.second vps.message
+                                updatedMessage = { currentMessage | extendedForm = Just str }
+                            in
+                            Just { original = currentMessage, current = updatedMessage }
             in
-            ( { model
-                | edited = edited
-              }
+            ( { model | edited = edited }
             , E.none
-            , vps.message
-                |> (\( id, message ) ->
-                        ( id, { message | extendedForm = Just str } )
-                   )
+            , case edited of
+                Just e -> (Tuple.first vps.message, e.current)
+                Nothing -> vps.message
             )
 
         EditCancel ->
@@ -354,10 +395,11 @@ update vps msg model =
                             vps.message
 
                         Just edited ->
-                            vps.message |> (\( id, _ ) -> ( id, edited.original ))
+                            (Tuple.first vps.message, edited.original)
             in
             ( { model
                 | edited = Nothing
+                , isEditPopupOpen = False
               }
             , E.none
             , message2
@@ -365,13 +407,15 @@ update vps msg model =
 
         EditSave ->
             let
-                updatedMsg =
+                (updatedMsg, messageToReturn) =
                     case model.edited of
-                        Just _ ->
-                            Just vps.message
+                        Just edited ->
+                            ( Just (Tuple.first vps.message, edited.current)
+                            , (Tuple.first vps.message, edited.current)
+                            )
 
-                        _ ->
-                            Nothing
+                        Nothing ->
+                            (Nothing, vps.message)
 
                 cmds =
                     case updatedMsg of
@@ -382,16 +426,16 @@ update vps msg model =
                             Api.rer_importer_inbox_submit (InboxSubmitDone model.id)
                                 { messages = [ v ] }
             in
-            ( model
+            ( { model | isEditPopupOpen = False }
             , cmds
-            , vps.message
+            , messageToReturn
             )
 
         InboxSubmitDone _ (Err e) ->
             ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Повідомлення не збереглося" e, vps.message )
 
         InboxSubmitDone _ (Ok ()) ->
-            ( { model | edited = Nothing }
+            ( { model | edited = Nothing, isEditPopupOpen = False }
             , E.none
             , vps.message
             )
@@ -503,17 +547,53 @@ leftColumn ( messageId, message ) ps model =
                         ]
                         []
                     ]
-                , div
-                    [ style "font-size" "1rem"
-                    , style "cursor" "pointer"
-                    , title "редагувати"
-                    , onClick <| ForSelf Edit
-                    ]
-                    [ i
-                        [ class "bi bi-pencil me-1 text-action"
-                        ]
-                        []
-                    ]
+                , Popup.new
+                    { body = 
+                        i
+                            [ class "bi bi-pencil me-1 text-action"
+                            , style "font-size" "1rem"
+                            , style "cursor" "pointer"
+                            , title "редагувати"
+                            ]
+                            []
+                    , popupBody = 
+                        div [ class "p-2", style "min-width" "300px" ]
+                            [ textarea
+                                [ class "form-control mb-2"
+                                , style "height" "120px"
+                                , style "width" "100%"
+                                , placeholder "Введіть коментар..."
+                                , id ("edit-comment-textarea-" ++ String.fromInt messageId)
+                                , onInput (ForSelf << ExtendedFormChanged)
+                                , value <| 
+                                    case model.edited of
+                                        Just edited -> Maybe.withDefault "" edited.current.extendedForm
+                                        Nothing -> Maybe.withDefault "" message.extendedForm
+                                , spellcheck False
+                                ]
+                                []
+                            , div [ class "d-flex justify-content-end gap-2" ]
+                                [ button
+                                    [ type_ "button"
+                                    , class "btn btn-outline-secondary btn-sm"
+                                    , onClick <| ForSelf EditCancel
+                                    ]
+                                    [ text "Відміна" ]
+                                , button
+                                    [ type_ "button"
+                                    , class "btn btn-primary btn-sm"
+                                    , onClick <| ForSelf EditSave
+                                    ]
+                                    [ text "Зберегти" ]
+                                ]
+                            ]
+                    , isOpen = model.isEditPopupOpen
+                    , onOpen = ForSelf EditPopupOpen
+                    , onClose = ForSelf EditPopupClose
+                    , disabled = False
+                    }
+                    |> Popup.withPlacementBottom
+                    |> Popup.view
                 , clipboardBlock Message True
                 , HtmlX.viewIf (Le.Auth.hasRole "DeleteMsg" ps.user) <|
                     div
@@ -652,70 +732,16 @@ leftColumn ( messageId, message ) ps model =
                                 ]
                             ]
                         ]
-        , case model.edited of
-            Just _ ->
-                let
-                    extendedFormBlock =
-                        let
-                            idPrefix =
-                                "rer-inbox-msg-"
-
-                            idExtendedFormTextarea =
-                                idPrefix ++ String.fromInt model.id
-                        in
-                        [ div []
-                            [ textarea
-                                [ class "form-control pt-2 rounded-0 m-1"
-                                , style "font-size" ".9rem"
-                                , placeholder ""
-                                , id <| idExtendedFormTextarea
-                                , onInput (ForSelf << ExtendedFormChanged)
-                                , value <| Maybe.withDefault "" message.extendedForm
-                                , style "height" "80px"
-                                , style "width" "120px"
-                                , spellcheck False
-                                ]
-                                []
-                            , div []
-                                [ div [ class "mt-2 flex justify-center" ]
-                                    [ button
-                                        [ type_ "button"
-                                        , class "btn btn-outline-primaly btn-sm text-nowrap me-1"
-                                        , onClick <| ForSelf EditCancel
-                                        , style "font-size" ".75rem"
-                                        ]
-                                        [ i [ class "bi bi-x-square" ] []
-                                        ]
-                                    , button
-                                        [ type_ "button"
-                                        , class "btn btn-outline btn-primary btn-sm text-nowrap"
-                                        , style "font-size" ".75rem"
-                                        , onClick <| ForSelf EditSave
-                                        ]
-                                        [ i [ class "bi bi-check-square" ] []
-                                        ]
-                                    ]
-                                ]
-                            ]
-                        ]
-                in
+        , flip HtmlX.viewMaybe message.extendedForm <|
+            \extendedForm ->
                 div
-                    [ class "flex justify-center"
-                    , style "color" "var(--bs-secondary-color)"
+                    [ class "text-center"
+                    , style "font-size" ".9rem"
                     ]
-                    extendedFormBlock
-
-            Nothing ->
-                flip HtmlX.viewMaybe message.extendedForm <|
-                    \extendedForm ->
-                        div
-                            [ class "text-center"
-                            , style "font-size" ".9rem"
-                            ]
-                            [ i [ class "bi bi-sticky" ] []
-                            , text " "
-                            , text extendedForm
-                            ]
+                    [ i [ class "bi bi-sticky" ] []
+                    , text " "
+                    , text extendedForm
+                    ]
         ]
 
 
