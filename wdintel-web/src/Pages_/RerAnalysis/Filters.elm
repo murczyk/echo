@@ -340,6 +340,15 @@ view isDark user model =
                         }
                         tabFiltersPosts
                    , filterMenuBlockCountOutOf
+                        { unfold = model.unfoldNetworksFilter
+                        , toggleMsg = ToggleUnfoldNetworksFilter
+                        , label = "мережі"
+                        , mCountLabel = List.length model.networksSelected |> zeroToNothing |> mmap String.fromInt
+                        , overallLabel = getOverallOptionsCount (\r -> r.networksCount) model.networksStats
+                        , withGreenCircle = False
+                        }
+                        tabFiltersNetworks
+                   , filterMenuBlockCountOutOf
                         { unfold = model.unfoldTagsFilter
                         , toggleMsg = ToggleUnfoldTagsFilter
                         , label = "теги, збережені"
@@ -708,6 +717,36 @@ view isDark user model =
                             model.selPostMenu
                             "всі"
                             { loading = RD.isLoading model.posts, disabled = False, isDark = isDark }
+                    )
+                ]
+
+        tabFiltersNetworks =
+            let
+                findNetworkName networkId =
+                    model.networkNames
+                        |> ListX.find (\entry -> entry.id == (String.toInt networkId |> Maybe.withDefault 0))
+                        |> Maybe.map .name
+                        |> Maybe.withDefault ("Network " ++ networkId)
+
+                items =
+                    List.map
+                        (\networkId ->
+                            Select.basicMenuItem
+                                { item = networkId
+                                , label = findNetworkName networkId
+                                }
+                        )
+                        model.networksSelected
+            in
+            div [ class "py-1 px-2" ]
+                [ Html.map SelNetworkMsg
+                    (Html.Styled.toUnstyled <|
+                        Le.Block.Select.renderSelectVirtual
+                            items
+                            model.selNetworkState
+                            model.selNetworkMenu
+                            "всі"
+                            { loading = RD.isLoading model.networksStats, disabled = False, isDark = isDark }
                     )
                 ]
     in
