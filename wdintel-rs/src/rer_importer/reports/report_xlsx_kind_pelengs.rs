@@ -103,6 +103,8 @@ pub async fn get_inbox_messages_report(
         )
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(datasource_group::Column::DatasourceId)
+        .group_by(datasource_group::Column::GroupMasterKey)
         .filter(datasource_group::Column::GroupMasterKey.is_in(
             crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
         ));

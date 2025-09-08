@@ -95,25 +95,11 @@ async fn get_inbox_messages_report(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .group_by(signal_message::Column::Id)
-        .group_by(sigint_inbox_item::Column::Id)
-        .group_by(sigint_important::Column::SignalMessageId)
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.is_in(
-            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
-        ));
-
-    if !req.or_with_extended_form.unwrap_or(false) {
-        q = q.join(
+        .join(
             JoinType::LeftJoin,
             signal_message::Relation::SigintComment.def(),
-        );
-    }
-    if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.is_in(logins));
-    }
-    if !req.or_important.unwrap_or(false) {
-        q = q.join(
+        )
+        .join(
             JoinType::LeftJoin,
             signal_message::Relation::SigintImportant
                 .def()
@@ -123,6 +109,16 @@ async fn get_inbox_messages_report(
                         .into_condition()
                 }),
         )
+        .group_by(signal_message::Column::Id)
+        .group_by(sigint_inbox_item::Column::Id)
+        .group_by(sigint_important::Column::SignalMessageId)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.is_in(
+            crate::users::get_identity_sigint_groups(&env.dbx, &login).await?,
+        ));
+
+    if req.report_tags_only_this_unit == Some(true) {
+        q = q.filter(sigint_comment::Column::Login.is_in(logins));
     }
     q = crate::rer_importer::inbox::query::get_order_by(env, req, q.clone())
         .await?;
