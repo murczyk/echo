@@ -178,33 +178,56 @@ pub async fn highlight_callsigns(
     }
     // println!("> callsign_forms: {callsign_forms:?}");
 
-    let mut substrings_to_highlight: Vec<(String, String)> = vec![];
-    substrings_to_highlight.sort();
-    substrings_to_highlight.dedup();
-    for token in &tokens {
-        let token2 = token.text.to_lowercase();
-        if let Some(etalon) = callsign_forms.get(&token2) {
-            substrings_to_highlight.push((etalon.clone(), token.text.clone()));
-        }
-    }
-    // println!("> substrings_to_highlight: {substrings_to_highlight:?}");
+    let mut substrings_to_highlight: Vec<(String, String, usize, usize)> =
+        vec![];
 
-    for (etalon, sub) in substrings_to_highlight {
-        for token in tokens.iter() {
-            if token.text == sub {
-                res.push(CNCallsign {
-                    begin: token.start,
-                    end: token.end,
-                    etalon: etalon.clone(),
-                    text: sub.clone(),
-                });
+    // 🔹 Scan n-grams of length 1..=2 (single word, two-word)
+    for n in 1..=2 {
+        for i in 0..tokens.len().saturating_sub(n - 1) {
+            let slice = &tokens[i..i + n];
+
+            // Join token texts with spaces
+            let text = slice
+                .iter()
+                .map(|t| t.text.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let text_lc = text.to_lowercase();
+
+            if let Some(etalon) = callsign_forms.get(&text_lc) {
+                if let (Some(first), Some(last)) = (slice.first(), slice.last())
+                {
+                    substrings_to_highlight.push((
+                        etalon.clone(),
+                        slice
+                            .iter()
+                            .map(|t| t.text.clone())
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        first.start,
+                        last.end,
+                    ));
+                }
             }
         }
     }
 
+    // println!("> substrings_to_highlight: {substrings_to_highlight:?}");
+
+    for (etalon, sub, start, end) in substrings_to_highlight {
+        res.push(CNCallsign {
+            begin: start,
+            end,
+            etalon: etalon.clone(),
+            text: sub.clone(),
+        });
+    }
+
+    // Deduplicate and sort
     let mut res = res.clone();
     res.sort();
     res.dedup();
+
     Ok(res)
 }
 
@@ -299,7 +322,7 @@ fn extract_kazhanchik_callsigns(
     // CALLSING must have capital letters and possibly numbers as a suffix
     // also allowed digital callsing in format 1-Й, 34-Й (i.e. numbers dash Й)
     // for digitall calllins only there is a extract_digital_callsigns function
-    const CALLSIGN_REGEX_STR: &str = r"(\d+\s*(-|—)\s*)??(?P<callsign>(([A-ZА-Я]+(\s*(-|—)?\s*[0-9]{1,3})?)|([0-9]{1,3}\s*(-|—)?\s*Й)))(\s?\([^\s]+\))?";
+    const CALLSIGN_REGEX_STR: &str = r"(\d+\s*(-|—)\s*)??(?P<callsign>(([A-ZА-ЯЁ]+(\s*(-|—)?\s*[0-9]{1,3})?)|([0-9]{1,3}\s*(-|—)?\s*Й)))(\s?\([^\s]+\))?";
 
     lazy_static! {
         // Regex for matching a single callsign
@@ -307,7 +330,7 @@ fn extract_kazhanchik_callsigns(
 
         // Regex for validating an entire line of callsigns separated by commas
         static ref LINE_REGEX: Regex = Regex::new(&format!(
-            r"^({})(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*\s*$",
+            r"^({})(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,\s*{})*(,)?\s*$",
             CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign1>"),
             CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign2>"),
             CALLSIGN_REGEX_STR.replace("?P<callsign>", "?P<callsign3>"),
@@ -1560,6 +1583,127 @@ mod tests {
         )
     }
 
+    #[tokio::test]
+    async fn extract_callsigns_13() {
+        let rq = reqwest::Client::new();
+        let body = r#"03.09.2025_18:52 F=136.2350(МГц) _
+УКХ р/м 1843 омсб 68 мсд 6 А (РАДЬКІВКА-КАЛИНОВЕ) 🔑
+АВРОРА, ЁЖ, КУРСК
+НВ
+1. Аврора 21
+2. Ёж 22, по небу пока 10
+1. Курск, да, принял"#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(
+            crate::utils::uniq_via_btreeset(&ress)
+                .into_iter()
+                .take(3)
+                .collect::<Vec<_>>(),
+            vec!["АВРОРА", "ЁЖ", "КУРСК"]
+        )
+    }
+
+    #[tokio::test]
+    async fn extract_callsigns_14() {
+        let rq = reqwest::Client::new();
+        let body = r#"03.09.2025_18:25 F=154.1580(МГц) _
+УКХ р/м 1843 омсб 68 мсд 6 А (РАДЬКІВКА-КАЛИНОВЕ) 🔑
+ФРУНЗЕ, КОБА,
+СОЛДАТ, СТУДЕНТ,
+5. СОЛДАТ на приём, СОЛДАТ на приём блядь!
+5. СОЛДАТ обстановку дай обстановку?
+1. Так, блядь, еще раз повторяю, Фрунзе, блядь, соображай маленько побыстрее, блядь, быстрее, маленько побыстрее, у Солдата запросить обстановку....
+5. Солдат, Солдат, бегом обстановочку, братишка, бегом.
+5. Коба 22 обстановка у пацанов
+1. Студент я Коба прием
+1. Так, Камушек, Камушек, повыше подними, прохожий со мной связь, как ты принял?
+2. принял
+1. давай соберись,по щекам по ногам....ты же мужик ебаный в рот блядь
+1. еще раз открытые места нужно ну очень бегом преодолевать ну очень быыстро,...
+1. так а пока я сказал на шевелимся,как принял
+1. Студент я Коба прием
+1. все братишка одна малая и движем"#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(
+            crate::utils::uniq_via_btreeset(&ress)
+                .into_iter()
+                .take(4)
+                .collect::<Vec<_>>(),
+            vec!["ФРУНЗЕ", "КОБА", "СОЛДАТ", "СТУДЕНТ"]
+        )
+    }
+
+    #[tokio::test]
+    async fn extract_callsigns_15() {
+        let rq = reqwest::Client::new();
+        let body = r#"03.09.2025_18:13 F=136.2350(МГц) _
+УКХ р/м 1843 омсб 68 мсд 6 А (РАДЬКІВКА-КАЛИНОВЕ) 🔑
+ТАМБОВ, МОСКВА, ИС, ОРЁЛ, ГСМ
+НВ
+1. Тамбов 22, небо пока +
+2. Москва, не прошёл Москва
+2. ИС 22, принял. Как слышишь, разбираешь?
+2. Орёл 22, принял
+3. ГСМ 22"#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(
+            crate::utils::uniq_via_btreeset(&ress)
+                .into_iter()
+                .take(5)
+                .collect::<Vec<_>>(),
+            vec!["ТАМБОВ", "МОСКВА", "ИС", "ОРЁЛ", "ГСМ"]
+        )
+    }
+
+    #[tokio::test]
+    async fn extract_callsigns_16() {
+        let rq = reqwest::Client::new();
+        let body = r#"08.09.2025, 14:05:08
+161.2000
+🅳🅼🆁УКХ р/м взаємодії 3 мсб 1432 мсп (☀️р-н Володимирівка - Котлярівка) (07.03.25) 🟢 ⚫
+ПЛЯЖ
+ЗАКУП, ИВА 4
+
+— Я Пляж 409 с запада на восток, по северам.
+— Закуп я Ива 4 зимут выхода 280, 290 120й ..."#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(
+            crate::utils::uniq_via_btreeset(&ress)
+                .into_iter()
+                .take(3)
+                .collect::<Vec<_>>(),
+            vec!["ПЛЯЖ", "ЗАКУП", "ИВА 4"]
+        )
+    }
+
+    #[tokio::test]
+    async fn extract_callsigns_17() {
+        let rq = reqwest::Client::new();
+        let body = r#"Отримано з поста "33_1"
+--------------------------------------
+08.09.2025, 14:07:06
+143.1500
+УКХ р/м управління, ймовірно, зрбатр 1 мсп 2 мсд 1 ТА (КАРПІВКА, НОВЕ, ДОНЕЦЬКА ОБЛАСТЬ) 143.150 МГц
+ДУБ 3
+ГУСАР
+
+— Гусар, Гусар, я Дуб 3. Проверка связи. Как меня слышно?
+— Гусар, Гусар, я Дуб 3. Как меня слышишь? Прием."#;
+        let res = find_known_callsigns(&rq, body).await.unwrap();
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(
+            crate::utils::uniq_via_btreeset(&ress)
+                .into_iter()
+                .take(2)
+                .collect::<Vec<_>>(),
+            vec!["ДУБ 3", "ГУСАР"]
+        )
+    }
+
     #[test]
     fn extract_callsigns_kazhanchik_01() {
         let body = r#"03.04.2023_08:49 F=145,5500(МГц)
@@ -2417,6 +2561,25 @@ mod tests {
             "Псих".to_string(),
             "1234".to_string(),
         ];
+        let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
+        assert_eq!(ress, expected);
+    }
+
+    #[tokio::test]
+    async fn test_extract_callsigns_format_hoor6() {
+        let body = r#"УКХ р/м управління 52 орб 68 мсд 6 А
+ДВОРІЧНА-ЗАПАДНЕ
+03.09.2025 17:52:55
+Відправник: Тор
+Отримувач(і): Топаз,
+Тору
+Перехоплення:
+1. Топаз Тору показывает технику, по главной трасе синей по дороге двигается в сторону Купянска, как принял?
+1. Топаз Тору показывает технику, рядом с красней и синей дорогой, ориентир 45, карандаш, техника не двигаеться.
+1. Топаз Тору показывает технику, ориентир 21, канат, направление в сторону Кучеровки."#;
+        let res = extract_sender_receiver_pair(body).unwrap();
+        let expected: Vec<String> =
+            vec!["Тор".to_string(), "Топаз".to_string(), "Тору".to_string()];
         let ress: Vec<String> = res.iter().cloned().map(|x| x.text).collect();
         assert_eq!(ress, expected);
     }
