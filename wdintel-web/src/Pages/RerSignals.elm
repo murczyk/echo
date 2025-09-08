@@ -3,13 +3,16 @@ module Pages.RerSignals exposing (EditSignalState, Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.ModalDialog as ModalDialog
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
-import Components.Watermark as Watermark
+import Shared.Components.Button as Button
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Watermark as Watermark
+import Core.Auth
+import Core.Types exposing (ApiError)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -19,14 +22,6 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Styled as Styled
 import Layouts
-import Le.Auth
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.ErrorHandling
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Time
-import Le.Types exposing (ApiError)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
 import Route exposing (Route)
@@ -36,6 +31,11 @@ import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
+import Utils.Api.ErrorHandling
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
 import View exposing (View)
 
 
@@ -178,7 +178,7 @@ init _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
+        [ E.sendCmd <| Task.attempt InitGotZone Utils.Time.getZone
         , loadSignals m2
         , loadUnitStats
         ]
@@ -206,7 +206,7 @@ update shared msg model =
 
         GotSignals (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" err
             )
 
         GotSignals (Ok rsp) ->
@@ -226,7 +226,7 @@ update shared msg model =
                     in
                     ( { model
                         | editSignalState =
-                            case Le.Block.Select.singleUpd mAction (Just editState.inpUnit) of
+                            case Utils.Select.singleUpd mAction (Just editState.inpUnit) of
                                 Nothing ->
                                     Nothing
 
@@ -247,7 +247,7 @@ update shared msg model =
                     Select.update selMsg model.inpUnitSelState
 
                 mUnitId =
-                    Le.Block.Select.singleUpd mAction model.inpUnit
+                    Utils.Select.singleUpd mAction model.inpUnit
 
                 m2 =
                     { model
@@ -284,7 +284,7 @@ update shared msg model =
 
         DeleteSignalDone (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення сигналу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення сигналу" err
             )
 
         DeleteSignalDone (Ok _) ->
@@ -358,7 +358,7 @@ update shared msg model =
 
         EditSignalDone _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення сигналу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення сигналу" err
             )
 
         EditSignalDone id (Ok _) ->
@@ -403,7 +403,7 @@ update shared msg model =
 
         AddSignalDone (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення сигналу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення сигналу" err
             )
 
         --TODO: подивитися чи можна не перезавантажувати все кожного разу
@@ -521,7 +521,7 @@ update shared msg model =
 
         GotUnitStats (Err err) ->
             ( { model | loadingUnitStats = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
             )
 
         GotUnitStats (Ok rsp) ->
@@ -628,7 +628,7 @@ signalsTableConfig : Shared.Model -> Model -> B.User -> Maybe Int -> Table.Confi
 signalsTableConfig shared model user editingSignalId =
     let
         hasEditorRole =
-            Le.Auth.hasRole "UnitsEditor" user
+            Core.Auth.hasRole "UnitsEditor" user
 
         getUnitName : Maybe Int -> String
         getUnitName unitId =
@@ -730,7 +730,7 @@ signalsTableConfig shared model user editingSignalId =
                             "Loading..."
 
                         Just zone ->
-                            Le.Time.renderDateTimeF1 zone (Time.millisToPosix signal.createdAt)
+                            Utils.Time.renderDateTimeF1 zone (Time.millisToPosix signal.createdAt)
                 )
                 |> Table.withColumnWidth "15%"
             , Table.veryCustomColumn
@@ -778,7 +778,7 @@ editSignalSidebarContent : Shared.Model -> Model -> B.User -> B.Signal -> List (
 editSignalSidebarContent shared model user signal =
     let
         hasEditorRole =
-            Le.Auth.hasRole "UnitsEditor" user
+            Core.Auth.hasRole "UnitsEditor" user
 
         currentEditState =
             case model.editSignalState of
@@ -826,7 +826,7 @@ editSignalSidebarContent shared model user signal =
                     [ div [ class "flex-grow" ]
                         [ Html.map EditUnitSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
+                                Utils.Select.renderSelectSingle
                                     (case shared.masterUnits of
                                         Success units ->
                                             Dict.get currentEditState.inpUnit units
@@ -838,7 +838,7 @@ editSignalSidebarContent shared model user signal =
                                     currentEditState.inpUnitSelState
                                     (populateUnitMenu shared)
                                     "підрозділ"
-                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                    (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     ]
                 ]
@@ -911,7 +911,7 @@ unitsBlock shared model =
             ]
     in
     if model.loadingUnitStats then
-        Le.Block.Spinner.loadingSpinner
+        Shared.Components.Spinner.loadingSpinner
 
     else
         div [ style "font-size" ".8rem" ] <|
@@ -943,7 +943,7 @@ renderSignalTrEdit : Shared.Model -> Model -> B.User -> B.Signal -> EditSignalSt
 renderSignalTrEdit shared model user signal editState =
     let
         hasEditorRole =
-            Le.Auth.hasRole "UnitsEditor" user
+            Core.Auth.hasRole "UnitsEditor" user
     in
     tr []
         [ td []
@@ -990,14 +990,14 @@ renderSignalTrEdit shared model user signal editState =
                 [ div [ class "flex-grow-1" ]
                     [ let
                         options =
-                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
 
                         options2 =
                             { options | disabled = not hasEditorRole }
                       in
                       Html.map EditUnitSelMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelectSingle
+                            Utils.Select.renderSelectSingle
                                 selectItem
                                 editState.inpUnitSelState
                                 (populateUnitMenu shared)
@@ -1023,7 +1023,7 @@ renderSignalTrEdit shared model user signal editState =
                         "Loading..."
 
                     Just zone ->
-                        Le.Time.renderDateTimeF1 zone
+                        Utils.Time.renderDateTimeF1 zone
                             (Time.millisToPosix signal.createdAt)
             ]
         , td [ style "font-size" ".8rem" ]
@@ -1049,7 +1049,7 @@ contentBlock : Shared.Model -> Model -> Auth.User -> Html Msg
 contentBlock shared model user =
     let
         hasEditorRole =
-            Le.Auth.hasRole "UnitsEditor" user
+            Core.Auth.hasRole "UnitsEditor" user
 
         filterPanel =
             div
@@ -1058,7 +1058,7 @@ contentBlock shared model user =
                 ]
                 [ div [ class "me-2" ]
                     [ if model.loading then
-                        Le.Block.Spinner.loadingSpinner2Sm
+                        Shared.Components.Spinner.loadingSpinner2Sm
 
                       else
                         i [ class "bi bi-filter text-[21px] text-action" ] []
@@ -1138,14 +1138,14 @@ contentBlock shared model user =
                         [ div [ class "flex-grow-1" ]
                             [ let
                                 options =
-                                    Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                    Utils.Select.defaultOptions (isDarkMode shared.themeMode)
 
                                 options2 =
                                     { options | disabled = not hasEditorRole }
                               in
                               Html.map AddUnitSelMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
+                                    Utils.Select.renderSelectSingle
                                         selectItem
                                         model.inpUnitSelState
                                         (populateUnitMenu shared)
@@ -1242,7 +1242,7 @@ view _ shared user model =
                         , onClick Refresh
                         ]
                         (if model.loading then
-                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+                            [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                          else
                             [ i [ class "bi bi-arrow-repeat" ] [] ]

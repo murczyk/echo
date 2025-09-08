@@ -4,15 +4,21 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.ModalDialog as ModalDialog
-import Components.RadioGroup as RadioGroup
-import Components.SegmentedControl as SegmentedControl
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.RadioGroup as RadioGroup
+import Shared.Components.SegmentedControl as SegmentedControl
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Core.Auth
+import Core.Types exposing (ApiError, GroupsActivityPerDayRsp)
+import Core.Unit as Unit
+import Core.UnitHierarchy
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -27,33 +33,27 @@ import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
-import Le.Auth
-import Le.Block.Callsign
-import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
-import Le.Block.DateTime
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.Block.Unit as Unit
-import Le.ErrorHandling
-import Le.NetworksUtils as EUtils
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Time
-import Le.Types exposing (ApiError, GroupsActivityPerDayRsp)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
-import RerFreqs.Model exposing (FurtherInvestigationFilter(..))
+import Pages_.RerFreqs.Model exposing (FurtherInvestigationFilter(..))
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set
 import Shared
+import Shared.Callsign
+import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
 import TimeZone
-import UnitHierarchy
 import Url.Builder
+import Utils.Api.ErrorHandling
+import Utils.NetworksUtils as EUtils
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
 import View exposing (View)
 
 
@@ -66,8 +66,8 @@ type NetworksMergeStatus
 type alias Model =
     { zone : Maybe Time.Zone
     , now : Maybe Time.Posix
-    , from : Le.Block.DateTime.Model
-    , to : Le.Block.DateTime.Model
+    , from : Shared.Components.DateTime.Model
+    , to : Shared.Components.DateTime.Model
     , networksGroupsActivity : RemoteData ApiError GroupsActivityPerDayRsp
     , networks : RemoteData ApiError (List B.Network)
     , currentRequestTracker : Maybe String
@@ -99,7 +99,7 @@ type alias Model =
     , loadingUnitStats : Bool
     , tableState : Table.State
     , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
-    , aorFilterSelect : Le.Block.Select.SelectType Int
+    , aorFilterSelect : Utils.Select.SelectType Int
     , aorFilterFocusedBefore : Maybe (List Int)
     }
 
@@ -124,8 +124,8 @@ init _ =
         m2 =
             { zone = Nothing
             , now = Nothing
-            , from = Le.Block.DateTime.init ()
-            , to = Le.Block.DateTime.init ()
+            , from = Shared.Components.DateTime.init ()
+            , to = Shared.Components.DateTime.init ()
             , networks = NotAsked
             , currentRequestTracker = Nothing
             , requestCounter = 0
@@ -172,7 +172,7 @@ init _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt GotZone Le.Time.getZone
+        [ E.sendCmd <| Task.attempt GotZone Utils.Time.getZone
         , E.getUnitStatsForNetworks UnitStatsReturnedByApi
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })
         ]
@@ -254,8 +254,8 @@ type Msg
     | MapClosedByUser
     | FilterStateMsg FilterState
     | FilterStateDebounceMsg Debounce.Msg
-    | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)
-    | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
+    | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
+    | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
     | UnitStatsReturnedByApi (Result ApiError B.NetworkUnitStatsRsp)
     | ReportModalOpenedByUser
     | ReportModalClosedByUser
@@ -416,10 +416,10 @@ update shared msg model =
         GotTime zone now_ ->
             let
                 from =
-                    Le.Block.DateTime.initFromPosix { datePosix = Le.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
 
                 to =
-                    Le.Block.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
 
                 m2 =
                     { model
@@ -432,7 +432,7 @@ update shared msg model =
 
         NetworksReturnedByApi (Err err) ->
             ( { model | networks = Failure err, currentRequestTracker = Nothing }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" err
             )
 
         NetworksReturnedByApi (Ok networks) ->
@@ -457,7 +457,7 @@ update shared msg model =
 
         NetworksGroupsActivityReturnedByApi (Err err) ->
             ( { model | networksGroupsActivity = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мереж" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мереж" err
             )
 
         NetworksGroupsActivityReturnedByApi (Ok res) ->
@@ -471,7 +471,7 @@ update shared msg model =
 
         CallsignsInfoReturnedByApi (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e
             )
 
         CallsignsInfoReturnedByApi (Ok callsigns) ->
@@ -510,7 +510,7 @@ update shared msg model =
 
         NetworkPointsReturnedByApi _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок мережі" e
             )
 
         NetworkPointsReturnedByApi networkId (Ok res) ->
@@ -570,7 +570,7 @@ update shared msg model =
         DateTimeFromMsg imsg ->
             let
                 ( m2, eff2 ) =
-                    Le.Block.DateTime.update
+                    Shared.Components.DateTime.update
                         { zone = model.zone
                         , msg = imsg
                         , model = model.from
@@ -591,7 +591,7 @@ update shared msg model =
         DateTimeToMsg imsg ->
             let
                 ( m2, eff2 ) =
-                    Le.Block.DateTime.update
+                    Shared.Components.DateTime.update
                         { zone = model.zone
                         , msg = imsg
                         , model = model.to
@@ -611,7 +611,7 @@ update shared msg model =
 
         UnitStatsReturnedByApi (Err err) ->
             ( { model | unitStats = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
             )
 
         UnitStatsReturnedByApi (Ok rsp) ->
@@ -639,7 +639,7 @@ update shared msg model =
                     { model | reportDownloadInProgress = False }
             in
             ( m2
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
             )
 
         ReportDownloadReturnedByApi (Ok bytes) ->
@@ -659,12 +659,12 @@ update shared msg model =
                         Just zone ->
                             "etalonka_"
                                 ++ (model.from.datePosix
-                                        |> mmap (Le.Time.renderDateTimeF6 zone)
+                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
                                         |> def ""
                                    )
                                 ++ "_"
                                 ++ (model.to.datePosix
-                                        |> mmap (Le.Time.renderDateTimeF6 zone)
+                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
                                         |> def ""
                                    )
                                 ++ "."
@@ -800,7 +800,7 @@ update shared msg model =
 
         NetworksMergedByApi _ (Err e) ->
             ( { model | networksMergeInProgress = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка об'єднання мереж" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка об'єднання мереж" e
             )
 
         NetworksMergedByApi idToRemove (Ok res) ->
@@ -985,7 +985,7 @@ update shared msg model =
                     Select.update selMsg model.aorFilterSelect.state
 
                 ( newSelected, newState ) =
-                    Le.Block.Select.multiUpdMenuOpen mAction model.aorFilterSelect.selected iState
+                    Utils.Select.multiUpdMenuOpen mAction model.aorFilterSelect.selected iState
 
                 focusedBefore =
                     case mAction of
@@ -1170,7 +1170,7 @@ networksTableConfig user shared model =
                 }
                 |> Table.withColumnWidth "8%"
             ]
-                ++ (if Le.Auth.hasRole "UnitsEditor" user then
+                ++ (if Core.Auth.hasRole "UnitsEditor" user then
                         [ Table.veryCustomColumn
                             { name = "Смуги"
                             , viewData =
@@ -1188,7 +1188,7 @@ networksTableConfig user shared model =
                                                 text aorNames
 
                                             _ ->
-                                                Le.Block.Spinner.loadingSpinnerSm
+                                                Shared.Components.Spinner.loadingSpinnerSm
                                         ]
                                     }
                             , sorter = Table.unsortable
@@ -1271,7 +1271,7 @@ networksTableConfig user shared model =
                                                     text "Не активні останні 10 днів"
 
                                         _ ->
-                                            Le.Block.Spinner.loadingSpinnerSm
+                                            Shared.Components.Spinner.loadingSpinnerSm
                                     ]
                                 }
                         , sorter = Table.unsortable
@@ -1287,13 +1287,13 @@ networksTableConfig user shared model =
                                         ( updatedAt, Just zone ) ->
                                             let
                                                 updatedAtString =
-                                                    Le.Time.renderDateF6 zone (Time.millisToPosix updatedAt)
+                                                    Utils.Time.renderDateF6 zone (Time.millisToPosix updatedAt)
 
                                                 updatedByString =
                                                     Maybe.withDefault "невідомий" network.lastUpdatedBy
 
                                                 createdAtString =
-                                                    Le.Time.renderDateF6 zone (Time.millisToPosix network.createdAt)
+                                                    Utils.Time.renderDateF6 zone (Time.millisToPosix network.createdAt)
                                             in
                                             [ div [ style "padding-left" "4px", title ("Прив'язку створено " ++ createdAtString) ]
                                                 [ i [ class "bi bi-calendar-date" ] []
@@ -1451,7 +1451,7 @@ filterPanel user shared model =
 
               else
                 text ""
-            , if Le.Auth.hasRole "UnitsEditor" user then
+            , if Core.Auth.hasRole "UnitsEditor" user then
                 let
                     selectedItems =
                         model.aorFilterSelect.selected
@@ -1471,12 +1471,12 @@ filterPanel user shared model =
                 div [ style "min-width" "210px", style "width" "210px" ]
                     [ Html.map AorFilterSelMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelect
+                            Utils.Select.renderSelect
                                 selectedItems
                                 model.aorFilterSelect.state
                                 model.aorFilterSelect.items
                                 "смуги"
-                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                     ]
 
               else
@@ -1548,7 +1548,7 @@ filterPanel user shared model =
                         , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
                             |> (if model.reportDownloadInProgress then
                                     Button.withIcon
-                                        [ Le.Block.Spinner.loadingSpinner2Sm
+                                        [ Shared.Components.Spinner.loadingSpinner2Sm
                                         ]
 
                                 else
@@ -1580,7 +1580,7 @@ contentBlock user shared model =
                     model
 
             _ ->
-                div [ class "flex items-center justify-center w-full h-full" ] [ Le.Block.Spinner.loadingSpinner ]
+                div [ class "flex items-center justify-center w-full h-full" ] [ Shared.Components.Spinner.loadingSpinner ]
         ]
 
 
@@ -1603,7 +1603,7 @@ leftPanel shared model =
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock shared model =
     let
-        config : UnitHierarchy.Config Msg
+        config : Core.UnitHierarchy.Config Msg
         config =
             { onUnitClick = FilterUnitMsg
             , onArmyToggle = ToggleArmyExpanded
@@ -1645,7 +1645,7 @@ unitsBlock shared model =
                 ]
     in
     if model.loadingUnitStats then
-        Le.Block.Spinner.loadingSpinner
+        Shared.Components.Spinner.loadingSpinner
 
     else
         div [ class "flex flex-col h-full" ]
@@ -1659,10 +1659,10 @@ unitsBlock shared model =
             , div [ class "overflow-y-auto grow-1" ]
                 (case shared.masterUnits of
                     Success units ->
-                        [ UnitHierarchy.view config (Dict.values units) (RD.withDefault [] model.unitStats) ]
+                        [ Core.UnitHierarchy.view config (Dict.values units) (RD.withDefault [] model.unitStats) ]
 
                     _ ->
-                        [ Le.Block.Spinner.loadingSpinner ]
+                        [ Shared.Components.Spinner.loadingSpinner ]
                 )
             ]
 
@@ -1688,7 +1688,7 @@ view dark shared user model =
                             Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
 
                         buttons =
-                            if Le.Auth.hasRole "UnitsEditor" user then
+                            if Core.Auth.hasRole "UnitsEditor" user then
                                 [ Button.new { label = "Створити", onClick = CreateNewNetworkClicked } |> Button.withStyleSecondary |> Button.view
                                 , reportButton
                                 ]
@@ -1826,7 +1826,7 @@ networksMergeSidebarContent shared model =
                     , Button.new { label = "Поєднати", onClick = NetworksMergeDoIt networkA.id networkB.id }
                         |> (if model.networksMergeInProgress then
                                 Button.withIcon
-                                    [ Le.Block.Spinner.loadingSpinner2Sm
+                                    [ Shared.Components.Spinner.loadingSpinner2Sm
                                     ]
 
                             else

@@ -2,22 +2,22 @@ module Api exposing (..)
 
 import Bindings exposing (..)
 import Bytes exposing (Bytes)
+import Shared.Components.Toast
+import Core.Types exposing (ApiError, ModelWithErrorFields)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Le.Api.RetryableHttp as RetryableHttp
-import Le.Block.Toast
-import Le.Types exposing (ApiError, ModelWithErrorFields)
-import Le.Utils exposing (..)
-import Temp exposing (jsonPair, leExpectJson, resolve)
 import Url.Builder
+import Utils.Api.RetryableHttp as RetryableHttp
+import Utils.Api.Temp exposing (jsonPair, leExpectJson, resolve)
+import Utils.Utils exposing (..)
 
 
 handleHttpError :
-    (Le.Block.Toast.Msg -> msg)
+    (Shared.Components.Toast.Msg -> msg)
     -> ApiError
     -> ModelWithErrorFields model
     -> ( ModelWithErrorFields model, Effect msg )
@@ -36,12 +36,12 @@ handleHttpError toMsg e m =
                             case e.errors of
                                 [] ->
                                     ( { m | formErrors = e.formErrors }
-                                    , E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+                                    , E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
                                     )
 
                                 es ->
                                     ( { m | formErrors = e.formErrors }
-                                    , E.sendCmd <| Le.Block.Toast.addErrors toMsg es
+                                    , E.sendCmd <| Shared.Components.Toast.addErrors toMsg es
                                     )
 
                         _ ->
@@ -53,19 +53,19 @@ handleHttpError toMsg e m =
             ( m
             , E.sendCmd <|
                 Cmd.batch
-                    [ Le.Block.Toast.addError toMsg "There was an error, please try again later"
-                    , logError ("Bad Body: " ++ badBody) (toMsg << always Le.Block.Toast.NoOp)
+                    [ Shared.Components.Toast.addError toMsg "There was an error, please try again later"
+                    , logError ("Bad Body: " ++ badBody) (toMsg << always Shared.Components.Toast.NoOp)
                     ]
             )
 
         _ ->
             ( m
-            , E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+            , E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
             )
 
 
 handleHttpError2 :
-    (Le.Block.Toast.Msg -> msg)
+    (Shared.Components.Toast.Msg -> msg)
     -> ApiError
     ->
         { formErrors : Dict String String
@@ -86,12 +86,12 @@ handleHttpError2 toMsg e =
                             case e.errors of
                                 [] ->
                                     { formErrors = e.formErrors
-                                    , cmds = E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+                                    , cmds = E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
                                     }
 
                                 es ->
                                     { formErrors = e.formErrors
-                                    , cmds = E.sendCmd <| Le.Block.Toast.addErrors toMsg es
+                                    , cmds = E.sendCmd <| Shared.Components.Toast.addErrors toMsg es
                                     }
 
                         _ ->
@@ -104,22 +104,22 @@ handleHttpError2 toMsg e =
             , cmds =
                 E.sendCmd <|
                     Cmd.batch
-                        [ Le.Block.Toast.addError toMsg "There was an error, please try again later"
-                        , logError ("Bad Body: " ++ badBody) (toMsg << always Le.Block.Toast.NoOp)
+                        [ Shared.Components.Toast.addError toMsg "There was an error, please try again later"
+                        , logError ("Bad Body: " ++ badBody) (toMsg << always Shared.Components.Toast.NoOp)
                         ]
             }
 
         _ ->
             { formErrors = Dict.empty
-            , cmds = E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+            , cmds = E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
             }
 
 
 {-| TODO: Refactor error handling to be more flexible and avoid code duplication.
-    This function is a temporary solution for login-specific error handling.
+This function is a temporary solution for login-specific error handling.
 -}
 handleLoginHttpError :
-    (Le.Block.Toast.Msg -> msg)
+    (Shared.Components.Toast.Msg -> msg)
     -> ApiError
     -> ModelWithErrorFields model
     -> ( ModelWithErrorFields model, Effect msg )
@@ -139,12 +139,12 @@ handleLoginHttpError toMsg e m =
                             case e.errors of
                                 [] ->
                                     ( { m | formErrors = e.formErrors }
-                                    , E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+                                    , E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
                                     )
 
                                 es ->
                                     ( { m | formErrors = e.formErrors }
-                                    , E.sendCmd <| Le.Block.Toast.addErrors toMsg es
+                                    , E.sendCmd <| Shared.Components.Toast.addErrors toMsg es
                                     )
 
                         _ ->
@@ -156,14 +156,14 @@ handleLoginHttpError toMsg e m =
             ( m
             , E.sendCmd <|
                 Cmd.batch
-                    [ Le.Block.Toast.addError toMsg "There was an error, please try again later"
-                    , logError ("Bad Body: " ++ badBody) (toMsg << always Le.Block.Toast.NoOp)
+                    [ Shared.Components.Toast.addError toMsg "There was an error, please try again later"
+                    , logError ("Bad Body: " ++ badBody) (toMsg << always Shared.Components.Toast.NoOp)
                     ]
             )
 
         _ ->
             ( m
-            , E.sendCmd <| Le.Block.Toast.addError toMsg "There was an error, please try again later"
+            , E.sendCmd <| Shared.Components.Toast.addError toMsg "There was an error, please try again later"
             )
 
 
@@ -1367,7 +1367,9 @@ units_search toMsg tracker req =
         }
 
 
+
 -- Messenger API functions
+
 
 messenger_list_accounts : (Result ApiError AccountsRsp -> msg) -> Cmd msg
 messenger_list_accounts toMsg =
@@ -1387,13 +1389,16 @@ messenger_get_qr toMsg req =
         }
 
 
+
 -- Custom retry config for QR code requests - only retry once
+
+
 qrCodeRetryConfig : { maxRetries : Int, maxDurationMs : Int, initialIntervalMs : Float, maxIntervalMs : Float }
 qrCodeRetryConfig =
-    { maxRetries = 1  -- Only retry once (original + 1 retry = 2 total attempts)
-    , maxDurationMs = 10000  -- 10 seconds max total time
-    , initialIntervalMs = 1000  -- Start with 1 second delay
-    , maxIntervalMs = 3000  -- Max 3 second delay
+    { maxRetries = 1 -- Only retry once (original + 1 retry = 2 total attempts)
+    , maxDurationMs = 10000 -- 10 seconds max total time
+    , initialIntervalMs = 1000 -- Start with 1 second delay
+    , maxIntervalMs = 3000 -- Max 3 second delay
     }
 
 

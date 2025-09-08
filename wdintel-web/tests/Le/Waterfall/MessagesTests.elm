@@ -1,9 +1,9 @@
 module Le.Waterfall.MessagesTests exposing (..)
 
 import Bindings as B
+import Config exposing (waterfallMessageLimit)
 import Expect
-import Le.Config exposing (waterfallMessageLimit)
-import Le.Waterfall.Messages as Messages exposing (Messages)
+import Pages_.RerDuty.Waterfall.Messages as Messages exposing (Messages)
 import Test exposing (..)
 
 

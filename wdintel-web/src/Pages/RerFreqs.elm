@@ -4,12 +4,19 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Components.Button as Button
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
-import Components.Watermark as Watermark exposing (Watermark)
+import Shared.Components.ActionMenu
+import Shared.Components.Button as Button
+import Shared.Components.DateTime
+import Shared.Components.Popup
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Watermark as Watermark exposing (Watermark)
+import Core.Auth
+import Core.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
+import Core.UnitHierarchy
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -21,49 +28,42 @@ import Html.Extra as HtmlX
 import Http
 import Json.Encode as Encode
 import Layouts
-import Le.Auth
-import Le.Block.ActionMenu
-import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
-import Le.Block.DateTime
-import Le.Block.Popup
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.ErrorHandling
-import Le.NetworksUtils as NetworksUtils
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Time
-import Le.Types as Types exposing (ApiError, GroupsActivityPerDayRsp)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerFreqsPorts as Ports
+import Pages_.RerFreqs.FilterPanel as FilterPanel
+import Pages_.RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
+import Pages_.RerFreqs.Msg exposing (Msg(..))
+import Pages_.RerFreqs.NetworkWorkflow as NetworkWorkflow
+import Pages_.RerFreqs.UnitsFilterSidebar
+import Pages_.RerFreqs.Utils as Utils
 import Process
-import RerFreqs.FilterPanel as FilterPanel
-import RerFreqs.Model exposing (FilterName(..), NetworkWorkflowStatus(..), NetworkWorkflowTab(..), ShowAllPopupFor(..), TextLocation(..))
-import RerFreqs.Msg exposing (Msg(..))
-import RerFreqs.NetworkWorkflow as NetworkWorkflow
-import RerFreqs.UnitsFilterSidebar
-import RerFreqs.Utils as Utils
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set
 import Shared
+import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
 import Time.Extra
-import UnitHierarchy
 import Url.Builder
+import Utils.Api.ErrorHandling
+import Utils.NetworksUtils as NetworksUtils
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
 import View exposing (View)
 
 
 type alias Model =
-    RerFreqs.Model.Model
+    Pages_.RerFreqs.Model.Model
 
 
 type alias Msg =
-    RerFreqs.Msg.Msg
+    Pages_.RerFreqs.Msg.Msg
 
 
 init : () -> ( Model, Effect Msg )
@@ -80,8 +80,8 @@ init _ =
             , newOnly = False
             , includeNonActive = False
             , freqs = []
-            , from = Le.Block.DateTime.init ()
-            , to = Le.Block.DateTime.init ()
+            , from = Shared.Components.DateTime.init ()
+            , to = Shared.Components.DateTime.init ()
             , filterState =
                 { freq = ""
                 , unit = ""
@@ -185,20 +185,20 @@ init _ =
             , addExistingConfirmationInp = Nothing
             , addConfirmationInp = Nothing
             , showNetworksWithoutUnit = False
-            , furtherInvestigationFilter = RerFreqs.Model.All
+            , furtherInvestigationFilter = Pages_.RerFreqs.Model.All
             , showSidebar = True
             , expandedArmies = Set.empty
             , expandedDivisions = Set.empty
             , expandedRegiments = Set.empty
             , expandedBattalions = Set.empty
             , showOnlyInvestigating = False
-            , networkWorkflowTab = RerFreqs.Model.Search
+            , networkWorkflowTab = Pages_.RerFreqs.Model.Search
             , tableState = Table.sortBy "Частота" True
             }
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt GotZone Le.Time.getZone
+        [ E.sendCmd <| Task.attempt GotZone Utils.Time.getZone
         , initLoad m2
         , E.getModulations ModulationsReturnedByApi
         , E.loadPostsFromShared { sortBy = Nothing }
@@ -515,7 +515,7 @@ update shared msg model =
 
         GotFreqs _ (Err err) ->
             ( { model | loading = False, loadingMore = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" err
             )
 
         GotFreqs paginating (Ok rsp) ->
@@ -579,12 +579,12 @@ update shared msg model =
 
         GroupsMessageCountByDayReturnedByApi (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики активності" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики активності" err
             )
 
         GotFreqNetworks _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж частот" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж частот" err
             )
 
         GotFreqNetworks freqS (Ok networks) ->
@@ -600,7 +600,7 @@ update shared msg model =
         DateTimeFromMsg imsg ->
             let
                 ( m2, eff2 ) =
-                    Le.Block.DateTime.update
+                    Shared.Components.DateTime.update
                         { zone = model.zone
                         , msg = imsg
                         , model = model.from
@@ -618,7 +618,7 @@ update shared msg model =
         DateTimeToMsg imsg ->
             let
                 ( m2, eff2 ) =
-                    Le.Block.DateTime.update
+                    Shared.Components.DateTime.update
                         { zone = model.zone
                         , msg = imsg
                         , model = model.to
@@ -633,10 +633,10 @@ update shared msg model =
         GotTime zone now_ ->
             let
                 from =
-                    Le.Block.DateTime.initFromPosix { datePosix = Le.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
 
                 to =
-                    Le.Block.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
 
                 m2 =
                     { model
@@ -653,7 +653,7 @@ update shared msg model =
                     Select.update imsg model.networkDialogUnitSelect.state
 
                 updatedUnitId =
-                    Le.Block.Select.singleUpd mAct model.networkDialogUnitSelect.selected
+                    Utils.Select.singleUpd mAct model.networkDialogUnitSelect.selected
 
                 -- Single pattern match handling all cases
                 ( m1, cmd1, networkWorkflowStatus ) =
@@ -769,7 +769,7 @@ update shared msg model =
 
         UnitsSearchReturned (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка пошуку підрозділів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка пошуку підрозділів" e
             )
 
         UnitsSearchReturned (Ok rsp) ->
@@ -842,7 +842,7 @@ update shared msg model =
                     Select.update imsg model.addExistingModulationSelect.state
 
                 updatedNetworkModulation =
-                    Le.Block.Select.singleUpd mAct model.addExistingModulationSelect.selected
+                    Utils.Select.singleUpd mAct model.addExistingModulationSelect.selected
 
                 modulationSelect =
                     model.addExistingModulationSelect
@@ -866,7 +866,7 @@ update shared msg model =
                     Select.update imsg model.addExistingKindSelect.state
 
                 updatedNetworkKind =
-                    Le.Block.Select.singleUpdWithDefault mAct model.addExistingKindSelect.selected
+                    Utils.Select.singleUpdWithDefault mAct model.addExistingKindSelect.selected
 
                 kindSelect =
                     model.addExistingKindSelect
@@ -937,7 +937,7 @@ update shared msg model =
 
         UnitStatsReturnedByApi (Err err) ->
             ( { model | loadingUnitStats = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
             )
 
         UnitStatsReturnedByApi (Ok rsp) ->
@@ -980,7 +980,7 @@ update shared msg model =
 
         PointsByFreqReturnedByApi _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
             )
 
         CallsignsByFreqsReturnedByApi (Ok rsp) ->
@@ -1016,7 +1016,7 @@ update shared msg model =
 
         CallsignsByFreqsReturnedByApi (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
             )
 
         AltUnitsByFreqReturnedByApi (Ok rsp) ->
@@ -1026,12 +1026,12 @@ update shared msg model =
 
         AltUnitsByFreqReturnedByApi (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження альтернативних підрозділів" err
             )
 
         CallsignsInfoReturnedByApi (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
             )
 
         CallsignsInfoReturnedByApi (Ok callsignsRes) ->
@@ -1077,7 +1077,7 @@ update shared msg model =
                     Select.update imsg model.selCallsignState
 
                 ( updatedSelectedItems, state ) =
-                    Le.Block.Select.multiUpdMenuOpen mAction model.filterState.callsigns imodel2
+                    Utils.Select.multiUpdMenuOpen mAction model.filterState.callsigns imodel2
 
                 currentFilterState =
                     model.filterState
@@ -1113,7 +1113,7 @@ update shared msg model =
 
         GotFilterCallsigns (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження фільтру позивних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження фільтру позивних" e
             )
 
         GotFilterCallsigns (Ok rsp) ->
@@ -1135,7 +1135,7 @@ update shared msg model =
 
                 --TODO: remove workaround related to loading from Shared
                 , addPostsSelect =
-                    Le.Block.Select.updateSelectItems
+                    Utils.Select.updateSelectItems
                         (\_ ->
                             List.map
                                 (\post -> Select.basicMenuItem { item = post.id, label = post.name })
@@ -1143,7 +1143,7 @@ update shared msg model =
                         )
                         model.addPostsSelect
                 , editPostsSelect =
-                    Le.Block.Select.updateSelectItems
+                    Utils.Select.updateSelectItems
                         (\_ ->
                             List.map
                                 (\post -> Select.basicMenuItem { item = post.id, label = post.name })
@@ -1154,7 +1154,7 @@ update shared msg model =
             , E.batch
                 [ E.getFreqActivityDaily FreqGroupsActivityReturnedByApi
                     { freq = freq
-                    , sinceDateInclusiveMs = Time.posixToMillis (Le.Time.xDaysAgo 30 (Time.millisToPosix shared.now))
+                    , sinceDateInclusiveMs = Time.posixToMillis (Utils.Time.xDaysAgo 30 (Time.millisToPosix shared.now))
                     , tillDateInclusiveMs = Nothing
                     }
                 ]
@@ -1172,7 +1172,7 @@ update shared msg model =
 
         NetworkConfirmationAdded (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання підтвердження мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання підтвердження мережі" e
             )
 
         NetworkConfirmationAdded (Ok network) ->
@@ -1232,7 +1232,7 @@ update shared msg model =
 
         FreqAddedToNetwork _ (Err e) ->
             ( { model | networkAddLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання частоти до мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання частоти до мережі" e
             )
 
         FreqAddedToNetwork freq (Ok network) ->
@@ -1278,7 +1278,7 @@ update shared msg model =
 
         FreqRemovedFromNetwork _ (Err e) ->
             ( { model | networkAddLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти з мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення частоти з мережі" e
             )
 
         FreqRemovedFromNetwork freq (Ok network) ->
@@ -1308,7 +1308,7 @@ update shared msg model =
 
         NetworkUpdated _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
             )
 
         NetworkUpdated freq (Ok network) ->
@@ -1320,7 +1320,7 @@ update shared msg model =
 
         ModulationsReturnedByApi (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
             )
 
         ModulationsReturnedByApi (Ok modulations) ->
@@ -1369,7 +1369,7 @@ update shared msg model =
 
         FreqGroupsActivityReturnedByApi (Err err) ->
             ( { model | freqGroupsActivityForNetworkAdd = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності груп частот" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності груп частот" err
             )
 
         NetworkPostsUpdated freq editState (Ok r) ->
@@ -1386,7 +1386,7 @@ update shared msg model =
 
         NetworkPostsUpdated _ _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" err
             )
 
         NetworkFreqUpdated freq editState (Ok r) ->
@@ -1394,7 +1394,7 @@ update shared msg model =
 
         NetworkFreqUpdated _ _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти мережі" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення частоти мережі" err
             )
 
         ConfirmationInputChangedByUser val ->
@@ -1406,7 +1406,7 @@ update shared msg model =
         NetworkAddExistingActiveFromChanged x ->
             ( { model
                 | addExistingActiveFrom =
-                    case Le.Time.parseDateParts x of
+                    case Utils.Time.parseDateParts x of
                         Err _ ->
                             model.addExistingActiveFrom
 
@@ -1421,7 +1421,7 @@ update shared msg model =
         NetworkAddExistingActiveToChanged x ->
             ( { model
                 | addExistingActiveTo =
-                    case Le.Time.parseDateParts x of
+                    case Utils.Time.parseDateParts x of
                         Err _ ->
                             model.addExistingActiveFrom
 
@@ -1611,7 +1611,7 @@ freqsTableConfig shared model user =
                         dateFromStr =
                             case ( model.zone, model.now ) of
                                 ( Just zone, Just time ) ->
-                                    Le.Time.renderDateF4 zone (Le.Time.xDaysAgo 15 time)
+                                    Utils.Time.renderDateF4 zone (Utils.Time.xDaysAgo 15 time)
 
                                 _ ->
                                     ""
@@ -1619,7 +1619,7 @@ freqsTableConfig shared model user =
                         dateToStr =
                             case ( model.zone, model.now ) of
                                 ( Just zone, Just time ) ->
-                                    Le.Time.renderDateF4 zone (Le.Time.xDaysAgo -1 time)
+                                    Utils.Time.renderDateF4 zone (Utils.Time.xDaysAgo -1 time)
 
                                 _ ->
                                     ""
@@ -1703,7 +1703,7 @@ freqsTableConfig shared model user =
                                         ]
                                         [ text <| String.fromInt freq.messageCount
                                         ]
-                                    , Le.Block.ActionMenu.actionMenu (actionMenuBody freq) "bi-three-dots-vertical"
+                                    , Shared.Components.ActionMenu.actionMenu (actionMenuBody freq) "bi-three-dots-vertical"
                                     ]
                                 , Watermark.new user.name
                                     |> Watermark.withPositioning ( 30, 10 )
@@ -1811,7 +1811,7 @@ freqsTableConfig shared model user =
                                                                         _ ->
                                                                             False
                                                             in
-                                                            [ Le.Block.Popup.new
+                                                            [ Shared.Components.Popup.new
                                                                 { body = body
                                                                 , popupBody = popupBody
                                                                 , isOpen = isOpen
@@ -1819,9 +1819,9 @@ freqsTableConfig shared model user =
                                                                 , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllLocations )
                                                                 , disabled = False
                                                                 }
-                                                                |> Le.Block.Popup.withFakeAnchor
-                                                                |> Le.Block.Popup.withCloseButton
-                                                                |> Le.Block.Popup.view
+                                                                |> Shared.Components.Popup.withFakeAnchor
+                                                                |> Shared.Components.Popup.withCloseButton
+                                                                |> Shared.Components.Popup.view
                                                             ]
 
                                                         else
@@ -1881,7 +1881,7 @@ freqsTableConfig shared model user =
                                                                 _ ->
                                                                     False
                                                     in
-                                                    [ Le.Block.Popup.new
+                                                    [ Shared.Components.Popup.new
                                                         { body = body
                                                         , popupBody = popupBody
                                                         , isOpen = isOpen
@@ -1889,9 +1889,9 @@ freqsTableConfig shared model user =
                                                         , onOpen = RowShowAllPopupChanged <| Just ( freq.freq, ShowAllAltUnits )
                                                         , disabled = False
                                                         }
-                                                        |> Le.Block.Popup.withFakeAnchor
-                                                        |> Le.Block.Popup.withCloseButton
-                                                        |> Le.Block.Popup.view
+                                                        |> Shared.Components.Popup.withFakeAnchor
+                                                        |> Shared.Components.Popup.withCloseButton
+                                                        |> Shared.Components.Popup.view
                                                     ]
 
                                                 else
@@ -1939,7 +1939,7 @@ freqsTableConfig shared model user =
                                 ( Just updatedAt, Just zone ) ->
                                     let
                                         updatedAtString =
-                                            Le.Time.renderDateF6 zone
+                                            Utils.Time.renderDateF6 zone
                                                 (Time.millisToPosix updatedAt)
 
                                         updatedByString =
@@ -1948,7 +1948,7 @@ freqsTableConfig shared model user =
                                         createdAtString =
                                             case freq.createdAt of
                                                 Just createdAt ->
-                                                    Le.Time.renderDateF6 zone
+                                                    Utils.Time.renderDateF6 zone
                                                         (Time.millisToPosix createdAt)
 
                                                 Nothing ->
@@ -1991,7 +1991,7 @@ viewFreqBlock mUser shared model freq =
         editBlock =
             case mUser of
                 Just user ->
-                    if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+                    if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
                         div []
                             [ div [ style "font-size" ".8rem" ]
                                 [ button
@@ -2073,11 +2073,11 @@ dateAndPanelsBlock _ model =
                 , style "font-size" "1rem"
                 ]
                 [ text "з" ]
-                :: (Le.Block.DateTime.new
+                :: (Shared.Components.DateTime.new
                         { model = model.from
                         , toMsg = DateTimeFromMsg
                         }
-                        |> Le.Block.DateTime.view
+                        |> Shared.Components.DateTime.view
                    )
                 ++ [ div
                         [ class "me-2"
@@ -2085,11 +2085,11 @@ dateAndPanelsBlock _ model =
                         ]
                         [ text "по" ]
                    ]
-                ++ (Le.Block.DateTime.new
+                ++ (Shared.Components.DateTime.new
                         { model = model.to
                         , toMsg = DateTimeToMsg
                         }
-                        |> Le.Block.DateTime.view
+                        |> Shared.Components.DateTime.view
                    )
         ]
 
@@ -2112,7 +2112,7 @@ leftPanel shared model =
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock shared model =
     let
-        config : UnitHierarchy.Config Msg
+        config : Core.UnitHierarchy.Config Msg
         config =
             { onUnitClick = FilterUnitMsg
             , onArmyToggle = ToggleArmyExpanded
@@ -2154,7 +2154,7 @@ unitsBlock shared model =
                 ]
     in
     if model.loadingUnitStats then
-        Le.Block.Spinner.loadingSpinner
+        Shared.Components.Spinner.loadingSpinner
 
     else
         div [ class "flex flex-col h-full" ]
@@ -2168,7 +2168,7 @@ unitsBlock shared model =
             , div [ class "overflow-y-auto grow-1" ]
                 [ case shared.masterUnits of
                     Success units ->
-                        UnitHierarchy.view config (Dict.toList units |> List.map Tuple.second) model.unitStats
+                        Core.UnitHierarchy.view config (Dict.toList units |> List.map Tuple.second) model.unitStats
 
                     _ ->
                         div [] [ text "Завантаження підрозділів..." ]
@@ -2204,7 +2204,7 @@ view dark shared user model =
                                 , attribute "data-position" "bottom"
                                 ]
                                 (if model.loading then
-                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                  else
                                     [ i [ class "bi bi-arrow-repeat" ] [] ]
@@ -2240,7 +2240,7 @@ view dark shared user model =
                                     |> Button.withDisabled model.loadingMore
                                     |> Button.withIcon
                                         (if model.loadingMore then
-                                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                            [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                          else
                                             []

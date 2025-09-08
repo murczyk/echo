@@ -3,12 +3,7 @@ module Pages.Admin.Organisms exposing (FieldError, FormField, Model, Msg, Organi
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
+import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -16,13 +11,6 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
-import Le.Block.Select
-import Le.Components exposing (..)
-import Le.ErrorHandling
-import Le.RemoteData as RD
-import Le.Time
-import Le.Types exposing (..)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Maybe
 import Page exposing (Page)
@@ -30,10 +18,22 @@ import Route exposing (Route)
 import Select
 import Set
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (..)
+import Utils.RemoteData as RD
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
 import Validate
 import View exposing (View)
 
@@ -70,9 +70,11 @@ filterOrganismsByName : String -> List B.Organism -> List B.Organism
 filterOrganismsByName filter organisms =
     if String.isEmpty filter then
         organisms
+
     else
         let
-            filterLower = String.toLower filter
+            filterLower =
+                String.toLower filter
         in
         organisms
             |> List.filter (\organism -> String.contains filterLower (String.toLower organism.name))
@@ -239,7 +241,7 @@ init _ =
             , Api.organism_all_groups GotAllGroups
             , Api.organism_group_list GotOrganismGroups
             , Api.aor_list GotAorList { sortBy = Nothing }
-            , Task.attempt GotTimeZone Le.Time.getZone
+            , Task.attempt GotTimeZone Utils.Time.getZone
             ]
     )
 
@@ -286,7 +288,7 @@ update msg model =
             ( { model | nameFilter = filter }, E.none )
 
         GotOrganisms (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження організмів" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження організмів" e )
 
         GotOrganisms (Ok res) ->
             let
@@ -310,7 +312,7 @@ update msg model =
                     model.inpRole
 
                 inpRole2 =
-                    { inpRole | selectedItems = Le.Block.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
+                    { inpRole | selectedItems = Utils.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
             in
             ( { model | inpRole = inpRole2 }
             , E.batch
@@ -329,7 +331,7 @@ update msg model =
                             editOrganism.inpRole
 
                         inpRole2 =
-                            { inpRole | selectedItems = Le.Block.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
+                            { inpRole | selectedItems = Utils.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
 
                         editOrganism2 =
                             { editOrganism | inpRole = inpRole2 }
@@ -352,7 +354,7 @@ update msg model =
                     model.inpGroups
 
                 inpGroups2 =
-                    { inpGroups | selectedItems = Le.Block.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
+                    { inpGroups | selectedItems = Utils.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
 
                 selectedParentId =
                     model.inpParentOrganism.selectedItem
@@ -407,7 +409,7 @@ update msg model =
                             editOrganism.inpGroups
 
                         inpGroups2 =
-                            { inpGroups | selectedItems = Le.Block.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
+                            { inpGroups | selectedItems = Utils.Select.multiUpdS mAction inpGroups.selectedItems, selectState = iState }
 
                         selectedParentId =
                             editOrganism.inpParentOrganism.selectedItem
@@ -465,7 +467,7 @@ update msg model =
                     model.inpParentOrganism
 
                 inpParentOrganism2 =
-                    { inpParentOrganism | selectedItem = Le.Block.Select.singleUpd mAction inpParentOrganism.selectedItem, selectState = iState }
+                    { inpParentOrganism | selectedItem = Utils.Select.singleUpd mAction inpParentOrganism.selectedItem, selectState = iState }
 
                 selectedParentId =
                     inpParentOrganism2.selectedItem
@@ -520,7 +522,7 @@ update msg model =
                             editOrganism.inpParentOrganism
 
                         inpParentOrganism2 =
-                            { inpParentOrganism | selectedItem = Le.Block.Select.singleUpd mAction inpParentOrganism.selectedItem, selectState = iState }
+                            { inpParentOrganism | selectedItem = Utils.Select.singleUpd mAction inpParentOrganism.selectedItem, selectState = iState }
 
                         selectedParentId =
                             inpParentOrganism2.selectedItem
@@ -676,7 +678,7 @@ update msg model =
             )
 
         AddOrganismDone (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання організму" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання організму" e )
 
         AddGroupToOrganismDone organismId groupId edited (Ok _) ->
             if edited then
@@ -708,7 +710,7 @@ update msg model =
                 ( { model | inpGroups = inpGroups2, organismGroups = organismGroups }, E.none )
 
         AddGroupToOrganismDone _ _ _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання групи до організму" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання групи до організму" e )
 
         RemoveGroupFromOrganismDone organismId groupId (Ok _) ->
             let
@@ -720,7 +722,7 @@ update msg model =
             ( { model | organismGroups = organismGroups }, E.none )
 
         RemoveGroupFromOrganismDone _ _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи з організму" e )
 
         ToggleEditEnabled ->
             case model.editOrganism of
@@ -805,7 +807,7 @@ update msg model =
                     ( model, E.none )
 
         GotAllGroups (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e )
 
         GotAllGroups (Ok res) ->
             let
@@ -821,7 +823,7 @@ update msg model =
             ( { model | groups = res, inpGroups = inpGroups2 }, E.none )
 
         GotOrganismGroups (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зв'язків організм-група" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зв'язків організм-група" e )
 
         GotOrganismGroups (Ok res) ->
             ( { model | organismGroups = res }, E.none )
@@ -840,7 +842,7 @@ update msg model =
             ( { model | aorList = RD.Success aors, inpAors = inpAors2 }, E.none )
 
         GotAorList (Err e) ->
-            ( { model | aorList = RD.Failure e }, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" e )
+            ( { model | aorList = RD.Failure e }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" e )
 
         AddAorSelMsg selMsg ->
             let
@@ -851,7 +853,7 @@ update msg model =
                     model.inpAors
 
                 inpAors2 =
-                    { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+                    { inpAors | selectedItems = Utils.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
             in
             ( { model | inpAors = inpAors2 }
             , E.batch [ E.sendCmd <| Cmd.map AddAorSelMsg iCmd ]
@@ -868,7 +870,7 @@ update msg model =
                             editOrganism.inpAors
 
                         inpAors2 =
-                            { inpAors | selectedItems = Le.Block.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
+                            { inpAors | selectedItems = Utils.Select.multiUpdI mAction inpAors.selectedItems, selectState = iState }
 
                         editOrganism2 =
                             { editOrganism | inpAors = inpAors2 }
@@ -946,7 +948,7 @@ update msg model =
                                     (Api.update_organism EditOrganismDone
                                         { name = Just editOrganism.inpName
                                         , parentId = editOrganism.inpParentOrganism.selectedItem
-                                        , roles = Le.Utils.emptyToNothing editOrganism.inpRole.selectedItems
+                                        , roles = Utils.Utils.emptyToNothing editOrganism.inpRole.selectedItems
                                         , groupAutoLink = Just editOrganism.autoAddGroups
                                         , id = id
                                         , enabled = editOrganism.enabled
@@ -993,7 +995,7 @@ update msg model =
             ( { model | editOrganism = Nothing, sidebarType = Nothing, organisms = model.organisms |> ListX.updateIf (\x -> x.id == o.id) (\y -> { y | name = o.name, parentId = o.parentId, roles = o.roles, groupAutoLink = o.groupAutoLink, enabled = o.enabled, aorIds = o.aorIds }) }, E.none )
 
         EditOrganismDone (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення організму" e )
 
 
 validator : Validate.Validator ( FormField, String ) { a | inpName : String }
@@ -1318,7 +1320,7 @@ organismsTableConfig groups organismGroups allOrganisms timeZone editingOrganism
                 , viewData =
                     \o ->
                         { attributes = [ class "col-narrow" ]
-                        , children = [ text (Le.Time.renderDateF5FromMillis o.createdAt timeZone) ]
+                        , children = [ text (Utils.Time.renderDateF5FromMillis o.createdAt timeZone) ]
                         }
                 , sorter = Table.increasingOrDecreasingBy (\o -> String.fromInt o.createdAt)
                 }
@@ -1385,7 +1387,7 @@ addOrganismSidebarContent isDark model =
                     , div [ class "w-full" ]
                         [ Html.map AddParentSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
+                                Utils.Select.renderSelectSingle
                                     (case model.inpParentOrganism.selectedItem of
                                         Just id ->
                                             ListX.find (\o -> o.id == id) model.organisms
@@ -1397,7 +1399,7 @@ addOrganismSidebarContent isDark model =
                                     model.inpParentOrganism.selectState
                                     model.inpParentOrganism.items
                                     "батьківський організм"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     ]
                 , div [ class "space-y-2" ]
@@ -1405,12 +1407,12 @@ addOrganismSidebarContent isDark model =
                     , div [ class "w-full" ]
                         [ Html.map AddGroupSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     groupsSelectedItems
                                     model.inpGroups.selectState
                                     (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
                                     "групи"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     , case model.groupsValidation of
                         Just groups ->
@@ -1429,12 +1431,12 @@ addOrganismSidebarContent isDark model =
                     , div [ class "w-full" ]
                         [ Html.map AddRoleSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     (model.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
                                     model.inpRole.selectState
                                     model.inpRole.items
                                     "роль"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     ]
                 , div [ class "space-y-2" ]
@@ -1442,7 +1444,7 @@ addOrganismSidebarContent isDark model =
                     , div [ class "w-full" ]
                         [ Html.map AddAorSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     (model.inpAors.selectedItems
                                         |> List.map
                                             (\id ->
@@ -1465,7 +1467,7 @@ addOrganismSidebarContent isDark model =
                                             []
                                     )
                                     "смуги"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     ]
                 ]
@@ -1531,7 +1533,7 @@ editOrganismSidebarContent isDark model organismId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditParentSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
+                                Utils.Select.renderSelectSingle
                                     (case editState.inpParentOrganism.selectedItem of
                                         Just id ->
                                             ListX.find (\o -> o.id == id) model.organisms
@@ -1543,7 +1545,7 @@ editOrganismSidebarContent isDark model organismId editState =
                                     editState.inpParentOrganism.selectState
                                     editState.inpParentOrganism.items
                                     "батьківський організм"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     ]
                 , div [ class "space-y-2" ]
@@ -1551,12 +1553,12 @@ editOrganismSidebarContent isDark model organismId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditGroupSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     groupsSelectedItems
                                     editState.inpGroups.selectState
                                     (availableGroups |> List.map (\x -> Select.basicMenuItem { item = x.masterKey, label = x.name }))
                                     "групи"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     , case editState.groupsValidation of
                         Just groups ->
@@ -1575,12 +1577,12 @@ editOrganismSidebarContent isDark model organismId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditRoleSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
                                     editState.inpRole.selectState
                                     editState.inpRole.items
                                     "роль"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     ]
                 , div [ class "space-y-2" ]
@@ -1588,7 +1590,7 @@ editOrganismSidebarContent isDark model organismId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditAorSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     (editState.inpAors.selectedItems
                                         |> List.map
                                             (\id ->
@@ -1611,7 +1613,7 @@ editOrganismSidebarContent isDark model organismId editState =
                                             []
                                     )
                                     "смуги"
-                                    (Le.Block.Select.defaultOptions isDark)
+                                    (Utils.Select.defaultOptions isDark)
                         ]
                     ]
                 , div [ class "grid grid-cols-2 gap-4" ]

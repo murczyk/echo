@@ -28,24 +28,24 @@ import Bindings as B exposing (AnalysisStatsReq, EditFreqUnitNameReq)
 import Browser.Dom
 import Browser.Navigation
 import Bytes exposing (Bytes)
+import Shared.Components.Toast
+import Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
 import Dict exposing (Dict)
 import File.Download
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Le.Block.Toast
-import Le.Time
-import Le.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
-import Le.Utils exposing (decodePair)
 import Route
 import Route.Path
 import Shared.Model
 import Shared.Msg
 import Task
-import Temp exposing (leExpectJson, resolve)
 import Time
 import TimeZone
 import Url exposing (Url)
+import Utils.Api.Temp exposing (leExpectJson, resolve)
+import Utils.Time
+import Utils.Utils exposing (decodePair)
 
 
 type Effect msg
@@ -273,7 +273,7 @@ showErrorWithDetails title content =
     SendSharedMsg (Shared.Msg.ShowToastWithDetails title content)
 
 
-sendToastMsg : Le.Block.Toast.Msg -> Effect msg
+sendToastMsg : Shared.Components.Toast.Msg -> Effect msg
 sendToastMsg toastMsg =
     SendSharedMsg (Shared.Msg.ToastMsg toastMsg)
 
@@ -945,7 +945,7 @@ toCmd options effect =
             Task.perform toMsg Time.now
 
         GetTimeZone toMsg ->
-            Task.attempt toMsg Le.Time.getZone
+            Task.attempt toMsg Utils.Time.getZone
 
         GetElementById id_ toMsg ->
             Task.attempt toMsg (Browser.Dom.getElement id_)
@@ -1532,6 +1532,7 @@ createNetworkCallsign toMsg payload =
 deleteNetworkCallsign : (Result ApiError B.NetworkCallsign -> msg) -> Int -> Effect msg
 deleteNetworkCallsign toMsg callsignId =
     DeleteNetworkCallsign toMsg callsignId
+
 
 updateNetworkCallsign : (Result ApiError B.NetworkCallsign -> msg) -> B.UpdateNetworkCallsignReq -> Effect msg
 updateNetworkCallsign toMsg payload =

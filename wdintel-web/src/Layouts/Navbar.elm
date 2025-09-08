@@ -1,19 +1,18 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
 import Auth
-import Components.Navbar
-import Components.NavbarOld
+import Core.Types exposing (ApiError)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (class, classList)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
-import Le.Block.Toast as Toast
-
-import Le.Types exposing (ApiError)
 import Process
 import Route exposing (Route)
 import Shared
+import Shared.Components.Navbar
+import Shared.Components.NavbarOld
+import Shared.Components.Toast as Toast
 import Shared.Model exposing (ThemeMode(..))
 import Shared.Msg
 import Task
@@ -106,8 +105,6 @@ update route msg model =
         ToastMsg toastMsg ->
             ( model, E.sendToastMsg toastMsg )
 
-       
-
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -123,9 +120,10 @@ view user activeName shared route { toContentMsg, model, content } =
     let
         navbarComponent =
             if shared.featureNavbarFrontOnly then
-                Components.Navbar.navBar
+                Shared.Components.Navbar.navBar
+
             else
-                Components.NavbarOld.navBar
+                Shared.Components.NavbarOld.navBar
     in
     { title = content.title
     , body =
@@ -135,6 +133,7 @@ view user activeName shared route { toContentMsg, model, content } =
                 , class
                     (if model.isNavbarVisible then
                         "translate-y-0"
+
                      else
                         "-translate-y-full"
                     )
@@ -149,6 +148,7 @@ view user activeName shared route { toContentMsg, model, content } =
                         ]
                         [ i [ class "bi bi-arrows-fullscreen text-xl" ] [] ]
                     ]
+
               else
                 div [] []
             , Toast.overlay ToastMsg shared.toasts
@@ -159,6 +159,7 @@ view user activeName shared route { toContentMsg, model, content } =
             , class
                 (if model.isNavbarVisible then
                     "pt-[50px] min-h-[calc(100vh-50px)]"
+
                  else
                     "pt-0 min-h-screen"
                 )

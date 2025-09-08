@@ -4,7 +4,10 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
-import Components.Button as Button
+import Shared.Components.Button as Button
+import Shared.Components.Console
+import Shared.Components.Spinner
+import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -14,18 +17,15 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
-import Le.Block.Spinner
-import Le.Console
-import Le.ErrorHandling
-import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
+import Utils.Api.ErrorHandling
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -49,7 +49,7 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , console : Le.Console.Model
+    , console : Shared.Components.Console.Model
     , file : Maybe File
     , taskId : Maybe Int
     , csvPage : Int
@@ -59,7 +59,7 @@ type alias Model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , console = Le.Console.init
+      , console = Shared.Components.Console.init
       , file = Nothing
       , taskId = Nothing
       , csvPage = 1
@@ -75,7 +75,7 @@ type Msg
     | ConvertDonePerRadio File (Result ApiError Bytes)
     | ConvertDonePerDate File (Result ApiError Bytes)
     | ConvertDoneCsv Int File (Result ApiError Bytes)
-    | ConsoleMsg (Le.Console.Msg Msg)
+    | ConsoleMsg (Shared.Components.Console.Msg Msg)
 
 
 finalizer : Model -> Effect Msg
@@ -115,15 +115,15 @@ update msg model =
             )
 
         UploadFileToConvertDone _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "File Upload Error" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "File Upload Error" e )
 
         UploadFileToConvertDone _ (Ok taskId) ->
             ( { model | taskId = Just taskId }
-            , E.sendCmd <| Task.perform (always (ConsoleMsg (Le.Console.TaskLaunched taskId))) (Process.sleep 0)
+            , E.sendCmd <| Task.perform (always (ConsoleMsg (Shared.Components.Console.TaskLaunched taskId))) (Process.sleep 0)
             )
 
         ConsoleMsg imsg ->
-            Le.Console.update
+            Shared.Components.Console.update
                 { msg = imsg
                 , model = model.console
                 , toModel = \console -> { model | console = console }
@@ -132,7 +132,7 @@ update msg model =
                 }
 
         ConvertDonePerRadio _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Download Error" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Download Error" e )
 
         ConvertDonePerRadio file (Ok bs) ->
             ( model
@@ -144,7 +144,7 @@ update msg model =
             )
 
         ConvertDonePerDate _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Download Error" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Download Error" e )
 
         ConvertDonePerDate file (Ok bs) ->
             ( model
@@ -197,14 +197,14 @@ contentBlock model =
         , Button.new { label = " додати kmz", onClick = UploadFileToConvert }
             |> Button.withStyleSecondary
             |> Button.withIcon
-                [ if not (Le.Console.isInProgress model.console) then
+                [ if not (Shared.Components.Console.isInProgress model.console) then
                     i [ class "bi bi-file-zip" ] []
 
                   else
-                    Le.Block.Spinner.loadingSpinnerSm
+                    Shared.Components.Spinner.loadingSpinnerSm
                 ]
             |> Button.view
-        , Le.Console.view model.console
+        , Shared.Components.Console.view model.console
         ]
 
 

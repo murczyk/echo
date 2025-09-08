@@ -1,14 +1,14 @@
 module CoordinatesTests exposing (..)
 
-import Coordinates as C
+import Core.Coordinates as C
 import Expect
-import Le.Console
-import Le.Time
 import List.Extra
 import Pages.Importer
 import Parser as P exposing ((|.), (|=), Parser)
+import Shared.Components.Console
 import Test exposing (..)
 import Time
+import Utils.Time
 
 
 suite : Test
@@ -295,7 +295,7 @@ testProgressRegex =
         \_ ->
             let
                 res =
-                    Le.Console.findLastProgress [ "[1/10] hello", "[3/10] world", "junk" ]
+                    Shared.Components.Console.findLastProgress [ "[1/10] hello", "[3/10] world", "junk" ]
             in
             Expect.equal
                 res
@@ -311,7 +311,7 @@ testParseDateStr =
         \_ ->
             let
                 res =
-                    Le.Time.parseDatetimeParts "2023-03-29T08:10"
+                    Utils.Time.parseDatetimeParts "2023-03-29T08:10"
             in
             Expect.equal res
                 (Ok
@@ -328,7 +328,7 @@ testParseDateStr =
         \_ ->
             let
                 res =
-                    Le.Time.parseDatetimeParts "2023-03-29T08:10:32.123"
+                    Utils.Time.parseDatetimeParts "2023-03-29T08:10:32.123"
             in
             Expect.equal res
                 (Ok
@@ -345,7 +345,7 @@ testParseDateStr =
         \_ ->
             let
                 res =
-                    Le.Time.parseDatetimeParts "2023-03-29T08:10:32"
+                    Utils.Time.parseDatetimeParts "2023-03-29T08:10:32"
             in
             Expect.equal res
                 (Ok
@@ -362,7 +362,7 @@ testParseDateStr =
         \_ ->
             let
                 res =
-                    Le.Time.parseTimeParts "08:10"
+                    Utils.Time.parseTimeParts "08:10"
             in
             Expect.equal res
                 (Ok

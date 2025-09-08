@@ -4,8 +4,7 @@ import Api
 import Auth
 import Bindings as B exposing (..)
 import Browser.Events
-import Components.Navbar exposing (navBar)
-import Components.ThemeSwitcher exposing (themeSwitcher)
+import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -14,31 +13,32 @@ import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
-import Le.ErrorHandling
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Types exposing (..)
-import Le.Utils exposing (..)
-import Le.Waterfall exposing (Msg(..), waterfallDivId)
-import Le.Waterfall.Messages as Messages
-import Le.Waterfall.Utils as Utils
 import Maybe.Extra as MaybeX exposing (isJust)
 import Page exposing (Page)
+import Pages_.RerDuty.Waterfall exposing (Msg(..), waterfallDivId)
+import Pages_.RerDuty.Waterfall.Messages as Messages
+import Pages_.RerDuty.Waterfall.Utils as Utils
 import Random
 import Route exposing (Route)
 import Route.Path
 import Set exposing (Set)
 import Shared
+import Shared.Components.Navbar exposing (navBar)
+import Shared.Components.ThemeSwitcher exposing (themeSwitcher)
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
+import Utils.Api.ErrorHandling
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Utils exposing (..)
+import Utils.Views
 import Uuid.Barebones
 import View exposing (View)
-import Views
 
 
 type alias Model =
     { navCollapsed : Bool
-    , waterfalls : List ( String, Le.Waterfall.Model )
+    , waterfalls : List ( String, Pages_.RerDuty.Waterfall.Model )
     , duplicates : Set Int
     , lastPushQuery : Dict String String
     , datasources : List ( Int, Datasource )
@@ -75,7 +75,7 @@ init route _ =
                         let
                             wfmodel =
                                 Tuple.first
-                                    (Le.Waterfall.init wfId (Just wfState))
+                                    (Pages_.RerDuty.Waterfall.init wfId (Just wfState))
                         in
                         ( wfId, wfmodel )
                     )
@@ -88,7 +88,7 @@ init route _ =
                                 let
                                     wfcmd =
                                         Tuple.second
-                                            (Le.Waterfall.init wfId (Just wfState))
+                                            (Pages_.RerDuty.Waterfall.init wfId (Just wfState))
                                 in
                                 --TODO: now it sends msgs to all waterfalls, like we check height of wf-1, but it also send to wf-2
                                 E.map (WaterfallMsg wfId) wfcmd
@@ -112,7 +112,7 @@ init route _ =
 
 
 type Msg
-    = WaterfallMsg String Le.Waterfall.Msg
+    = WaterfallMsg String Pages_.RerDuty.Waterfall.Msg
     | ResizeHappened
     | GenerateNewWaterfallId
     | AddWaterfall String
@@ -219,7 +219,7 @@ update shared user msg model =
                 Just waterfall ->
                     let
                         ( r1model, r1cmd ) =
-                            Le.Waterfall.update shared user imsg waterfall
+                            Pages_.RerDuty.Waterfall.update shared user imsg waterfall
 
                         waterfalls2 =
                             updateV id_ (\_ -> r1model) model.waterfalls
@@ -229,7 +229,7 @@ update shared user msg model =
 
                         m3 =
                             case imsg of
-                                Le.Waterfall.CloseWaterfall ->
+                                Pages_.RerDuty.Waterfall.CloseWaterfall ->
                                     { m2
                                         | waterfalls =
                                             List.filter (\( wId, _ ) -> wId /= id_) model.waterfalls
@@ -279,7 +279,7 @@ update shared user msg model =
                     List.any (\( id, _ ) -> id == wfId) model.waterfalls
 
                 ( wfModel, wfCmd ) =
-                    Le.Waterfall.init wfId Nothing
+                    Pages_.RerDuty.Waterfall.init wfId Nothing
             in
             if isIdDuplicated then
                 ( model, E.none )
@@ -292,7 +292,7 @@ update shared user msg model =
                 )
 
         GotDatasourceList (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел даних" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел даних" e )
 
         GotDatasourceList (Ok xs) ->
             let
@@ -318,7 +318,7 @@ subscriptions model =
             :: List.map
                 (\( id_, wf ) ->
                     Sub.map (WaterfallMsg id_)
-                        (Le.Waterfall.subscriptions wf)
+                        (Pages_.RerDuty.Waterfall.subscriptions wf)
                 )
                 model.waterfalls
 
@@ -336,7 +336,7 @@ emptyWaterfallQueryStateWf =
     }
 
 
-waterfallQueryState : Le.Waterfall.Model -> B.RerDutyQueryStateWf
+waterfallQueryState : Pages_.RerDuty.Waterfall.Model -> B.RerDutyQueryStateWf
 waterfallQueryState wf =
     { groupsSelected = Just wf.groupsSelected
     , sendersSelected = Just wf.sendersSelect.selected
@@ -414,7 +414,7 @@ body isDarkMode shared user model =
             List.map
                 (\( id_, wf ) ->
                     Html.map (WaterfallMsg id_)
-                        (Le.Waterfall.messageTab
+                        (Pages_.RerDuty.Waterfall.messageTab
                             { isDarkMode = isDarkMode
                             , duplicates = model.duplicates
                             , datasources = model.datasources

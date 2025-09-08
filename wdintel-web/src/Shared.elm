@@ -10,15 +10,14 @@ module Shared exposing
 
 import Api
 import Bindings as B
+import Shared.Components.Toast
+import Core.EventService
+import Core.EventTypes
+import Core.Types exposing (ApiError)
 import Dict
 import Effect as E exposing (Effect)
 import Http
 import Json.Decode
-import Le.Block.Toast
-import Le.EventService
-import Le.EventTypes
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Types exposing (ApiError)
 import PagePorts.SharedPorts as Ports
 import Process
 import Route exposing (Route)
@@ -26,9 +25,10 @@ import Route.Path
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Task
-import Temp exposing (leExpectJson)
 import TimeZone
 import Url
+import Utils.Api.Temp exposing (leExpectJson)
+import Utils.RemoteData as RD exposing (RemoteData(..))
 
 
 type alias Flags =
@@ -85,9 +85,9 @@ init flagsResult route =
       , timeZone = TimeZone.europe__kyiv ()
       , callsignsInfo = Dict.empty
       , posts = NotAsked
-      , toasts = Le.Block.Toast.init
+      , toasts = Shared.Components.Toast.init
       , featureNavbarFrontOnly = flags.featureNavbarFrontOnly
-      , eventService = Le.EventService.init
+      , eventService = Core.EventService.init
       , pendingEvents = []
       , eventSubscriptions = Dict.empty
       , networks = NotAsked
@@ -286,7 +286,7 @@ update req msg model =
         ToastMsg toastMsg ->
             let
                 ( toastModel, toastCmd ) =
-                    Le.Block.Toast.update toastMsg model.toasts
+                    Shared.Components.Toast.update toastMsg model.toasts
             in
             ( { model | toasts = toastModel }
             , E.sendCmd <| Cmd.map ToastMsg toastCmd
@@ -294,12 +294,12 @@ update req msg model =
 
         ShowToast error ->
             ( model
-            , E.sendCmd <| Le.Block.Toast.addError ToastMsg error
+            , E.sendCmd <| Shared.Components.Toast.addError ToastMsg error
             )
 
         ShowToastWithDetails title content ->
             ( model
-            , E.sendCmd <| Le.Block.Toast.addErrorV2 ToastMsg title content
+            , E.sendCmd <| Shared.Components.Toast.addErrorV2 ToastMsg title content
             )
 
         EventServiceStartPolling ->
@@ -435,13 +435,13 @@ update req msg model =
 
         SubscribeToEvents pageId eventTypes ->
             -- Add page subscription to event types
-            ( { model | eventSubscriptions = Le.EventTypes.subscribeToEvents pageId eventTypes model.eventSubscriptions }
+            ( { model | eventSubscriptions = Core.EventTypes.subscribeToEvents pageId eventTypes model.eventSubscriptions }
             , E.none
             )
 
         UnsubscribeFromEvents pageId ->
             -- Remove page subscription
-            ( { model | eventSubscriptions = Le.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
+            ( { model | eventSubscriptions = Core.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
             , E.none
             )
 

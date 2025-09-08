@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
+import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -13,14 +14,13 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
-import Le.ErrorHandling
-import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Route exposing (Route)
 import Shared
 import Shared.Model exposing (isDarkMode)
+import Utils.Api.ErrorHandling
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -83,7 +83,7 @@ update msg model =
             )
 
         UploadKmzToFixDone _ (Err e) ->
-            ( { model | fixKmzInProgress = False }, Le.ErrorHandling.formatErrorForShowErrorWithDetails "File Upload Error" e )
+            ( { model | fixKmzInProgress = False }, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "File Upload Error" e )
 
         UploadKmzToFixDone file (Ok bs) ->
             ( { model | fixKmzInProgress = False }

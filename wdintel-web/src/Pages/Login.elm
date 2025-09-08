@@ -1,19 +1,16 @@
 module Pages.Login exposing (Model, Msg, page)
-import Shared.Model exposing (isDarkMode)
 
 import Api
 import Bindings as B
 import Browser.Dom
 import Browser.Navigation
+import Shared.Components.Toast
+import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Le.Block.Toast
-import Le.Components exposing (fieldError, isInvalidCls)
-import Le.Types exposing (..)
-import Le.Utils exposing (..)
 import Maybe
 import Page exposing (Page)
 import Regex
@@ -23,12 +20,14 @@ import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
 import Url.Builder
+import Utils.Components exposing (fieldError, isInvalidCls)
+import Utils.Utils exposing (..)
 import View exposing (View)
 
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
+    , toasts : Shared.Components.Toast.Model
     , loginInp : String
     , passwordInp : String
     , redirect : Maybe String
@@ -62,7 +61,7 @@ init route shared _ =
                     )
     in
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
+      , toasts = Shared.Components.Toast.init
       , loginInp = ""
       , passwordInp = ""
       , redirect = Dict.get "redirect" route.query
@@ -72,7 +71,7 @@ init route shared _ =
         ((E.sendCmd <| focusLoginInput)
             :: (case mDeltaRedirectError of
                     Just deltaError ->
-                        [ E.sendCmd <| Le.Block.Toast.addError ToastMsg deltaError
+                        [ E.sendCmd <| Shared.Components.Toast.addError ToastMsg deltaError
                         , E.replaceRoute { path = Route.Path.Login, hash = Nothing, query = Dict.remove "api_error" route.query }
                         ]
 
@@ -85,7 +84,7 @@ init route shared _ =
 
 type Msg
     = NoOp
-    | ToastMsg Le.Block.Toast.Msg
+    | ToastMsg Shared.Components.Toast.Msg
     | SetLoginInp String
     | SetPasswordInp String
     | Login
@@ -119,7 +118,7 @@ update shared msg model =
         ToastMsg imsg ->
             let
                 ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
+                    Shared.Components.Toast.update imsg model.toasts
             in
             ( { model | toasts = im }
             , E.sendCmd <| Cmd.map ToastMsg icmds
@@ -206,7 +205,7 @@ update shared msg model =
                             )
 
                     else if isIpAddress loc.hostname then
-                        Le.Block.Toast.addWarning ToastMsg ("Ви використовуєте ЕХО через IP-адресу: " ++ loc.hostname ++ ". Відділ безпеки Дельти може звернутись щодо підтвердження користування ЕХО.")
+                        Shared.Components.Toast.addWarning ToastMsg ("Ви використовуєте ЕХО через IP-адресу: " ++ loc.hostname ++ ". Відділ безпеки Дельти може звернутись щодо підтвердження користування ЕХО.")
 
                     else
                         Cmd.none
@@ -240,7 +239,7 @@ subscriptions model =
 
 body : Bool -> Bool -> Model -> List (Html Msg)
 body isDarkMode deltaLoginFlag model =
-    [ Le.Block.Toast.view ToastMsg model.toasts <|
+    [ Shared.Components.Toast.view ToastMsg model.toasts <|
         div
             [ class "d-flex flex-column justify-content-center align-items-center"
             , style "height" "100vh"

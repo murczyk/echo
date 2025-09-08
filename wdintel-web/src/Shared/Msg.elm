@@ -1,8 +1,8 @@
 module Shared.Msg exposing (Msg(..))
 
 import Bindings as B
-import Le.Block.Toast
-import Le.Types exposing (ApiError, LocationRes)
+import Shared.Components.Toast
+import Core.Types exposing (ApiError, LocationRes)
 import Route.Path
 import Shared.Model exposing (ThemeMode)
 import Time exposing (Posix)
@@ -25,7 +25,7 @@ type Msg
     | PostLoadAll B.ListPostsReq
     | PostsReturnedByApi (Result ApiError (List B.Post))
     | TriggerResize
-    | ToastMsg Le.Block.Toast.Msg
+    | ToastMsg Shared.Components.Toast.Msg
     | ShowToast String
     | ShowToastWithDetails String String
     | EventServiceStartPolling

@@ -14,11 +14,12 @@ import Auth
 import Base64.Decode
 import Bindings as B
 import Bytes exposing (Bytes)
-import Coordinates exposing (Coordinates)
+import Shared.Components.Spinner
+import Core.Coordinates exposing (Coordinates)
+import Core.Types exposing (ApiError)
 import DateFormat
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
-import EnumeratedList as EL exposing (EnumeratedItem, EnumeratedList)
 import File exposing (File)
 import File.Download as Download
 import File.Select
@@ -27,12 +28,6 @@ import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.Components exposing (fieldError, isInvalidCls)
-import Le.ErrorHandling
-import Le.Types exposing (ApiError)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
@@ -44,9 +39,14 @@ import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (fieldError, isInvalidCls)
+import Utils.EnumeratedList as EL exposing (EnumeratedItem, EnumeratedList)
+import Utils.Select
+import Utils.Utils exposing (..)
+import Utils.Views
 import Uuid.Barebones
 import View exposing (View)
-import Views
 
 
 type alias FileWithUuid =
@@ -226,12 +226,12 @@ buildRowInfo ( i, r ) =
             []
 
         SelectedCoordManual ->
-            case Coordinates.extractCoordinates r.manualCoordTxt of
-                (Coordinates.Wgs84LatLng { lat, lng }) :: _ ->
+            case Core.Coordinates.extractCoordinates r.manualCoordTxt of
+                (Core.Coordinates.Wgs84LatLng { lat, lng }) :: _ ->
                     [ { content = r.content
                       , imageUrls = r.imageUrls
-                      , lat = Coordinates.renderWgsFloat lat
-                      , lng = Coordinates.renderWgsFloat lng
+                      , lat = Core.Coordinates.renderWgsFloat lat
+                      , lng = Core.Coordinates.renderWgsFloat lng
                       , title = r.title
                       , icon = r.icon
                       }
@@ -270,13 +270,13 @@ buildRowInfo ( i, r ) =
 renderCoordinatesToLatLng : Int -> Coordinates -> Dict Int { lat : Float, lng : Float } -> Maybe { lat : String, lng : String }
 renderCoordinatesToLatLng coordId coords coordinatesWgs84 =
     case coords of
-        Coordinates.Wgs84LatLng { lat, lng } ->
-            Just { lat = Coordinates.renderWgsFloat lat, lng = Coordinates.renderWgsFloat lng }
+        Core.Coordinates.Wgs84LatLng { lat, lng } ->
+            Just { lat = Core.Coordinates.renderWgsFloat lat, lng = Core.Coordinates.renderWgsFloat lng }
 
-        Coordinates.Wgs84DegMinSec { lat, lng } ->
+        Core.Coordinates.Wgs84DegMinSec { lat, lng } ->
             Just
-                { lat = Coordinates.renderWgsFloat (Coordinates.dmsToLatLng lat)
-                , lng = Coordinates.renderWgsFloat (Coordinates.dmsToLatLng lng)
+                { lat = Core.Coordinates.renderWgsFloat (Core.Coordinates.dmsToLatLng lat)
+                , lng = Core.Coordinates.renderWgsFloat (Core.Coordinates.dmsToLatLng lng)
                 }
 
         _ ->
@@ -286,8 +286,8 @@ renderCoordinatesToLatLng coordId coords coordinatesWgs84 =
 
                 Just { lat, lng } ->
                     Just
-                        { lat = Coordinates.renderWgsFloat lat
-                        , lng = Coordinates.renderWgsFloat lng
+                        { lat = Core.Coordinates.renderWgsFloat lat
+                        , lng = Core.Coordinates.renderWgsFloat lng
                         }
 
 
@@ -459,7 +459,7 @@ update msg model =
                     EL.findByPosition rowId model.rows |> Maybe.map .el
 
                 coordinates =
-                    Coordinates.extractCoordinates content
+                    Core.Coordinates.extractCoordinates content
 
                 coordinatesEL =
                     EL.fromList <| coordinates
@@ -488,20 +488,20 @@ update msg model =
                         EL.map
                             (\c ->
                                 case c.el of
-                                    Coordinates.Usk2000 xy ->
+                                    Core.Coordinates.Usk2000 xy ->
                                         Ports.importer_usk2000ToWgs84
                                             { rowId = rowId
                                             , coordId = c.pos
                                             , coords = xy
                                             }
 
-                                    Coordinates.Wgs84LatLng _ ->
+                                    Core.Coordinates.Wgs84LatLng _ ->
                                         Cmd.none
 
-                                    Coordinates.Wgs84DegMinSec _ ->
+                                    Core.Coordinates.Wgs84DegMinSec _ ->
                                         Cmd.none
 
-                                    Coordinates.MGRS mgrs ->
+                                    Core.Coordinates.MGRS mgrs ->
                                         Ports.importer_mgrsToWgs84
                                             { rowId = rowId
                                             , coordId = c.pos
@@ -708,7 +708,7 @@ update msg model =
 
         DownloadKmzDone (Err e) ->
             ( { model | downloadKmzInProgress = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ" e
             )
 
         DownloadKmzDone (Ok bs) ->
@@ -744,7 +744,7 @@ update msg model =
 
         DownloadGeojsonDone (Err e) ->
             ( { model | downloadGeojsonInProgress = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження GeoJSON" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження GeoJSON" e
             )
 
         DownloadGeojsonDone (Ok bs) ->
@@ -852,7 +852,7 @@ update msg model =
                             { model | rows = EL.setAtPos rowId row2 model.rows }
             in
             ( m3
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зображень" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зображень" e
             )
 
         UploadImageDone rowId (Ok res) ->
@@ -896,7 +896,7 @@ update msg model =
 
         UploadPdfDone (Err e) ->
             ( { model | pdfToProcess = Nothing }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження PDF" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження PDF" e
             )
 
         UploadPdfDone (Ok res) ->
@@ -916,7 +916,7 @@ update msg model =
                                             { empty
                                                 | content = x.content
                                                 , imageUrls = x.imageUrls
-                                                , coordinates = EL.fromList [ Coordinates.Wgs84LatLng { lat = lat, lng = lng } ]
+                                                , coordinates = EL.fromList [ Core.Coordinates.Wgs84LatLng { lat = lat, lng = lng } ]
                                                 , title = x.title
                                                 , icon = x.icon
                                                 , selected = SelectedCoordIndex [ 0 ]
@@ -1154,7 +1154,7 @@ renderImpRow isDark formErrors row_i =
                         [ span [ class "badge text-bg-secondary me-1" ]
                             [ text <| String.fromInt (x.pos + 1)
                             ]
-                        , text <| Coordinates.render x.el
+                        , text <| Core.Coordinates.render x.el
                         ]
                     ]
                 ]
@@ -1261,12 +1261,12 @@ renderImpRow isDark formErrors row_i =
                 , div [ class "flex-fill", style "font-size" ".8rem" ]
                     [ Html.map (SelIconMsg rowId)
                         (Styled.toUnstyled <|
-                            Le.Block.Select.renderSelectSingle
+                            Utils.Select.renderSelectSingle
                                 selItem
                                 row.selState
                                 row.selMenu
                                 "Не обрано"
-                                (Le.Block.Select.defaultOptions isDark)
+                                (Utils.Select.defaultOptions isDark)
                         )
                     ]
                 , div
@@ -1334,7 +1334,7 @@ renderImpRow isDark formErrors row_i =
                 ]
 
         renderFilesToUpload _ =
-            div [ class "pe-4 my-4 d-inline-block" ] [ Le.Block.Spinner.loadingSpinnerSm ]
+            div [ class "pe-4 my-4 d-inline-block" ] [ Shared.Components.Spinner.loadingSpinnerSm ]
     in
     div [ class "row mb-4 d-flex justify-content-start align-items-start" ]
         [ div [ style "width" "500px" ]

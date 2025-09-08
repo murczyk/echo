@@ -3,6 +3,10 @@ module Pages.Home_ exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Shared.Components.Spinner
+import Shared.Components.Toast
+import Core.Auth
+import Core.Types
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -10,13 +14,6 @@ import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Layouts
-import Le.Auth
-import Le.Block.Spinner
-import Le.Block.Toast
-import Le.Components exposing (googleMapsOutLink)
-import Le.ErrorHandling
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Types
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
@@ -24,19 +21,22 @@ import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (googleMapsOutLink)
+import Utils.RemoteData as RD exposing (RemoteData(..))
 import View exposing (View)
 
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
-    , inboxGroupsActivityStats : RemoteData Le.Types.ApiError B.InboxByGroupDigestRsp
+    , toasts : Shared.Components.Toast.Model
+    , inboxGroupsActivityStats : RemoteData Core.Types.ApiError B.InboxByGroupDigestRsp
     }
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
-    | GotInboxGroupsActivityStats (Result Le.Types.ApiError B.InboxByGroupDigestRsp)
+    = ToastMsg Shared.Components.Toast.Msg
+    | GotInboxGroupsActivityStats (Result Core.Types.ApiError B.InboxByGroupDigestRsp)
     | Slept
 
 
@@ -66,7 +66,7 @@ loadInboxGroupsActivityInterval =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
+      , toasts = Shared.Components.Toast.init
       , inboxGroupsActivityStats = Loading
       }
     , E.batch
@@ -83,7 +83,7 @@ update msg model =
         ToastMsg imsg ->
             let
                 ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
+                    Shared.Components.Toast.update imsg model.toasts
             in
             ( { model | toasts = im }
             , E.sendCmd <| Cmd.map ToastMsg icmds
@@ -91,7 +91,7 @@ update msg model =
 
         GotInboxGroupsActivityStats (Err err) ->
             ( { model | inboxGroupsActivityStats = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики активності груп" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики активності груп" err
             )
 
         GotInboxGroupsActivityStats (Ok resp) ->
@@ -133,7 +133,7 @@ view shared user model =
                         , i [ class "bi bi-arrow-up-right text-lg group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform duration-300" ] []
                         ]
                     ]
-                , HtmlX.viewIf (Le.Auth.hasRole "Rer" user) <|
+                , HtmlX.viewIf (Core.Auth.hasRole "Rer" user) <|
                     div [ class "flex-1 bg-card border border-border rounded-sm relative" ]
                         [ h4 [ class "pl-2 pt-2" ] [ text "Активність груп" ]
                         , div [ class "h-[45vh]" ]
@@ -144,7 +144,7 @@ view shared user model =
                                 []
                             ]
                         , HtmlX.viewIf (RD.isLoading model.inboxGroupsActivityStats) <|
-                            span [ class "absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2" ] [ Le.Block.Spinner.loadingSpinner ]
+                            span [ class "absolute top-[50%] left-[50%] transform -translate-x-1/2 -translate-y-1/2" ] [ Shared.Components.Spinner.loadingSpinner ]
                         ]
                 ]
             ]
