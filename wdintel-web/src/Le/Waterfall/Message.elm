@@ -2,10 +2,12 @@ module Le.Waterfall.Message exposing (ClipboardObject(..), InternalMsg, Model, M
 
 import Api
 import Bindings as B
+import Browser.Dom
 import Components.Watermark as Watermark
 import Dict exposing (Dict)
 import Le.Block.Popup as Popup
 import Effect as E exposing (Effect)
+import Task
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -244,6 +246,7 @@ type InternalMsg
     | Edit
     | EditPopupOpen
     | EditPopupClose
+    | FocusTextarea (Result Browser.Dom.Error ())
     | ToggleTag Int Int
     | ExtendedFormChanged String
     | EditCancel
@@ -308,9 +311,11 @@ update vps msg model =
             let
                 currentMessage = Tuple.second vps.message
                 edited = { original = currentMessage, current = currentMessage }
+                textareaId = "edit-comment-textarea-" ++ String.fromInt (Tuple.first vps.message)
+                focusCmd = Task.attempt FocusTextarea (Browser.Dom.focus textareaId)
             in
             ( { model | edited = Just edited, isEditPopupOpen = True }
-            , E.none
+            , E.sendCmd focusCmd
             , vps.message
             )
 
@@ -318,9 +323,11 @@ update vps msg model =
             let
                 currentMessage = Tuple.second vps.message
                 edited = { original = currentMessage, current = currentMessage }
+                textareaId = "edit-comment-textarea-" ++ String.fromInt (Tuple.first vps.message)
+                focusCmd = Task.attempt FocusTextarea (Browser.Dom.focus textareaId)
             in
             ( { model | edited = Just edited, isEditPopupOpen = True }
-            , E.none
+            , E.sendCmd focusCmd
             , vps.message
             )
 
@@ -329,6 +336,9 @@ update vps msg model =
             , E.none
             , vps.message
             )
+
+        FocusTextarea _ ->
+            ( model, E.none, vps.message )
 
         UnfoldDuplicate ->
             ( { model | isUnfolded = True }
@@ -553,6 +563,7 @@ leftColumn ( messageId, message ) ps model =
                                 , style "height" "120px"
                                 , style "width" "100%"
                                 , placeholder "Введіть коментар..."
+                                , id ("edit-comment-textarea-" ++ String.fromInt messageId)
                                 , onInput (ForSelf << ExtendedFormChanged)
                                 , value <| 
                                     case model.edited of
