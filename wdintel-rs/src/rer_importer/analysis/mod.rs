@@ -368,7 +368,6 @@ pub fn filter_selected_tags<Q>(
     or_with_extended_form: &Option<bool>,
     filter_tags_option: &Option<TagFilterOption>,
     user_id: &str,
-    group_by: bool,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect + Clone,
@@ -392,39 +391,41 @@ where
         }
     }
     if or_bookmarked == &Some(true) {
-        let y = sigint_bookmark::Column::UserId.eq(user_id.to_string());
+        let bookmark_exists = sigint_bookmark::Entity::find()
+                      .select_only()
+            .expr(Expr::value(1))  
+            .filter(
+                Expr::col((
+                    sigint_bookmark::Entity,
+                    sigint_bookmark::Column::SignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .filter(sigint_bookmark::Column::Deleted.eq(false))
+            .filter(sigint_bookmark::Column::UserId.eq(user_id.to_string()))
+            .into_query();
+        let bookmark_exists_expr = Expr::exists(bookmark_exists);
+
         m_inner_expr =
-            m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
-        q = q.join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintBookmark.def().on_condition(
-                |_left, right| {
-                    Expr::col((right, sigint_bookmark::Column::Deleted))
-                        .not()
-                        .into_condition()
-                },
-            ),
-        );
+            m_inner_expr.map(|x| x.or(bookmark_exists_expr.clone())).or(Some(bookmark_exists_expr.clone()));
     }
     if or_important == &Some(true) {
-        // let y = sigint_important::Column::UserId.eq(user_id.to_string());
-        // m_inner_expr =
-        //     m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
-        // m_inner_expr =
-        //     m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
-        let y = sigint_important::Column::SignalMessageId.is_not_null();
+        let important_exists = sigint_important::Entity::find()
+                      .select_only()
+            .expr(Expr::value(1))  
+            .filter(
+                Expr::col((
+                    sigint_important::Entity,
+                    sigint_important::Column::SignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .filter(sigint_important::Column::Deleted.eq(false))
+            .into_query();
+        let important_exists_expr = Expr::exists(important_exists);
+
         m_inner_expr =
-            m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
-        q = q.join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintImportant
-                .def()
-                .on_condition(|_left, right| {
-                    Expr::col((right, sigint_important::Column::Deleted))
-                        .not()
-                        .into_condition()
-                }),
-        );
+            m_inner_expr.map(|x| x.or(important_exists_expr.clone())).or(Some(important_exists_expr.clone()));
     }
     if or_with_coords == &Some(true) {
         let y = sigint_inbox_item::Column::Lat
@@ -434,22 +435,22 @@ where
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
     if or_with_extended_form == &Some(true) {
-        q = q
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintComment.def(),
+        let comment_exists = sigint_comment::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))  
+            .filter(
+                Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::SignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
             )
-            .filter(sigint_comment::Column::Comment.eq("").not());
-        q = q.having(Expr::cust("count(sigint_comment.id) > 0"));
+            .filter(sigint_comment::Column::Comment.eq("").not())
+            .into_query();
+
+        q = q.filter(Expr::exists(comment_exists));
     }
-    if group_by {
-        q = q
-            .group_by(signal_message::Column::Id)
-            .group_by(sigint_post::Column::Name)
-            .group_by(sigint_inbox_item::Column::Id)
-            .group_by(datasource_group::Column::DatasourceId)
-            .group_by(datasource_group::Column::GroupMasterKey);
-    }
+
     if let Some(ref inner_expr) = m_inner_expr {
         q = q.filter(inner_expr.clone());
     }
@@ -728,7 +729,6 @@ pub async fn summary_table_freq_1(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id()?,
-        false,
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -1256,7 +1256,6 @@ pub async fn edit_freq_unit_name(
         &None,
         &req.filter_tags_option,
         &user.id()?,
-        true,
     )?;
     let rows_res = filter_search(rows_res, &req.search)?;
     // println!(
@@ -1591,7 +1590,6 @@ pub async fn bi_new_callsigns(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user_id,
-        true,
     )?;
     let rows_res =
         filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
@@ -1660,7 +1658,6 @@ pub async fn bi_new_callsigns(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         user_id,
-        true,
     )?;
     let mut rows_res = rows_res.into_model::<Row>().stream(&env.dbx).await?;
 

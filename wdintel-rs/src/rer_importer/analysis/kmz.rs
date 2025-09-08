@@ -69,7 +69,6 @@ pub async fn rer_analysis_download_kmz(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id()?,
-        false,
     )?;
     let items =
         filter_selected_aors(items, &req.selected_aors).context(h!())?;

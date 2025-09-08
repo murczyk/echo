@@ -137,7 +137,6 @@ pub async fn get_inbox_messages_report(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &user.id()?,
-        true,
     )?;
     let q = filter_selected_locations(
         q,
