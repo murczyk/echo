@@ -201,7 +201,7 @@ pub async fn report_xlsx_kind_interception(
 ) -> Result<(), AppError> {
     let mut workbook = Workbook::new(); // Use rust_xlsxwriter
     let sheet1 = workbook.add_worksheet().set_name("Пеленги").context(h!())?; // Use rust_xlsxwriter
-
+    let date_format = Format::new().set_num_format("dd.mm.yyyy");
     // Define formats using rust_xlsxwriter
     let coltitle_base = Format::new()
         .set_bold()
@@ -353,10 +353,16 @@ pub async fn report_xlsx_kind_interception(
             continue;
         };
         let freq = m.freq.unwrap_or("".to_string());
+        let date = rust_xlsxwriter::ExcelDateTime::from_ymd(
+            date.year() as u16,
+            date.month() as u8,
+            date.day() as u8,
+        )
+        .context(h!())?;
 
         // Write data using rust_xlsxwriter
         sheet1
-            .write_string(i, 0, format!("{}", &date.format("%d/%m/%Y")))
+            .write_datetime_with_format(i, 0, date, &date_format)
             .context(h!())?;
         sheet1.write_string(i, 1, time.to_string()).context(h!())?;
         sheet1.write_string(i, 2, &freq).context(h!())?;
