@@ -18,33 +18,48 @@ where
         load_organism_with_parents_chain(organism_id, txn)
             .await
             .context(h!())?;
-    let mut organism_ids: Vec<i64> =
-        parents.into_iter().map(|x| x.id).collect();
-    organism_ids.push(organism_id);
-    let aor_groups = signal_group::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_group::Relation::SignalGroupAor.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_group_aor::Relation::AreaOfResponsibility.def(),
-        )
+    let organism_aors = area_of_responsibility::Entity::find()
         .join(
             JoinType::InnerJoin,
             area_of_responsibility::Relation::OrganismAor.def(),
         )
         .filter(organism_aor::Column::OrganismId.eq(organism_id))
-        .select_only()
-        .column(signal_group::Column::MasterKey)
-        .into_tuple::<String>()
         .all(txn)
         .await
-        .context(h!())?
-        .into_iter()
-        .collect::<HashSet<_>>();
+        .context(h!())?;
+    let m_aor_filter = if organism_aors.is_empty() {
+        None
+    } else {
+        let mut conditions = vec![];
+        for organism_aor in organism_aors {
+            let condition_1 = area_of_responsibility::Column::LeftBound
+                .gt(organism_aor.right_bound);
+            let condition_2 = area_of_responsibility::Column::RightBound
+                .lt(organism_aor.left_bound);
+            let condition = condition_1.or(condition_2);
+            conditions.push(condition.not());
+        }
+        let conditions = conditions
+            .into_iter()
+            .reduce(|a, b| a.or(b))
+            .context(h!())?;
+        let filter = conditions
+            .or(area_of_responsibility::Column::Id.is_null())
+            .or(signal_group_aor::Column::Id.is_null());
+        Some(filter)
+    };
+
     let mut group_ids = signal_group::Entity::find()
+        .join(
+            JoinType::LeftJoin,
+            signal_group::Relation::SignalGroupAor.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
         .filter(signal_group::Column::Deleted.eq(false))
+        .apply_if(m_aor_filter, |q, f| q.filter(f))
         .join(
             JoinType::InnerJoin,
             signal_group::Relation::SigintZoneDatasource.def(),
@@ -56,12 +71,9 @@ where
         .all(txn)
         .await
         .context(h!())?;
-    if !aor_groups.is_empty() {
-        group_ids = group_ids
-            .into_iter()
-            .filter(|g| aor_groups.contains(g))
-            .collect_vec();
-    }
+    let mut organism_ids: Vec<i64> =
+        parents.into_iter().map(|x| x.id).collect();
+    organism_ids.push(organism_id);
     let organism_groups = organism_group::Entity::find()
         .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
         .all(txn)
