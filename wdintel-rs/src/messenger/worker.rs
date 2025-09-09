@@ -31,7 +31,7 @@ pub async fn receive_thread_nofail(mode: Mode) {
         BTreeMap::<String, NaiveDateTime>::new();
     loop {
         let clients = match list_clients(&dbx).await {
-            Ok(txn) => txn,
+            Ok(x) => x,
             Err(e) => {
                 error!("failed to load clients: {e:?}");
                 continue;
@@ -55,7 +55,6 @@ pub async fn receive_thread_nofail(mode: Mode) {
                 println!("> {client_name}::receive_thread_nofail error: {e:?}");
             }
         }
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
     }
 }
 
@@ -323,7 +322,7 @@ async fn sync_groups(
                     datasource_id: Set(datasource_id),
                     last_sync_at: NotSet,
                     created_at: NotSet,
-                    name: Set("".to_string()),
+                    name: Set(g.name),
                 }
                 .insert(txn)
                 .await
@@ -332,6 +331,7 @@ async fn sync_groups(
             Some(rec) => {
                 let mut rec = rec.into_active_model();
                 rec.last_sync_at = Set(Utc::now().naive_utc());
+                rec.name = Set(g.name);
                 rec.update(txn).await.context(h!())?;
             }
         }

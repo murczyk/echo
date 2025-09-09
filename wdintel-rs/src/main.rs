@@ -376,6 +376,7 @@ enum Cmd {
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffPopulateSignalMessageGroupIds,
+    OneoffFixEchoimGroups,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -694,6 +695,9 @@ async fn main() -> Result<(), AppError> {
                 mode,
             )
             .await
+        }
+        Cmd::OneoffFixEchoimGroups => {
+            messenger::group::oneoff::oneoff_fix_echoim_groups(mode).await
         }
     }
 }
