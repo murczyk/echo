@@ -30,23 +30,21 @@ where
     let m_aor_filter = if organism_aors.is_empty() {
         None
     } else {
-        let mut conditions = vec![];
+        let mut condition = Condition::any();
         for organism_aor in organism_aors {
             let condition_1 = area_of_responsibility::Column::LeftBound
                 .gt(organism_aor.right_bound);
             let condition_2 = area_of_responsibility::Column::RightBound
                 .lt(organism_aor.left_bound);
-            let condition = condition_1.or(condition_2);
-            conditions.push(condition.not());
+            let c = condition_1.or(condition_2);
+            condition = condition.add(c.not());
         }
-        let conditions = conditions
-            .into_iter()
-            .reduce(|a, b| a.or(b))
-            .context(h!())?;
-        let filter = conditions
-            .or(area_of_responsibility::Column::Id.is_null())
-            .or(signal_group_aor::Column::Id.is_null());
-        Some(filter)
+        Some(
+            Condition::all()
+                .add(condition)
+                .add(signal_group_aor::Column::Id.is_not_null())
+                .add(area_of_responsibility::Column::Id.is_not_null()),
+        )
     };
 
     let mut group_ids = signal_group::Entity::find()
