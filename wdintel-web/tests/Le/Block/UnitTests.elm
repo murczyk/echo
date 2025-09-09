@@ -1,8 +1,8 @@
 module Le.Block.UnitTests exposing (suite)
 
 import Bindings as B
+import Core.Unit as Unit
 import Expect
-import Le.Block.Unit as Unit
 import Test exposing (Test, describe, test)
 
 

@@ -3,7 +3,9 @@ module Pages.Settings exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
+import Shared.Components.Button as Button
+import Shared.Components.Spinner
+import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -11,18 +13,16 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled
 import Layouts
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.ErrorHandling
-import Le.Types exposing (..)
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
 import Shared.Model exposing (isDarkMode)
+import Utils.Api.ErrorHandling
+import Utils.Select
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 type alias Model =
@@ -93,7 +93,7 @@ update msg model =
             )
 
         GotZoneList (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Zones" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Zones" e )
 
         GotZoneList (Ok vs) ->
             ( { model | zones = vs }, E.none )
@@ -122,7 +122,7 @@ update msg model =
                 m2 =
                     { model | saveInProgress = False }
             in
-            ( m2, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Save Failed" e )
+            ( m2, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Save Failed" e )
 
         SaveDone (Ok ()) ->
             let
@@ -132,7 +132,7 @@ update msg model =
             ( m2, E.none )
 
         GotUser (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load User" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load User" e )
 
         GotUser (Ok user) ->
             ( { model | zoneId = user.sigintZoneId }
@@ -145,7 +145,7 @@ update msg model =
                     Select.update selectMsg model.zoneSelectState
 
                 mZoneId =
-                    Le.Block.Select.singleUpd mAction model.zoneId
+                    Utils.Select.singleUpd mAction model.zoneId
             in
             ( { model
                 | zoneSelectState = iState
@@ -224,12 +224,12 @@ view shared user model =
                                 , div [ class "w-2/5" ]
                                     [ Html.map ZoneSelectMsg <|
                                         Html.Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelectSingle
+                                            Utils.Select.renderSelectSingle
                                                 selectedZoneItem
                                                 model.zoneSelectState
                                                 zoneMenuItems
                                                 "Оберіть зону"
-                                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                                (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                                     ]
                                 ]
 
@@ -240,7 +240,7 @@ view shared user model =
                                 , div [ class "flex gap-3" ]
                                     [ if model.saveInProgress then
                                         Button.new { label = "зберегти", onClick = Save }
-                                            |> Button.withIcon [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                            |> Button.withIcon [ Shared.Components.Spinner.loadingSpinner2Sm ]
                                             |> Button.withDisabled True
                                             |> Button.view
 

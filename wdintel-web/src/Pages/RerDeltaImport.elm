@@ -3,7 +3,10 @@ module Pages.RerDeltaImport exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
+import Shared.Components.Button as Button
+import Shared.Components.Console
+import Shared.Components.Spinner
+import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -12,18 +15,15 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
-import Le.Block.Spinner
-import Le.Console
-import Le.ErrorHandling
-import Le.Types exposing (ApiError)
 import Page exposing (Page)
 import Process
 import Route exposing (Route)
 import Shared
 import Shared.Model exposing (isDarkMode)
 import Task
+import Utils.Api.ErrorHandling
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -47,16 +47,16 @@ toLayout user model =
 
 type alias Model =
     { formErrors : Dict String String
-    , consoleCSV : Le.Console.Model
-    , consoleKMZ : Le.Console.Model
+    , consoleCSV : Shared.Components.Console.Model
+    , consoleKMZ : Shared.Components.Console.Model
     }
 
 
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , consoleCSV = Le.Console.init
-      , consoleKMZ = Le.Console.init
+      , consoleCSV = Shared.Components.Console.init
+      , consoleKMZ = Shared.Components.Console.init
       }
     , E.none
     )
@@ -69,8 +69,8 @@ type Msg
     | UploadKMZFileToConvert
     | UploadKMZFileToConvertSelected File
     | UploadKMZFileToConvertDone File (Result ApiError Int)
-    | ConsoleMsgCSV (Le.Console.Msg Msg)
-    | ConsoleMsgKMZ (Le.Console.Msg Msg)
+    | ConsoleMsgCSV (Shared.Components.Console.Msg Msg)
+    | ConsoleMsgKMZ (Shared.Components.Console.Msg Msg)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -95,11 +95,11 @@ update msg model =
             )
 
         UploadCSVFileToConvertDone _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "CSV Import Error" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "CSV Import Error" e )
 
         UploadCSVFileToConvertDone _ (Ok taskId) ->
             ( model
-            , E.sendCmd <| Task.perform (always (ConsoleMsgCSV (Le.Console.TaskLaunched taskId))) (Process.sleep 0)
+            , E.sendCmd <| Task.perform (always (ConsoleMsgCSV (Shared.Components.Console.TaskLaunched taskId))) (Process.sleep 0)
             )
 
         UploadKMZFileToConvert ->
@@ -121,15 +121,15 @@ update msg model =
             )
 
         UploadKMZFileToConvertDone _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "KMZ Import Error" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "KMZ Import Error" e )
 
         UploadKMZFileToConvertDone _ (Ok taskId) ->
             ( model
-            , E.sendCmd <| Task.perform (always (ConsoleMsgKMZ (Le.Console.TaskLaunched taskId))) (Process.sleep 0)
+            , E.sendCmd <| Task.perform (always (ConsoleMsgKMZ (Shared.Components.Console.TaskLaunched taskId))) (Process.sleep 0)
             )
 
         ConsoleMsgCSV imsg ->
-            Le.Console.update
+            Shared.Components.Console.update
                 { msg = imsg
                 , model = model.consoleCSV
                 , toModel = \console -> { model | consoleCSV = console }
@@ -138,7 +138,7 @@ update msg model =
                 }
 
         ConsoleMsgKMZ imsg ->
-            Le.Console.update
+            Shared.Components.Console.update
                 { msg = imsg
                 , model = model.consoleKMZ
                 , toModel = \console -> { model | consoleKMZ = console }
@@ -175,27 +175,27 @@ contentBlock model =
             [ Button.new { label = " додати csv", onClick = UploadCSVFileToConvert }
                 |> Button.withStyleSecondary
                 |> Button.withIcon
-                    [ if not (Le.Console.isInProgress model.consoleCSV) then
+                    [ if not (Shared.Components.Console.isInProgress model.consoleCSV) then
                         i [ class "bi bi-file-earmark-text" ] []
 
                       else
-                        Le.Block.Spinner.loadingSpinnerSm
+                        Shared.Components.Spinner.loadingSpinnerSm
                     ]
                 |> Button.view
             , Button.new { label = " додати kmz", onClick = UploadKMZFileToConvert }
                 |> Button.withStyleSecondary
                 |> Button.withIcon
-                    [ if not (Le.Console.isInProgress model.consoleKMZ) then
+                    [ if not (Shared.Components.Console.isInProgress model.consoleKMZ) then
                         i [ class "bi bi-geo-alt" ] []
 
                       else
-                        Le.Block.Spinner.loadingSpinnerSm
+                        Shared.Components.Spinner.loadingSpinnerSm
                     ]
                 |> Button.view
             ]
         , div [ class "space-y-4" ]
-            [ Le.Console.view model.consoleCSV
-            , Le.Console.view model.consoleKMZ
+            [ Shared.Components.Console.view model.consoleCSV
+            , Shared.Components.Console.view model.consoleKMZ
             ]
         ]
 

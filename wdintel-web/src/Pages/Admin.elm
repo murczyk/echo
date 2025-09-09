@@ -4,14 +4,14 @@ import Shared.Model exposing (isDarkMode)
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.ModalDialog as ModalDialog
-import Components.Pager as Pager
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Config as Config
-import Components.Tabs as Tabs
-import Components.Toggle as Toggle
+import Shared.Components.Button as Button
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Pager as Pager
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Table as Table
+import Shared.Components.Table.Config as Config
+import Shared.Components.Tabs as Tabs
+import Shared.Components.Toggle as Toggle
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -19,14 +19,14 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.ErrorHandling
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.RerMessage
-import Le.Types exposing (..)
-import Le.Time
-import Le.Utils as Utils exposing (..)
+import Utils.Select
+import Shared.Components.Spinner
+import Utils.Api.ErrorHandling
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Shared.Components.RerMessage
+import Core.Types exposing (..)
+import Utils.Time
+import Utils.Utils as Utils exposing (..)
 import Maybe
 import Time
 import TimeZone
@@ -266,7 +266,7 @@ renderGroup model zoneId activeSourceId group =
                     [ i [ class "bi bi-pencil" ] [] ]
                 , -- Loading spinner (for any ongoing operations)
                   if isLoading then
-                    span [ class "ml-1" ] [ Le.Block.Spinner.loadingSpinner2Sm ]
+                    span [ class "ml-1" ] [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                   else
                     text ""
@@ -493,7 +493,7 @@ resetDatasourceGroupsSelect model =
                             (\groupKey ->
                                 Select.basicMenuItem
                                     { item = groupKey
-                                    , label = Le.RerMessage.groupName groupKey acc.groupInfos
+                                    , label = Shared.Components.RerMessage.groupName groupKey acc.groupInfos
                                     }
                             )
                             (Dict.get sourceId acc.datasourceGroups |> def [])
@@ -516,7 +516,7 @@ update msg model =
     case msg of
         GotDatasourceList (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел даних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел даних" e
             )
 
         GotDatasourceList (Ok vs) ->
@@ -535,7 +535,7 @@ update msg model =
 
         GotZoneList (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зон" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зон" e
             )
 
         GotZoneList (Ok vs) ->
@@ -598,7 +598,7 @@ update msg model =
                                         model.zoneSourcesState
                                 , zoneSources =
                                     Dict.update zoneId
-                                        (def [] >> Le.Block.Select.multiUpdI mAction >> Just)
+                                        (def [] >> Utils.Select.multiUpdI mAction >> Just)
                                         model.zoneSources
                             }
 
@@ -612,7 +612,7 @@ update msg model =
 
         GotZonesDatasources _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел зон" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел зон" e
             )
 
         GotZonesDatasources zoneId (Ok zds) ->
@@ -632,7 +632,7 @@ update msg model =
 
         GotDatasourceGroups _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп джерел" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп джерел" e
             )
 
         GotDatasourceGroups sourceId (Ok groupKeys) ->
@@ -668,7 +668,7 @@ update msg model =
 
         GotZoneDatasourceGroups _ _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп зон" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп зон" e
             )
 
         GotZoneDatasourceGroups zoneId sourceId (Ok res) ->
@@ -698,7 +698,7 @@ update msg model =
 
         GotGroupInfos (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про групи" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про групи" e
             )
 
         GotGroupInfos (Ok groups) ->
@@ -762,7 +762,7 @@ update msg model =
                     { model | saveInProgress = saveInProgress2 }
             in
             ( m2
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження груп" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження груп" e
             )
 
         SaveDone zoneId sourceId (Ok ()) ->
@@ -859,7 +859,7 @@ update msg model =
 
                 selected : List String
                 selected =
-                    Le.Block.Select.multiUpdS mAction model.userSelectorSelect.selectedItems
+                    Utils.Select.multiUpdS mAction model.userSelectorSelect.selectedItems
             in
             ( { model | userSelectorSelect = { selectState = imodel2, items = model.userSelectorSelect.items, selectedItems = selected } }
             , E.sendCmd <| Cmd.map UserSelectorSelMsg icmd
@@ -1299,7 +1299,7 @@ update msg model =
         RemoveGroupFromDatasourceDone (Err e) _ _ _ ->
             -- Handle error - could show a toast or set an error state
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення групи" e
             )
 
         OpenOrphanGroupZoneSelector groupKey ->
@@ -1520,7 +1520,7 @@ update msg model =
 
                         selected : List String
                         selected =
-                            Le.Block.Select.multiUpdS mAction dialog.selectedUsers
+                            Utils.Select.multiUpdS mAction dialog.selectedUsers
                     in
                     ( { model
                         | orphanGroupAssignmentDialog =
@@ -1691,7 +1691,7 @@ update msg model =
 
                         selected : List String
                         selected =
-                            Le.Block.Select.multiUpdS mAction dialog.selectedUsers
+                            Utils.Select.multiUpdS mAction dialog.selectedUsers
                     in
                     ( { model
                         | groupEditDialog =
@@ -2042,7 +2042,7 @@ update msg model =
 
                         selected : List Int
                         selected =
-                            Le.Block.Select.multiUpdI mAction dialog.areaOfResponsibilitySelector.selected
+                            Utils.Select.multiUpdI mAction dialog.areaOfResponsibilitySelector.selected
                     in
                     ( { model
                         | orphanGroupEditDialog =
@@ -2086,7 +2086,7 @@ update msg model =
 
                         selected : List Int
                         selected =
-                            Le.Block.Select.multiUpdI mAction dialog.areaOfResponsibilitySelector.selected
+                            Utils.Select.multiUpdI mAction dialog.areaOfResponsibilitySelector.selected
                     in
                     ( { model
                         | groupEditDialog =
@@ -2123,7 +2123,7 @@ update msg model =
 
                 selected : Maybe Int
                 selected =
-                    Le.Block.Select.singleUpd mAction model.areaOfResponsibilityFilter
+                    Utils.Select.singleUpd mAction model.areaOfResponsibilityFilter
             in
             ( { model
                 | areaOfResponsibilityFilter = selected
@@ -2204,7 +2204,7 @@ renderOrphanGroupsSection isDark model user =
 
         RD.Loading ->
             div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
-                [ Le.Block.Spinner.loadingSpinner ]
+                [ Shared.Components.Spinner.loadingSpinner ]
 
         RD.Failure _ ->
             div [ class "bg-[var(--bs-body-bg)] rounded-lg border p-6" ]
@@ -2453,7 +2453,7 @@ renderOrphanGroupEditSidebar isDark model dialog =
                                   in
                                   Html.map OrphanGroupAreaSelectMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelect
+                                        Utils.Select.renderSelect
                                             selectedItems
                                             dialog.areaOfResponsibilitySelector.selectState
                                             availableItems
@@ -2519,7 +2519,7 @@ renderOrphanGroupEditSidebar isDark model dialog =
                         )
                     , if dialog.isLoading then
                         div [ class "flex items-center gap-2" ]
-                            [ Le.Block.Spinner.loadingSpinner2Sm
+                            [ Shared.Components.Spinner.loadingSpinner2Sm
                             , span [ class "text-sm text-gray-600" ] [ text "Збереження..." ]
                             ]
 
@@ -2640,7 +2640,7 @@ renderGroupEditSidebar isDark model dialog =
                                   in
                                   Html.map GroupAreaSelectMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelect
+                                        Utils.Select.renderSelect
                                             selectedItems
                                             dialog.areaOfResponsibilitySelector.selectState
                                             availableItems
@@ -2717,7 +2717,7 @@ renderGroupEditSidebar isDark model dialog =
                                             [ text "👥 Користувачі, яким видима група:" ]
                                         , Html.map GroupEditUserSelectMsg <|
                                             Styled.toUnstyled <|
-                                                Le.Block.Select.renderSelectVirtual
+                                                Utils.Select.renderSelectVirtual
                                                     (List.map (\user -> Select.basicMenuItem { item = user, label = user }) dialog.selectedUsers)
                                                     dialog.userSelectState
                                                     (List.map (\user -> Select.basicMenuItem { item = user, label = user }) model.allLogins)
@@ -2845,7 +2845,7 @@ renderGroupEditSidebar isDark model dialog =
                         )
                     , if dialog.isLoading then
                         div [ class "flex items-center gap-2 px-4 py-2" ]
-                            [ Le.Block.Spinner.loadingSpinner2Sm
+                            [ Shared.Components.Spinner.loadingSpinner2Sm
                             , span
                                 [ class <|
                                     "text-sm "
@@ -2898,7 +2898,7 @@ renderOrphanGroupAssignmentDialog isDark model dialog =
                             [ text "Користувачі, яким видима група:" ]
                         , Html.map OrphanGroupUserSelectMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectVirtual
+                                Utils.Select.renderSelectVirtual
                                     (List.map (\user -> Select.basicMenuItem { item = user, label = user }) dialog.selectedUsers)
                                     dialog.userSelectState
                                     (List.map (\user -> Select.basicMenuItem { item = user, label = user }) model.allLogins)
@@ -2925,7 +2925,7 @@ renderOrphanGroupAssignmentDialog isDark model dialog =
                     )
                 , if model.orphanGroupAssignmentInProgress == Just dialog.groupKey then
                     div [ class "flex items-center gap-2" ]
-                        [ Le.Block.Spinner.loadingSpinner2Sm
+                        [ Shared.Components.Spinner.loadingSpinner2Sm
                         , span [ class "text-sm text-gray-600" ] [ text "Додавання..." ]
                         ]
 
@@ -3095,7 +3095,7 @@ renderOrphanGroupsTable model groups =
                             timeZone =
                                 TimeZone.europe__kyiv ()
                         in
-                        Le.Time.renderDateF6 timeZone posixTime
+                        Utils.Time.renderDateF6 timeZone posixTime
                             |> String.replace "." "-"
 
                     else
@@ -3277,7 +3277,7 @@ renderOrphanGroupsTable model groups =
             , children =
                 [ if isAssigning then
                     div [ class "flex items-center gap-1" ]
-                        [ Le.Block.Spinner.loadingSpinner2Sm
+                        [ Shared.Components.Spinner.loadingSpinner2Sm
                         , span [ class "text-xs text-gray-600" ] [ text "Призначення..." ]
                         ]
 
@@ -3750,7 +3750,7 @@ mainBlock isDark model user =
                       div [ class "w-64" ]
                         [ Html.map AreaOfResponsibilityFilterMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
+                                Utils.Select.renderSelectSingle
                                     selectedItem
                                     model.areaOfResponsibilityFilterSelectState
                                     availableItems
@@ -3783,7 +3783,7 @@ body dark shared user model =
                                 div [ class "" ]
                                     [ Html.map UserSelectorSelMsg <|
                                         Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelectVirtual
+                                            Utils.Select.renderSelectVirtual
                                                 (List.map (\login -> Select.basicMenuItem { item = login, label = login }) model.userSelectorSelect.selectedItems)
                                                 model.userSelectorSelect.selectState
                                                 model.userSelectorSelect.items

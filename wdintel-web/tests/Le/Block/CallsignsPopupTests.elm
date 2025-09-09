@@ -1,11 +1,11 @@
 module Le.Block.CallsignsPopupTests exposing (suite)
 
 import Bindings as B
+import Core.Callsigns.HintStrategy as HintStrategy
 import Dict exposing (Dict)
 import Expect
-import Le.Block.CallsignsPopup as CallsignsPopup
-import Le.Callsign.HintStrategy as HintStrategy
 import List.Extra as ListX
+import Shared.CallsignsPopup as CallsignsPopup
 import Test exposing (Test, describe, test)
 
 

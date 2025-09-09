@@ -3,35 +3,30 @@ module Pages.RerCallsigns exposing (AddState, EditCallsignState, Model, Msg, cel
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.ModalDialog as ModalDialog
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
-import Components.Tag as Tag
-import Components.Watermark as Watermark exposing (Watermark)
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DateTime
+import Shared.Components.FloatingPopup
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Tag as Tag
+import Shared.Components.Watermark as Watermark exposing (Watermark)
+import Core.Auth
+import Core.Types exposing (ApiError)
+import Core.UnitHierarchy
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
-import EnumeratedList as EL exposing (EnumeratedList)
-import FloatingPopup
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import Html.Styled as Styled
 import Layouts
-import Le.Auth
-import Le.Block.DateTime
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.ErrorHandling
-import Le.RemoteData exposing (RemoteData(..))
-import Le.Time
-import Le.Types exposing (ApiError)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
 import Route exposing (Route)
@@ -43,7 +38,12 @@ import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
-import UnitHierarchy
+import Utils.Api.ErrorHandling
+import Utils.EnumeratedList as EL exposing (EnumeratedList)
+import Utils.RemoteData exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
 import View exposing (View)
 
 
@@ -89,8 +89,8 @@ type alias Model =
     , loading : Bool
     , loadingUnitStats : Bool
     , unitStats : List B.CallsignUnitStatRow
-    , from : Le.Block.DateTime.Model
-    , to : Le.Block.DateTime.Model
+    , from : Shared.Components.DateTime.Model
+    , to : Shared.Components.DateTime.Model
     , now : Maybe Time.Posix
     , isIgnoringDateFilter : Bool
     , sortingOrder : SortingOrder
@@ -156,8 +156,8 @@ init req _ =
             , loading = True
             , loadingUnitStats = True
             , unitStats = []
-            , from = Le.Block.DateTime.init ()
-            , to = Le.Block.DateTime.init ()
+            , from = Shared.Components.DateTime.init ()
+            , to = Shared.Components.DateTime.init ()
             , now = Nothing
             , isIgnoringDateFilter = False
             , sortingOrder = UnitAsc
@@ -179,7 +179,7 @@ init req _ =
     in
     ( m2
     , E.batch
-        [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
+        [ E.sendCmd <| Task.attempt InitGotZone Utils.Time.getZone
         , E.replaceRoute { path = Route.Path.RerCallsigns, hash = Nothing, query = Dict.remove "callsign" req.query }
         ]
     )
@@ -216,8 +216,8 @@ type Msg
     | FilterUnitDebounceMsg Debounce.Msg
     | Refresh
     | GotUnitStats (Result ApiError B.CallsignUnitStatsRsp)
-    | DateTimeFromMsg (Le.Block.DateTime.Msg Msg)
-    | DateTimeToMsg (Le.Block.DateTime.Msg Msg)
+    | DateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
+    | DateTimeToMsg (Shared.Components.DateTime.Msg Msg)
     | InitGotTime Time.Zone Time.Posix
     | ToggleIsIgnoringDateFilter Bool
     | SortByCallsignName
@@ -398,13 +398,13 @@ loadCallsignsWithUnitsFromInbox model =
 
                 sinceDateInclusiveMs =
                     if model.isIgnoringDateFilter then
-                        Time.posixToMillis (Le.Time.xDaysAgo callsignsInpoxItemsPeriodLimit now)
+                        Time.posixToMillis (Utils.Time.xDaysAgo callsignsInpoxItemsPeriodLimit now)
 
-                    else if (Time.posixToMillis dateTo - Time.posixToMillis dateFrom) < Le.Time.xDaysInMillis callsignsInpoxItemsPeriodLimit then
+                    else if (Time.posixToMillis dateTo - Time.posixToMillis dateFrom) < Utils.Time.xDaysInMillis callsignsInpoxItemsPeriodLimit then
                         Time.posixToMillis dateFrom
 
                     else
-                        Time.posixToMillis (Le.Time.xDaysAgo callsignsInpoxItemsPeriodLimit dateTo)
+                        Time.posixToMillis (Utils.Time.xDaysAgo callsignsInpoxItemsPeriodLimit dateTo)
             in
             E.sendCmd
                 (Api.sigint_callsigns_with_units_from_inbox
@@ -521,10 +521,10 @@ update req shared msg model =
         InitGotTime zone now_ ->
             let
                 from =
-                    Le.Block.DateTime.initFromPosix { datePosix = Le.Time.xDaysAgo 7 now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = Utils.Time.xDaysAgo 7 now_, zone = zone }
 
                 to =
-                    Le.Block.DateTime.initFromPosix { datePosix = now_, zone = zone }
+                    Shared.Components.DateTime.initFromPosix { datePosix = now_, zone = zone }
 
                 m2 =
                     { model
@@ -539,7 +539,7 @@ update req shared msg model =
 
         GotCallsigns (Err err) ->
             ( { model | loading = False, loadingMore = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних" err
             )
 
         GotCallsigns (Ok rsp) ->
@@ -562,7 +562,7 @@ update req shared msg model =
 
         GotCallsignsWithUnitsFromInbox (Err err) ->
             ( { model | callsignsWithUnitsFromInbox = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних з підрозділами" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позивних з підрозділами" err
             )
 
         GotCallsignsWithUnitsFromInbox (Ok rsp) ->
@@ -608,7 +608,7 @@ update req shared msg model =
                     Select.update selMsg model.inpUnitSelState
 
                 mUnitId =
-                    Le.Block.Select.singleUpd mAction model.inpUnit
+                    Utils.Select.singleUpd mAction model.inpUnit
 
                 mUnit =
                     mUnitId
@@ -671,7 +671,7 @@ update req shared msg model =
                     in
                     ( { model
                         | editState =
-                            case Le.Block.Select.singleUpd mAction (Just editState.inpUnitId) of
+                            case Utils.Select.singleUpd mAction (Just editState.inpUnitId) of
                                 Nothing ->
                                     Nothing
 
@@ -721,7 +721,7 @@ update req shared msg model =
 
         AddCallsignDone (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення позивного" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення позивного" err
             )
 
         AddCallsignDone (Ok newCallsign) ->
@@ -818,7 +818,7 @@ update req shared msg model =
 
         EditCallsignDone _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення позивного" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення позивного" err
             )
 
         EditCallsignDone id (Ok updatedCallsign) ->
@@ -864,7 +864,7 @@ update req shared msg model =
 
         DeleteCallsignDone (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення позивного" err
             )
 
         DeleteCallsignDone (Ok deletedCallsign) ->
@@ -890,7 +890,7 @@ update req shared msg model =
 
         GotSources (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження джерел" err
             )
 
         GotSources (Ok rsp) ->
@@ -1026,7 +1026,7 @@ update req shared msg model =
 
         GotUnitStats (Err err) ->
             ( { model | loadingUnitStats = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики підрозділів" err
             )
 
         GotUnitStats (Ok rsp) ->
@@ -1037,7 +1037,7 @@ update req shared msg model =
         DateTimeFromMsg imsg ->
             let
                 ( m2, eff2 ) =
-                    Le.Block.DateTime.update
+                    Shared.Components.DateTime.update
                         { zone = model.zone
                         , msg = imsg
                         , model = model.from
@@ -1055,7 +1055,7 @@ update req shared msg model =
         DateTimeToMsg imsg ->
             let
                 ( m2, eff2 ) =
-                    Le.Block.DateTime.update
+                    Shared.Components.DateTime.update
                         { zone = model.zone
                         , msg = imsg
                         , model = model.to
@@ -1114,7 +1114,7 @@ update req shared msg model =
                     Select.update imsg model.inpSourceSelState
 
                 updatedSourceId =
-                    Le.Block.Select.singleUpd mAction model.inpSource
+                    Utils.Select.singleUpd mAction model.inpSource
             in
             ( { model
                 | inpSourceSelState = imodel2
@@ -1328,7 +1328,7 @@ callsignsTableConfig : Shared.Model -> Model -> Auth.User -> Table.Config B.Call
 callsignsTableConfig shared model user =
     let
         hasEditorRole =
-            Le.Auth.hasRole "CallsignsEditor" user || Le.Auth.hasRole "UnitsEditor" user
+            Core.Auth.hasRole "CallsignsEditor" user || Core.Auth.hasRole "UnitsEditor" user
 
         defaultCustomizations =
             Table.defaultCustomizations
@@ -1462,7 +1462,7 @@ callsignsTableConfig shared model user =
                                                 _ ->
                                                     False
                                     in
-                                    FloatingPopup.new
+                                    Shared.Components.FloatingPopup.new
                                         { anchorContent =
                                             span
                                                 [ class "inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 cursor-pointer rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
@@ -1471,7 +1471,7 @@ callsignsTableConfig shared model user =
                                                 , i [ class "bi bi-chevron-down text-xs" ] []
                                                 ]
                                         , popupContent =
-                                            div [ class "comment-popup-content p-4" ]
+                                            div [ class "comment-popup-content p-1" ]
                                                 [ div [ class "mb-3 pb-2 border-b border-gray-200 dark:border-gray-700" ]
                                                     [ h4 [ class "text-sm font-semibold text-gray-900 dark:text-gray-100" ]
                                                         [ text "Повний коментар" ]
@@ -1483,8 +1483,8 @@ callsignsTableConfig shared model user =
                                         , onClose = RowShowAllPopupChanged Nothing
                                         , onOpen = RowShowAllPopupChanged <| Just ( callsign.id, ShowAllComment )
                                         }
-                                        |> FloatingPopup.withPlacement FloatingPopup.Top
-                                        |> FloatingPopup.view
+                                        |> Shared.Components.FloatingPopup.withPlacement Shared.Components.FloatingPopup.Top
+                                        |> Shared.Components.FloatingPopup.view
 
                                   else
                                     text ""
@@ -1533,7 +1533,7 @@ callsignsTableConfig shared model user =
                         , children =
                             case model.callsignsWithUnitsFromInbox of
                                 Loading ->
-                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                 Success callsignsWithUnitsFromInbox ->
                                     let
@@ -1598,7 +1598,7 @@ callsignsTableConfig shared model user =
 
                                                         popupBody =
                                                             div
-                                                                [ class "p-4 max-h-[300px] max-w-[400px] overflow-y-auto"
+                                                                [ class "p-1 max-h-[300px] max-w-[400px] overflow-y-auto"
                                                                 , style "position" "relative"
                                                                 , style "z-index" "40"
                                                                 ]
@@ -1625,15 +1625,15 @@ callsignsTableConfig shared model user =
                                                                 _ ->
                                                                     False
                                                     in
-                                                    [ FloatingPopup.new
+                                                    [ Shared.Components.FloatingPopup.new
                                                         { anchorContent = body
                                                         , popupContent = popupBody
                                                         , isOpen = isOpen
                                                         , onClose = RowShowAllPopupChanged Nothing
                                                         , onOpen = RowShowAllPopupChanged <| Just ( callsign.id, ShowAllUnits )
                                                         }
-                                                        |> FloatingPopup.withPlacement FloatingPopup.Top
-                                                        |> FloatingPopup.view
+                                                        |> Shared.Components.FloatingPopup.withPlacement Shared.Components.FloatingPopup.Top
+                                                        |> Shared.Components.FloatingPopup.view
                                                     ]
 
                                                 else
@@ -1686,7 +1686,7 @@ callsignsTableConfig shared model user =
 
                                 Just zone ->
                                     text <|
-                                        Le.Time.renderDateF6 zone
+                                        Utils.Time.renderDateF6 zone
                                             (Time.millisToPosix callsign.createdAt)
                             ]
                         }
@@ -1813,12 +1813,12 @@ editSidebarContent model shared user =
                                   in
                                   Html.map EditUnitSelMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
+                                        Utils.Select.renderSelectSingle
                                             selectItem
                                             editState.inpUnitSelState
                                             editState.inpUnitSelMenu
                                             "жоден"
-                                            (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                            (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                                 ]
                             , div []
                                 [ label [ class "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2" ]
@@ -1885,7 +1885,7 @@ contentBlock : Shared.Model -> Model -> Auth.User -> Html Msg
 contentBlock shared model user =
     let
         hasEditorRole =
-            Le.Auth.hasRole "CallsignsEditor" user || Le.Auth.hasRole "UnitsEditor" user
+            Core.Auth.hasRole "CallsignsEditor" user || Core.Auth.hasRole "UnitsEditor" user
 
         deleteConfirmationModal =
             let
@@ -1999,14 +1999,14 @@ contentBlock shared model user =
                             [ div [ class "flex-grow" ]
                                 [ let
                                     options =
-                                        Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                        Utils.Select.defaultOptions (isDarkMode shared.themeMode)
 
                                     options2 =
                                         { options | disabled = not hasEditorRole }
                                   in
                                   Html.map AddUnitSelMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
+                                        Utils.Select.renderSelectSingle
                                             selectItem
                                             model.inpUnitSelState
                                             (populateUnitMenu shared)
@@ -2027,14 +2027,14 @@ contentBlock shared model user =
                             [ div [ class "w-32" ]
                                 [ Html.map InpSourceSelMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
+                                        Utils.Select.renderSelectSingle
                                             selectItem
                                             model.inpSourceSelState
                                             (model.sources
                                                 |> List.map (\source -> Select.basicMenuItem { item = source.id, label = source.name })
                                             )
                                             "жоден"
-                                            (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                                            (Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                                                 |> (\opts ->
                                                         { opts
                                                             | disabled =
@@ -2097,7 +2097,7 @@ contentBlock shared model user =
                   div [ class "d-flex justify-content-between align-items-center" ]
                     [ div [ class "flex items-center gap-2" ]
                         [ if model.loading then
-                            Le.Block.Spinner.loadingSpinner2Sm
+                            Shared.Components.Spinner.loadingSpinner2Sm
 
                           else
                             i [ class "bi bi-filter text-lg" ] []
@@ -2211,31 +2211,31 @@ contentBlock shared model user =
                             , div [ class "flex items-center gap-2" ]
                                 [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "з" ]
                                 , div [ class "inline-flex" ]
-                                    (Le.Block.DateTime.new
+                                    (Shared.Components.DateTime.new
                                         { model =
                                             if not model.isIgnoringDateFilter then
                                                 model.from
 
                                             else
-                                                Le.Block.DateTime.init ()
+                                                Shared.Components.DateTime.init ()
                                         , toMsg = DateTimeFromMsg
                                         }
-                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                        |> Le.Block.DateTime.view
+                                        |> Shared.Components.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Shared.Components.DateTime.view
                                     )
                                 , span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text "по" ]
                                 , div [ class "inline-flex" ]
-                                    (Le.Block.DateTime.new
+                                    (Shared.Components.DateTime.new
                                         { model =
                                             if not model.isIgnoringDateFilter then
                                                 model.to
 
                                             else
-                                                Le.Block.DateTime.init ()
+                                                Shared.Components.DateTime.init ()
                                         , toMsg = DateTimeToMsg
                                         }
-                                        |> Le.Block.DateTime.setDisabled model.isIgnoringDateFilter
-                                        |> Le.Block.DateTime.view
+                                        |> Shared.Components.DateTime.setDisabled model.isIgnoringDateFilter
+                                        |> Shared.Components.DateTime.view
                                     )
                                 ]
                             ]
@@ -2334,7 +2334,7 @@ contentBlock shared model user =
                             , style "backdrop-filter" "blur(1px)"
                             ]
                             [ div [ class "flex flex-col items-center gap-2" ]
-                                [ Le.Block.Spinner.loadingSpinner
+                                [ Shared.Components.Spinner.loadingSpinner
                                 , div [ class "text-sm text-gray-600 dark:text-gray-300" ]
                                     [ text "Завантаження даних..." ]
                                 ]
@@ -2350,7 +2350,7 @@ contentBlock shared model user =
                             |> Button.withDisabled model.loadingMore
                             |> Button.withIcon
                                 (if model.loadingMore then
-                                    [ Le.Block.Spinner.loadingSpinner2Sm ]
+                                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                                  else
                                     []
@@ -2372,7 +2372,7 @@ contentBlock shared model user =
 unitsBlock : Shared.Model -> Model -> Html Msg
 unitsBlock shared model =
     let
-        config : UnitHierarchy.Config Msg
+        config : Core.UnitHierarchy.Config Msg
         config =
             { onUnitClick = FilterUnitMsg
             , onArmyToggle = ToggleArmyExpanded
@@ -2391,7 +2391,7 @@ unitsBlock shared model =
             }
     in
     if model.loadingUnitStats then
-        Le.Block.Spinner.loadingSpinner
+        Shared.Components.Spinner.loadingSpinner
 
     else
         section []
@@ -2401,7 +2401,7 @@ unitsBlock shared model =
                 , p [ class "text-sm text-gray-600 dark:text-gray-400" ]
                     [ Html.text "Оберіть підрозділ для фільтрації" ]
                 ]
-            , UnitHierarchy.view config
+            , Core.UnitHierarchy.view config
                 (case shared.masterUnits of
                     Success units ->
                         Dict.values units
@@ -2500,7 +2500,7 @@ view dark shared user model =
                         , attribute "data-position" "bottom"
                         ]
                         (if model.loading then
-                            [ Le.Block.Spinner.loadingSpinner2Sm ]
+                            [ Shared.Components.Spinner.loadingSpinner2Sm ]
 
                          else
                             [ i [ class "bi bi-arrow-repeat" ] [] ]

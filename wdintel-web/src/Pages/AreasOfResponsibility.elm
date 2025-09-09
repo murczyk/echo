@@ -1,26 +1,26 @@
 module Pages.AreasOfResponsibility exposing (Model, Msg, page)
-import Shared.Model exposing (isDarkMode)
 
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.ModalDialog as ModalDialog
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Core.Types exposing (..)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Layouts
-import Le.ErrorHandling
-import Le.Types exposing (..)
 import Page exposing (Page)
 import Route exposing (Route)
 import Shared
+import Shared.Model exposing (isDarkMode)
+import Utils.Api.ErrorHandling
 import View exposing (View)
 
 
@@ -154,7 +154,7 @@ update msg model =
             )
 
         GotAors (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг" e )
 
         GotAors (Ok res) ->
             ( { model | aors = res }, E.none )
@@ -175,7 +175,7 @@ update msg model =
             ( model, submitCreateForm model.createForm )
 
         CreateAorResponse (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення смуги" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення смуги" e )
 
         CreateAorResponse (Ok newAor) ->
             ( { model | aors = newAor :: model.aors, createForm = emptyCreateForm, showCreateSidebar = False }
@@ -195,7 +195,7 @@ update msg model =
             ( model, Maybe.map submitEditForm model.editForm |> Maybe.withDefault E.none )
 
         UpdateAorResponse (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення смуги" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення смуги" e )
 
         UpdateAorResponse (Ok updatedAor) ->
             ( { model
@@ -232,7 +232,7 @@ update msg model =
             ( { model | deleteConfirmation = Nothing, deleteDialogOpen = False }, E.none )
 
         DeleteAorResponse _ (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення смуги" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення смуги" e )
 
         DeleteAorResponse id (Ok _) ->
             ( { model | aors = List.filter (\aor -> aor.id /= id) model.aors }

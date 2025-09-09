@@ -1,6 +1,6 @@
-port module PagePorts.SharedPorts exposing (shared_getLocation, shared_getLocationRes, shared_toggleDarkMode, shared_triggerResize, shared_saveThemeMode, shared_loadThemeMode, shared_loadThemeModeRes)
+port module PagePorts.SharedPorts exposing (shared_getLocation, shared_getLocationRes, shared_loadThemeMode, shared_loadThemeModeRes, shared_saveThemeMode, shared_toggleDarkMode, shared_triggerResize)
 
-import Le.Types exposing (..)
+import Core.Types exposing (..)
 
 
 port shared_toggleDarkMode :
@@ -22,6 +22,11 @@ port shared_loadScriptRes : (String -> msg) -> Sub msg
 
 port shared_triggerResize : () -> Cmd msg
 
+
 port shared_saveThemeMode : String -> Cmd msg
+
+
 port shared_loadThemeMode : () -> Cmd msg
+
+
 port shared_loadThemeModeRes : (String -> msg) -> Sub msg

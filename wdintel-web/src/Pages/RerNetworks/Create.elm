@@ -4,11 +4,7 @@ import Api exposing (check_if_freq_exist)
 import Auth
 import Bindings as B
 import Char
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.Pager as Pager
-import Components.Sidebar as Sidebar
-import Components.Table as Table
+import Core.Types exposing (ApiError)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -18,29 +14,33 @@ import Html.Events exposing (..)
 import Html.Styled as Styled
 import Http
 import Layouts
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.Block.Toast
-import Le.Components exposing (fieldError, isInvalidCls)
-import Le.ErrorHandling
-import Le.NetworksUtils as NetworksUtils
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Time
-import Le.Types exposing (ApiError)
 import Maybe.Extra as MaybeX
 import Page exposing (Page)
-import RerNetworks.Create.CallsignsTables as CallsignsTables
-import RerNetworks.Create.FrequenciesTable as FrequenciesTable
-import RerNetworks.Create.Model exposing (FreqActivityFilter(..), Mode(..))
-import RerNetworks.Create.Msg exposing (Msg(..))
+import Pages_.RerNetworks.Create.CallsignsTables as CallsignsTables
+import Pages_.RerNetworks.Create.FrequenciesTable as FrequenciesTable
+import Pages_.RerNetworks.Create.Model exposing (FreqActivityFilter(..), Mode(..))
+import Pages_.RerNetworks.Create.Msg exposing (Msg(..))
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.Pager as Pager
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Toast
 import Shared.Model exposing (isDarkMode)
 import Time
 import Time.Extra
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (fieldError, isInvalidCls)
+import Utils.NetworksUtils as NetworksUtils
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
 import View exposing (View)
 
 
@@ -87,7 +87,10 @@ isFormValid req =
         )
 
 
+
 -- Helper function to check if network has at least one frequency
+
+
 hasAtLeastOneFrequency : Model -> Bool
 hasAtLeastOneFrequency model =
     case model.freqs of
@@ -131,7 +134,7 @@ toLayout user model =
 
 
 type alias Model =
-    RerNetworks.Create.Model.Model
+    Pages_.RerNetworks.Create.Model.Model
 
 
 init : Route () -> Shared.Model -> () -> ( Model, Effect Msg )
@@ -335,7 +338,7 @@ init route shared () =
 
 
 type alias Msg =
-    RerNetworks.Create.Msg.Msg
+    Pages_.RerNetworks.Create.Msg.Msg
 
 
 update : Shared.Model -> Route () -> Msg -> Model -> ( Model, Effect Msg )
@@ -374,7 +377,7 @@ update shared route msg model =
                     Select.update selectMsg model.kindSelect.state
 
                 updatedNetworkKind =
-                    Le.Block.Select.singleUpdWithDefault mAct model.kindSelect.selected
+                    Utils.Select.singleUpdWithDefault mAct model.kindSelect.selected
 
                 newSelect =
                     { state = newState
@@ -392,7 +395,7 @@ update shared route msg model =
                     Select.update selectMsg model.unitSelect.state
 
                 updatedUnit =
-                    Le.Block.Select.multiUpdI mAct model.unitSelect.selected
+                    Utils.Select.multiUpdI mAct model.unitSelect.selected
 
                 newSelect =
                     { state = newState
@@ -423,7 +426,7 @@ update shared route msg model =
                     Select.update selectMsg model.postsSelect.state
 
                 updatedPosts =
-                    Le.Block.Select.multiUpdI mAct model.postsSelect.selected
+                    Utils.Select.multiUpdI mAct model.postsSelect.selected
 
                 postsSelect =
                     model.postsSelect
@@ -463,7 +466,7 @@ update shared route msg model =
                     Select.update selectMsg model.aorSelect.state
 
                 updatedAors =
-                    Le.Block.Select.multiUpdI mAct model.aorSelect.selected
+                    Utils.Select.multiUpdI mAct model.aorSelect.selected
 
                 newSelect =
                     { state = newState
@@ -575,7 +578,7 @@ update shared route msg model =
                     ( { model | deletingNetwork = True }
                     , E.deleteNetwork NetworkDeleted { networkId = network.id }
                     )
-                
+
                 Nothing ->
                     -- Сценарій 1: Просто перейти назад
                     ( model
@@ -626,17 +629,21 @@ update shared route msg model =
         NetworkCreated (Ok network) ->
             let
                 -- Check if there's a freq parameter in URL
-                freqFromQuery = Dict.get "freq" route.query
-                
+                freqFromQuery =
+                    Dict.get "freq" route.query
+
                 -- Update model based on URL parameter
-                (updatedModel, urlEffect) = 
+                ( updatedModel, urlEffect ) =
                     case freqFromQuery of
                         Just freq ->
                             let
-                                currentFreqState = model.freqCreateState
-                                updatedFreqState = { currentFreqState | freq = freq }
+                                currentFreqState =
+                                    model.freqCreateState
+
+                                updatedFreqState =
+                                    { currentFreqState | freq = freq }
                             in
-                            ( { model 
+                            ( { model
                                 | creatingNetwork = False
                                 , networkCreated = Just network
                                 , freqCreateSidebar = True
@@ -644,7 +651,7 @@ update shared route msg model =
                               }
                             , E.pushRoute { path = Route.Path.RerNetworks_Create, hash = Nothing, query = Dict.empty }
                             )
-                        
+
                         Nothing ->
                             ( { model | creatingNetwork = False, networkCreated = Just network }
                             , E.none
@@ -664,12 +671,12 @@ update shared route msg model =
 
         NetworkCreated (Err error) ->
             ( { model | creatingNetwork = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення мережі" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення мережі" error
             )
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
             )
 
         ModulationsReturnedByApi (Ok res) ->
@@ -705,7 +712,7 @@ update shared route msg model =
 
         NetworkDeleted (Err error) ->
             ( { model | deletingNetwork = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" error
             )
 
 
@@ -853,11 +860,11 @@ viewMissingFieldsBlock shared model =
                                     )
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map AorSelectMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelect
+                            Utils.Select.renderSelect
                                 selectedItems
                                 model.aorSelect.state
                                 model.aorSelect.items
@@ -886,11 +893,11 @@ viewMissingFieldsBlock shared model =
                                     )
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map UnitSelectMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelect
+                            Utils.Select.renderSelect
                                 selectedItems
                                 model.unitSelect.state
                                 model.unitSelect.items
@@ -921,11 +928,11 @@ viewMissingFieldsBlock shared model =
                                     )
 
                         defaultOptions =
-                            Le.Block.Select.defaultOptions (isDarkMode shared.themeMode)
+                            Utils.Select.defaultOptions (isDarkMode shared.themeMode)
                       in
                       Html.map PostsSelectMsg <|
                         Styled.toUnstyled <|
-                            Le.Block.Select.renderSelect
+                            Utils.Select.renderSelect
                                 selectedItems
                                 model.postsSelect.state
                                 model.postsSelect.items
@@ -1041,13 +1048,14 @@ viewActionButtons model =
                 ""
     in
     div [ class "flex justify-end gap-[8px] mt-[16px]" ]
-        [ Button.new { label = "Відмінити", onClick = CancelClicked } 
-            |> Button.withStyleSecondary 
+        [ Button.new { label = "Відмінити", onClick = CancelClicked }
+            |> Button.withStyleSecondary
             |> Button.withDisabled model.deletingNetwork
             |> Button.withIcon
                 (if model.deletingNetwork then
-                    [ Le.Block.Spinner.loadingSpinner2Sm ]
-                else
+                    [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                 else
                     []
                 )
             |> Button.view
@@ -1063,8 +1071,9 @@ viewActionButtons model =
                         |> Button.withDisabled isSaveDisabled
                         |> Button.withIcon
                             (if model.creatingNetwork then
-                                [ Le.Block.Spinner.loadingSpinner2Sm ]
-                            else
+                                [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                             else
                                 []
                             )
                         |> Button.view

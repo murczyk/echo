@@ -1,6 +1,6 @@
 module Chapters.Button exposing (firstChapter)
 
-import Components.Button as Button
+import Shared.Components.Button as Button
 import ElmBook.Chapter exposing (..)
 import Html exposing (div, Html)
 import Html.Attributes exposing (..)

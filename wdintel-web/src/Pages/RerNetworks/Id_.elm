@@ -5,17 +5,8 @@ import Auth
 import Bindings as B
 import Bytes exposing (Bytes)
 import Char
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
-import Components.ModalDialog as ModalDialog
-import Components.Pager as Pager
-import Components.SegmentedControl as SegmentedControl
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
-import Components.Table.Sorter as TableSorter
+import Core.Auth
+import Core.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File.Download as Download
@@ -26,35 +17,44 @@ import Html.Keyed
 import Html.Styled as Styled
 import Json.Encode as Encode
 import Layouts
-import Le.Auth
-import Le.Block.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
-import Le.Block.Popup as Popup
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.ErrorHandling
-import Le.NetworksUtils as NetworksUtils
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Time
-import Le.Types exposing (ApiError, GroupsActivityPerDayRsp, GroupsByDate)
-import Le.Utils exposing (networkKindVHFMapping)
 import List.Extra as ListX
 import Page exposing (Page)
-import RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
-import RerNetworks.Id_.Descriptions as Descriptions
-import RerNetworks.Id_.FrequenciesTable as FrequenciesTable
-import RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
-import RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
-import RerNetworks.Id_.NetworkInfo as NetworkInfo
-import RerNetworks.Utils as IdUtils
+import Pages_.RerNetworks.Id_.CallsignsTables as CallsignsTables exposing (getDevelopingCallsigns, getRegularCallsigns)
+import Pages_.RerNetworks.Id_.Descriptions as Descriptions
+import Pages_.RerNetworks.Id_.FrequenciesTable as FrequenciesTable
+import Pages_.RerNetworks.Id_.Model as Types exposing (CallsignCreateMode(..), CallsignTableRow, FreqActivityFilter(..), Mode(..), ShowAllPopupFor(..))
+import Pages_.RerNetworks.Id_.Msg as Msgs exposing (Msg(..))
+import Pages_.RerNetworks.Id_.NetworkInfo as NetworkInfo
+import Pages_.RerNetworks.Utils as IdUtils
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set exposing (Set)
 import Shared
+import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.DropdownBadge as DropdownBadge exposing (DropdownAction(..))
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Pager as Pager
+import Shared.Components.Popup as Popup
+import Shared.Components.SegmentedControl as SegmentedControl
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Spinner
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
+import Shared.Components.Table.Sorter as TableSorter
 import Shared.Model exposing (isDarkMode)
 import Time
 import Time.Extra
 import Url.Builder
+import Utils.Api.ErrorHandling
+import Utils.NetworksUtils as NetworksUtils
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (networkKindVHFMapping)
 import View exposing (View)
 
 
@@ -322,7 +322,7 @@ update shared msg model =
 
         NetworkReturnedByApi (Err e) ->
             ( { model | network = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мережі" e
             )
 
         NetworkReturnedByApi (Ok res) ->
@@ -391,7 +391,7 @@ update shared msg model =
 
         MapPointsReturnedByApi (Err e) ->
             ( { model | mapPoints = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок мережі" e
             )
 
         MapPointsReturnedByApi (Ok res) ->
@@ -399,7 +399,7 @@ update shared msg model =
 
         GroupsActivityReturnedByApi (Err e) ->
             ( { model | groupsActivity = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мережі" e
             )
 
         GroupsActivityReturnedByApi (Ok res) ->
@@ -536,7 +536,7 @@ update shared msg model =
 
         NetworkPostsUpdatedByApi _ (Err e) ->
             ( { model | missingFieldsEditLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення постів мережі" e
             )
 
         NetworkPostsUpdatedByApi editState (Ok _) ->
@@ -558,12 +558,12 @@ update shared msg model =
 
         NetworkUnitsUpdatedByApi editState (Err e) ->
             ( { model | missingFieldsEditLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів мережі" e
             )
 
         NetworkUpdatedByApi (Err e) ->
             ( { model | missingFieldsEditLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мережі" e
             )
 
         NetworkUpdatedByApi (Ok network) ->
@@ -571,7 +571,7 @@ update shared msg model =
 
         MissingFieldsUpdatedByApi (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення полів мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення полів мережі" e
             )
 
         MissingFieldsUpdatedByApi (Ok network) ->
@@ -585,7 +585,7 @@ update shared msg model =
                             Select.update imsg model.editKindSelect.state
 
                         updatedNetworkKind =
-                            Le.Block.Select.singleUpdWithDefault mAct model.editKindSelect.selected
+                            Utils.Select.singleUpdWithDefault mAct model.editKindSelect.selected
 
                         kindSelect =
                             model.editKindSelect
@@ -619,7 +619,7 @@ update shared msg model =
                             Select.update imsg model.editPostsSelect.state
 
                         updatedNetworkPosts =
-                            Le.Block.Select.multiUpdI mAct model.editPostsSelect.selected
+                            Utils.Select.multiUpdI mAct model.editPostsSelect.selected
 
                         postsSelect =
                             model.editPostsSelect
@@ -665,7 +665,7 @@ update shared msg model =
                             Select.update imsg model.editUnitsSelect.state
 
                         updatedNetworkUnits =
-                            Le.Block.Select.multiUpdI mAct model.editUnitsSelect.selected
+                            Utils.Select.multiUpdI mAct model.editUnitsSelect.selected
 
                         unitsSelect =
                             model.editUnitsSelect
@@ -707,7 +707,7 @@ update shared msg model =
                             Select.update imsg model.editAorSelect.state
 
                         updatedAors =
-                            Le.Block.Select.multiUpdI mAct model.editAorSelect.selected
+                            Utils.Select.multiUpdI mAct model.editAorSelect.selected
 
                         items =
                             case model.aorList of
@@ -739,7 +739,7 @@ update shared msg model =
 
         SignalsForNetworkLoaded (Err e) ->
             ( { model | signals = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження сигналів" e
             )
 
         SignalsForNetworkLoaded (Ok res) ->
@@ -773,7 +773,7 @@ update shared msg model =
 
         ReportDownloadReturnedByApi (Err e) ->
             ( { model | reportDownloadInProgress = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка генерації звіту" e
             )
 
         ReportDownloadReturnedByApi (Ok bytes) ->
@@ -849,7 +849,7 @@ update shared msg model =
 
         ModulationsReturnedByApi (Err e) ->
             ( { model | modulations = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження модуляцій" e
             )
 
         ModulationsReturnedByApi (Ok res) ->
@@ -905,7 +905,7 @@ update shared msg model =
 
         DeleteNetworkReturnedByApi (Err e) ->
             ( { model | deleteNetworkLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення мережі" e
             )
 
         DeleteNetworkReturnedByApi (Ok _) ->
@@ -935,7 +935,7 @@ contentBlock user shared network model =
             ]
         , div [ class "flex gap-[8px]" ]
             [ Button.new { label = "Звіт \"Еталонка\"", onClick = ReportModalOpenedByUser } |> Button.view
-            , if Le.Auth.hasRole "Admin" user || Le.Auth.hasRole "UnitsEditor" user then
+            , if Core.Auth.hasRole "Admin" user || Core.Auth.hasRole "UnitsEditor" user then
                 Button.new { label = "Видалити", onClick = DeleteNetworkClickedByUser }
                     |> Button.withStyleDanger
                     |> Button.view
@@ -1020,7 +1020,7 @@ view user shared model =
                                    )
 
                         _ ->
-                            [ div [ class "h-full" ] [ Le.Block.Spinner.loadingSpinner ] ]
+                            [ div [ class "h-full" ] [ Shared.Components.Spinner.loadingSpinner ] ]
                     )
                 , Html.map Callsigns <| CallsignsTables.createCallsignsSidebar model user shared
                 , Html.map Callsigns <| CallsignsTables.editCallsignsSidebar model user shared
@@ -1057,7 +1057,7 @@ view user shared model =
                                 , Button.new { label = "Згенерувати", onClick = ReportDownloadClickedByUser }
                                     |> (if model.reportDownloadInProgress then
                                             Button.withIcon
-                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                [ Shared.Components.Spinner.loadingSpinner2Sm
                                                 ]
 
                                         else
@@ -1082,7 +1082,7 @@ view user shared model =
                                     |> Button.withStyleDanger
                                     |> (if model.deleteNetworkLoading then
                                             Button.withIcon
-                                                [ Le.Block.Spinner.loadingSpinner2Sm
+                                                [ Shared.Components.Spinner.loadingSpinner2Sm
                                                 ]
 
                                         else

@@ -2,28 +2,28 @@ module Pages.CoordsConverter exposing (Model, Msg, page)
 
 import Auth
 import Bindings as B
-import Coordinates as C
+import Shared.Components.Toast
+import Core.Coordinates as C
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Layouts
-import Le.Block.Toast
-import Le.Components exposing (googleMapsOutLink)
 import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.HomePorts as Ports
 import Route exposing (Route)
 import Shared
 import Shared.Model exposing (isDarkMode)
+import Utils.Components exposing (googleMapsOutLink)
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 type alias Model =
     { formErrors : Dict String String
-    , toasts : Le.Block.Toast.Model
+    , toasts : Shared.Components.Toast.Model
     , toWgsContent : String
     , toWgsRes : Maybe { lat : Float, lng : Float }
     , toUskContent : String
@@ -33,7 +33,7 @@ type alias Model =
 
 
 type Msg
-    = ToastMsg Le.Block.Toast.Msg
+    = ToastMsg Shared.Components.Toast.Msg
     | ToWgsChanged String
     | ToUskChanged String
     | GotUsk2000ToWgs84Res { coords : { lat : Float, lng : Float } }
@@ -64,7 +64,7 @@ toLayout user model =
 init : () -> ( Model, Effect Msg )
 init _ =
     ( { formErrors = Dict.empty
-      , toasts = Le.Block.Toast.init
+      , toasts = Shared.Components.Toast.init
       , toWgsContent = ""
       , toWgsRes = Nothing
       , toUskContent = ""
@@ -81,7 +81,7 @@ update msg model =
         ToastMsg imsg ->
             let
                 ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
+                    Shared.Components.Toast.update imsg model.toasts
             in
             ( { model | toasts = im }
             , E.sendCmd <| Cmd.map ToastMsg icmds
@@ -189,7 +189,7 @@ view : Shared.Model -> B.User -> Model -> View Msg
 view shared user model =
     { title = "координати"
     , body =
-        [ Views.headerAndContent "координати" ToastMsg model.toasts <|
+        [ Utils.Views.headerAndContent "координати" ToastMsg model.toasts <|
             mainContentV model
         ]
     }

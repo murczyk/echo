@@ -3,6 +3,8 @@ module Pages.RerAnalysis exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
+import Config
+import Core.Types exposing (..)
 import Dict
 import Dict.Extra as DE
 import Effect as E exposing (Effect)
@@ -12,44 +14,42 @@ import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts
-import Le.Block.DateRangePicker
-import Le.Block.DateTime
-import Le.Block.Select
-import Le.Block.Toast
-import Le.Components exposing (..)
-import Le.Config
-import Le.ErrorHandling
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.RerMessage
-import Le.Time
-import Le.Types exposing (..)
-import Le.Utils as Utils exposing (..)
-import Le.Waterfall.Filters
 import List.Extra as ListX
 import Page exposing (Page)
-import RerAnalysis.Constants exposing (..)
-import RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), invalidateFiltersState)
-import RerAnalysis.MainBody
-import RerAnalysis.Model exposing (..)
-import RerAnalysis.Msg exposing (..)
-import RerAnalysis.Query as Query
+import Pages_.RerAnalysis.Constants exposing (..)
+import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), invalidateFiltersState)
+import Pages_.RerAnalysis.MainBody
+import Pages_.RerAnalysis.Model exposing (..)
+import Pages_.RerAnalysis.Msg exposing (..)
+import Pages_.RerAnalysis.Query as Query
+import Pages_.RerDuty.Waterfall.Filters
 import Route exposing (Route)
 import Route.Path
 import Select
 import Set
 import Shared
+import Shared.Components.DateRangePicker
+import Shared.Components.DateTime
+import Shared.Components.RerMessage
+import Shared.Components.Toast
 import Shared.Model exposing (isDarkMode)
 import String exposing (fromInt)
 import Time exposing (Posix)
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (..)
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Time
+import Utils.Utils as Utils exposing (..)
 import View exposing (View)
 
 
 type alias Model =
-    RerAnalysis.Model.Model
+    Pages_.RerAnalysis.Model.Model
 
 
 type alias Msg =
-    RerAnalysis.Msg.Msg
+    Pages_.RerAnalysis.Msg.Msg
 
 
 init : Route () -> () -> ( Model, Effect Msg )
@@ -66,11 +66,11 @@ init route _ =
         model : Model
         model =
             { formErrors = Dict.empty
-            , toasts = Le.Block.Toast.init
+            , toasts = Shared.Components.Toast.init
             , zone = Nothing
-            , from = Le.Block.DateTime.init ()
-            , to = Le.Block.DateTime.init ()
-            , dateRangePicker = Le.Block.DateRangePicker.init
+            , from = Shared.Components.DateTime.init ()
+            , to = Shared.Components.DateTime.init ()
+            , dateRangePicker = Shared.Components.DateRangePicker.init
             , loadingInboxMessages = True
             , messages = []
             , profiles = Dict.empty
@@ -85,7 +85,7 @@ init route _ =
             , includePelengLocations = True
             , includeOnlyNewFreqs = False
             , groupInfos = Dict.empty
-            , rowsModel = Le.RerMessage.model0
+            , rowsModel = Shared.Components.RerMessage.model0
             , senderInput = ""
             , callsignInput = ""
             , sendersSortBy = "count"
@@ -185,7 +185,7 @@ init route _ =
             , mapOpenMessages = NotAsked
             , adjacentFreqsRangeSelect =
                 { state = Select.initState (Select.selectIdentifier "selectAdjacentFreqsRange")
-                , items = Le.Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
+                , items = Config.adjacentFreqsRangeOptions |> List.map (\x -> Select.basicMenuItem { item = x, label = String.fromFloat (x * 1000) ++ " кГц" })
                 , selected = 0
                 }
             , filterSelectedAdjacentFreqs = []
@@ -219,7 +219,7 @@ init route _ =
         [ E.getTimeZone InitGotZone
         , E.getAnalysisSavedFilters SavedFiltersGot
         , E.getTags GotTags
-        , E.map RowsMsg Le.RerMessage.init
+        , E.map RowsMsg Shared.Components.RerMessage.init
         ]
     )
 
@@ -313,7 +313,7 @@ loadSumTableOnly model =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
                 loadingSumTable =
-                    not (Le.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+                    not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
 
                 sumTable =
                     if loadingSumTable then
@@ -343,10 +343,10 @@ loadCoreStats model =
                     Query.analysisStatsParams dtFromPosix dtToPosix model
 
                 loadingCounts =
-                    not (Le.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+                    not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
 
                 loadingSumTable =
-                    model.unfoldSumTable && not (Le.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
+                    model.unfoldSumTable && not (Utils.Time.isMoreThanAWeekApart dtFromPosix dtToPosix)
 
                 cmdLoadSummaryTable isLoading =
                     if isLoading then
@@ -610,7 +610,7 @@ extractMetaInfo inboxRsp model =
 
         m3 =
             { m2
-                | sendersSelectedNames = Le.Waterfall.Filters.ensureAllSendersNamed m2.profiles m2.sendersSelected m2.sendersSelectedNames
+                | sendersSelectedNames = Pages_.RerDuty.Waterfall.Filters.ensureAllSendersNamed m2.profiles m2.sendersSelected m2.sendersSelectedNames
             }
     in
     { m3
@@ -629,7 +629,7 @@ update user shared route msg model =
         ToastMsg imsg ->
             let
                 ( im, icmds ) =
-                    Le.Block.Toast.update imsg model.toasts
+                    Shared.Components.Toast.update imsg model.toasts
             in
             ( { model | toasts = im }
             , E.sendCmd <| Cmd.map ToastMsg icmds
@@ -637,7 +637,7 @@ update user shared route msg model =
 
         InitGotZone (Err e) ->
             ( model
-            , E.sendCmd <| Le.Block.Toast.addError ToastMsg ("Error getting timezone: " ++ renderZoneError e)
+            , E.sendCmd <| Shared.Components.Toast.addError ToastMsg ("Error getting timezone: " ++ renderZoneError e)
             )
 
         InitGotZone (Ok ( _, zone )) ->
@@ -648,7 +648,7 @@ update user shared route msg model =
         InitGotTime zone now_ ->
             let
                 ( from, to ) =
-                    Le.Block.DateTime.initAnalysisRanges
+                    Shared.Components.DateTime.initAnalysisRanges
                         { from = model.from
                         , to = model.to
                         , zone = zone
@@ -659,7 +659,7 @@ update user shared route msg model =
                     { model
                         | from = from
                         , to = to
-                        , dateRangePicker = Le.Block.DateRangePicker.initFromData from to
+                        , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
                         , now = Just now_
                     }
 
@@ -719,10 +719,10 @@ update user shared route msg model =
         DateRangePickerMsg imsg ->
             let
                 m2 =
-                    { model | dateRangePicker = Le.Block.DateRangePicker.update { zone = model.zone, from = model.from, to = model.to } imsg model.dateRangePicker }
+                    { model | dateRangePicker = Shared.Components.DateRangePicker.update { zone = model.zone, from = model.from, to = model.to } imsg model.dateRangePicker }
             in
             case imsg of
-                Le.Block.DateRangePicker.Submit ->
+                Shared.Components.DateRangePicker.Submit ->
                     let
                         m3 =
                             { m2 | from = model.dateRangePicker.from, to = model.dateRangePicker.to }
@@ -746,7 +746,7 @@ update user shared route msg model =
 
         GotInbox (Err e) ->
             ( { model | loadingInboxMessages = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень" e
             )
 
         GotInbox (Ok rsp) ->
@@ -773,7 +773,7 @@ update user shared route msg model =
 
         GotInboxMore (Err e) ->
             ( { model | loadingInboxMessages = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження додаткових повідомлень" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження додаткових повідомлень" e
             )
 
         GotInboxMore (Ok rsp) ->
@@ -805,7 +805,7 @@ update user shared route msg model =
 
         GotStatsCount (Err e) ->
             ( { model | counts = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження статистики" e
             )
 
         GotStatsCount (Ok counts) ->
@@ -817,7 +817,7 @@ update user shared route msg model =
 
         GotStatsFreqs (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження частот" e
             )
 
         GotStatsFreqs (Ok rsp) ->
@@ -852,7 +852,7 @@ update user shared route msg model =
 
         GotStatsCallsigns (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позывних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження позывних" e
             )
 
         GotStatsCallsigns (Ok rsp) ->
@@ -873,7 +873,7 @@ update user shared route msg model =
 
         GotStatsLocations (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження локацій" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження локацій" e
             )
 
         GotStatsLocations (Ok rsp) ->
@@ -894,7 +894,7 @@ update user shared route msg model =
 
         GotStatsPosts (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження постів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження постів" e
             )
 
         GotStatsPosts (Ok rsp) ->
@@ -916,7 +916,7 @@ update user shared route msg model =
 
         GotStatsTags (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
             )
 
         GotStatsTags (Ok rsp) ->
@@ -928,7 +928,7 @@ update user shared route msg model =
 
         GotStatsUnits (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" e
             )
 
         GotStatsUnits (Ok rsp) ->
@@ -950,7 +950,7 @@ update user shared route msg model =
 
         GotStatsSenders (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження відправників" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження відправників" e
             )
 
         GotStatsSenders (Ok rsp) ->
@@ -962,7 +962,7 @@ update user shared route msg model =
                 | senders = Success rsp.senders
                 , selSenderMenu =
                     rsp.senders
-                        |> List.map (\sender -> ( Le.RerMessage.getProfileName m1.profiles sender.uuid, sender.count ))
+                        |> List.map (\sender -> ( Shared.Components.RerMessage.getProfileName m1.profiles sender.uuid, sender.count ))
                         |> List.foldl
                             (\( name, count ) ( acc, seen ) ->
                                 if Set.member name seen then
@@ -1002,7 +1002,7 @@ update user shared route msg model =
 
         GotStatsAors (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг" e
             )
 
         GotStatsAors (Ok rsp) ->
@@ -1033,7 +1033,7 @@ update user shared route msg model =
 
         GotStatsGroups (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження груп" e
             )
 
         GotStatsGroups (Ok rsp) ->
@@ -1052,7 +1052,7 @@ update user shared route msg model =
                         (\x ->
                             Select.basicMenuItem
                                 { item = x.masterKey
-                                , label = Le.RerMessage.groupName x.masterKey m1.groupInfos
+                                , label = Shared.Components.RerMessage.groupName x.masterKey m1.groupInfos
                                 }
                         )
                         rsp.groups
@@ -1151,7 +1151,7 @@ update user shared route msg model =
                         _ ->
                             Dict.empty
 
-                vps : Le.RerMessage.ViewParams
+                vps : Shared.Components.RerMessage.ViewParams
                 vps =
                     { profiles = model.profiles
                     , groupInfos = model.groupInfos
@@ -1177,7 +1177,7 @@ update user shared route msg model =
                     }
 
                 res =
-                    Le.RerMessage.update vps imsg model.rowsModel
+                    Shared.Components.RerMessage.update vps imsg model.rowsModel
 
                 m2 =
                     { model | rowsModel = res.model, messages = res.messages }
@@ -1187,40 +1187,40 @@ update user shared route msg model =
                     List.foldl
                         (\sig ( accM, accCmds ) ->
                             case sig of
-                                Le.RerMessage.OutFocus { elemId } ->
+                                Shared.Components.RerMessage.OutFocus { elemId } ->
                                     ( accM
                                     , accCmds ++ [ E.focusHtmlElement { elemId = elemId } ]
                                     )
 
-                                Le.RerMessage.OutFormErrors es ->
+                                Shared.Components.RerMessage.OutFormErrors es ->
                                     ( { accM | formErrors = Dict.union es accM.formErrors }
                                     , accCmds
                                     )
 
-                                Le.RerMessage.OutBookmarkAdd msgId ->
+                                Shared.Components.RerMessage.OutBookmarkAdd msgId ->
                                     ( { accM | bookmarks = Set.insert msgId accM.bookmarks }
                                     , accCmds
                                     )
 
-                                Le.RerMessage.OutBookmarkRm msgId ->
+                                Shared.Components.RerMessage.OutBookmarkRm msgId ->
                                     ( { accM | bookmarks = Set.remove msgId accM.bookmarks }
                                     , accCmds
                                     )
 
-                                Le.RerMessage.OutImportantAdd msgId ->
+                                Shared.Components.RerMessage.OutImportantAdd msgId ->
                                     ( { accM | importants = Set.insert msgId accM.importants }
                                     , accCmds
                                     )
 
-                                Le.RerMessage.OutImportantRm msgId ->
+                                Shared.Components.RerMessage.OutImportantRm msgId ->
                                     ( { accM | importants = Set.remove msgId accM.importants }
                                     , accCmds
                                     )
 
-                                Le.RerMessage.OutDeleteMessage msgId ->
+                                Shared.Components.RerMessage.OutDeleteMessage msgId ->
                                     ( { accM | deleteMessageModalId = Just msgId }, accCmds )
 
-                                Le.RerMessage.OutSelectFreqAndShowMap freq ->
+                                Shared.Components.RerMessage.OutSelectFreqAndShowMap freq ->
                                     let
                                         ( accM2, accCmds2 ) =
                                             loadCoreStatsAndPushUrl { accM | freqsSelected = [ freq ], unfoldMapBlock = True }
@@ -1641,7 +1641,7 @@ update user shared route msg model =
 
         GotCallsignGraph (Err e) ->
             ( { model | loadingCallsignGraph = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження графу позивних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження графу позивних" e
             )
 
         GotCallsignGraph (Ok graphDataAndMeta) ->
@@ -1664,7 +1664,7 @@ update user shared route msg model =
 
         GotSumTable (Err e) ->
             ( { model | sumTable = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зведеної таблиці" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження зведеної таблиці" e
             )
 
         GotSumTable (Ok sumTable) ->
@@ -1695,7 +1695,7 @@ update user shared route msg model =
 
         DownloadXlsxDone (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження Excel файлу" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження Excel файлу" e
             )
 
         DownloadXlsxDone (Ok bs) ->
@@ -1732,7 +1732,7 @@ update user shared route msg model =
 
         DownloadKmzDone (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ файлу" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ файлу" e
             )
 
         DownloadKmzDone (Ok bs) ->
@@ -1768,7 +1768,7 @@ update user shared route msg model =
 
         DownloadGeojsonDone (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження GeoJSON файлу" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження GeoJSON файлу" e
             )
 
         DownloadGeojsonDone (Ok bs) ->
@@ -1813,7 +1813,7 @@ update user shared route msg model =
 
         GotCorrelatedFreqs (Err e) ->
             ( { model | correlatedFreqs = Failure e }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження суміжних частот" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження суміжних частот" e
             )
 
         ClearAllFilters ->
@@ -1824,7 +1824,7 @@ update user shared route msg model =
                             Query.updModelFromQueryState model Query.emptyQueryState
 
                         ( from, to ) =
-                            Le.Block.DateTime.initAnalysisRanges
+                            Shared.Components.DateTime.initAnalysisRanges
                                 { from = m2.from
                                 , to = m2.to
                                 , zone = zone
@@ -1835,7 +1835,7 @@ update user shared route msg model =
                             { m2
                                 | from = from
                                 , to = to
-                                , dateRangePicker = Le.Block.DateRangePicker.initFromData from to
+                                , dateRangePicker = Shared.Components.DateRangePicker.initFromData from to
                             }
                     in
                     loadCoreStatsAndPushUrl m3
@@ -1896,7 +1896,7 @@ update user shared route msg model =
 
         EditUnitSaveDone _ _ _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження назви підрозділу" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження назви підрозділу" e
             )
 
         EditUnitSaveDone freq unit_ unitNew (Ok ()) ->
@@ -1966,7 +1966,7 @@ update user shared route msg model =
 
         SaveFilterDone (Err e) ->
             ( { model | saveFilterInProgress = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження фільтра" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка збереження фільтра" e
             )
 
         SaveFilterDone (Ok filters) ->
@@ -1981,7 +1981,7 @@ update user shared route msg model =
 
         SavedFiltersGot (Err e) ->
             ( { model | savedFiltersLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження збережених фільтрів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження збережених фільтрів" e
             )
 
         SavedFiltersGot (Ok filters) ->
@@ -2058,7 +2058,7 @@ update user shared route msg model =
 
         SavedFilterRenameDone (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перейменування фільтра" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перейменування фільтра" e
             )
 
         SavedFilterRenameDone (Ok ()) ->
@@ -2074,7 +2074,7 @@ update user shared route msg model =
 
         SavedFilterDeleteDone (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення фільтра" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення фільтра" e
             )
 
         SavedFilterDeleteDone (Ok ()) ->
@@ -2147,7 +2147,7 @@ update user shared route msg model =
                             Select.update imsg model.selAorState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.aorsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.aorsSelected imodel2
 
                         m2 =
                             { model
@@ -2204,7 +2204,7 @@ update user shared route msg model =
                             Select.update imsg model.selGroupState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.groupsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.groupsSelected imodel2
 
                         m2 =
                             { model
@@ -2259,7 +2259,7 @@ update user shared route msg model =
                             Select.update imsg model.selSenderState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.sendersSelectedNames imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.sendersSelectedNames imodel2
 
                         m2 =
                             { model
@@ -2269,7 +2269,7 @@ update user shared route msg model =
 
                         m3 =
                             { m2
-                                | sendersSelected = Le.Waterfall.Filters.extractSendersIds model.sendersSelectedNames m2.sendersSelectedNames m2.profiles m2.sendersSelected
+                                | sendersSelected = Pages_.RerDuty.Waterfall.Filters.extractSendersIds model.sendersSelectedNames m2.sendersSelectedNames m2.profiles m2.sendersSelected
                             }
 
                         result =
@@ -2319,7 +2319,7 @@ update user shared route msg model =
                             Select.update imsg model.selFreqState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.freqsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.freqsSelected imodel2
 
                         m2 =
                             { model
@@ -2377,7 +2377,7 @@ update user shared route msg model =
                             Select.update imsg model.selCallsignState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.callsignsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.callsignsSelected imodel2
 
                         m2 =
                             { model
@@ -2432,7 +2432,7 @@ update user shared route msg model =
                             Select.update imsg model.selLocationState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.locationsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.locationsSelected imodel2
 
                         m2 =
                             { model
@@ -2487,7 +2487,7 @@ update user shared route msg model =
                             Select.update imsg model.selPostState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.postsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.postsSelected imodel2
 
                         m2 =
                             { model
@@ -2542,7 +2542,7 @@ update user shared route msg model =
                             Select.update imsg model.selUnitState
 
                         ( updatedSelectedItems, state ) =
-                            Le.Block.Select.multiUpdMenuOpen mAction model.unitsSelected imodel2
+                            Utils.Select.multiUpdMenuOpen mAction model.unitsSelected imodel2
 
                         m2 =
                             { model
@@ -2594,7 +2594,7 @@ update user shared route msg model =
 
         GotTags (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження тегів" e
             )
 
         GotTags (Ok vs) ->
@@ -2632,7 +2632,7 @@ update user shared route msg model =
 
         ReportDownloadDocxDone (Err e) ->
             ( { model | reportDownloadInProgress = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження звіту" e
             )
 
         ReportDownloadDocxDone (Ok bytes) ->
@@ -2678,12 +2678,12 @@ update user shared route msg model =
                         Just zone ->
                             "report_"
                                 ++ (model.from.datePosix
-                                        |> mmap (Le.Time.renderDateTimeF6 zone)
+                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
                                         |> def ""
                                    )
                                 ++ "_"
                                 ++ (model.to.datePosix
-                                        |> mmap (Le.Time.renderDateTimeF6 zone)
+                                        |> mmap (Utils.Time.renderDateTimeF6 zone)
                                         |> def ""
                                    )
                                 ++ "."
@@ -2704,7 +2704,7 @@ update user shared route msg model =
 
         GotBookmarks (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження закладок" e
             )
 
         GotBookmarks (Ok vs) ->
@@ -2712,7 +2712,7 @@ update user shared route msg model =
 
         GotImportants (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження важливих повідомлень" e
             )
 
         GotImportants (Ok vs) ->
@@ -2768,7 +2768,7 @@ update user shared route msg model =
 
         GotNewCallsignStats (Err e) ->
             ( { model | newCallsignsLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових позивних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових позивних" e
             )
 
         GotNewCallsignStats (Ok vs) ->
@@ -2781,7 +2781,7 @@ update user shared route msg model =
 
         GotMessagesComments (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження коментарів" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження коментарів" e
             )
 
         GotMessagesComments (Ok comments) ->
@@ -2796,7 +2796,7 @@ update user shared route msg model =
 
         GotUserInfo _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації користувача" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації користувача" e
             )
 
         GotUserInfo login (Ok user_) ->
@@ -2837,12 +2837,12 @@ update user shared route msg model =
 
         DeleteMessageDone _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення повідомлення" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення повідомлення" err
             )
 
         GotGdocCallsignsForSumTable (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації позивних" e
             )
 
         GotGdocCallsignsForSumTable (Ok callsigns) ->
@@ -2869,7 +2869,7 @@ update user shared route msg model =
 
         GotMapPoints (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження точок карти" err
             )
 
         MapClosed ->
@@ -2902,7 +2902,7 @@ update user shared route msg model =
 
         GotMessagesForMap (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження повідомлень для карти" err
             )
 
         GotFreqActivityDaily (Ok r) ->
@@ -2910,7 +2910,7 @@ update user shared route msg model =
 
         GotFreqActivityDaily (Err err) ->
             ( { model | groupsMessageCountByDay = Failure err }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності частот" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності частот" err
             )
 
         SetUnitFilterFromMap unitName ->
@@ -3035,13 +3035,13 @@ getSinceDateForGroupsActivity period dtFromPosix dtToPosix =
             dtFromPosix
 
         Month ->
-            Le.Time.xDaysAgo 30 dtToPosix
+            Utils.Time.xDaysAgo 30 dtToPosix
 
         Quarter ->
-            Le.Time.xDaysAgo 90 dtToPosix
+            Utils.Time.xDaysAgo 90 dtToPosix
 
         Year ->
-            Le.Time.xDaysAgo 365 dtToPosix
+            Utils.Time.xDaysAgo 365 dtToPosix
 
 
 subscriptions : Model -> Sub Msg
@@ -3054,7 +3054,7 @@ view shared user route model =
     { title = "РЕР-аналіз"
     , body =
         [ div [ class "w-full" ]
-            [ RerAnalysis.MainBody.filtersAndMainContent user model shared route
+            [ Pages_.RerAnalysis.MainBody.filtersAndMainContent user model shared route
             ]
         ]
     }

@@ -3,8 +3,13 @@ module Pages.RerUnits exposing (EditUnitState, Model, Msg, RemovingDuplicateProc
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.Checkbox as Checkbox
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.Console
+import Shared.Components.Popup
+import Shared.Components.Spinner
+import Core.Auth
+import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import File exposing (File)
@@ -14,15 +19,6 @@ import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
 import Html.Styled
 import Layouts
-import Le.Auth
-import Le.Block.Popup
-import Le.Block.Select
-import Le.Block.Spinner
-import Le.Console
-import Le.ErrorHandling
-import Le.Time
-import Le.Types exposing (ApiError)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Page exposing (Page)
 import Process
@@ -33,8 +29,12 @@ import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
+import Utils.Api.ErrorHandling
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -68,7 +68,7 @@ type alias Model =
     , inpActive : Bool
     , editUnit : Dict Int EditUnitState
     , deleteUnitConfirmation : Maybe Int
-    , console : Le.Console.Model
+    , console : Shared.Components.Console.Model
     , actionsPopupUnitId : Maybe Int
     , removingDuplicateProcess : RemovingDuplicateProcess
     , removeDuplicateLoading : Bool
@@ -109,7 +109,7 @@ init _ =
       , inpActive = True
       , editUnit = Dict.empty
       , deleteUnitConfirmation = Nothing
-      , console = Le.Console.init
+      , console = Shared.Components.Console.init
       , actionsPopupUnitId = Nothing
       , removeDuplicateLoading = False
       , removingDuplicateProcess = NotStarted
@@ -121,7 +121,7 @@ init _ =
       , filterCompany = ""
       }
     , E.batch
-        [ E.sendCmd <| Task.attempt InitGotZone Le.Time.getZone
+        [ E.sendCmd <| Task.attempt InitGotZone Utils.Time.getZone
         , loadUnits
         ]
     )
@@ -152,7 +152,7 @@ type Msg
     | LoadKMZ
     | LoadKMZSelected File
     | LoadKMZDone File (Result ApiError Int)
-    | ConsoleMsg (Le.Console.Msg Msg)
+    | ConsoleMsg (Shared.Components.Console.Msg Msg)
     | OpenUnitActionsPopup Int
     | CloseUnitActionsPopup
     | FixUnitDuplicates Int
@@ -197,7 +197,7 @@ update msg model =
 
         GotUnits (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділів" err
             )
 
         GotUnits (Ok rsp) ->
@@ -246,7 +246,7 @@ update msg model =
 
         AddUnitDone (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення підрозділу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення підрозділу" err
             )
 
         AddUnitDone (Ok _) ->
@@ -312,7 +312,7 @@ update msg model =
 
         EditUnitDone _ (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділу" err
             )
 
         EditUnitDone id (Ok _) ->
@@ -350,7 +350,7 @@ update msg model =
 
         DeleteUnitDone (Err err) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення підрозділу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення підрозділу" err
             )
 
         DeleteUnitDone (Ok _) ->
@@ -391,16 +391,16 @@ update msg model =
 
         LoadKMZDone _ (Err e) ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ файлу" e
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження KMZ файлу" e
             )
 
         LoadKMZDone _ (Ok taskId) ->
             ( model
-            , E.sendCmd <| Task.perform (always (ConsoleMsg (Le.Console.TaskLaunched taskId))) (Process.sleep 0)
+            , E.sendCmd <| Task.perform (always (ConsoleMsg (Shared.Components.Console.TaskLaunched taskId))) (Process.sleep 0)
             )
 
         ConsoleMsg imsg ->
-            Le.Console.update
+            Shared.Components.Console.update
                 { msg = imsg
                 , model = model.console
                 , toModel = \console -> { model | console = console }
@@ -463,7 +463,7 @@ update msg model =
 
         RemoveDuplicateDone (Err err) ->
             ( { model | removeDuplicateLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення дублікату підрозділу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення дублікату підрозділу" err
             )
 
         RemoveDuplicateDone (Ok _) ->
@@ -616,7 +616,7 @@ contentBlock shared model =
         ( hasAdminRole, hasEditorOrAdminRole ) =
             case shared.user of
                 Just user ->
-                    ( Le.Auth.hasRole "Admin" user, Le.Auth.hasRole "UnitsEditor" user )
+                    ( Core.Auth.hasRole "Admin" user, Core.Auth.hasRole "UnitsEditor" user )
 
                 Nothing ->
                     ( False, False )
@@ -666,7 +666,7 @@ contentBlock shared model =
 
                         Just zone ->
                             text <|
-                                Le.Time.renderDateTimeF1 zone
+                                Utils.Time.renderDateTimeF1 zone
                                     (Time.millisToPosix unit.createdAt)
                     ]
                 , td [] [ div [ style "white-space" "pre-line" ] [ text unit.comment ] ]
@@ -733,7 +733,7 @@ contentBlock shared model =
                                                     ]
                                                 ]
                                     in
-                                    [ Le.Block.Popup.new
+                                    [ Shared.Components.Popup.new
                                         { body = actionsBody
                                         , popupBody = actionsPopupBody
                                         , isOpen = model.actionsPopupUnitId == Just unit.id
@@ -741,10 +741,10 @@ contentBlock shared model =
                                         , onClose = CloseUnitActionsPopup
                                         , disabled = isEditing
                                         }
-                                        |> Le.Block.Popup.withPlacementTop
-                                        |> Le.Block.Popup.withFakeAnchor
-                                        |> Le.Block.Popup.withSkidding "-16"
-                                        |> Le.Block.Popup.view
+                                        |> Shared.Components.Popup.withPlacementTop
+                                        |> Shared.Components.Popup.withFakeAnchor
+                                        |> Shared.Components.Popup.withSkidding "-16"
+                                        |> Shared.Components.Popup.view
                                     ]
 
                                 UnitSelected unitId ->
@@ -821,7 +821,7 @@ contentBlock shared model =
                                 "Loading..."
 
                             Just zone ->
-                                Le.Time.renderDateTimeF1 zone
+                                Utils.Time.renderDateTimeF1 zone
                                     (Time.millisToPosix unit.createdAt)
                     ]
                 , td []
@@ -1089,7 +1089,7 @@ contentBlock shared model =
                             ]
                         , div [ class "d-flex align-items-center gap-3" ]
                             ((if model.removeDuplicateLoading then
-                                [ Le.Block.Spinner.loadingSpinnerSm ]
+                                [ Shared.Components.Spinner.loadingSpinnerSm ]
 
                               else
                                 []
@@ -1149,7 +1149,7 @@ contentBlock shared model =
                         [ text "підвантажити KMZ з картою підрозділів з Дельти"
                         ]
                     ]
-                , Le.Console.view model.console
+                , Shared.Components.Console.view model.console
                 , div
                     [ class "border mb-4 p-3"
                     , style "background-color" "var(--bs-tertiary-bg)"

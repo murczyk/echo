@@ -1,12 +1,12 @@
 module Shared.Model exposing (Model, ThemeMode(..), isDarkMode, themeModeFromString, themeModeToString)
 
 import Bindings as B
+import Core.EventTypes
+import Core.Types exposing (ApiError, LocationRes)
 import Dict exposing (Dict)
-import Le.Block.Toast
-import Le.EventTypes
-import Le.RemoteData exposing (RemoteData)
-import Le.Types exposing (ApiError, LocationRes)
+import Shared.Components.Toast
 import Time exposing (Zone)
+import Utils.RemoteData exposing (RemoteData)
 
 
 type ThemeMode
@@ -22,10 +22,16 @@ isDarkMode themeMode =
     case themeMode of
         Light ->
             False
+
         Dark ->
             True
+
         System ->
-            False -- Default to light for now, will be updated in later milestones
+            False
+
+
+
+-- Default to light for now, will be updated in later milestones
 
 
 {-| Helper function to convert String to ThemeMode from localStorage
@@ -35,12 +41,19 @@ themeModeFromString str =
     case str of
         "light" ->
             Light
+
         "dark" ->
             Dark
+
         "system" ->
             System
+
         _ ->
-            Light -- Default fallback
+            Light
+
+
+
+-- Default fallback
 
 
 {-| Helper function to convert ThemeMode to String for localStorage
@@ -50,8 +63,10 @@ themeModeToString themeMode =
     case themeMode of
         Light ->
             "light"
+
         Dark ->
             "dark"
+
         System ->
             "system"
 
@@ -67,9 +82,9 @@ type alias Model =
     , timeZone : Zone
     , callsignsInfo : Dict String (List B.CallsignInfo)
     , posts : RemoteData ApiError (Dict Int B.Post)
-    , toasts : Le.Block.Toast.Model
+    , toasts : Shared.Components.Toast.Model
     , featureNavbarFrontOnly : Bool
-    , eventService : Le.EventTypes.EventState
+    , eventService : Core.EventTypes.EventState
     , pendingEvents : List B.EventMsg
-    , eventSubscriptions : Le.EventTypes.EventSubscriptions
+    , eventSubscriptions : Core.EventTypes.EventSubscriptions
     }

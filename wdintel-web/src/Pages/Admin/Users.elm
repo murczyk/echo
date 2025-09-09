@@ -3,12 +3,7 @@ module Pages.Admin.Users exposing (FieldError, FormField, LoginEdit, Model, Msg,
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.Checkbox as Checkbox
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
+import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -18,25 +13,30 @@ import Html.Extra as HtmlX
 import Html.Keyed
 import Html.Styled as Styled exposing (fromUnstyled)
 import Layouts
-import Le.Block.Select
-import Le.Components exposing (..)
-import Le.ErrorHandling
-import Le.Time
-import Le.Types exposing (..)
-import Le.Utils exposing (..)
 import List.Extra as ListX
 import Maybe
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.Checkbox as Checkbox
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time
 import TimeZone
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (..)
+import Utils.Select
+import Utils.Time
+import Utils.Utils exposing (..)
+import Utils.Views
 import Validate
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -217,7 +217,7 @@ init =
             [ Api.list_logins GotLogins { sortBy = Just B.LoginCreatedAtDesc }
             , Api.sigint_zones_list GotZoneList
             , Api.list_organisms GotOrganisms { sortBy = Nothing }
-            , Task.attempt GotTimeZone Le.Time.getZone
+            , Task.attempt GotTimeZone Utils.Time.getZone
             ]
     )
 
@@ -318,10 +318,10 @@ update msg model =
             ( { model | logins = res.users, filterRoleSelect = filterRoleSelect2 }, E.none )
 
         GotLogins (Err err) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Users" err )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Users" err )
 
         GotZoneList (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Zones" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Zones" e )
 
         GotZoneList (Ok vs) ->
             let
@@ -339,7 +339,7 @@ update msg model =
             ( { model | zones = vs, inpZone = inpZone2 }, E.none )
 
         GotOrganisms (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Organisms" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Load Organisms" e )
 
         GotOrganisms (Ok res) ->
             let
@@ -465,7 +465,7 @@ update msg model =
             ( m2, E.none )
 
         AddLoginDone (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Create User" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Create User" e )
 
         AddZoneSelMsg selMsg ->
             let
@@ -476,7 +476,7 @@ update msg model =
                     model.inpZone
 
                 inpZone2 =
-                    { inpZone | selectedItem = Le.Block.Select.singleUpd mAction inpZone.selectedItem, selectState = iState }
+                    { inpZone | selectedItem = Utils.Select.singleUpd mAction inpZone.selectedItem, selectState = iState }
             in
             ( { model | inpZone = inpZone2 }
             , E.batch
@@ -493,7 +493,7 @@ update msg model =
                     model.inpOrganism
 
                 inpOrganism2 =
-                    { inpOrganism | selectedItem = Le.Block.Select.singleUpd mAction inpOrganism.selectedItem, selectState = iState }
+                    { inpOrganism | selectedItem = Utils.Select.singleUpd mAction inpOrganism.selectedItem, selectState = iState }
             in
             ( { model | inpOrganism = inpOrganism2 }
             , E.batch
@@ -510,7 +510,7 @@ update msg model =
                     model.inpRole
 
                 inpRole2 =
-                    { inpRole | selectedItems = Le.Block.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
+                    { inpRole | selectedItems = Utils.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
             in
             ( { model | inpRole = inpRole2 }
             , E.batch
@@ -529,7 +529,7 @@ update msg model =
                             editLogin.inpZone
 
                         inpZone2 =
-                            { inpZone | selectedItem = Le.Block.Select.singleUpd mAction inpZone.selectedItem, selectState = iState }
+                            { inpZone | selectedItem = Utils.Select.singleUpd mAction inpZone.selectedItem, selectState = iState }
 
                         a =
                             { editLogin | inpZone = inpZone2 }
@@ -554,7 +554,7 @@ update msg model =
                             editLogin.inpOrganism
 
                         inpOrganism2 =
-                            { inpOrganism | selectedItem = Le.Block.Select.singleUpd mAction inpOrganism.selectedItem, selectState = iState }
+                            { inpOrganism | selectedItem = Utils.Select.singleUpd mAction inpOrganism.selectedItem, selectState = iState }
 
                         a =
                             { editLogin | inpOrganism = inpOrganism2 }
@@ -579,7 +579,7 @@ update msg model =
                             editLogin.inpRole
 
                         inpRole2 =
-                            { inpRole | selectedItems = Le.Block.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
+                            { inpRole | selectedItems = Utils.Select.multiUpdS mAction inpRole.selectedItems, selectState = iState }
 
                         a =
                             { editLogin | inpRole = inpRole2 }
@@ -655,7 +655,7 @@ update msg model =
                                     , password = emptyStringToNothing editLogin.inpPassword
                                     , sigintZoneId = editLogin.inpZone.selectedItem
                                     , organismId = editLogin.inpOrganism.selectedItem
-                                    , roles = Le.Utils.emptyToNothing editLogin.inpRole.selectedItems
+                                    , roles = Utils.Utils.emptyToNothing editLogin.inpRole.selectedItems
                                     , deleted = Just editLogin.inpDeleted
                                     , deltaLogin = emptyStringToNothing editLogin.deltaLogin
                                     , deactivationReason =
@@ -707,7 +707,7 @@ update msg model =
             ( m2, E.none )
 
         EditLoginDone (Err e) ->
-            ( model, Le.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Update User" e )
+            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Failed to Update User" e )
 
         ToggleEditPassword ->
             case model.editLogin of
@@ -740,7 +740,7 @@ update msg model =
                     Select.update selMsg model.filterOrganismSelect.selectState
 
                 newFilterOrganism =
-                    Le.Block.Select.multiUpdI mAction model.filterOrganismSelect.selectedItems
+                    Utils.Select.multiUpdI mAction model.filterOrganismSelect.selectedItems
 
                 filterOrganismSelect =
                     model.filterOrganismSelect
@@ -760,7 +760,7 @@ update msg model =
                     Select.update selMsg model.filterStatusSelect.selectState
 
                 newFilterStatus =
-                    Le.Block.Select.singleUpd mAction model.filterStatusSelect.selectedItem
+                    Utils.Select.singleUpd mAction model.filterStatusSelect.selectedItem
 
                 filterStatusSelect =
                     model.filterStatusSelect
@@ -780,7 +780,7 @@ update msg model =
                     Select.update selMsg model.filterRoleSelect.selectState
 
                 newFilterRole =
-                    Le.Block.Select.multiUpdS mAction model.filterRoleSelect.selectedItems
+                    Utils.Select.multiUpdS mAction model.filterRoleSelect.selectedItems
 
                 filterRoleSelect =
                     model.filterRoleSelect
@@ -856,7 +856,7 @@ viewDeletedStatus timeZone login =
                     , case login.lastActiveAt of
                         Just lastActive ->
                             span [ class "text-gray-500 text-xs" ]
-                                [ text <| "Останній: " ++ Le.Time.renderDateF5FromMillis lastActive timeZone ]
+                                [ text <| "Останній: " ++ Utils.Time.renderDateF5FromMillis lastActive timeZone ]
 
                         Nothing ->
                             text ""
@@ -1175,12 +1175,12 @@ mainContent shared model =
                                 [ div [ class "flex-grow-1" ]
                                     [ Html.map AddRoleSelMsg <|
                                         Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelect
+                                            Utils.Select.renderSelect
                                                 (addState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
                                                 addState.inpRole.selectState
                                                 addState.inpRole.items
                                                 "роль"
-                                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                                (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                                     ]
                                 ]
                             , viewFormErrors Roles addState.fieldsErrors
@@ -1190,12 +1190,12 @@ mainContent shared model =
                                 [ div [ class "flex-grow-1" ]
                                     [ Html.map AddZoneSelMsg <|
                                         Styled.toUnstyled <|
-                                            Le.Block.Select.renderSelectSingle
+                                            Utils.Select.renderSelectSingle
                                                 zoneSelectedItem
                                                 addState.inpZone.selectState
                                                 addState.inpZone.items
                                                 "зона"
-                                                (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                                (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                                     ]
                                 ]
                             , viewFormErrors Zone addState.fieldsErrors
@@ -1204,12 +1204,12 @@ mainContent shared model =
                             [ div [ class "flex-grow-1" ]
                                 [ Html.map AddOrganismSelMsg <|
                                     Styled.toUnstyled <|
-                                        Le.Block.Select.renderSelectSingle
+                                        Utils.Select.renderSelectSingle
                                             organismSelectedItem
                                             addState.inpOrganism.selectState
                                             addState.inpOrganism.items
                                             "організм"
-                                            (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                            (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                                 ]
                             ]
                         , div [ class "text-center" ]
@@ -1397,7 +1397,7 @@ mainContent shared model =
                             [ label [ class "block text-sm font-medium mb-1" ] [ text "Організм" ]
                             , Html.map FilterOrganismSelMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
+                                    Utils.Select.renderSelect
                                         (model.filterOrganismSelect.selectedItems
                                             |> List.map
                                                 (\orgId ->
@@ -1424,13 +1424,13 @@ mainContent shared model =
                                         model.filterOrganismSelect.selectState
                                         organismMenuItems
                                         "Всі организми"
-                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                        (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                             ]
                         , div [ class "flex-1" ]
                             [ label [ class "block text-sm font-medium  mb-1" ] [ text "Статус" ]
                             , Html.map FilterStatusSelMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
+                                    Utils.Select.renderSelectSingle
                                         (Maybe.map
                                             (\status ->
                                                 Select.customMenuItem
@@ -1472,13 +1472,13 @@ mainContent shared model =
                                         model.filterStatusSelect.selectState
                                         statusMenuItems
                                         "Всі статуси"
-                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                        (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                             ]
                         , div [ class "flex-1" ]
                             [ label [ class "block text-sm font-medium mb-1" ] [ text "Роль" ]
                             , Html.map FilterRoleSelMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelect
+                                    Utils.Select.renderSelect
                                         (model.filterRoleSelect.selectedItems
                                             |> List.map
                                                 (\role ->
@@ -1502,7 +1502,7 @@ mainContent shared model =
                                         model.filterRoleSelect.selectState
                                         roleMenuItems
                                         "Всі ролі"
-                                        (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                        (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                             ]
                         ]
                     , div [ class "grid grid-cols-12 gap-4 mt-4" ]
@@ -1617,12 +1617,12 @@ editLoginSidebarContent shared model loginId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditRoleSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelect
+                                Utils.Select.renderSelect
                                     (editState.inpRole.selectedItems |> List.map (\x -> Select.basicMenuItem { item = x, label = x }))
                                     editState.inpRole.selectState
                                     editState.inpRole.items
                                     "роль"
-                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                    (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     , viewFormErrors Roles editState.fieldsErrors
                     ]
@@ -1631,12 +1631,12 @@ editLoginSidebarContent shared model loginId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditOrganismSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
+                                Utils.Select.renderSelectSingle
                                     organismSelectedItem
                                     editState.inpOrganism.selectState
                                     editState.inpOrganism.items
                                     "організм"
-                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                    (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     ]
                 , div [ class "space-y-2" ]
@@ -1644,12 +1644,12 @@ editLoginSidebarContent shared model loginId editState =
                     , div [ class "w-full" ]
                         [ Html.map EditZoneSelMsg <|
                             Styled.toUnstyled <|
-                                Le.Block.Select.renderSelectSingle
+                                Utils.Select.renderSelectSingle
                                     zoneSelectedItem
                                     editState.inpZone.selectState
                                     editState.inpZone.items
                                     "зона"
-                                    (Le.Block.Select.defaultOptions (isDarkMode shared.themeMode))
+                                    (Utils.Select.defaultOptions (isDarkMode shared.themeMode))
                         ]
                     , viewFormErrors Zone editState.fieldsErrors
                     ]
@@ -1782,7 +1782,7 @@ usersTableConfig shared model =
                 |> Table.withColumnWidth "15%"
             , Table.customColumn
                 { name = "Створено"
-                , viewData = \login -> Le.Time.renderDateF5FromMillis login.createdAt model.timeZone
+                , viewData = \login -> Utils.Time.renderDateF5FromMillis login.createdAt model.timeZone
                 , sorter = Table.increasingOrDecreasingBy (\login -> String.fromInt login.createdAt)
                 }
                 |> Table.withColumnWidth "12%"

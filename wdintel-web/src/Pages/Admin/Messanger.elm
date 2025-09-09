@@ -3,12 +3,7 @@ module Pages.Admin.Messanger exposing (Model, Msg, page)
 import Api
 import Auth
 import Bindings as B
-import Components.Button as Button
-import Components.ModalDialog as ModalDialog
-import Components.Sidebar as Sidebar
-import Components.Table as Table
-import Components.Table.Column as TableColumn
-import Components.Table.Config as TableConfig
+import Core.Types exposing (..)
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
 import Html exposing (..)
@@ -16,20 +11,25 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Html.Styled as Styled
 import Layouts
-import Le.Block.Select
-import Le.Components exposing (..)
-import Le.ErrorHandling
-import Le.RemoteData as RD exposing (RemoteData(..))
-import Le.Types exposing (..)
-import Le.Utils exposing (..)
 import Page exposing (Page)
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.ModalDialog as ModalDialog
+import Shared.Components.Sidebar as Sidebar
+import Shared.Components.Table as Table
+import Shared.Components.Table.Column as TableColumn
+import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
 import Time
+import Utils.Api.ErrorHandling
+import Utils.Components exposing (..)
+import Utils.RemoteData as RD exposing (RemoteData(..))
+import Utils.Select
+import Utils.Utils exposing (..)
+import Utils.Views
 import View exposing (View)
-import Views
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
@@ -63,9 +63,9 @@ type alias Model =
     , linkFlow : LinkFlow
     , deleteConfirmDialog : Maybe Int
     , deleteLoading : Bool
-    , messengerTypeSelect : Le.Block.Select.SelectTypeSingle String
+    , messengerTypeSelect : Utils.Select.SelectTypeSingle String
     , aorList : RemoteData ApiError (List B.AreaOfResponsibility)
-    , aorSelect : Le.Block.Select.SelectTypeSingle Int
+    , aorSelect : Utils.Select.SelectTypeSingle Int
     , editForm : Maybe EditForm
     , showEditSidebar : Bool
     , editLoading : Bool
@@ -588,7 +588,7 @@ update msg model =
 
         GotAccounts (Err error) ->
             ( { model | accounts = RD.Failure error }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження акаунтів месенджерів" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження акаунтів месенджерів" error
             )
 
         GotAorList (Ok aorList) ->
@@ -611,7 +611,7 @@ update msg model =
 
         GotAorList (Err error) ->
             ( { model | aorList = RD.Failure error }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження смуг відповідальності" error
             )
 
         OpenLinkSidebar ->
@@ -753,7 +753,7 @@ update msg model =
 
         GotLinkResult (Err error) ->
             ( { model | linkFlow = LinkFormState { messengerType = "signal", phoneNumber = "", name = "", description = "", aorId = Nothing } }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка прив'язування акаунту" error
             )
 
         GotQrCode (Ok qrRsp) ->
@@ -770,7 +770,7 @@ update msg model =
             case model.linkFlow of
                 LinkQrCode qrData ->
                     ( { model | linkFlow = LinkError { message = "Помилка отримання QR коду після кількох спроб", accountId = qrData.accountId, account = qrData.account } }
-                    , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
+                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка отримання QR коду" error
                     )
 
                 _ ->
@@ -895,7 +895,7 @@ update msg model =
 
         GotDeleteResult (Err error) accountId ->
             ( { model | deleteConfirmDialog = Nothing, deleteLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення акаунту" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення акаунту" error
             )
 
         ToggleAccountStatus accountId ->
@@ -961,7 +961,7 @@ update msg model =
 
         GotToggleStatusResult (Err error) accountId ->
             ( model
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка зміни статусу акаунту" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка зміни статусу акаунту" error
             )
 
         MessengerTypeSelectMsg selectMsg ->
@@ -970,7 +970,7 @@ update msg model =
                     Select.update selectMsg model.messengerTypeSelect.state
 
                 updatedMessengerType =
-                    Le.Block.Select.singleUpdWithDefault mAction (Maybe.withDefault "signal" model.messengerTypeSelect.selected)
+                    Utils.Select.singleUpdWithDefault mAction (Maybe.withDefault "signal" model.messengerTypeSelect.selected)
 
                 newSelect =
                     { state = newState
@@ -1000,7 +1000,7 @@ update msg model =
                     Select.update selectMsg model.aorSelect.state
 
                 updatedAorId =
-                    Le.Block.Select.singleUpd mAction model.aorSelect.selected
+                    Utils.Select.singleUpd mAction model.aorSelect.selected
 
                 newSelect =
                     { state = newState
@@ -1126,7 +1126,7 @@ update msg model =
 
         EditAccountResponse (Err error) accountId ->
             ( { model | editLoading = False }
-            , Le.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка редагування акаунту" error
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка редагування акаунту" error
             )
 
         EditAorSelectMsg selectMsg ->
@@ -1137,7 +1137,7 @@ update msg model =
                             Select.update selectMsg model.aorSelect.state
 
                         updatedAorId =
-                            Le.Block.Select.singleUpd mAction model.aorSelect.selected
+                            Utils.Select.singleUpd mAction model.aorSelect.selected
 
                         newSelect =
                             { state = newState
@@ -1281,12 +1281,12 @@ linkAccountSidebarContent isDark shared model =
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Тип месенджера" ]
                             , Html.map MessengerTypeSelectMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
+                                    Utils.Select.renderSelectSingle
                                         (Just (Select.basicMenuItem { item = linkForm.messengerType, label = getMessengerTypeLabel linkForm.messengerType }))
                                         model.messengerTypeSelect.state
                                         messengerTypeMenuItems
                                         "Виберіть тип месенджера"
-                                        (Le.Block.Select.defaultOptions isDark)
+                                        (Utils.Select.defaultOptions isDark)
                             ]
                         , div [ class "space-y-2" ]
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Номер телефону" ]
@@ -1320,7 +1320,7 @@ linkAccountSidebarContent isDark shared model =
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуга відповідальності" ]
                             , Html.map AorSelectMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
+                                    Utils.Select.renderSelectSingle
                                         (Maybe.andThen
                                             (\aorId ->
                                                 List.filter (\aor -> aor.id == aorId) (RD.withDefault [] model.aorList)
@@ -1332,7 +1332,7 @@ linkAccountSidebarContent isDark shared model =
                                         model.aorSelect.state
                                         model.aorSelect.items
                                         "Оберіть смугу відповідальності"
-                                        (Le.Block.Select.defaultOptions isDark)
+                                        (Utils.Select.defaultOptions isDark)
                             , case Dict.get "aorId" model.formErrors of
                                 Just error ->
                                     p [ class "text-xs text-red-600" ] [ text error ]
@@ -1499,7 +1499,7 @@ editAccountSidebarContent isDark shared model =
                             [ label [ class "text-sm font-medium text-foreground" ] [ text "Смуга відповідальності" ]
                             , Html.map EditAorSelectMsg <|
                                 Styled.toUnstyled <|
-                                    Le.Block.Select.renderSelectSingle
+                                    Utils.Select.renderSelectSingle
                                         (Maybe.andThen
                                             (\aorId ->
                                                 List.filter (\aor -> aor.id == aorId) (RD.withDefault [] model.aorList)
@@ -1511,7 +1511,7 @@ editAccountSidebarContent isDark shared model =
                                         model.aorSelect.state
                                         model.aorSelect.items
                                         "Оберіть смугу відповідальності"
-                                        (Le.Block.Select.defaultOptions isDark)
+                                        (Utils.Select.defaultOptions isDark)
                             , case Dict.get "aorId" model.formErrors of
                                 Just error ->
                                     p [ class "text-xs text-red-600" ] [ text error ]
