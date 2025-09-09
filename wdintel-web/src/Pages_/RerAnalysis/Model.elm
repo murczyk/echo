@@ -143,6 +143,7 @@ type alias Model =
     , groupsActivityPeriod : GroupsActivityPeriod
     , filterTagsOption : B.TagFilterOption
     , unitsExactMatchOnly : Bool
+    , editSidebar : Maybe Int
     }
 
 

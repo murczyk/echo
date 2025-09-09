@@ -139,3 +139,7 @@ type Msg
     | GroupsActivityPeriodChanged GroupsActivityPeriod
     | FilterTagsOptionChanged Bool
     | UnitsExactMatchOnlyChanged Bool
+    | CloseEditSidebar
+    | SaveEditSidebar
+    | EditSidebarUpdate Int (B.InboxMessage -> B.InboxMessage)
+    | EditSidebarSaveDone Int (Result ApiError ())
