@@ -1226,6 +1226,10 @@ update user shared route msg model =
                                             loadCoreStatsAndPushUrl { accM | freqsSelected = [ freq ], unfoldMapBlock = True }
                                     in
                                     ( accM2, accCmds2 :: accCmds )
+
+                                Shared.Components.RerMessage.OutOpenSidebarEdit msgId ->
+                                    -- TODO: Implement sidebar logic in Milestone 3
+                                    ( accM, accCmds )
                         )
                         ( m2, [] )
                         res.sigs

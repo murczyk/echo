@@ -100,6 +100,7 @@ type Msg
     | ImportantRemoveDone (Result ApiError ())
     | DeleteMessage Int
     | SelectFreqAndShowMap String
+    | OpenSidebarEdit Int
 
 
 type OutSignal
@@ -111,6 +112,7 @@ type OutSignal
     | OutImportantRm Int
     | OutDeleteMessage Int
     | OutSelectFreqAndShowMap String
+    | OutOpenSidebarEdit Int
 
 
 isOurOrganism : B.User -> Dict String (Maybe B.User) -> String -> Bool
@@ -616,6 +618,13 @@ update vps msg model =
             , messages = vps.messages
             }
 
+        OpenSidebarEdit msgId ->
+            { model = model
+            , cmds = E.none
+            , sigs = [ OutOpenSidebarEdit msgId ]
+            , messages = vps.messages
+            }
+
 
 callsignInputId : Int -> String
 callsignInputId id_ =
@@ -1011,6 +1020,7 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
                 [ class "text-center cursor-pointer me-1"
                 , style "font-size" "1rem"
                 , title "редагувати додаткові поля"
+                , onClick <| OpenSidebarEdit msgId
                 ]
                 [ i [ class "bi bi-pencil text-action" ] []
                 ]
