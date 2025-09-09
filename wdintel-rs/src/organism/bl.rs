@@ -18,9 +18,6 @@ where
         load_organism_with_parents_chain(organism_id, txn)
             .await
             .context(h!())?;
-    let mut organism_ids: Vec<i64> =
-        parents.into_iter().map(|x| x.id).collect();
-    organism_ids.push(organism_id);
     let organism_aors = area_of_responsibility::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -46,10 +43,9 @@ where
             .into_iter()
             .reduce(|a, b| a.or(b))
             .context(h!())?;
-        let filter = signal_group_aor::Column::Id
-            .is_not_null()
-            .and(area_of_responsibility::Column::Id.is_not_null())
-            .and(conditions);
+        let filter = conditions
+            .or(area_of_responsibility::Column::Id.is_null())
+            .or(signal_group_aor::Column::Id.is_null());
         Some(filter)
     };
 
@@ -75,6 +71,9 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    let mut organism_ids: Vec<i64> =
+        parents.into_iter().map(|x| x.id).collect();
+    organism_ids.push(organism_id);
     let organism_groups = organism_group::Entity::find()
         .filter(organism_group::Column::OrganismId.is_in(organism_ids.clone()))
         .all(txn)
