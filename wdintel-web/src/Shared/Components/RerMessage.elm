@@ -3,10 +3,8 @@ module Shared.Components.RerMessage exposing (Edited, Model, Msg(..), OutSignal(
 import Api
 import Bindings as B exposing (..)
 import Shared.Components.ActionMenu
-import Shared.Components.Tag as Tag
-import Shared.Components.Watermark as Watermark exposing (Watermark)
+import Shared.Components.Watermark as Watermark
 import Core.Auth
-import Core.Callsign
 import Core.Callsigns.HintStrategy
 import Core.Types exposing (..)
 import Core.Unit
@@ -25,14 +23,9 @@ import Shared.Callsign
 import Shared.MarkedText
 import Time
 import Utils.Api.ErrorHandling
-import Utils.Components exposing (fieldError, isInvalidCls)
 import Utils.Time
 import Utils.Utils exposing (..)
 import Utils.ViewUtils exposing (tagsBlock)
-
-
-extendedFormWidth =
-    260
 
 
 type alias ViewParams =
@@ -704,10 +697,9 @@ renderRow :
     ViewParams
     -> RenderParams
     -> Model
-    -> Dict String String
     -> ( Int, ( Int, InboxMessage ) )
     -> Html Msg
-renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
+renderRow vps renderPs model ( i_, ( msgId, message ) ) =
     let
         idPrefix =
             "rer-inbox-msg-"
@@ -894,50 +886,16 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                 ]
             ]
 
-        dateInpBlock =
+        metadataReadonlyBlock =
             [ div [ class "d-flex justify-content-center mb-1" ]
                 [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-calendar-event" ] [] ]
-                    , input
-                        [ type_ "text"
-                        , class "text-center"
-                        , style "width" "120px"
-                        , value <| Maybe.withDefault "" message.date
-                        , onInput <| InputDate msgId
-                        ]
-                        []
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-calendar-event" ] [] ]
-                    ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-clock" ] [] ]
-                    , div []
-                        [ input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.time
-                            , onInput <| InputTime msgId
-                            ]
-                            []
-                        ]
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-clock" ] [] ]
-                    ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
                     [ Shared.Components.ActionMenu.actionMenu actionMenuBody "bi-broadcast text-danger"
-                    , div []
-                        [ input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.freq
-                            , onInput <| InputFreq msgId
-                            ]
-                            []
+                    , div 
+                        [ class "text-center"
+                        , style "width" "120px"
+                        , style "font-size" ".9rem"
                         ]
+                        [ text <| Maybe.withDefault "-" message.freq ]
                     , div
                         [ class "ms-1 opacity-0"
                         ]
@@ -947,36 +905,24 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
             , div [ class "d-flex justify-content-center mb-1" ]
                 [ div [ class "d-flex justify-content-center" ]
                     [ div [ class "me-2" ] [ i [ class "bi bi-geo" ] [] ]
-                    , div [] <|
-                        input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.coords
-                            , onInput <| InputCoords msgId
-                            , placeholder "коорд"
-                            , isInvalidCls ("coordinates-" ++ String.fromInt msgId) formErrors
-                            ]
-                            []
-                            :: fieldError ("coordinates-" ++ String.fromInt msgId) formErrors
+                    , div 
+                        [ class "text-center"
+                        , style "width" "120px"
+                        , style "font-size" ".9rem"
+                        ]
+                        [ text <| Maybe.withDefault "-" message.coords ]
                     , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-geo" ] [] ]
                     ]
                 ]
             , div [ class "d-flex justify-content-center mb-1" ]
                 [ div [ class "d-flex justify-content-center" ]
                     [ div [ class "me-2" ] [ i [ class "bi bi-binoculars" ] [] ]
-                    , div [] <|
-                        input
-                            [ type_ "text"
-                            , class "text-center"
-                            , style "width" "120px"
-                            , value <| Maybe.withDefault "" message.post
-                            , onInput <| InputPost msgId
-                            , placeholder "пост"
-                            , isInvalidCls ("post-" ++ String.fromInt msgId) formErrors
-                            ]
-                            []
-                            :: fieldError ("post-" ++ String.fromInt msgId) formErrors
+                    , div 
+                        [ class "text-center"
+                        , style "width" "120px"
+                        , style "font-size" ".9rem"
+                        ]
+                        [ text <| Maybe.withDefault "-" message.post ]
                     , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-binoculars" ] [] ]
                     ]
                 ]
@@ -1060,12 +1006,22 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
             else
                 text ""
 
+        editIconBlock =
+            div
+                [ class "text-center cursor-pointer me-1"
+                , style "font-size" "1rem"
+                , title "редагувати додаткові поля"
+                ]
+                [ i [ class "bi bi-pencil text-action" ] []
+                ]
+
         timeColumn =
             [ div [] <|
                 div [ class "flex justify-start items-center" ]
                     [ bookmarkBlock
                     , importantBlock
                     , deleteMessageBlock
+                    , editIconBlock
                     , div
                         [ class "text-center"
                         , style "font-size" ".8rem"
@@ -1085,7 +1041,7 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
                     ]
                     :: groupNameBlock
                     ++ senderNameBlock
-                    ++ dateInpBlock
+                    ++ metadataReadonlyBlock
             ]
 
         messageColumn =
@@ -1109,37 +1065,7 @@ renderRow vps renderPs model formErrors ( i_, ( msgId, message ) ) =
             [ div []
                 [ div []
                     [ div [ class "" ]
-                        [ input
-                            [ type_ "text"
-                            , class "w-100"
-                            , style "padding-left" "5px"
-                            , style "padding-top" "2px"
-                            , style "padding-bottom" "2px"
-
-                            -- , style "font-size" "1rem"
-                            , value <| Maybe.withDefault "" message.unit
-                            , onInput <| InputUnit msgId
-                            , placeholder "підрозділ"
-                            ]
-                            []
-                        , div [] [ networkBlock ]
-                        ]
-                    ]
-                , div [ class "d-flex justify-content-between mt-2" ]
-                    [ div [ class "flex-fill" ]
-                        [ input
-                            [ type_ "text"
-                            , class " w-100"
-                            , style "padding-left" "5px"
-                            , style "padding-top" "2px"
-                            , style "padding-bottom" "2px"
-
-                            -- , style "font-size" "1rem"
-                            , value <| Maybe.withDefault "" message.location
-                            , onInput <| InputLocation msgId
-                            , placeholder "локація"
-                            ]
-                            []
+                        [ div [] [ networkBlock ]
                         ]
                     ]
                 , div [ class "mt-1" ] <|

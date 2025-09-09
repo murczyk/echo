@@ -132,7 +132,6 @@ mainBody user model shared route =
                                         vps
                                         renderPs
                                         model.rowsModel
-                                        model.formErrors
                                     )
                                     (enumerate model.messages)
                                 )
@@ -712,7 +711,7 @@ filtersAndMainContent user model shared route =
             , style "overflow-y" "hidden"
             ]
             [ div
-                [ class "self-stretch overflow-auto text-sm w-[260px] min-w-[260px]"
+                [ class "self-stretch overflow-auto text-sm w-[25%]"
                 , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
                 ]
                 [ Pages_.RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) user model ]
