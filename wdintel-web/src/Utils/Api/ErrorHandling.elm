@@ -152,4 +152,11 @@ formatErrorForShowErrorWithDetails customTitle error =
         errorDetails =
             formatErrorWithCustomTitle customTitle error
     in
-    E.showErrorWithDetails errorDetails.title errorDetails.content
+    case error.httpError of
+        Http.BadStatus 401 ->
+            -- For 401 errors, trigger logout instead of showing error
+            E.logout
+            
+        _ ->
+            -- For other errors, show the error message
+            E.showErrorWithDetails errorDetails.title errorDetails.content
