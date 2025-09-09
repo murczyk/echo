@@ -392,8 +392,8 @@ where
     }
     if or_bookmarked == &Some(true) {
         let bookmark_exists = sigint_bookmark::Entity::find()
-                      .select_only()
-            .expr(Expr::value(1))  
+            .select_only()
+            .expr(Expr::value(1))
             .filter(
                 Expr::col((
                     sigint_bookmark::Entity,
@@ -406,13 +406,14 @@ where
             .into_query();
         let bookmark_exists_expr = Expr::exists(bookmark_exists);
 
-        m_inner_expr =
-            m_inner_expr.map(|x| x.or(bookmark_exists_expr.clone())).or(Some(bookmark_exists_expr.clone()));
+        m_inner_expr = m_inner_expr
+            .map(|x| x.or(bookmark_exists_expr.clone()))
+            .or(Some(bookmark_exists_expr.clone()));
     }
     if or_important == &Some(true) {
         let important_exists = sigint_important::Entity::find()
-                      .select_only()
-            .expr(Expr::value(1))  
+            .select_only()
+            .expr(Expr::value(1))
             .filter(
                 Expr::col((
                     sigint_important::Entity,
@@ -424,8 +425,9 @@ where
             .into_query();
         let important_exists_expr = Expr::exists(important_exists);
 
-        m_inner_expr =
-            m_inner_expr.map(|x| x.or(important_exists_expr.clone())).or(Some(important_exists_expr.clone()));
+        m_inner_expr = m_inner_expr
+            .map(|x| x.or(important_exists_expr.clone()))
+            .or(Some(important_exists_expr.clone()));
     }
     if or_with_coords == &Some(true) {
         let y = sigint_inbox_item::Column::Lat
@@ -437,7 +439,7 @@ where
     if or_with_extended_form == &Some(true) {
         let comment_exists = sigint_comment::Entity::find()
             .select_only()
-            .expr(Expr::value(1))  
+            .expr(Expr::value(1))
             .filter(
                 Expr::col((
                     sigint_comment::Entity,
