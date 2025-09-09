@@ -356,7 +356,7 @@ pub async fn report_xlsx_kind_interception(
 
         // Write data using rust_xlsxwriter
         sheet1
-            .write_string(i, 0, format!("{}", &date.format("%m/%d/%Y")))
+            .write_string(i, 0, format!("{}", &date.format("%d/%m/%Y")))
             .context(h!())?;
         sheet1.write_string(i, 1, time.to_string()).context(h!())?;
         sheet1.write_string(i, 2, &freq).context(h!())?;
