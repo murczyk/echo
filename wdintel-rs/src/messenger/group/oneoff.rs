@@ -13,7 +13,10 @@ use log::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 
-pub async fn oneoff_fix_echoim_groups(mode: Mode) -> Result<(), AppError> {
+pub async fn oneoff_fix_echoim_groups(
+    mode: Mode,
+    interactive: bool,
+) -> Result<(), AppError> {
     info!("oneoff_assign_message_ids started");
     let config = config::read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
@@ -46,7 +49,9 @@ pub async fn oneoff_fix_echoim_groups(mode: Mode) -> Result<(), AppError> {
             .await
             .context(h!())?;
     }
-    fix_retro_signal_group_mappings(&dbx).await.context(h!())?;
+    fix_retro_signal_group_mappings(&dbx, interactive)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
@@ -210,6 +215,7 @@ async fn insert_missing_datasource_groups(
 
 async fn fix_retro_signal_group_mappings(
     db: &DatabaseConnection,
+    interactive: bool,
 ) -> anyhow::Result<()> {
     let ts_cutoff =
         Utc::now() - Duration::days(config::MAX_AGE_MESSAGES_TO_UPDATE);
@@ -231,7 +237,7 @@ async fn fix_retro_signal_group_mappings(
     if all_keys.is_empty() {
         return Ok(());
     }
-
+    info!("all group keys: {all_keys:?}");
     let datasource_groups = datasource_group::Entity::find()
         .filter(datasource_group::Column::GroupMasterKey.is_in(all_keys))
         .all(db)
@@ -244,38 +250,54 @@ async fn fix_retro_signal_group_mappings(
             .collect::<Vec<_>>();
         let to_groups = datasource_groups
             .iter()
-            .filter(|g| g.group_master_key.eq(&internal_id))
+            .filter(|g| g.group_master_key.eq(&group_id))
             .collect::<Vec<_>>();
+        info!("{internal_id} => {group_id}: ");
+        info!("from: {from_groups:?}");
+        info!("to: {to_groups:?}");
         for source_group in from_groups {
             let target_group_id = to_groups
                 .iter()
                 .find(|g| g.datasource_id.eq(&source_group.datasource_id))
                 .map(|g| g.id);
             if target_group_id.is_none() {
-                let prompt = format!("Do you want to change master key of datasource group {} (id={}, datasource_id={}) from {} to {}?", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+                if interactive {
+                    let prompt = format!("Do you want to change master key of datasource group {} (id={}, datasource_id={}) from {} to {}?", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+                    let confirmed =
+                        Confirm::with_theme(&ColorfulTheme::default())
+                            .with_prompt(prompt)
+                            .default(false)
+                            .interact()
+                            .context(h!())?;
+                    if confirmed {
+                        let mut model =
+                            source_group.clone().into_active_model();
+                        model.group_master_key = Set(group_id.clone());
+                        model.update(db).await.context(h!())?;
+                    }
+                    continue;
+                }
+            } else {
+                info!("Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+            }
+            let target_group_id = target_group_id.context(h!())?;
+            if interactive {
                 let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-                    .with_prompt(prompt)
+                    .with_prompt(format!(
+                        "Do you want to remap messages from group {} to group {}?",
+                        source_group.id, target_group_id
+                    ))
                     .default(false)
                     .interact()
                     .context(h!())?;
-                if confirmed {
-                    let mut model = source_group.clone().into_active_model();
-                    model.group_master_key = Set(group_id.clone());
-                    model.update(db).await.context(h!())?;
+                if !confirmed {
+                    continue;
                 }
-                continue;
-            }
-            let target_group_id = target_group_id.context(h!())?;
-            let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-                .with_prompt(format!(
-                    "Do you want to remap messages from group {} to group {}?",
+            } else {
+                info!(
+                    "Remapping messages from group {} to group {}?",
                     source_group.id, target_group_id
-                ))
-                .default(false)
-                .interact()
-                .context(h!())?;
-            if !confirmed {
-                continue;
+                );
             }
             loop {
                 let messages_to_update = signal_message::Entity::find()
