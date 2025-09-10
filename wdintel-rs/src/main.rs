@@ -323,6 +323,12 @@ pub struct OneoffGetNetworksActivityStatsPs {
     pub end: String,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffFixEchoimGroups {
+    #[arg(long, default_value = "false")]
+    pub noninteractive: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -376,6 +382,7 @@ enum Cmd {
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffPopulateSignalMessageGroupIds,
+    OneoffFixEchoimGroups(OneoffFixEchoimGroups),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -692,6 +699,13 @@ async fn main() -> Result<(), AppError> {
         Cmd::OneoffPopulateSignalMessageGroupIds => {
             messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
                 mode,
+            )
+            .await
+        }
+        Cmd::OneoffFixEchoimGroups(ps) => {
+            messenger::group::oneoff::oneoff_fix_echoim_groups(
+                mode,
+                !ps.noninteractive,
             )
             .await
         }

@@ -1,12 +1,59 @@
-use crate::entities::{datasource_group, signal_group, signal_message};
+use crate::entities::{
+    datasource_group, echo_group, signal_group, signal_message,
+};
 use crate::error::AppError;
-use crate::types::Mode;
+use crate::types::{Mode, ShortContext};
 use crate::{config, h};
 use anyhow::Context;
+use chrono::{Duration, Utc};
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::Confirm;
 use echo_migration::Expr;
 use log::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
+
+pub async fn oneoff_fix_echoim_groups(
+    mode: Mode,
+    interactive: bool,
+) -> Result<(), AppError> {
+    info!("oneoff_assign_message_ids started");
+    let config = config::read_config(mode).context(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    let group_names = signal_group::Entity::find()
+        .select_only()
+        .filter(signal_group::Column::Name.is_not_null())
+        .column(signal_group::Column::MasterKey)
+        .column(signal_group::Column::Name)
+        .into_tuple::<(String, String)>()
+        .all(&dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<String, String>>();
+    for (key, name) in group_names {
+        if name.trim().is_empty() {
+            continue;
+        }
+        datasource_group::Entity::update_many()
+            .filter(datasource_group::Column::GroupMasterKey.eq(key))
+            .filter(
+                datasource_group::Column::Name
+                    .eq("".to_string())
+                    .or(datasource_group::Column::Name.is_null()),
+            )
+            .col_expr(datasource_group::Column::Name, Expr::value(name))
+            .exec(&dbx)
+            .await
+            .context(h!())?;
+    }
+    fix_retro_signal_group_mappings(&dbx, interactive)
+        .await
+        .context(h!())?;
+    Ok(())
+}
 
 pub async fn oneoff_populate_signal_message_group_ids(
     mode: Mode,
@@ -164,4 +211,128 @@ async fn insert_missing_datasource_groups(
         existing_groups.push(new_group);
     }
     Ok(existing_groups)
+}
+
+async fn fix_retro_signal_group_mappings(
+    db: &DatabaseConnection,
+    interactive: bool,
+) -> anyhow::Result<()> {
+    let ts_cutoff =
+        Utc::now() - Duration::days(config::MAX_AGE_MESSAGES_TO_UPDATE);
+    let keys_mapping = echo_group::Entity::find()
+        .filter(echo_group::Column::GroupId.starts_with("group."))
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .flat_map(|g| {
+            g.internal_id.map(|internal_id| (g.group_id, internal_id))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut all_keys = vec![];
+    for (k, v) in keys_mapping.clone() {
+        all_keys.push(k);
+        all_keys.push(v);
+    }
+    if all_keys.is_empty() {
+        return Ok(());
+    }
+    info!("all group keys: {all_keys:?}");
+    let datasource_groups = datasource_group::Entity::find()
+        .filter(datasource_group::Column::GroupMasterKey.is_in(all_keys))
+        .all(db)
+        .await
+        .context(h!())?;
+    for (group_id, internal_id) in keys_mapping {
+        let from_groups = datasource_groups
+            .iter()
+            .filter(|g| g.group_master_key.eq(&internal_id))
+            .collect::<Vec<_>>();
+        let to_groups = datasource_groups
+            .iter()
+            .filter(|g| g.group_master_key.eq(&group_id))
+            .collect::<Vec<_>>();
+        info!("{internal_id} => {group_id}: ");
+        info!("from: {from_groups:?}");
+        info!("to: {to_groups:?}");
+        for source_group in from_groups {
+            let target_group_id = to_groups
+                .iter()
+                .find(|g| g.datasource_id.eq(&source_group.datasource_id))
+                .map(|g| g.id);
+            if target_group_id.is_none() {
+                if interactive {
+                    let prompt = format!("Do you want to change master key of datasource group {} (id={}, datasource_id={}) from {} to {}?", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+                    let confirmed =
+                        Confirm::with_theme(&ColorfulTheme::default())
+                            .with_prompt(prompt)
+                            .default(false)
+                            .interact()
+                            .context(h!())?;
+                    if confirmed {
+                        let mut model =
+                            source_group.clone().into_active_model();
+                        model.group_master_key = Set(group_id.clone());
+                        model.update(db).await.context(h!())?;
+                    }
+                    continue;
+                }
+            } else {
+                info!("Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+            }
+            let target_group_id = target_group_id.context(h!())?;
+            if interactive {
+                let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt(format!(
+                        "Do you want to remap messages from group {} to group {}?",
+                        source_group.id, target_group_id
+                    ))
+                    .default(false)
+                    .interact()
+                    .context(h!())?;
+                if !confirmed {
+                    continue;
+                }
+            } else {
+                info!(
+                    "Remapping messages from group {} to group {}?",
+                    source_group.id, target_group_id
+                );
+            }
+            loop {
+                let messages_to_update = signal_message::Entity::find()
+                    .filter(
+                        signal_message::Column::DatasourceGroupId
+                            .eq(source_group.id),
+                    )
+                    .filter(
+                        signal_message::Column::CreatedAt
+                            .gte(ts_cutoff.naive_utc()),
+                    )
+                    .select_only()
+                    .column(signal_message::Column::Id)
+                    .order_by_desc(signal_message::Column::CreatedAt)
+                    .limit(20000)
+                    .into_tuple::<i64>()
+                    .all(db)
+                    .await
+                    .context(h!())?;
+                if messages_to_update.is_empty() {
+                    break;
+                }
+                signal_message::Entity::update_many()
+                    .filter(
+                        signal_message::Column::Id.is_in(messages_to_update),
+                    )
+                    .col_expr(
+                        signal_message::Column::DatasourceGroupId,
+                        Expr::value(target_group_id),
+                    )
+                    .exec(db)
+                    .await
+                    .context(h!())?;
+            }
+        }
+    }
+    Ok(())
 }
