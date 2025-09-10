@@ -1,4 +1,4 @@
-module Core.Unit exposing (boldMasterUnit, isSameOrChildUnit, unitName)
+module Core.Unit exposing (boldMasterUnit, createMasterUnitText, isSameOrChildUnit, unitName)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -125,21 +125,22 @@ sameRegiment unit1 unit2 =
 boldMasterUnit : Dict Int B.Unit -> B.Network -> Html msg
 boldMasterUnit masterUnits network =
     div [ class "fw-semibold" ]
-        [ div []
-            [ -- text <| Utils.networkKindVHFMapping network.kind
-              text " р/м "
-            , text network.name
-            , text " "
-            , text <|
-                String.join ", "
-                    (List.map (unitName masterUnits)
-                        (Maybe.withDefault [] network.unitIds)
-                    )
-            , text <|
-                if network.location /= "" then
-                    " (" ++ String.toUpper network.location ++ ")"
-
-                else
-                    ""
-            ]
+        [ text <| createMasterUnitText masterUnits network
         ]
+
+
+createMasterUnitText : Dict Int B.Unit -> B.Network -> String
+createMasterUnitText masterUnits network =
+    "р/м "
+        ++ network.name
+        ++ " "
+        ++ String.join ", "
+            (List.map (unitName masterUnits)
+                (Maybe.withDefault [] network.unitIds)
+            )
+        ++ (if network.location /= "" then
+                " (" ++ String.toUpper network.location ++ ")"
+
+            else
+                ""
+           )

@@ -19,6 +19,7 @@ import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
 import Shared.Components.Watermark as Watermark
+import Shared.Icons as Icons
 import Shared.MarkedText
 import Time
 import Utils.Api.ErrorHandling
@@ -780,7 +781,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                           in
                           div
                             [ title "додати в закладки"
-                            , class "text-[1rem] cursor-pointer "
+                            , class "text-[1rem] cursor-pointer text-action "
                             , onClick
                                 (if bookmarked then
                                     BookmarkRemove msgId
@@ -804,7 +805,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                           in
                           div
                             [ title "помітити як важливе"
-                            , class "text-[1rem] cursor-pointer"
+                            , class "text-[1rem] cursor-pointer text-action"
                             , onClick
                                 (if important then
                                     ImportantRemove msgId
@@ -825,7 +826,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         , HtmlX.viewIf (Core.Auth.hasRole "DeleteMsg" vps.user) <|
                             div
                                 [ title "видалити повідомлення"
-                                , class "text-[1rem] cursor-pointer"
+                                , class "text-[1rem] cursor-pointer text-action"
                                 , attribute "data-bs-toggle" "modal"
                                 , attribute "data-bs-target" "#deleteMessageModal"
                                 ]
@@ -943,25 +944,35 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 networkBlock =
                     case message.networkIds of
                         Just networkIds ->
-                            div [] <|
-                                for_ networkIds <|
-                                    \networkId ->
-                                        case Dict.get networkId vps.networks of
-                                            Just network ->
-                                                Core.Unit.boldMasterUnit vps.masterUnits network
+                            let
+                                networkStrings =
+                                    List.map
+                                        (\networkId ->
+                                            case Dict.get networkId vps.networks of
+                                                Just network ->
+                                                    Core.Unit.createMasterUnitText vps.masterUnits network
 
-                                            _ ->
-                                                text "Невідома мережа"
+                                                _ ->
+                                                    "Невідома мережа"
+                                        )
+                                        networkIds
+
+                                networkBlock_ =
+                                    List.map (\str -> span [] [ text str ]) networkStrings
+                                        |> (\list ->
+                                                div [ class "flex gap-2 items-center border-b border-b-border pb-1" ]
+                                                    [ Icons.network
+                                                    , div [] list
+                                                    ]
+                                           )
+                            in
+                            networkBlock_
 
                         Nothing ->
                             text ""
             in
             [ div []
-                [ div []
-                    [ div [ class "" ]
-                        [ div [] [ networkBlock ]
-                        ]
-                    ]
+                [ div [] [ networkBlock ]
                 , div [ class "mt-1" ] <|
                     List.map renderImage message.images
                 , div
