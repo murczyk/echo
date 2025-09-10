@@ -6,6 +6,8 @@ use crate::types::{Mode, ShortContext};
 use crate::{config, h};
 use anyhow::Context;
 use chrono::{Duration, Utc};
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::Confirm;
 use echo_migration::Expr;
 use log::*;
 use sea_orm::*;
@@ -245,26 +247,36 @@ async fn fix_retro_signal_group_mappings(
             .filter(|g| g.group_master_key.eq(&internal_id))
             .collect::<Vec<_>>();
         for source_group in from_groups {
-            let mut target_group_id = to_groups
+            let target_group_id = to_groups
                 .iter()
                 .find(|g| g.datasource_id.eq(&source_group.datasource_id))
                 .map(|g| g.id);
             if target_group_id.is_none() {
-                let new_id = datasource_group::ActiveModel {
-                    id: NotSet,
-                    group_master_key: Set(group_id.clone()),
-                    datasource_id: Set(source_group.datasource_id),
-                    last_sync_at: NotSet,
-                    created_at: NotSet,
-                    name: Set(source_group.name.clone()),
+                let prompt = format!("Do you want to change master key of datasource group {} (id={}, datasource_id={}) from {} to {}?", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+                let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt(prompt)
+                    .default(false)
+                    .interact()
+                    .context(h!())?;
+                if confirmed {
+                    let mut model = source_group.clone().into_active_model();
+                    model.group_master_key = Set(group_id.clone());
+                    model.update(db).await.context(h!())?;
                 }
-                .insert(db)
-                .await
-                .context(h!())?
-                .id;
-                target_group_id = Some(new_id);
+                continue;
             }
             let target_group_id = target_group_id.context(h!())?;
+            let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!(
+                    "Do you want to remap messages from group {} to group {}?",
+                    source_group.id, target_group_id
+                ))
+                .default(false)
+                .interact()
+                .context(h!())?;
+            if !confirmed {
+                continue;
+            }
             loop {
                 let messages_to_update = signal_message::Entity::find()
                     .filter(
@@ -286,10 +298,6 @@ async fn fix_retro_signal_group_mappings(
                 if messages_to_update.is_empty() {
                     break;
                 }
-                info!(
-                    "remapping messages from group {} to group {}",
-                    source_group.id, target_group_id
-                );
                 signal_message::Entity::update_many()
                     .filter(
                         signal_message::Column::Id.is_in(messages_to_update),
