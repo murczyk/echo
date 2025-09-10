@@ -273,10 +273,14 @@ async fn fix_retro_signal_group_mappings(
                         continue;
                     };
                 }
-
+                let id = source_group.id;
+                let name = source_group.name.clone();
                 let mut model = source_group.clone().into_active_model();
                 model.group_master_key = Set(group_id.clone());
-                model.update(db).await.context(h!())?;
+                if let Err(e) = model.update(db).await {
+                    info!("failed to update {name}(id={id}), skipping: {e:?}");
+                    continue;
+                }
             } else {
                 info!("Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
             }
