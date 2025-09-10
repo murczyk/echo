@@ -272,7 +272,10 @@ async fn fix_retro_signal_group_mappings(
                     if !confirmed {
                         continue;
                     };
+                } else {
+                    info!("Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
                 }
+
                 let id = source_group.id;
                 let name = source_group.name.clone();
                 let mut model = source_group.clone().into_active_model();
@@ -281,10 +284,11 @@ async fn fix_retro_signal_group_mappings(
                     info!("failed to update {name}(id={id}), skipping: {e:?}");
                     continue;
                 }
-            } else {
-                info!("Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
             }
-            let target_group_id = target_group_id.context(h!())?;
+            let Some(target_group_id) = target_group_id else {
+                error!("[unexpected] missing target group id, skipping...");
+                continue;
+            };
             if interactive {
                 let confirmed = Confirm::with_theme(&ColorfulTheme::default())
                     .with_prompt(format!(
