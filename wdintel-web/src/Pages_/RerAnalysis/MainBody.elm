@@ -705,7 +705,7 @@ view user model shared route =
         [ -- viewIf model.showReportConstructor reportConstructorBlock
           viewReportConstructor
         , div
-            [ class "page-rer-analysis overflow-y-hidden grid grid-cols-24 gap-2"
+            [ class "page-rer-analysis overflow-y-hidden bg-card grid grid-cols-24 gap-2"
             , style "height" <| "calc(100vh - " ++ fromInt navbarHeightPx ++ "px)"
             ]
             [ div

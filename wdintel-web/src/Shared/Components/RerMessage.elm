@@ -18,7 +18,6 @@ import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
-import Shared.Components.ActionMenu
 import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
 import Time
@@ -771,249 +770,173 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                 ]
 
-        groupNameBlock =
-            case
-                message.groupMasterKey
-                    |> Maybe.andThen (\groupMasterKey -> Dict.get groupMasterKey vps.groupInfos)
-            of
-                Nothing ->
-                    []
-
-                Just group ->
-                    [ div
-                        [ class "text-center mb-1"
-                        , style "font-size" ".8rem"
-                        ]
-                      <|
-                        (text <| group.name)
-                            :: (case message.duplicateIds of
-                                    Nothing ->
-                                        []
-
-                                    Just duplicateIds ->
-                                        if List.length duplicateIds > 0 then
-                                            let
-                                                lbl =
-                                                    "+" ++ String.fromInt (List.length duplicateIds)
-                                            in
-                                            [ text " "
-                                            , sup
-                                                [ class "badge rounded-pill text-bg-light"
-                                                ]
-                                                [ text lbl ]
-                                            ]
-
-                                        else
-                                            []
-                               )
-                    ]
-
-        senderNameBlock =
-            case message.sender of
-                Nothing ->
-                    []
-
-                Just senderUuid ->
-                    senderNameBlockNoInput senderUuid
-
-        senderNameBlockNoInput _ =
-            let
-                emptyName =
-                    "(невідомо)"
-
-                profile =
-                    message.sender
-                        |> Maybe.andThen (\s -> Dict.get s vps.profiles)
-                        |> MaybeX.join
-                        |> Maybe.withDefault
-                            { givenName = Just emptyName, familyName = Nothing }
-            in
-            [ div
-                [ class "unknown-profile-name text-center mb-1"
-
-                -- , onClick <| AddNameInput id_ senderUuid
-                ]
-                [ text <|
-                    case ( profile.givenName, profile.familyName ) of
-                        ( Nothing, Nothing ) ->
-                            emptyName
-
-                        _ ->
-                            Maybe.withDefault "" profile.givenName
-                                ++ " "
-                                ++ Maybe.withDefault "" profile.familyName
-                ]
-            ]
-
-        actionMenuBody =
-            let
-                updatedRouteString =
-                    case vps.currentRoute of
-                        Just x ->
-                            insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSelectedFreq (message.freq |> def "") x)
-
-                        Nothing ->
-                            "/rer-analysis"
-            in
-            [ span []
-                [ i [ class "bi me-1 bi-pin-map" ] []
-                , button [ class "bg-transparent border-0", onClick (SelectFreqAndShowMap (message.freq |> def "")) ]
-                    [ text "на мапі" ]
-                ]
-            , span []
-                [ i [ class "bi me-1 bi-pin-map" ] []
-                , a [ href updatedRouteString, target "_blank" ]
-                    [ text "на мапі "
-                    , sup []
-                        [ i
-                            [ class "bi bi-box-arrow-up-right"
-                            ]
-                            []
-                        ]
-                    ]
-                ]
-            ]
-
-        metadataReadonlyBlock =
-            [ div [ class "bg-muted rounded p-1 text-xs" ]
-                [ div [ class "flex items-center justify-center mb-1" ]
-                    [ Shared.Components.ActionMenu.actionMenu actionMenuBody "bi-broadcast text-danger"
-                    , div [ class "mx-1 px-1 py-0.5 bg-card rounded text-xs font-medium" ]
-                        [ text <| Maybe.withDefault "-" message.freq ]
-                    ]
-                , div [ class "flex items-center justify-center mb-1" ]
-                    [ i [ class "bi bi-geo text-icons mr-1" ] []
-                    , div [ class "px-1 py-0.5 bg-card rounded text-xs" ]
-                        [ text <| Maybe.withDefault "-" message.coords ]
-                    ]
-                , div [ class "flex items-center justify-center" ]
-                    [ i [ class "bi bi-binoculars text-icons mr-1" ] []
-                    , div [ class "px-1 py-0.5 bg-card rounded text-xs" ]
-                        [ text <| Maybe.withDefault "-" message.post ]
-                    ]
-                ]
-            ]
-
-        bookmarkBlock =
-            let
-                bookmarked =
-                    Set.member msgId vps.bookmarks
-            in
-            div
-                ([ style "font-size" "1rem"
-                 , style "cursor" "pointer"
-                 , title "додати в закладки"
-                 , class "me-1"
-                 ]
-                    ++ (if bookmarked then
-                            [ onClick <| BookmarkRemove msgId ]
-
-                        else
-                            [ onClick <| BookmarkAdd msgId
-                            ]
-                       )
-                )
-                [ i
-                    [ class "bi"
-                    , classList
-                        [ ( "bi-bookmark", not bookmarked )
-                        , ( "bi-bookmark-fill", bookmarked )
-                        ]
-                    ]
-                    []
-                ]
-
-        importantBlock =
-            let
-                important =
-                    Set.member msgId vps.importants
-            in
-            div
-                ([ style "font-size" "1rem"
-                 , style "cursor" "pointer"
-                 , title "помітити як важливе"
-                 , class "me-1"
-                 ]
-                    ++ (if important then
-                            [ onClick <| ImportantRemove msgId ]
-
-                        else
-                            [ onClick <| ImportantAdd msgId
-                            ]
-                       )
-                )
-                [ i
-                    [ class "bi"
-                    , classList
-                        [ ( "bi-exclamation-triangle", not important )
-                        , ( "bi-exclamation-triangle-fill text-danger", important )
-                        ]
-                    ]
-                    []
-                ]
-
-        deleteMessageBlock =
-            if Core.Auth.hasRole "DeleteMsg" vps.user then
-                div
-                    [ style "font-size" "1rem"
-                    , style "cursor" "pointer"
-                    , title "видалити повідомлення"
-                    , class "me-1"
-                    , attribute "data-bs-toggle" "modal"
-                    , attribute "data-bs-target" "#deleteMessageModal"
-                    ]
-                    [ i
-                        [ class "bi bi-trash3 text-danger"
-                        , onClick <| DeleteMessage msgId
-                        ]
-                        []
-                    ]
-
-            else
-                text ""
-
-        editIconBlock =
-            div
-                [ class "text-center cursor-pointer me-1"
-                , style "font-size" "1rem"
-                , title "редагувати додаткові поля"
-                , onClick <| OpenSidebarEdit msgId
-                ]
-                [ i [ class "bi bi-pencil text-action" ] []
-                ]
-
         timeColumn =
-            [ div []
-                [ -- Actions block
-                  div [ class "flex justify-center mb-2" ]
-                    [ bookmarkBlock
-                    , importantBlock
-                    , deleteMessageBlock
-                    , editIconBlock
-                    ]
+            let
+                actionsBlock =
+                    div [ class "flex justify-between" ]
+                        [ let
+                            bookmarked =
+                                Set.member msgId vps.bookmarks
+                          in
+                          div
+                            [ title "додати в закладки"
+                            , class "text-[1rem] cursor-pointer "
+                            , onClick
+                                (if bookmarked then
+                                    BookmarkRemove msgId
 
-                -- Time block
-                , div
-                    [ class "text-center mb-2"
-                    , style "font-size" ".75rem"
+                                 else
+                                    BookmarkAdd msgId
+                                )
+                            ]
+                            [ i
+                                [ class "bi"
+                                , classList
+                                    [ ( "bi-bookmark", not bookmarked )
+                                    , ( "bi-bookmark-fill", bookmarked )
+                                    ]
+                                ]
+                                []
+                            ]
+                        , let
+                            important =
+                                Set.member msgId vps.importants
+                          in
+                          div
+                            [ title "помітити як важливе"
+                            , class "text-[1rem] cursor-pointer"
+                            , onClick
+                                (if important then
+                                    ImportantRemove msgId
+
+                                 else
+                                    ImportantAdd msgId
+                                )
+                            ]
+                            [ i
+                                [ class "bi"
+                                , classList
+                                    [ ( "bi-exclamation-triangle", not important )
+                                    , ( "bi-exclamation-triangle-fill text-danger", important )
+                                    ]
+                                ]
+                                []
+                            ]
+                        , HtmlX.viewIf (Core.Auth.hasRole "DeleteMsg" vps.user) <|
+                            div
+                                [ title "видалити повідомлення"
+                                , class "text-[1rem] cursor-pointer"
+                                , attribute "data-bs-toggle" "modal"
+                                , attribute "data-bs-target" "#deleteMessageModal"
+                                ]
+                                [ i
+                                    [ class "bi bi-trash3 text-danger"
+                                    , onClick <| DeleteMessage msgId
+                                    ]
+                                    []
+                                ]
+                        , div
+                            [ class "text-center cursor-pointer"
+                            , style "font-size" "1rem"
+                            , title "редагувати додаткові поля"
+                            , onClick <| OpenSidebarEdit msgId
+                            ]
+                            [ i [ class "bi bi-pencil text-action" ] []
+                            ]
+                        ]
+            in
+            [ div [ class "flex flex-col gap-2" ]
+                [ div []
+                    [ actionsBlock
+                    , div
+                        [ class "flex items-center justify-center text-sm"
+                        ]
+                        [ span []
+                            [ text <|
+                                case vps.zone of
+                                    Just zone ->
+                                        Maybe.withDefault ""
+                                            (Maybe.map
+                                                (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
+                                                message.timestamp
+                                            )
+
+                                    Nothing ->
+                                        ""
+                            ]
+                        ]
                     ]
-                    [ text <|
-                        case vps.zone of
-                            Just zone ->
-                                Maybe.withDefault ""
-                                    (Maybe.map
-                                        (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
-                                        message.timestamp
-                                    )
+                , metadataBlock
+                ]
+            ]
+
+        metadataBlock =
+            let
+                itemBlock : { iconName : String, iconTitle : String, label : Maybe String } -> List (Html Msg) -> Html Msg
+                itemBlock config actions =
+                    div [ class "flex justify-between items-center" ]
+                        [ div [ class "flex items-center" ]
+                            [ i [ class ("bi mr-2 text-icons leading-none " ++ config.iconName), title config.iconTitle ] []
+                            , span [ class "" ]
+                                [ text <| Maybe.withDefault "-" config.label ]
+                            ]
+                        , div [ class "flex items-center gap-1" ]
+                            actions
+                        ]
+            in
+            div [ class "flex flex-col gap-1" ]
+                [ let
+                    mGroup =
+                        message.groupMasterKey
+                            |> Maybe.andThen (\groupMasterKey -> Dict.get groupMasterKey vps.groupInfos)
+                  in
+                  itemBlock { iconTitle = "Група", iconName = "bi-signal", label = Maybe.map .name mGroup } []
+                , let
+                    emptyName =
+                        "(невідомо)"
+
+                    profile =
+                        message.sender
+                            |> Maybe.andThen (\s -> Dict.get s vps.profiles)
+                            |> MaybeX.join
+                            |> Maybe.withDefault
+                                { givenName = Just emptyName, familyName = Nothing }
+
+                    label =
+                        case ( profile.givenName, profile.familyName ) of
+                            ( Nothing, Nothing ) ->
+                                emptyName
+
+                            _ ->
+                                Maybe.withDefault "" profile.givenName
+                                    ++ " "
+                                    ++ Maybe.withDefault "" profile.familyName
+                  in
+                  itemBlock { iconTitle = "Відправник", iconName = "bi-person-circle", label = Just label } []
+                , let
+                    updatedRouteString =
+                        case vps.currentRoute of
+                            Just x ->
+                                insertShowMapToQuery (Pages_.RerAnalysis.Utils.updateQueryWithSelectedFreq (message.freq |> def "") x)
 
                             Nothing ->
-                                ""
-                    ]
+                                "/rer-analysis"
+
+                    actionsBlock =
+                        [ i
+                            [ class "bi bi-map mr-1 text-icons leading-none text-sm cursor-pointer"
+                            , title "Відкрити частоту на мапі"
+                            , onClick (SelectFreqAndShowMap (message.freq |> def ""))
+                            ]
+                            []
+                        , a [ href updatedRouteString, target "_blank" ]
+                            [ i [ class "bi bi-box-arrow-up-right cursor-pointer text-action text-sm", title "Відкрити частоту на мапі в окремому вікні" ] [] ]
+                        ]
+                  in
+                  itemBlock { label = message.freq, iconName = "bi-broadcast", iconTitle = "Частота" } actionsBlock
+                , itemBlock { iconTitle = "Координати", iconName = "bi-geo", label = message.coords } []
+                , itemBlock { iconTitle = "Пости", iconName = "bi-binoculars", label = message.post } []
                 ]
-                :: groupNameBlock
-                ++ senderNameBlock
-                ++ metadataReadonlyBlock
-            ]
 
         messageColumn =
             let
@@ -1192,15 +1115,15 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 , text comment.comment
                 ]
     in
-    div [ class "mb-3 p-2 bg-card rounded-lg border border-border relative shadow-sm" ]
+    div [ class "mb-3 p-2 bg-bw rounded-lg border border-border relative shadow-sm" ]
         [ div
             [ class "grid grid-cols-12 gap-2"
             , id <| "message-" ++ String.fromInt msgId
             ]
             [ div
-                [ class "border-r border-border m-w-[160p] col-span-2"
+                [ class "border-r border-border m-w-[160p] col-span-2 pr-2"
                 ]
-                (List.concat timeColumn)
+                timeColumn
             , div [ class "col-span-6 border-r border-border" ] messageColumn
             , div [ class "px-2 col-span-4 flex flex-col" ]
                 [ div [] [ callsignsColumn ]
