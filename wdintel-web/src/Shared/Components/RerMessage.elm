@@ -61,6 +61,7 @@ type alias Model =
     { callsignInputs : Dict Int String
     , edited : Dict Int Edited
     , extendedForm : Set Int
+    , focusedTextarea : Maybe Int
     }
 
 
@@ -69,6 +70,7 @@ model0 =
     { callsignInputs = Dict.empty
     , edited = Dict.empty
     , extendedForm = Set.empty
+    , focusedTextarea = Nothing
     }
 
 
@@ -101,6 +103,8 @@ type Msg
     | DeleteMessage Int
     | SelectFreqAndShowMap String
     | OpenSidebarEdit Int
+    | TextareaFocus Int
+    | TextareaBlur Int
 
 
 type OutSignal
@@ -625,10 +629,82 @@ update vps msg model =
             , messages = vps.messages
             }
 
+        TextareaFocus msgId ->
+            { model = { model | focusedTextarea = Just msgId }
+            , cmds = E.none
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        TextareaBlur _ ->
+            { model = { model | focusedTextarea = Nothing }
+            , cmds = E.none
+            , sigs = []
+            , messages = vps.messages
+            }
+
 
 callsignInputId : Int -> String
 callsignInputId id_ =
     "add-callsign-input-" ++ String.fromInt id_
+
+
+{-| Reusable view for textarea with floating action buttons -}
+textareaWithFloatingActions :
+    { msgId : Int
+    , value : String
+    , placeholder : String
+    , onInput : String -> Msg
+    , onSave : Msg
+    , onCancel : Msg
+    , onFocus : Msg
+    , onBlur : Msg
+    , isEdited : Bool
+    , isFocused : Bool
+    }
+    -> Html Msg
+textareaWithFloatingActions config =
+    div [ class "relative" ]
+        [ textarea
+            [ class "w-full px-3 py-2 border border-border rounded-lg bg-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            , style "min-height" "100px"
+            , style "font-size" ".9rem"
+            , placeholder config.placeholder
+            , onInput config.onInput
+            , onFocus config.onFocus
+            , onBlur config.onBlur
+            , value config.value
+            , spellcheck False
+            ]
+            []
+        , if config.isEdited then
+            div
+                [ class "absolute bottom-2 right-2 flex gap-1"
+                , classList
+                    [ ( "opacity-40", not config.isFocused )
+                    , ( "opacity-100", config.isFocused )
+                    ]
+                , class "transition-opacity duration-200"
+                ]
+                [ button
+                    [ type_ "button"
+                    , class "w-8 h-8 flex items-center justify-center bg-neutral text-w rounded-full shadow-lg hover:bg-neutral-hover hover:shadow-xl transition-all duration-200"
+                    , onClick config.onCancel
+                    , title "Скасувати зміни"
+                    ]
+                    [ i [ class "bi bi-x-lg text-sm" ] [] ]
+                , button
+                    [ type_ "button"
+                    , class "w-8 h-8 flex items-center justify-center bg-primary text-w rounded-full shadow-lg hover:bg-primary-hover hover:shadow-xl transition-all duration-200"
+                    , onClick config.onSave
+                    , title "Зберегти зміни"
+                    ]
+                    [ i [ class "bi bi-check-lg text-sm" ] [] ]
+                ]
+
+          else
+            text ""
+        ]
 
 
 profileNameStr : String -> B.SignalProfileEntry -> String
@@ -708,14 +784,8 @@ renderRow :
     -> Model
     -> ( Int, ( Int, InboxMessage ) )
     -> Html Msg
-renderRow vps renderPs model ( i_, ( msgId, message ) ) =
+renderRow vps _ model ( i_, ( msgId, message ) ) =
     let
-        idPrefix =
-            "rer-inbox-msg-"
-
-        idExtendedFormTextarea =
-            idPrefix ++ String.fromInt msgId
-
         callsignBlock ( j, callsign ) =
             let
                 hintResult =
@@ -832,39 +902,6 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
                 ]
             ]
 
-        editedBlock =
-            if renderPs.hideIndividualSave then
-                []
-
-            else
-                let
-                    show =
-                        case Dict.get msgId model.edited of
-                            Just _ ->
-                                True
-
-                            Nothing ->
-                                False
-                in
-                [ div [ classList [ ( "opacity-0", not show ) ], class "flex flex-col gap-2" ]
-                    [ button
-                        [ type_ "button"
-                        , class "btn btn-light btn-sm text-nowrap"
-                        , onClick <| EditCancel msgId
-                        , style "font-size" ".75rem"
-                        ]
-                        [ i [ class "bi bi-x-circle" ] []
-                        ]
-                    , button
-                        [ type_ "button"
-                        , class "btn btn-outline btn-primary btn-sm text-nowrap"
-                        , style "font-size" ".75rem"
-                        , onClick <| EditSave msgId
-                        ]
-                        [ i [ class "bi bi-check" ] []
-                        ]
-                    ]
-                ]
 
         actionMenuBody =
             let
@@ -896,43 +933,21 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
             ]
 
         metadataReadonlyBlock =
-            [ div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
+            [ div [ class "bg-muted rounded p-1 text-xs" ]
+                [ div [ class "flex items-center justify-center mb-1" ]
                     [ Shared.Components.ActionMenu.actionMenu actionMenuBody "bi-broadcast text-danger"
-                    , div 
-                        [ class "text-center"
-                        , style "width" "120px"
-                        , style "font-size" ".9rem"
-                        ]
+                    , div [ class "mx-1 px-1 py-0.5 bg-card rounded text-xs font-medium" ]
                         [ text <| Maybe.withDefault "-" message.freq ]
-                    , div
-                        [ class "ms-1 opacity-0"
-                        ]
-                        [ i [ class "bi bi-broadcast" ] [] ]
                     ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-geo" ] [] ]
-                    , div 
-                        [ class "text-center"
-                        , style "width" "120px"
-                        , style "font-size" ".9rem"
-                        ]
+                , div [ class "flex items-center justify-center mb-1" ]
+                    [ i [ class "bi bi-geo text-icons mr-1" ] []
+                    , div [ class "px-1 py-0.5 bg-card rounded text-xs" ]
                         [ text <| Maybe.withDefault "-" message.coords ]
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-geo" ] [] ]
                     ]
-                ]
-            , div [ class "d-flex justify-content-center mb-1" ]
-                [ div [ class "d-flex justify-content-center" ]
-                    [ div [ class "me-2" ] [ i [ class "bi bi-binoculars" ] [] ]
-                    , div 
-                        [ class "text-center"
-                        , style "width" "120px"
-                        , style "font-size" ".9rem"
-                        ]
+                , div [ class "flex items-center justify-center" ]
+                    [ i [ class "bi bi-binoculars text-icons mr-1" ] []
+                    , div [ class "px-1 py-0.5 bg-card rounded text-xs" ]
                         [ text <| Maybe.withDefault "-" message.post ]
-                    , div [ class "ms-1 opacity-0" ] [ i [ class "bi bi-binoculars" ] [] ]
                     ]
                 ]
             ]
@@ -1026,32 +1041,35 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
                 ]
 
         timeColumn =
-            [ div [] <|
-                div [ class "flex justify-start items-center" ]
+            [ div []
+                [ -- Actions block
+                  div [ class "flex justify-center mb-2" ]
                     [ bookmarkBlock
                     , importantBlock
                     , deleteMessageBlock
                     , editIconBlock
-                    , div
-                        [ class "text-center"
-                        , style "font-size" ".8rem"
-                        ]
-                        [ text <|
-                            case vps.zone of
-                                Just zone ->
-                                    Maybe.withDefault ""
-                                        (Maybe.map
-                                            (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
-                                            message.timestamp
-                                        )
-
-                                Nothing ->
-                                    ""
-                        ]
                     ]
-                    :: groupNameBlock
-                    ++ senderNameBlock
-                    ++ metadataReadonlyBlock
+                  -- Time block
+                , div
+                    [ class "text-center mb-2"
+                    , style "font-size" ".75rem"
+                    ]
+                    [ text <|
+                        case vps.zone of
+                            Just zone ->
+                                Maybe.withDefault ""
+                                    (Maybe.map
+                                        (Utils.Time.renderDateTimeF1 zone << Time.millisToPosix)
+                                        message.timestamp
+                                    )
+
+                            Nothing ->
+                                ""
+                    ]
+                ]
+                :: groupNameBlock
+                ++ senderNameBlock
+                ++ metadataReadonlyBlock
             ]
 
         messageColumn =
@@ -1141,7 +1159,7 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
                     Dict.get msgId model.callsignInputs
                         |> Maybe.withDefault ""
             in
-            [ div [] <|
+            div [] <|
                 div [ class "flex justify-between" ]
                     [ div [ class "flex-fill" ]
                         [ input
@@ -1169,31 +1187,39 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
                     ]
                     :: List.map callsignBlock (enumerate message.callsigns)
                     ++ List.map proposedCallsignBlock callsignsProposed
-            ]
 
         extendedFormColumn =
-            [ div [ class "mb-2" ] <|
+            let
+                isEdited =
+                    case Dict.get msgId model.edited of
+                        Just _ -> True
+                        Nothing -> False
+                
+                isFocused =
+                    model.focusedTextarea == Just msgId
+            in
+            div [ class "mb-2" ] <|
                 [ div
                     [ class "flex justify-center mb-2"
                     ]
                   <|
                     [ tagsBlock message.tags (ToggleTag msgId) vps.tags
                     ]
-                , textarea
-                    [ class "form-control pt-2 rounded-0"
-                    , style "font-size" ".9rem"
-                    , placeholder "коментар"
-                    , id <| idExtendedFormTextarea
-                    , onInput (ExtendedFormChanged msgId)
-                    , value <| Maybe.withDefault "" message.extendedForm
-                    , style "min-height" "100px"
-                    , spellcheck False
-                    ]
-                    []
+                , textareaWithFloatingActions
+                    { msgId = msgId
+                    , value = Maybe.withDefault "" message.extendedForm
+                    , placeholder = "коментар"
+                    , onInput = ExtendedFormChanged msgId
+                    , onSave = EditSave msgId
+                    , onCancel = EditCancel msgId
+                    , onFocus = TextareaFocus msgId
+                    , onBlur = TextareaBlur msgId
+                    , isEdited = isEdited
+                    , isFocused = isFocused
+                    }
+                , HtmlX.viewIf (List.length otherCommentsBlock > 0)
+                    (div [ class "mb-2" ] otherCommentsBlock)
                 ]
-            , HtmlX.viewIf (List.length otherCommentsBlock > 0)
-                (div [ class "mb-2" ] otherCommentsBlock)
-            ]
 
         otherCommentsBlock =
             vps.messageComments
@@ -1210,19 +1236,21 @@ renderRow vps renderPs model ( i_, ( msgId, message ) ) =
                 , text comment.comment
                 ]
     in
-    div [ class "rer-message mb-4 relative" ]
+    div [ class "rer-message mb-3 p-3 bg-card rounded-lg border border-border relative shadow-sm" ]
         [ div
-            [ class "flex  message"
+            [ class "flex message gap-3"
             , id <| "message-" ++ String.fromInt msgId
             ]
             [ div
-                [ style "min-width" (String.fromInt imgWidth ++ "px")
+                [ class "border-r border-border pr-3"
+                , style "min-width" "160px"
                 ]
-                timeColumn
-            , div [ class "basis-[45%]" ] messageColumn
-            , div [ class "text-center mx-1" ] callsignsColumn
-            , div [ class "text-center mx-1 basis-[23%]" ] extendedFormColumn
-            , div [ class "" ] editedBlock
+                (List.concat timeColumn)
+            , div [ class "basis-[45%] border-r border-border pr-3" ] messageColumn
+            , div [ class "text-center border-r border-border px-3 flex flex-col" ]
+                [ div [ class "flex-1" ] [ callsignsColumn ]
+                , div [ class "flex-1 border-t border-border pt-2 mt-2" ] [ extendedFormColumn ]
+                ]
             ]
         , Watermark.new vps.user.name |> Watermark.withPositioning ( 65, 75 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
         , Watermark.new vps.user.name |> Watermark.withPositioning ( 25, 30 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
