@@ -79,6 +79,7 @@ type alias Model =
     , savedFilters : List ( Int, B.SavedFilter )
     , savedFiltersLoading : Bool
     , savedFilterEditInp : Dict Int String
+    , savedFilterMenuOpen : Maybe Int
     , searchInput : String
     , nolimitShown : Bool
     , menuTab : MenuTab

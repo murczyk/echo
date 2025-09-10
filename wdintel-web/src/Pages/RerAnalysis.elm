@@ -128,6 +128,7 @@ init route _ =
             , savedFilters = []
             , savedFiltersLoading = True
             , savedFilterEditInp = Dict.empty
+            , savedFilterMenuOpen = Nothing
             , searchInput = ""
             , nolimitShown = False
             , menuTab = TabFilters
@@ -2036,6 +2037,22 @@ update user shared route msg model =
             , E.none
             )
 
+        SavedFilterMenuToggle id ->
+            ( { model
+                | savedFilterMenuOpen = 
+                    if model.savedFilterMenuOpen == Just id then
+                        Nothing
+                    else
+                        Just id
+              }
+            , E.none
+            )
+
+        SavedFilterMenuClose ->
+            ( { model | savedFilterMenuOpen = Nothing }
+            , E.none
+            )
+
         SavedFilterEdit id ->
             case findK id model.savedFilters of
                 Nothing ->
@@ -2045,6 +2062,7 @@ update user shared route msg model =
                     ( { model
                         | savedFilterEditInp =
                             Dict.insert id savedFilter.name model.savedFilterEditInp
+                        , savedFilterMenuOpen = Nothing
                       }
                     , E.none
                     )
@@ -2111,6 +2129,7 @@ update user shared route msg model =
         SavedFilterDelete id ->
             ( { model
                 | savedFilterEditInp = Dict.remove id model.savedFilterEditInp
+                , savedFilterMenuOpen = Nothing
                 , savedFilters = List.filter (\( k, _ ) -> k /= id) model.savedFilters
               }
             , E.deleteSavedAnalysisFilter SavedFilterDeleteDone id

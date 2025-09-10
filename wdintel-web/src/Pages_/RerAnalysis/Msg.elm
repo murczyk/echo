@@ -76,6 +76,8 @@ type Msg
     | SaveFilterDo
     | SaveFilterDone (Result ApiError (List B.SavedFilter))
     | SavedFiltersGot (Result ApiError (List B.SavedFilter))
+    | SavedFilterMenuToggle Int
+    | SavedFilterMenuClose
     | SavedFilterEdit Int
     | SavedFilterEditCancel Int
     | SavedFilterEditInp Int String
