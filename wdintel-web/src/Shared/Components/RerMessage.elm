@@ -1192,18 +1192,17 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 , text comment.comment
                 ]
     in
-    div [ class "rer-message mb-3 p-3 bg-card rounded-lg border border-border relative shadow-sm" ]
+    div [ class "mb-3 p-2 bg-card rounded-lg border border-border relative shadow-sm" ]
         [ div
-            [ class "flex message gap-3"
+            [ class "grid grid-cols-12 gap-2"
             , id <| "message-" ++ String.fromInt msgId
             ]
             [ div
-                [ class "border-r border-border"
-                , style "min-width" "160px"
+                [ class "border-r border-border m-w-[160p] col-span-2"
                 ]
                 (List.concat timeColumn)
-            , div [ class "basis-[50%] border-r border-border" ] messageColumn
-            , div [ class "px-2 flex flex-col" ]
+            , div [ class "col-span-6 border-r border-border" ] messageColumn
+            , div [ class "px-2 col-span-4 flex flex-col" ]
                 [ div [] [ callsignsColumn ]
                 , div [ class "flex-1" ] [ extendedFormColumn ]
                 ]

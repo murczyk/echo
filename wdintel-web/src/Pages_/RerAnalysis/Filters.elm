@@ -750,7 +750,7 @@ leftColumn isDark user model =
                 ]
     in
     div
-        [ class "filter-col d-flex flex-column pt-1 left-panel"
+        [ class "flex flex-col pt-1"
         , style "min-height" "100%"
         ]
     <|

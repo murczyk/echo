@@ -1522,21 +1522,22 @@ update user shared route msg model =
         SaveEditSidebar ->
             case model.editSidebar of
                 Just msgId ->
-                    case List.filter (\(id, _) -> id == msgId) model.messages |> List.head of
-                        Just (_, message) ->
+                    case List.filter (\( id, _ ) -> id == msgId) model.messages |> List.head of
+                        Just ( _, message ) ->
                             ( model
                             , Api.rer_importer_inbox_submit (EditSidebarSaveDone msgId) { messages = [ ( msgId, message ) ] }
                             )
-                        
+
                         Nothing ->
                             ( model, E.none )
-                
+
                 Nothing ->
                     ( model, E.none )
 
         EditSidebarUpdate msgId updateFn ->
             let
-                messages2 = updateMessageField msgId updateFn model.messages
+                messages2 =
+                    updateMessageField msgId updateFn model.messages
             in
             ( { model | messages = messages2 }, E.none )
 
@@ -3078,6 +3079,7 @@ updateMessageField msgId updateFn messages =
         (\( id, message ) ->
             if id == msgId then
                 ( id, updateFn message )
+
             else
                 ( id, message )
         )
@@ -3104,24 +3106,32 @@ subscriptions _ =
     Sub.none
 
 
+
+--VIEW
+
+
 view : Shared.Model -> B.User -> Route () -> Model -> View Msg
 view shared user route model =
     { title = "РЕР-аналіз"
     , body =
-        [ div [ class "w-full" ]
-            [ Pages_.RerAnalysis.MainBody.filtersAndMainContent user model shared route
+        [ div []
+            [ Pages_.RerAnalysis.MainBody.view user model shared route
             ]
         , Sidebar.view (model.editSidebar /= Nothing) CloseEditSidebar (editSidebarContent model)
         ]
     }
 
 
+
+-- SIDEBARS
+
+
 editSidebarContent : Model -> List (Html Msg)
 editSidebarContent model =
     case model.editSidebar of
         Just msgId ->
-            case List.filter (\(id, _) -> id == msgId) model.messages |> List.head of
-                Just (_, message) ->
+            case List.filter (\( id, _ ) -> id == msgId) model.messages |> List.head of
+                Just ( _, message ) ->
                     [ div [ class "flex flex-col h-full" ]
                         [ div [ class "p-4 border-b border-b-border" ]
                             [ h3 [ class "text-lg font-semibold" ] [ text "Редагування додаткових полів" ]
@@ -3214,9 +3224,9 @@ editSidebarContent model =
                             ]
                         ]
                     ]
-                
+
                 Nothing ->
                     [ div [ class "p-4" ] [ text "Повідомлення не знайдено" ] ]
-        
+
         Nothing ->
             []
