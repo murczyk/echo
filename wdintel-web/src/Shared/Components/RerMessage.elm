@@ -2,8 +2,6 @@ module Shared.Components.RerMessage exposing (Edited, Model, Msg(..), OutSignal(
 
 import Api
 import Bindings as B exposing (..)
-import Shared.Components.ActionMenu
-import Shared.Components.Watermark as Watermark
 import Core.Auth
 import Core.Callsigns.HintStrategy
 import Core.Types exposing (..)
@@ -20,6 +18,8 @@ import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
+import Shared.Components.ActionMenu
+import Shared.Components.Watermark as Watermark
 import Shared.MarkedText
 import Time
 import Utils.Api.ErrorHandling
@@ -649,64 +649,6 @@ callsignInputId id_ =
     "add-callsign-input-" ++ String.fromInt id_
 
 
-{-| Reusable view for textarea with floating action buttons -}
-textareaWithFloatingActions :
-    { msgId : Int
-    , value : String
-    , placeholder : String
-    , onInput : String -> Msg
-    , onSave : Msg
-    , onCancel : Msg
-    , onFocus : Msg
-    , onBlur : Msg
-    , isEdited : Bool
-    , isFocused : Bool
-    }
-    -> Html Msg
-textareaWithFloatingActions config =
-    div [ class "relative" ]
-        [ textarea
-            [ class "w-full px-3 py-2 border border-border rounded-lg bg-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-            , style "min-height" "100px"
-            , style "font-size" ".9rem"
-            , placeholder config.placeholder
-            , onInput config.onInput
-            , onFocus config.onFocus
-            , onBlur config.onBlur
-            , value config.value
-            , spellcheck False
-            ]
-            []
-        , if config.isEdited then
-            div
-                [ class "absolute bottom-2 right-2 flex gap-1"
-                , classList
-                    [ ( "opacity-40", not config.isFocused )
-                    , ( "opacity-100", config.isFocused )
-                    ]
-                , class "transition-opacity duration-200"
-                ]
-                [ button
-                    [ type_ "button"
-                    , class "w-8 h-8 flex items-center justify-center bg-neutral text-w rounded-full shadow-lg hover:bg-neutral-hover hover:shadow-xl transition-all duration-200"
-                    , onClick config.onCancel
-                    , title "Скасувати зміни"
-                    ]
-                    [ i [ class "bi bi-x-lg text-sm" ] [] ]
-                , button
-                    [ type_ "button"
-                    , class "w-8 h-8 flex items-center justify-center bg-primary text-w rounded-full shadow-lg hover:bg-primary-hover hover:shadow-xl transition-all duration-200"
-                    , onClick config.onSave
-                    , title "Зберегти зміни"
-                    ]
-                    [ i [ class "bi bi-check-lg text-sm" ] [] ]
-                ]
-
-          else
-            text ""
-        ]
-
-
 profileNameStr : String -> B.SignalProfileEntry -> String
 profileNameStr uuid x =
     case ( x.givenName, x.familyName ) of
@@ -786,7 +728,7 @@ renderRow :
     -> Html Msg
 renderRow vps _ model ( i_, ( msgId, message ) ) =
     let
-        callsignBlock ( j, callsign ) =
+        callsignTag ( j, callsign ) =
             let
                 hintResult =
                     Core.Callsigns.HintStrategy.getCallsignHints Core.Callsigns.HintStrategy.MessageContext message vps callsign
@@ -798,17 +740,18 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     else
                         Shared.Callsign.viewDefault callsign False
             in
-            div [ class "d-flex justify-content-between text-uppercase" ]
-                [ div [ class "flex-fill" ]
-                    [ result ]
-                , div [ class "ms-1" ]
-                    [ i
-                        [ class "bi bi-dash-circle text-action cursor-pointer"
-                        , attribute "role" "button"
-                        , onClick <| DeleteCallsign msgId j
-                        ]
-                        []
+            span
+                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors group"
+                ]
+                [ span [ class "text-uppercase font-medium" ] [ result ]
+                , button
+                    [ type_ "button"
+                    , class "w-4 h-4 flex items-center justify-center text-secondary hover:text-error transition-colors opacity-60 group-hover:opacity-100"
+                    , onClick <| DeleteCallsign msgId j
+                    , title "Видалити позивний"
                     ]
+                    [ i [ class "bi bi-x text-sm" ] [] ]
+                , text "|"
                 ]
 
         imgWidth =
@@ -901,7 +844,6 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                 ++ Maybe.withDefault "" profile.familyName
                 ]
             ]
-
 
         actionMenuBody =
             let
@@ -1049,7 +991,8 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     , deleteMessageBlock
                     , editIconBlock
                     ]
-                  -- Time block
+
+                -- Time block
                 , div
                     [ class "text-center mb-2"
                     , style "font-size" ".75rem"
@@ -1112,26 +1055,15 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 ]
             ]
 
-        proposedCallsignBlock callsign =
-            div
-                [ class "d-flex justify-content-between text-uppercase mt-1"
-                , style "font-size" ".7rem"
+        proposedCallsignTag callsign =
+            span
+                [ class "inline-flex items-center gap-1 text-secondary hover:text-secondary-hover transition-colors cursor-pointer"
+                , onClick <| AddCallsignS msgId callsign
+                , title "Додати позивний"
                 ]
-                [ div
-                    [ class "flex-fill"
-                    , onClick <| AddCallsignS msgId callsign
-                    ]
-                    [ span [ class "text-action cursor-pointer" ]
-                        [ text callsign ]
-                    ]
-                , div [ class "ms-1" ]
-                    [ i
-                        [ class "bi bi-dash-circle text-danger"
-                        , attribute "role" "button"
-                        , style "opacity" "0"
-                        ]
-                        []
-                    ]
+                [ span [ class "text-uppercase font-medium" ] [ text callsign ]
+                , i [ class "bi bi-plus text-sm opacity-60" ] []
+                , text "|"
                 ]
 
         callsignsProposed : List String
@@ -1158,14 +1090,22 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 inpVal =
                     Dict.get msgId model.callsignInputs
                         |> Maybe.withDefault ""
+
+                isEdited =
+                    case Dict.get msgId model.edited of
+                        Just _ ->
+                            True
+
+                        Nothing ->
+                            False
             in
-            div [] <|
-                div [ class "flex justify-between" ]
-                    [ div [ class "flex-fill" ]
+            div [ class "space-y-2" ] <|
+                [ div [ class "flex justify-between items-center gap-2" ]
+                    [ div [ class "flex items-center gap-2" ]
                         [ input
                             [ type_ "text"
-                            , class "text-center text-uppercase"
-                            , style "width" "130px"
+                            , class "flex-1  px-1 py-1 text-center text-uppercase border border-border rounded bg-card text-text focus:outline-none focus:ring-1 focus:ring-secondary-active"
+                            , style "font-size" ".7rem"
                             , value inpVal
                             , placeholder "позивний"
                             , onInput <| SetCallsignInput msgId
@@ -1173,52 +1113,68 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             , id <| callsignInputId msgId
                             ]
                             []
-                        ]
-                    , div [ class "ms-1" ]
-                        [ i
-                            [ class "bi bi-plus-circle align-middle"
-                            , classList [ ( "text-muted opacity-50", inpVal == "" ) ]
-                            , classList [ ( "text-success", inpVal /= "" ) ]
-                            , attribute "role" "button"
+                        , button
+                            [ type_ "button"
+                            , class "w-5 h-5 flex items-center justify-center bg-secondary text-w rounded hover:bg-secondary-hover transition-colors disabled:opacity-50"
                             , onClick <| AddCallsign msgId
+                            , disabled (inpVal == "")
+                            , title "Додати позивний"
                             ]
-                            []
+                            [ i [ class "bi bi-plus text-xs" ] [] ]
+                        ]
+                    , div [ class "flex gap-1 ml-3 pl-3 border-l border-border" ]
+                        [ if isEdited then
+                            button
+                                [ type_ "button"
+                                , class "w-7 h-7 flex items-center justify-center bg-neutral text-w rounded shadow-md hover:bg-neutral-hover hover:shadow-lg transition-all"
+                                , onClick <| EditCancel msgId
+                                , title "Скасувати всі зміни"
+                                ]
+                                [ i [ class "bi bi-x-lg text-sm" ] [] ]
+
+                          else
+                            div [ class "w-7 h-7" ] []
+                        , if isEdited then
+                            button
+                                [ type_ "button"
+                                , class "w-7 h-7 flex items-center justify-center bg-[var(--color-primary)] text-w rounded shadow-md hover:bg-primary-hover hover:shadow-lg transition-all"
+                                , onClick <| EditSave msgId
+                                , title "Зберегти всі зміни"
+                                ]
+                                [ i [ class "bi bi-check-lg text-sm" ] [] ]
+
+                          else
+                            div [ class "w-7 h-7" ] []
                         ]
                     ]
-                    :: List.map callsignBlock (enumerate message.callsigns)
-                    ++ List.map proposedCallsignBlock callsignsProposed
+                , div [ class "flex flex-wrap gap-1" ]
+                    (List.map callsignTag (enumerate message.callsigns))
+                , div [ class "flex flex-wrap gap-1" ]
+                    (List.map proposedCallsignTag callsignsProposed)
+                ]
 
         extendedFormColumn =
-            let
-                isEdited =
-                    case Dict.get msgId model.edited of
-                        Just _ -> True
-                        Nothing -> False
-                
-                isFocused =
-                    model.focusedTextarea == Just msgId
-            in
-            div [ class "mb-2" ] <|
+            div [ class "mb-2 flex flex-col gap-2 h-full" ] <|
                 [ div
-                    [ class "flex justify-center mb-2"
+                    [ class "flex justify-center"
                     ]
                   <|
                     [ tagsBlock message.tags (ToggleTag msgId) vps.tags
                     ]
-                , textareaWithFloatingActions
-                    { msgId = msgId
-                    , value = Maybe.withDefault "" message.extendedForm
-                    , placeholder = "коментар"
-                    , onInput = ExtendedFormChanged msgId
-                    , onSave = EditSave msgId
-                    , onCancel = EditCancel msgId
-                    , onFocus = TextareaFocus msgId
-                    , onBlur = TextareaBlur msgId
-                    , isEdited = isEdited
-                    , isFocused = isFocused
-                    }
+                , textarea
+                    [ class "w-full grow-1 px-3 py-2 border border-border rounded-lg bg-card text-text resize-none focus:outline-none focus:ring-2 focus:ring-secondary-light-active focus:border-transparent transition-all"
+                    , style "min-height" "100px"
+                    , style "font-size" ".9rem"
+                    , placeholder "коментар"
+                    , onInput (ExtendedFormChanged msgId)
+                    , onFocus (TextareaFocus msgId)
+                    , onBlur (TextareaBlur msgId)
+                    , value (Maybe.withDefault "" message.extendedForm)
+                    , spellcheck False
+                    ]
+                    []
                 , HtmlX.viewIf (List.length otherCommentsBlock > 0)
-                    (div [ class "mb-2" ] otherCommentsBlock)
+                    (div [] otherCommentsBlock)
                 ]
 
         otherCommentsBlock =
@@ -1242,16 +1198,15 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             , id <| "message-" ++ String.fromInt msgId
             ]
             [ div
-                [ class "border-r border-border pr-3"
+                [ class "border-r border-border"
                 , style "min-width" "160px"
                 ]
                 (List.concat timeColumn)
-            , div [ class "basis-[45%] border-r border-border pr-3" ] messageColumn
-            , div [ class "text-center border-r border-border px-3 flex flex-col" ]
-                [ div [ class "flex-1" ] [ callsignsColumn ]
-                , div [ class "flex-1 border-t border-border pt-2 mt-2" ] [ extendedFormColumn ]
+            , div [ class "basis-[50%] border-r border-border" ] messageColumn
+            , div [ class "px-2 flex flex-col" ]
+                [ div [] [ callsignsColumn ]
+                , div [ class "flex-1" ] [ extendedFormColumn ]
                 ]
             ]
         , Watermark.new vps.user.name |> Watermark.withPositioning ( 65, 75 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
-        , Watermark.new vps.user.name |> Watermark.withPositioning ( 25, 30 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
         ]
