@@ -14,7 +14,6 @@ import Auth
 import Base64.Decode
 import Bindings as B
 import Bytes exposing (Bytes)
-import Shared.Components.Spinner
 import Core.Coordinates exposing (Coordinates)
 import Core.Types exposing (ApiError)
 import DateFormat
@@ -36,6 +35,7 @@ import Random
 import Route exposing (Route)
 import Select
 import Shared
+import Shared.Components.Spinner
 import Shared.Model exposing (isDarkMode)
 import Task
 import Time exposing (Posix)
@@ -1251,11 +1251,10 @@ renderImpRow isDark formErrors row_i =
                             }
                         )
             in
-            div [ class "d-flex justify-content-center align-items-center" ]
+            div [ class "flex justify-center items-center" ]
                 [ img
                     [ src <| "/img/google_earth_icons/" ++ icon.icon
-                    , height 20
-                    , class "pe-1"
+                    , class "pe-1 h-[20px]"
                     ]
                     []
                 , div [ class "flex-fill", style "font-size" ".8rem" ]
@@ -1293,8 +1292,7 @@ renderImpRow isDark formErrors row_i =
 
         renderProposedIcon icon =
             img
-                [ height 20
-                , class "icon-proposed m-1"
+                [ class "icon-proposed m-1 h-[20px]"
                 , src <| "/img/google_earth_icons/" ++ icon
                 , onClick <| SelectIcon rowId icon
                 ]
