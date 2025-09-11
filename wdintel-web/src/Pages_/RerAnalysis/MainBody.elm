@@ -717,7 +717,7 @@ view user model shared route =
                 , id "messages-div"
                 ]
                 [ div
-                    [ class "fixed bottom-[40px] right-[30px] opacity-50"
+                    [ class "fixed bottom-[20px] right-[30px] opacity-50 z-55"
                     , onClick <| ScrollMessagesToTop
                     ]
                     [ span [ class "text-[2rem] cursor-pointer" ]
