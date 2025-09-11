@@ -713,7 +713,7 @@ view user model shared route =
                 ]
                 [ Pages_.RerAnalysis.Filters.leftColumn (isDarkMode shared.themeMode) user model ]
             , div
-                [ class "col-span-19 flex flex-col h-full relative border-l border-border  mt-4 overflow-auto"
+                [ class "col-span-19 flex flex-col h-full relative  mt-4 overflow-auto"
                 , id "messages-div"
                 ]
                 [ div

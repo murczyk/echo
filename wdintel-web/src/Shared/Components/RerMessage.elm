@@ -781,7 +781,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                           in
                           div
                             [ title "додати в закладки"
-                            , class "text-[1rem] cursor-pointer text-action "
+                            , class "cursor-pointer text-action  text-[20px]"
                             , onClick
                                 (if bookmarked then
                                     BookmarkRemove msgId
@@ -805,7 +805,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                           in
                           div
                             [ title "помітити як важливе"
-                            , class "text-[1rem] cursor-pointer text-action"
+                            , class "text-[20px] cursor-pointer text-action"
                             , onClick
                                 (if important then
                                     ImportantRemove msgId
@@ -826,7 +826,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         , HtmlX.viewIf (Core.Auth.hasRole "DeleteMsg" vps.user) <|
                             div
                                 [ title "видалити повідомлення"
-                                , class "text-[1rem] cursor-pointer text-action"
+                                , class "text-[20px] cursor-pointer text-action"
                                 , attribute "data-bs-toggle" "modal"
                                 , attribute "data-bs-target" "#deleteMessageModal"
                                 ]
@@ -838,7 +838,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                 ]
                         , div
                             [ class "text-center cursor-pointer"
-                            , style "font-size" "1rem"
+                            , style "font-size" "20px"
                             , title "редагувати додаткові поля"
                             , onClick <| OpenSidebarEdit msgId
                             ]
@@ -847,10 +847,10 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         ]
             in
             [ div [ class "flex flex-col gap-2" ]
-                [ div []
+                [ div [ class "flex flex-col gap-1" ]
                     [ actionsBlock
                     , div
-                        [ class "flex items-center justify-center text-sm"
+                        [ class "flex items-center justify-center"
                         ]
                         [ span []
                             [ text <|
@@ -958,12 +958,10 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                                         networkIds
 
                                 networkBlock_ =
-                                    List.map (\str -> span [] [ text str ]) networkStrings
+                                    List.map (\str -> div [ class "font-medium" ] [ text str ]) networkStrings
                                         |> (\list ->
-                                                div [ class "flex gap-2 items-center border-b border-b-border pb-1" ]
-                                                    [ Icons.network
-                                                    , div [] list
-                                                    ]
+                                                div [ class " border-b border-b-border pb-1" ]
+                                                    list
                                            )
                             in
                             networkBlock_
@@ -1056,7 +1054,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                             ]
                             [ i [ class "bi bi-plus text-xs" ] [] ]
                         ]
-                    , div [ class "flex gap-1 ml-3 pl-3 border-l border-border" ]
+                    , div [ class "flex gap-1 ml-3 pl-3" ]
                         [ if isEdited then
                             button
                                 [ type_ "button"
@@ -1088,7 +1086,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 ]
 
         extendedFormColumn =
-            div [ class "mb-2 flex flex-col gap-2 h-full" ] <|
+            div [ class "flex flex-col gap-2 h-full my-1" ] <|
                 [ div
                     [ class "flex justify-center"
                     ]
