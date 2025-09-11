@@ -879,7 +879,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                         [ div [ class "flex items-center" ]
                             [ i [ class ("bi mr-2 text-icons leading-none " ++ config.iconName), title config.iconTitle ] []
                             , span [ class "" ]
-                                [ text <| Maybe.withDefault "-" config.label ]
+                                [ text <| Maybe.withDefault "" config.label ]
                             ]
                         , div [ class "flex items-center gap-1" ]
                             actions
