@@ -287,7 +287,6 @@ async fn sync_groups(
         }
     }
     for (master_key, datasource_id) in datasource_groups_to_delete.clone() {
-
         let up_for_delete = datasource_group::Entity::find()
             .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
             .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
