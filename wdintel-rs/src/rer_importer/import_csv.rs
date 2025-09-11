@@ -679,6 +679,7 @@ pub async fn ensure_import_group_exists(
                 last_sync_at: NotSet,
                 created_at: NotSet,
                 name: Set(group_name.clone()),
+                deleted: NotSet,
             }
             .insert(dbx)
             .await
@@ -756,6 +757,7 @@ pub async fn ensure_import_group_exists(
                 last_sync_at: NotSet,
                 created_at: NotSet,
                 name: Set(group_name),
+                deleted: NotSet,
             }
             .insert(dbx)
             .await

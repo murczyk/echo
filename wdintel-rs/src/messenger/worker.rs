@@ -11,6 +11,7 @@ use crate::types::*;
 use anyhow::Context;
 use chrono::*;
 use echo_im::types::{MessageF1, MessageSource};
+use echo_migration::Expr;
 use log::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -287,17 +288,13 @@ async fn sync_groups(
         }
     }
     for (master_key, datasource_id) in datasource_groups_to_delete.clone() {
-        let up_for_delete = datasource_group::Entity::find()
+        datasource_group::Entity::update_many()
             .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
             .filter(datasource_group::Column::GroupMasterKey.eq(master_key))
-            .all(txn)
+            .col_expr(datasource_group::Column::Deleted, Expr::value(true))
+            .exec(txn)
             .await
             .context(h!())?;
-        for g in up_for_delete {
-            if let Err(e) = g.delete(txn).await {
-                error!("{e:?}");
-            }
-        }
     }
     client_groups_sync_ts_map.insert(client_name.to_string(), now);
 
@@ -328,6 +325,7 @@ async fn sync_groups(
                     last_sync_at: NotSet,
                     created_at: NotSet,
                     name: Set(g.name),
+                    deleted: NotSet,
                 }
                 .insert(txn)
                 .await

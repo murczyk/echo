@@ -257,6 +257,7 @@ pub async fn sync_groups(
                     last_sync_at: NotSet,
                     created_at: NotSet,
                     name: Set(wg.name.clone()),
+                    deleted: NotSet,
                 }
                 .insert(dbx)
                 .await

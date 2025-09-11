@@ -259,6 +259,7 @@ pub async fn do_sync_state(
                         last_sync_at: NotSet,
                         created_at: NotSet,
                         name: Set(group_name),
+                        deleted: NotSet,
                     }
                     .insert(dbx)
                     .await
@@ -285,6 +286,7 @@ pub async fn do_sync_state(
                     last_sync_at: NotSet,
                     created_at: NotSet,
                     name: Set(group_name),
+                    deleted: NotSet,
                 }
                 .insert(dbx)
                 .await

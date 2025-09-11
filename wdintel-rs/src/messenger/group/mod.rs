@@ -209,6 +209,7 @@ where
         created_at: NotSet,
         id: NotSet,
         last_sync_at: NotSet,
+        deleted: NotSet,
     }
     .insert(db)
     .await

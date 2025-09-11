@@ -166,6 +166,7 @@ async fn ensure_group(
                 last_sync_at: NotSet,
                 created_at: NotSet,
                 name: Set(group.name),
+                deleted: NotSet,
             }
             .insert(txn)
             .await

@@ -147,6 +147,7 @@ mod m20250902_132740_add_datasource_group_id_to_message;
 mod m20250903_075616_remove_legacy_message_columns;
 mod m20250903_091910_rename_datasource_group_id;
 mod m20250905_212243_add_organism_aor;
+mod m20250911_194424_deleted_datasource_group;
 
 pub struct Migrator;
 
@@ -301,6 +302,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250903_075616_remove_legacy_message_columns::Migration),
             Box::new(m20250903_091910_rename_datasource_group_id::Migration),
             Box::new(m20250905_212243_add_organism_aor::Migration),
+            Box::new(m20250911_194424_deleted_datasource_group::Migration),
         ]
     }
 }

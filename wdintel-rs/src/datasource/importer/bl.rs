@@ -121,6 +121,7 @@ pub async fn upsert_signal_groups(
                             last_sync_at: NotSet,
                             created_at: NotSet,
                             name: Set(inserted.name.clone().unwrap_or_default()),
+                            deleted: NotSet,
                         }
                         .insert(db)
                         .await
@@ -168,6 +169,7 @@ pub async fn upsert_signal_groups(
                         last_sync_at: NotSet,
                         created_at: NotSet,
                         name: Set(name),
+                        deleted: NotSet,
                     }
                     .insert(db)
                     .await

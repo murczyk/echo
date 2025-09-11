@@ -17,6 +17,7 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(column_type = "Text")]
     pub name: String,
+    pub deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
